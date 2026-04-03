@@ -1282,8 +1282,10 @@ class PhotoStore: ObservableObject {
         isClassifyingScenes = true
         classifyProgress = 0
 
-        let photoSnapshots = photos
+        let photoSnapshots = photos.filter { !$0.isFolder && !$0.isParentFolder }
         let total = photoSnapshots.count
+        let startTime = CFAbsoluteTimeGetCurrent()
+        print("🏷 [SCENE] Start: \(total) photos")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var results: [UUID: String] = [:]
@@ -1291,34 +1293,29 @@ class PhotoStore: ObservableObject {
             var completed = 0
 
             DispatchQueue.concurrentPerform(iterations: total) { idx in
+                autoreleasepool {
                 let photo = photoSnapshots[idx]
 
-                // Try hardware JPEG decode, fall back to CGImageSource
-                let isJPEG = ["jpg", "jpeg"].contains(photo.jpgURL.pathExtension.lowercased())
-                let cgImage: CGImage
-                if isJPEG, HWJPEGDecoder.isAvailable, let hwImage = HWJPEGDecoder.decode(url: photo.jpgURL, maxPixel: 800) {
-                    cgImage = hwImage
-                } else {
-                    let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
-                    guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, sourceOptions as CFDictionary) else {
-                        resultsLock.lock()
-                        completed += 1
-                        resultsLock.unlock()
-                        return
-                    }
-                    let thumbOptions: [NSString: Any] = [
-                        kCGImageSourceThumbnailMaxPixelSize: 800,
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceShouldCache: false
-                    ]
-                    guard let swImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
-                        resultsLock.lock()
-                        completed += 1
-                        resultsLock.unlock()
-                        return
-                    }
-                    cgImage = swImage
+                // Use 480px — sufficient for Vision classification, much faster than 800px
+                let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
+                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, sourceOptions as CFDictionary) else {
+                    resultsLock.lock()
+                    completed += 1
+                    resultsLock.unlock()
+                    return
+                }
+                let thumbOptions: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: 480,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCache: false
+                ]
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
+                    resultsLock.lock()
+                    completed += 1
+                    resultsLock.unlock()
+                    return
                 }
 
                 // Single-pass scene + face classification
@@ -1333,12 +1330,20 @@ class PhotoStore: ObservableObject {
                 resultsLock.lock()
                 completed += 1
                 c = completed
-                shouldReport = (c % 20 == 0 || c == total)
+                shouldReport = (c % 50 == 0 || c == total)
                 resultsLock.unlock()
 
                 if shouldReport {
+                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                    let rate = elapsed > 0 ? Double(c) / elapsed : 0
+                    if c == total {
+                        print("🏷 [SCENE] DONE: \(total) photos in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
+                    } else {
+                        print("🏷 [SCENE] Progress: \(c)/\(total) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
+                    }
                     DispatchQueue.main.async { [weak self] in self?.classifyProgress = Double(c) / Double(total) }
                 }
+                } // autoreleasepool
             }
 
             DispatchQueue.main.async {
