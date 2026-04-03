@@ -1204,14 +1204,31 @@ class ThumbnailLoader {
         if isRAW {
             let t0 = CFAbsoluteTimeGetCurrent()
             if var img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
-                // Apply RAW EXIF orientation to embedded JPEG (which may lack orientation tag)
+                // Check if CGImageSource reports correct orientation-applied dimensions
+                // Compare embedded JPEG aspect ratio with RAW's intended aspect ratio
                 let orient = readOrientation(url: url)
-                if orient >= 5 && orient <= 8 && img.size.width > img.size.height {
-                    // Should be portrait but embedded JPEG is landscape → rotate
-                    img = rotateImage(img, orientation: orient)
-                } else if orient >= 2 && orient <= 4 && img.size.width < img.size.height {
-                    // Mirrored/flipped cases
-                    img = rotateImage(img, orientation: orient)
+                if orient >= 5 && orient <= 8 {
+                    // RAW says portrait (orientation 5-8 = rotated 90°)
+                    // If embedded JPEG is landscape (w > h), it needs rotation
+                    if img.size.width > img.size.height {
+                        img = rotateImage(img, orientation: orient)
+                    }
+                } else if orient == 1 {
+                    // RAW says normal (no rotation needed)
+                    // But some cameras store embedded JPEG already rotated
+                    // If RAW pixel W > H (landscape) but embedded is H > W (portrait), undo rotation
+                    let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+                    if let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary),
+                       let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                       let rawW = props[kCGImagePropertyPixelWidth as String] as? Int,
+                       let rawH = props[kCGImagePropertyPixelHeight as String] as? Int {
+                        let rawIsLandscape = rawW > rawH
+                        let imgIsLandscape = img.size.width > img.size.height
+                        if rawIsLandscape != imgIsLandscape {
+                            // Mismatch: embedded JPEG has wrong orientation, rotate to match RAW
+                            img = rotateImage(img, orientation: 6)  // 90° CW
+                        }
+                    }
                 }
                 let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 if ms > 300 { print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded OK)") }
