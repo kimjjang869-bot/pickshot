@@ -1,0 +1,544 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
+		61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E4A569DDF734271ED6268 /* UpdateService.swift */; };
+		'A10001' = {isa = PBXBuildFile; fileRef = B10001; };
+		'A10002' = {isa = PBXBuildFile; fileRef = B10002; };
+		'A10003' = {isa = PBXBuildFile; fileRef = B10003; };
+		'A10004' = {isa = PBXBuildFile; fileRef = B10004; };
+		'A10005' = {isa = PBXBuildFile; fileRef = B10005; };
+		'A10006' = {isa = PBXBuildFile; fileRef = B10006; };
+		'A10007' = {isa = PBXBuildFile; fileRef = B10007; };
+		'A10008' = {isa = PBXBuildFile; fileRef = B10008; };
+		'A10009' = {isa = PBXBuildFile; fileRef = B10009; };
+		'A10010' = {isa = PBXBuildFile; fileRef = B10010; };
+		'A10011' = {isa = PBXBuildFile; fileRef = B10011; };
+		'A10012' = {isa = PBXBuildFile; fileRef = B10012; };
+		'A10013' = {isa = PBXBuildFile; fileRef = B10013; };
+		'A10014' = {isa = PBXBuildFile; fileRef = B10014; };
+		'A10015' = {isa = PBXBuildFile; fileRef = B10015; };
+		'A10016' = {isa = PBXBuildFile; fileRef = B10016; };
+		'A10017' = {isa = PBXBuildFile; fileRef = B10017; };
+		'A10018' = {isa = PBXBuildFile; fileRef = B10018; };
+		'A10019' = {isa = PBXBuildFile; fileRef = B10019; };
+		'A10020' = {isa = PBXBuildFile; fileRef = B10020; };
+		'A10021' = {isa = PBXBuildFile; fileRef = B10021; };
+		'A10022' = {isa = PBXBuildFile; fileRef = B10022; };
+		'A10023' = {isa = PBXBuildFile; fileRef = B10023; };
+		'A10024' = {isa = PBXBuildFile; fileRef = B10024; };
+		'A10025' = {isa = PBXBuildFile; fileRef = B10025; };
+		'A10026' = {isa = PBXBuildFile; fileRef = B10026; };
+		'A10027' = {isa = PBXBuildFile; fileRef = B10027; };
+		'A10028' = {isa = PBXBuildFile; fileRef = B10028; };
+		'A10029' = {isa = PBXBuildFile; fileRef = B10029; };
+		'A10030' = {isa = PBXBuildFile; fileRef = B10030; };
+		'A10031' = {isa = PBXBuildFile; fileRef = B10031; };
+		'A10032' = {isa = PBXBuildFile; fileRef = B10032; };
+		'A10033' = {isa = PBXBuildFile; fileRef = B10033; };
+		'A10055' = {isa = PBXBuildFile; fileRef = 'B10055'; };
+		'A10034' = {isa = PBXBuildFile; fileRef = B10034; };
+		'A10035' = {isa = PBXBuildFile; fileRef = B10035; };
+		'A10036' = {isa = PBXBuildFile; fileRef = B10036; };
+		'A10037' = {isa = PBXBuildFile; fileRef = B10037; };
+		'B20034' = {isa = PBXBuildFile; fileRef = A20034; };
+		'B20037' = {isa = PBXBuildFile; fileRef = A20037; };
+		'B20038' = {isa = PBXBuildFile; fileRef = A20038; };
+		'B20035' = {isa = PBXBuildFile; fileRef = A20035; };
+		'B20036' = {isa = PBXBuildFile; fileRef = A20036; };
+		BTV00100 /* TetherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ATV00100 /* TetherView.swift */; };
+		BTS00100 /* TetherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ATS00100 /* TetherService.swift */; };
+		'K30012' = {isa = PBXBuildFile; fileRef = 'K30011'; };
+		'B20039' = {isa = PBXBuildFile; fileRef = 'A20039'; };
+		'B20040' = {isa = PBXBuildFile; fileRef = 'A20040'; };
+		'B20041' = {isa = PBXBuildFile; fileRef = 'A20041'; };
+		'B20042' = {isa = PBXBuildFile; fileRef = 'A20042'; };
+		'B20043' = {isa = PBXBuildFile; fileRef = 'A20043'; };
+		DC10002 = {isa = PBXBuildFile; fileRef = DC10001; };
+		CV10001 = {isa = PBXBuildFile; fileRef = CV10002; };
+		CV10003 = {isa = PBXBuildFile; fileRef = CV10004; };
+		CV10005 = {isa = PBXBuildFile; fileRef = CV10006; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
+		94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateView.swift; path = PhotoRawManager/Views/UpdateView.swift; sourceTree = SOURCE_ROOT; };
+		'A20034' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectService.swift; sourceTree = "<group>"; };
+		'A20037' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		'A20038' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+        K30001 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		'A20035' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectSetupView.swift; sourceTree = "<group>"; };
+		'A20036' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectQRView.swift; sourceTree = "<group>"; };
+		'B10000' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		'B10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRawManagerApp.swift; sourceTree = "<group>"; };
+		'B10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		'B10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoItem.swift; sourceTree = "<group>"; };
+		'B10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
+		'B10005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMatchingService.swift; sourceTree = "<group>"; };
+		'B10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
+		'B10007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
+		'B10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGridView.swift; sourceTree = "<group>"; };
+		'B10009' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
+		'B10010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
+		'B10011' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
+		'B10012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
+		'B10013' = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		'B10014' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAnalysisService.swift; sourceTree = "<group>"; };
+		'B10015' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCorrectionService.swift; sourceTree = "<group>"; };
+		'B10016' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVisionService.swift; sourceTree = "<group>"; };
+		'B10017' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisView.swift; sourceTree = "<group>"; };
+		'B10018' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		'B10019' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		'B10020' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutHelpView.swift; sourceTree = "<group>"; };
+		'B10021' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistogramView.swift; sourceTree = "<group>"; };
+		'B10022' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
+		'B10023' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowView.swift; sourceTree = "<group>"; };
+		'B10024' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchBarProvider.swift; sourceTree = "<group>"; };
+		'B10025' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcherService.swift; sourceTree = "<group>"; };
+		'B10026' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		'B10027' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmstripView.swift; sourceTree = "<group>"; };
+		'B10028' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameView.swift; sourceTree = "<group>"; };
+		'B10029' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		'B10030' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceGroupingService.swift; sourceTree = "<group>"; };
+		'B10031' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveService.swift; sourceTree = "<group>"; };
+		'B10032' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveUploadView.swift; sourceTree = "<group>"; };
+		'B10033' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		'B10055' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupView.swift; sourceTree = "<group>"; };
+		'B10034' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		ATV00100 /* TetherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherView.swift; sourceTree = "<group>"; };
+		ATS00100 /* TetherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherService.swift; sourceTree = "<group>"; };
+		'K30011' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		'A20039' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickshotFileService.swift; sourceTree = "<group>"; };
+		'A20040' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientView.swift; sourceTree = "<group>"; };
+		'A20041' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenView.swift; sourceTree = "<group>"; };
+		'A20042' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PerformanceMonitor.swift; path = PhotoRawManager/Services/PerformanceMonitor.swift; sourceTree = "SOURCE_ROOT"; };
+		'A20043' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardwareAcceleration.swift; sourceTree = "<group>"; };
+		DC10001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
+		CV10002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Toolbar.swift"; sourceTree = "<group>"; };
+		CV10004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+FolderBrowser.swift"; sourceTree = "<group>"; };
+		CV10006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+SupportingViews.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		'C10001' = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		'D10000' = {
+			isa = PBXGroup;
+			children = (
+				D10001,
+				D10005,
+				832E4A569DDF734271ED6268 /* UpdateService.swift */,
+				94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */,
+			);
+			sourceTree = "<group>";
+		};
+		'D10001' = {
+			isa = PBXGroup;
+			children = (
+				B10001,
+				D10002,
+				D10003,
+				D10004,
+				B10013,
+			);
+			path = PhotoRawManager;
+			sourceTree = "<group>";
+		};
+		'D10002' = {
+			isa = PBXGroup;
+			children = (
+				B10003,
+				B10004,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		'D10003' = {
+			isa = PBXGroup;
+			children = (
+				B10002,
+				CV10002,
+				CV10004,
+				CV10006,
+				B10008,
+				B10009,
+				B10010,
+				B10011,
+				B10012,
+				B10017,
+				B10019,
+				B10020,
+				B10021,
+				B10022,
+				B10023,
+				B10024,
+				B10026,
+				B10027,
+				B10028,
+				B10029,
+				B10032,
+				B10033,
+				A20035,
+				A20036,
+				'B10055',
+				B10034,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		'D10004' = {
+			isa = PBXGroup;
+			children = (
+				B10005,
+				B10006,
+				B10007,
+				B10014,
+				B10015,
+				B10016,
+				B10018,
+				B10025,
+				B10030,
+				B10031,
+				A20034,
+				A20037,
+				A20038,
+				A20039,
+				A20043,
+				DC10001,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		'D10005' = {
+			isa = PBXGroup;
+			children = (
+				B10000,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		'E10001' = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10003;
+			buildPhases = (
+				C10002,
+				C10001,
+				C10003,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PhotoRawManager;
+			productName = PhotoRawManager;
+			productReference = B10000;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		'E10000' = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					E10001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = F10001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ko;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				ko,
+				Base,
+			);
+			mainGroup = D10000;
+			productRefGroup = D10005;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10001,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		'C10003' = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10013,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		'C10002' = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001,
+				A10002,
+				A10003,
+				A10004,
+				A10005,
+				A10006,
+				A10007,
+				A10008,
+				A10009,
+				A10010,
+				A10011,
+				A10012,
+				A10014,
+				A10015,
+				A10016,
+				A10017,
+				A10018,
+				A10019,
+				A10020,
+				A10021,
+				A10022,
+				A10023,
+				A10024,
+				A10025,
+				A10026,
+				A10027,
+				A10028,
+				A10029,
+				A10030,
+				A10031,
+				B20036,
+				B20035,
+				B20034,
+				B20037,
+				B20038,
+				B20039,
+				B20042,
+				B20043,
+				DC10002,
+				CV10001,
+				CV10003,
+				CV10005,
+				A10032,
+				A10033,
+				A10034,
+				61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */,
+				1F05414884699B73642AF15D /* UpdateView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+
+/* Begin XCBuildConfiguration section */
+		'F10010' = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		'F10011' = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				LLVM_LTO = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		'F10020' = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 데스크탑 접근이 필요합니다.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 문서 폴더 접근이 필요합니다.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
+				MARKETING_VERSION = 3.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
+				PRODUCT_NAME = PickShot;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		'F10021' = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 데스크탑 접근이 필요합니다.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 문서 폴더 접근이 필요합니다.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
+				MARKETING_VERSION = 3.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
+				PRODUCT_NAME = PickShot;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		'F10001' = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10010,
+				F10011,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		'F10003' = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10020,
+				F10021,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E10000;
+}

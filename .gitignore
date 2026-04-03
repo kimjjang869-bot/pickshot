@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+
+# CocoaPods
+Pods/
+
+# Secrets
+.env
+.env.*
+!.env.example
+Secrets.xcconfig
+
+# gstack
+.gstack/
+
+# Temporary
+/tmp/
+*.log
+
+# DMG builds
+*.dmg
