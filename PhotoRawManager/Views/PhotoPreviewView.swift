@@ -56,18 +56,18 @@ class PreviewImageCache {
     private let diskCacheDir: URL
 
     init() {
-        // Aggressive cache: use more RAM for instant photo switching
+        // Balanced cache: enough for fast navigation without memory pressure
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
-            maxEntries = 500
+            maxEntries = 200
         } else if ramGB >= 32 {
-            maxEntries = 300
+            maxEntries = 120
         } else if ramGB >= 16 {
-            maxEntries = 150
+            maxEntries = 80
         } else if ramGB >= 8 {
-            maxEntries = 60
+            maxEntries = 40
         } else {
-            maxEntries = 30
+            maxEntries = 20
         }
 
         // Setup disk cache directory
