@@ -152,8 +152,8 @@ struct FaceGroupingService {
                 } catch { continue }
 
                 let avgSize = Float((allFaces[i].faceSize + allFaces[j].faceSize) / 2)
-                // Stricter thresholds to reduce false grouping
-                let threshold: Float = avgSize > 0.15 ? 0.55 : (avgSize > 0.08 ? 0.50 : 0.45)
+                // Balanced thresholds: strict enough to avoid false grouping, lenient enough to catch same person
+                let threshold: Float = avgSize > 0.15 ? 0.62 : (avgSize > 0.08 ? 0.58 : 0.52)
 
                 if distance < threshold {
                     localPairs.append(PairResult(i: i, j: j))
@@ -178,11 +178,11 @@ struct FaceGroupingService {
             clusterMap[root, default: []].append(i)
         }
 
-        // Convert to photo-level groups (only groups with 3+ distinct photos — reduces noise)
+        // Convert to photo-level groups (2+ distinct photos, sorted by size)
         var groupID = 0
         for (_, members) in clusterMap.sorted(by: { $0.value.count > $1.value.count }) {
             let photoIDs = Set(members.map { allFaces[$0].photoID })
-            if photoIDs.count >= 3 {
+            if photoIDs.count >= 2 {
                 for photoID in photoIDs {
                     result.assignments[photoID] = groupID
                 }
