@@ -1,0 +1,335 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+    --primary: #4A90D9;
+    --primary-dark: #357ABD;
+    --bg: #111;
+    --card-bg: #1a1a1a;
+    --text: #fff;
+    --text-dim: #888;
+    --select-border: #4A90D9;
+    --check-bg: #4A90D9;
+    --header-h: 50px;
+    --bottom-h: 70px;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Header */
+header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-h);
+    background: rgba(17, 17, 17, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 100;
+    border-bottom: 1px solid #222;
+}
+
+.logo {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+.header-center {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.header-right {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+#selectCount, #completeBtnCount {
+    font-size: 18px;
+    font-weight: 900;
+}
+
+/* Loading */
+#loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 12px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #333;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+#loading p {
+    font-size: 14px;
+    color: var(--text-dim);
+}
+
+#error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 8px;
+    color: #e55;
+}
+
+/* Photo Grid */
+main {
+    padding: calc(var(--header-h) + 8px) 4px var(--bottom-h) 4px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+}
+
+@media (min-width: 768px) {
+    main { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+}
+
+@media (min-width: 1200px) {
+    main { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+}
+
+/* Photo Item */
+.photo {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--card-bg);
+    transition: transform 0.15s ease;
+}
+
+.photo:active {
+    transform: scale(0.95);
+}
+
+.photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: opacity 0.3s ease;
+}
+
+.photo img.loading {
+    opacity: 0;
+}
+
+.photo img.loaded {
+    opacity: 1;
+}
+
+/* Selection State */
+.photo.selected {
+    outline: 3px solid var(--select-border);
+    outline-offset: -3px;
+}
+
+.photo .check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: transparent;
+    transition: all 0.2s ease;
+}
+
+.photo.selected .check {
+    background: var(--check-bg);
+    border-color: var(--check-bg);
+    color: #fff;
+}
+
+/* Photo Number */
+.photo .num {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.5);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+/* Floating Button */
+#completeBtn {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 30px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(74, 144, 217, 0.4);
+    transition: all 0.2s ease;
+    min-width: 200px;
+}
+
+#completeBtn:active {
+    transform: translateX(-50%) scale(0.95);
+    background: var(--primary-dark);
+}
+
+#completeBtn:disabled {
+    background: #333;
+    color: #666;
+    box-shadow: none;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.modal-content {
+    background: #222;
+    border-radius: 16px;
+    padding: 28px 24px;
+    text-align: center;
+    max-width: 320px;
+    width: 90%;
+}
+
+.modal-content h2 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.modal-content p {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+}
+
+.modal-content strong {
+    color: var(--primary);
+    font-size: 24px;
+}
+
+.modal-sub {
+    font-size: 12px !important;
+    color: #555 !important;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-buttons button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-cancel {
+    background: #333;
+    color: #aaa;
+}
+
+.btn-confirm {
+    background: var(--primary);
+    color: #fff;
+}
+
+.done-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #2d8a4e;
+    color: #fff;
+    font-size: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+
+/* Placeholder skeleton */
+.photo .skeleton {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Safe area for iPhone notch */
+@supports (padding-top: env(safe-area-inset-top)) {
+    header {
+        padding-top: env(safe-area-inset-top);
+        height: calc(var(--header-h) + env(safe-area-inset-top));
+    }
+    #completeBtn {
+        bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+}

@@ -5,6 +5,9 @@ struct GSelectQRView: View {
     let link: String
     let count: Int
     let folderName: String
+    var viewerLink: String? = nil
+
+    @State private var showViewer = true  // Default: show viewer QR
 
     var body: some View {
         VStack(spacing: 12) {
@@ -20,8 +23,19 @@ struct GSelectQRView: View {
                     .font(.system(size: 14, weight: .bold))
             }
 
+            // Toggle: Google Drive vs Web Viewer
+            if viewerLink != nil {
+                Picker("", selection: $showViewer) {
+                    Text("고객 셀렉").tag(true)
+                    Text("Drive 폴더").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+
             // QR Code
-            if let qrImage = generateQR(from: link) {
+            let activeLink = (showViewer && viewerLink != nil) ? viewerLink! : link
+            if let qrImage = generateQR(from: activeLink) {
                 Image(nsImage: qrImage)
                     .interpolation(.none)
                     .resizable()
@@ -41,7 +55,7 @@ struct GSelectQRView: View {
 
             // Link display + copy
             HStack {
-                Text(link)
+                Text(activeLink)
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -49,7 +63,7 @@ struct GSelectQRView: View {
 
                 Button(action: {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link, forType: .string)
+                    NSPasteboard.general.setString(activeLink, forType: .string)
                 }) {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 10))
@@ -59,13 +73,20 @@ struct GSelectQRView: View {
             }
             .padding(.horizontal, 8)
 
-            Text("클라이언트 폰으로 QR 스캔하면\nGoogle Drive 폴더를 바로 확인할 수 있습니다")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            if showViewer && viewerLink != nil {
+                Text("고객이 QR 스캔 → 사진 셀렉 → 완료\n결과가 Google Drive에 자동 저장됩니다")
+                    .font(.system(size: 10))
+                    .foregroundColor(.green)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("클라이언트 폰으로 QR 스캔하면\nGoogle Drive 폴더를 바로 확인할 수 있습니다")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(20)
-        .frame(width: 260)
+        .frame(width: 280)
     }
 
     private func generateQR(from string: String) -> NSImage? {

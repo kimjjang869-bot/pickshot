@@ -552,7 +552,7 @@ extension ContentView {
                     .cornerRadius(4)
                     .help("QR 코드 표시 - 클라이언트 폰으로 스캔")
                     .popover(isPresented: $showGSelectQR) {
-                        GSelectQRView(link: link, count: gSelect.gSelectedIDs.count, folderName: gSelect.sessionFolderName)
+                        GSelectQRView(link: link, count: gSelect.gSelectedIDs.count, folderName: gSelect.sessionFolderName, viewerLink: gSelect.viewerLink)
                     }
 
                     // Share sheet

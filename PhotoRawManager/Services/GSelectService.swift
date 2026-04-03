@@ -16,6 +16,7 @@ class GSelectService: ObservableObject {
     @Published var failedCount: Int = 0
     @Published var currentlyUploading: UUID? = nil
     @Published var shareLink: String? = nil
+    @Published var viewerLink: String? = nil  // Client web viewer link
     @Published var sessionFolderName: String = ""
     @Published var showSetupSheet: Bool = false
 
@@ -89,6 +90,11 @@ class GSelectService: ObservableObject {
                     GoogleDriveService.createShareLink(fileId: folderId, accessToken: token) { link, _ in
                         DispatchQueue.main.async {
                             self?.shareLink = link
+                            // Generate client web viewer link
+                            if let token = GoogleDriveService.savedAccessToken {
+                                let name = folderName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folderName
+                                self?.viewerLink = "https://kimjjang869-bot.github.io/pickshot-viewer/?folder=\(folderId)&token=\(token)&name=\(name)"
+                            }
                         }
                     }
                 } else {

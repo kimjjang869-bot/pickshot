@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>PickShot - 사진 셀렉</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header id="header">
+        <div class="header-left">
+            <span class="logo">PickShot</span>
+        </div>
+        <div class="header-center">
+            <span id="selectCount">0</span>장 선택
+        </div>
+        <div class="header-right">
+            <span id="totalCount">0</span>장
+        </div>
+    </header>
+
+    <!-- Loading -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>사진을 불러오는 중...</p>
+        <p id="loadingProgress"></p>
+    </div>
+
+    <!-- Error -->
+    <div id="error" style="display:none">
+        <p>사진을 불러올 수 없습니다</p>
+        <p id="errorMessage"></p>
+    </div>
+
+    <!-- Photo Grid -->
+    <main id="grid"></main>
+
+    <!-- Floating Complete Button -->
+    <button id="completeBtn" onclick="completeSelection()">
+        <span id="completeBtnCount">0</span>장 셀렉 완료
+    </button>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="modal" style="display:none">
+        <div class="modal-content">
+            <h2>셀렉 완료</h2>
+            <p><strong id="confirmCount">0</strong>장을 선택했습니다.</p>
+            <p class="modal-sub">포토그래퍼에게 전달됩니다.</p>
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeModal()">취소</button>
+                <button class="btn-confirm" onclick="submitSelection()">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Done Modal -->
+    <div id="doneModal" class="modal" style="display:none">
+        <div class="modal-content">
+            <div class="done-icon">&#10003;</div>
+            <h2>전송 완료!</h2>
+            <p><strong id="doneCount">0</strong>장이 전달되었습니다.</p>
+            <p class="modal-sub">감사합니다.</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
