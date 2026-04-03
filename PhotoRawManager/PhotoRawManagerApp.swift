@@ -6,7 +6,7 @@ struct PhotoRawManagerApp: App {
     @ObservedObject private var updateService = UpdateService.shared
 
     var body: some Scene {
-        WindowGroup("PickShot v3.5") {
+        WindowGroup("PickShot v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.6")") {
             ContentView()
                 .environmentObject(store)
                 .task {

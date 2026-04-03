@@ -54,6 +54,21 @@ extension ContentView {
 
                 Spacer()
 
+                // Thumbnail progress (before G Select)
+                if store.isPreloadingThumbs {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
+                        let progress = store.thumbsTotal > 0 ? CGFloat(store.thumbsLoaded) / CGFloat(store.thumbsTotal) : 0
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 5)
+                            RoundedRectangle(cornerRadius: 3).fill(Color.green).frame(width: 60 * progress, height: 5)
+                        }
+                        Text("\(store.thumbsLoaded)/\(store.thumbsTotal)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 if !store.photos.isEmpty {
                     // G Select button
                     gSelectButton
@@ -80,22 +95,8 @@ extension ContentView {
                     }
                 }
 
-                    // Thumbnail progress + Subscription (right side)
-                    if store.isPreloadingThumbs {
-                        HStack(spacing: 4) {
-                            ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
-                            let progress = store.thumbsTotal > 0 ? CGFloat(store.thumbsLoaded) / CGFloat(store.thumbsTotal) : 0
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 5)
-                                RoundedRectangle(cornerRadius: 3).fill(Color.green).frame(width: 60 * progress, height: 5)
-                            }
-                            Text("\(store.thumbsLoaded)/\(store.thumbsTotal)")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    SubscriptionBadge()
-                    APIUsageGauge()
+                SubscriptionBadge()
+                APIUsageGauge()
             }
             .fixedSize(horizontal: false, vertical: true)
             // end Row 1

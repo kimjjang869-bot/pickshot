@@ -126,6 +126,7 @@ class PhotoStore: ObservableObject {
     @Published var loadingStatus: String = ""
     @Published var thumbsLoaded: Int = 0
     @Published var thumbsTotal: Int = 0
+    private var thumbsGeneration: Int = 0  // Incremented on folder switch to discard stale callbacks
     var isPreloadingThumbs: Bool { thumbsLoaded < thumbsTotal && thumbsTotal > 0 }
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
@@ -716,6 +717,9 @@ class PhotoStore: ObservableObject {
 
         // Cancel previous thumbnail loading immediately
         ThumbnailLoader.shared.cancelAll()
+        thumbsGeneration += 1  // Invalidate stale callbacks from previous folder
+        thumbsLoaded = 0
+        thumbsTotal = 0
 
         folderURL = url
 
@@ -727,7 +731,10 @@ class PhotoStore: ObservableObject {
         addToFolderHistory(url)
 
         if isFolderWatchingEnabled {
-            folderWatcher.startWatching(folder: url)
+            // Start watching on background thread to avoid blocking main thread on slow disks
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.folderWatcher.startWatching(folder: url)
+            }
         }
 
         // Auto-optimize for NAS/network volumes
@@ -763,16 +770,22 @@ class PhotoStore: ObservableObject {
 
             DispatchQueue.main.async {
                 guard self?.folderURL == url else { return }
-                // Set photos (triggers didSet but sort is already done)
+                // Set photos first (triggers didSet but sort is already done)
                 self?.photos = sorted
                 if restoreRatings { self?.applySavedRatings() }
-                // Select first non-folder photo
-                let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                    ?? sorted.first
-                if let fp = firstPhoto {
-                    self?.selectedPhotoID = fp.id
-                    self?.selectedPhotoIDs = [fp.id]
-                    self?.scrollTrigger += 1
+
+                // Select first non-folder photo on NEXT run loop
+                // This ensures SwiftUI has processed the photos array update
+                // before ExifInfoView tries to load metadata for the selected photo
+                DispatchQueue.main.async {
+                    guard self?.folderURL == url else { return }
+                    let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
+                        ?? sorted.first
+                    if let fp = firstPhoto {
+                        self?.selectedPhotoID = fp.id
+                        self?.selectedPhotoIDs = [fp.id]
+                        self?.scrollTrigger += 1
+                    }
                 }
                 // Delay thumbnail preload so UI renders first
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -798,13 +811,22 @@ class PhotoStore: ObservableObject {
         let urls = photos.map { $0.jpgURL }
         thumbsTotal = urls.count
         thumbsLoaded = 0
+        let generation = thumbsGeneration  // Capture current generation
 
         let totalCount = urls.count
         var completedCount = 0
         let lock = NSLock()
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let rawCount = urls.filter { FileMatchingService.rawExtensions.contains($0.pathExtension.lowercased()) }.count
+        let jpgCount = urls.filter { FileMatchingService.jpgExtensions.contains($0.pathExtension.lowercased()) }.count
+        print("📊 [THUMB] Start preload: \(totalCount) files (JPG:\(jpgCount) RAW:\(rawCount)), concurrency=\(ThumbnailLoader.shared.queue.maxConcurrentOperationCount)")
 
         for url in urls {
             ThumbnailLoader.shared.load(url: url) { [weak self] _ in
+                // Discard stale callbacks from previous folder
+                guard let self = self, self.thumbsGeneration == generation else { return }
+
                 lock.lock()
                 completedCount += 1
                 let current = completedCount
@@ -812,8 +834,16 @@ class PhotoStore: ObservableObject {
 
                 // Update UI every 10 items or at completion
                 if current % 10 == 0 || current == totalCount {
+                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                    let rate = elapsed > 0 ? Double(current) / elapsed : 0
                     DispatchQueue.main.async { [weak self] in
+                        guard self?.thumbsGeneration == generation else { return }
                         self?.thumbsLoaded = current
+                    }
+                    if current == totalCount {
+                        print("📊 [THUMB] DONE: \(totalCount) files in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) files/s)")
+                    } else if current % 50 == 0 {
+                        print("📊 [THUMB] Progress: \(current)/\(totalCount) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) files/s)")
                     }
                 }
             }

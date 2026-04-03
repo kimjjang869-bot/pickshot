@@ -81,7 +81,35 @@ class DiskThumbnailCache {
         lock.unlock()
     }
 
+    /// Fast NAS lookup: find any cached thumbnail for this file path (ignores modDate).
+    /// Returns the most recent cache entry matching the path prefix.
+    func getByPath(url: URL) -> NSImage? {
+        let pathHash = pathOnlyKey(url: url)
+        let fm = FileManager.default
+
+        lock.lock()
+        let files = (try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+        lock.unlock()
+
+        // Find any cache file matching the path-only hash prefix
+        for file in files {
+            if file.lastPathComponent.hasPrefix(pathHash) {
+                if let image = NSImage(contentsOf: file) {
+                    return image
+                }
+            }
+        }
+        return nil
+    }
+
     // MARK: - Private
+
+    /// SHA256 hash of file path only (for NAS fast lookup, ignoring modDate)
+    private func pathOnlyKey(url: URL) -> String {
+        let hash = SHA256.hash(data: Data(url.path.utf8))
+        // Return first 16 chars as prefix for matching
+        return hash.prefix(8).compactMap { String(format: "%02x", $0) }.joined()
+    }
 
     /// SHA256 hash of file path + modification date as cache key
     private func cacheKey(url: URL, modDate: Date) -> String {

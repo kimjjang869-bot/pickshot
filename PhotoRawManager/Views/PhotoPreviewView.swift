@@ -1169,8 +1169,19 @@ struct PhotoPreviewView: View {
                 // RAW: 2-stage loading
                 let optimalPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
 
+                // Read orientation from original RAW EXIF (embedded JPEGs may lack orientation tag)
+                let rawOrientation = Self.readRawOrientation(url: url)
+
                 // Stage 1: Fast load at 1200px for rapid navigation
-                let fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
+                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
+                // Apply RAW orientation if the loaded image appears unrotated
+                if let fast = fastImage, rawOrientation >= 5 && rawOrientation <= 8 {
+                    // Orientation 5-8 means width/height should be swapped
+                    // If image width > height but it should be portrait, rotate it
+                    if fast.size.width > fast.size.height {
+                        fastImage = Self.applyOrientation(fast, orientation: rawOrientation)
+                    }
+                }
                 guard let fast = fastImage, self.pendingPhotoID == id else { return }
 
                 DispatchQueue.main.async {
@@ -1183,7 +1194,10 @@ struct PhotoPreviewView: View {
                 if optimalPx > 1200 {
                     guard self.pendingPhotoID == id else { return }
                     let targetPx = resolution > 0 ? optimalPx : rawHiResPx
-                    let hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+                    var hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+                    if let hr = hiRes, rawOrientation >= 5 && rawOrientation <= 8, hr.size.width > hr.size.height {
+                        hiRes = Self.applyOrientation(hr, orientation: rawOrientation)
+                    }
                     guard let hr = hiRes, self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: hr)
                     DispatchQueue.main.async {
@@ -1374,6 +1388,59 @@ struct PhotoPreviewView: View {
         }
         _dimensionCache[url] = size
         return size
+    }
+
+    /// Read EXIF orientation from a RAW file (1-8, default 1)
+    private static func readRawOrientation(url: URL) -> Int {
+        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
+        return props[kCGImagePropertyOrientation as String] as? Int ?? 1
+    }
+
+    /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
+    private static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let cgImage = bitmap.cgImage else { return image }
+
+        let w = cgImage.width
+        let h = cgImage.height
+
+        // For orientations 5-8, the output size is swapped
+        let outputSize: CGSize
+        let transform: CGAffineTransform
+
+        switch orientation {
+        case 6: // 90° CW (most common for portrait photos)
+            outputSize = CGSize(width: h, height: w)
+            transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
+        case 8: // 90° CCW
+            outputSize = CGSize(width: h, height: w)
+            transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
+        case 5: // Mirrored + 90° CW
+            outputSize = CGSize(width: h, height: w)
+            transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
+        case 7: // Mirrored + 90° CCW
+            outputSize = CGSize(width: h, height: w)
+            transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
+        default:
+            return image
+        }
+
+        guard let context = CGContext(data: nil,
+                                       width: Int(outputSize.width),
+                                       height: Int(outputSize.height),
+                                       bitsPerComponent: cgImage.bitsPerComponent,
+                                       bytesPerRow: 0,
+                                       space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                       bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
+
+        context.concatenate(transform)
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        guard let rotated = context.makeImage() else { return image }
+        return NSImage(cgImage: rotated, size: outputSize)
     }
 
     private static let rawExts: Set<String> = ["cr2", "cr3", "arw", "nef", "raf", "dng", "orf", "rw2", "pef", "srw"]

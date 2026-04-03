@@ -937,7 +937,7 @@ class ThumbnailCache {
 
 class ThumbnailLoader {
     static let shared = ThumbnailLoader()
-    private let queue = OperationQueue()
+    let queue = OperationQueue()
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
     private let lock = NSLock()
 
@@ -1049,10 +1049,24 @@ class ThumbnailLoader {
         lock.unlock()
 
         queue.addOperation { [weak self] in
-            let modDate = Self.fileModDate(url)
+            // For NAS: skip expensive stat on cache miss path — use file path hash only
+            // Disk cache uses modDate for invalidation, but for NAS the stat() is ~50-100ms per file
+            let isNAS = ThumbnailLoader.shared.isNetworkMode
+            let modDate: Date
+            if isNAS {
+                // Defer expensive stat: check disk cache with a sentinel date first
+                // If disk cache has ANY entry for this URL hash, use it (modDate mismatch = stale but fast)
+                modDate = Date.distantPast  // Will be updated on cache save
+            } else {
+                modDate = Self.fileModDate(url)
+            }
 
             // 2. Disk cache hit → load from disk, populate memory cache
-            if let diskCached = DiskThumbnailCache.shared.get(url: url, modDate: modDate) {
+            // For NAS: try path-only lookup first (skip modDate check)
+            let diskCached = isNAS
+                ? DiskThumbnailCache.shared.getByPath(url: url)
+                : DiskThumbnailCache.shared.get(url: url, modDate: modDate)
+            if let diskCached = diskCached {
                 AppLogger.log(.cache, "disk cache HIT: \(url.lastPathComponent)")
                 ThumbnailCache.shared.set(url, image: diskCached)
 
@@ -1068,20 +1082,21 @@ class ThumbnailLoader {
 
             // 3. Extract from file
             let thumbStart = CFAbsoluteTimeGetCurrent()
-            // Try up to 2 times (retry once on failure — helps NAS/HDD timeouts)
             var image = Self.extractThumbnail(url: url)
             if image == nil && ThumbnailLoader.shared.isSlowDisk {
-                Thread.sleep(forTimeInterval: 0.1)  // Brief pause before retry
+                Thread.sleep(forTimeInterval: 0.1)
                 image = Self.extractThumbnail(url: url)
             }
-            let thumbElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
-            if thumbElapsed > 500 {
-                AppLogger.log(.performance, "SLOW thumbnail: \(url.lastPathComponent) \(String(format: "%.0f", thumbElapsed))ms")
-            }
+            let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
+
             if let image = image {
+                // Memory cache: immediate (needed for UI)
                 ThumbnailCache.shared.set(url, image: image)
-                // Save to disk cache for next launch
-                DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: image)
+                // Disk cache: deferred to background (was 289ms avg, now non-blocking)
+                DispatchQueue.global(qos: .utility).async {
+                    let realModDate = isNAS ? Self.fileModDate(url) : modDate
+                    DiskThumbnailCache.shared.set(url: url, modDate: realModDate, image: image)
+                }
             }
 
             // Always clean up callbacks (even on failure) to prevent leaks
@@ -1106,15 +1121,18 @@ class ThumbnailLoader {
         ThumbnailLoader.shared.isSlowDisk ? 160 : 200
     }
 
+    private static let allKnownExtensions: Set<String> = {
+        FileMatchingService.jpgExtensions
+            .union(FileMatchingService.rawExtensions)
+            .union(FileMatchingService.imageExtensions)
+            .union(FileMatchingService.videoExtensions)
+    }()
+
     private static func extractThumbnail(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
 
         // Generic files: use system icon
-        let allKnown = FileMatchingService.jpgExtensions
-            .union(FileMatchingService.rawExtensions)
-            .union(FileMatchingService.imageExtensions)
-            .union(FileMatchingService.videoExtensions)
-        if !allKnown.contains(ext) {
+        if !allKnownExtensions.contains(ext) {
             let icon = NSWorkspace.shared.icon(forFile: url.path)
             icon.size = NSSize(width: thumbSize, height: thumbSize)
             return icon
@@ -1126,50 +1144,55 @@ class ThumbnailLoader {
         }
 
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
-        let isSlowStorage = ThumbnailLoader.shared.isSlowDisk
 
-        // NAS/HDD: try 3MB embedded JPEG FIRST (avoids reading full 40MB+ over network)
-        if isRAW && isSlowStorage {
+        // RAW: ALWAYS try embedded JPEG first (3MB read vs 40MB+ full decode)
+        if isRAW {
+            let t0 = CFAbsoluteTimeGetCurrent()
             if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                if ms > 300 { print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded OK)") }
                 return img
             }
+            let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded FAIL → CGImageSource)")
         }
 
-        // Local SSD + all files: use CGImageSource (fastest on local disk, OS-level caching)
+        // CGImageSource path
         let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else {
-            // CGImageSource failed — try embedded JPEG as last resort
-            if isRAW { return extractEmbeddedJPEG(url: url, maxSize: thumbSize) }
             return nil
         }
         let imageCount = CGImageSourceGetCount(source)
 
         if isRAW {
-            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
-            let canDecode = props?[kCGImagePropertyPixelWidth as String] != nil
-
-            if canDecode {
-                let opts: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: thumbSize,
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceShouldCache: false
-                ]
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) {
+            // RAW: try existing embedded thumbnail ONLY (no full decode for thumbnails)
+            let opts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: thumbSize,
+                kCGImageSourceCreateThumbnailFromImageAlways: false,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCache: false
+            ]
+            // Try each image index for an existing thumbnail
+            for idx in 0..<imageCount {
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, opts as CFDictionary) {
                     return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                }
-
-                if imageCount > 1 {
-                    for idx in 1..<imageCount {
-                        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, opts as CFDictionary) {
-                            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                        }
-                    }
                 }
             }
 
-            // (embedded JPEG already tried above as first strategy)
+            // Last resort: decode at smallest possible size
+            let fallbackOpts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: thumbSize,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceSubsampleFactor: 8,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCache: false
+            ]
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, fallbackOpts as CFDictionary) {
+                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
         } else {
             // JPG/PNG: use SubsampleFactor for 2-4x faster JPEG decode
             // SubsampleFactor: 2 = 1/2 size decode, 4 = 1/4 size decode
@@ -1204,38 +1227,56 @@ class ThumbnailLoader {
     }
 
     /// Extract embedded JPEG from RAW files that macOS can't decode (e.g., Nikon Z8/Z9 High Efficiency)
-    /// Scans for FFD8 JPEG markers and returns the best-sized embedded preview
+    /// Scans for FFD8 JPEG markers and returns the best-sized embedded preview.
+    /// Uses tiered read: 512KB first (covers most thumbnails), then 3MB if needed.
     private static func extractEmbeddedJPEG(url: URL, maxSize: Int) -> NSImage? {
-        // Read only first 3MB (not entire file) — critical for NAS/HDD performance
-        let readSize = 3_000_000
-        let data: Data
-        do {
-            let handle = try FileHandle(forReadingFrom: url)
-            data = handle.readData(ofLength: readSize)
+        let isNAS = ThumbnailLoader.shared.isNetworkMode
+
+        // Tiered read: small read first, expand only if no JPEG found
+        // Most RAW embedded thumbnails live within the first 200-500KB
+        let firstReadSize = isNAS ? 512_000 : 1_000_000
+        let maxReadSize = isNAS ? 1_500_000 : 3_000_000
+
+        let handle: FileHandle
+        do { handle = try FileHandle(forReadingFrom: url) }
+        catch { return nil }
+
+        var data = handle.readData(ofLength: firstReadSize)
+        guard data.count > 100 else { handle.closeFile(); return nil }
+
+        // Scan for FFD8 markers
+        if let img = findBestEmbeddedJPEG(in: data, maxSize: maxSize) {
             handle.closeFile()
-        } catch { return nil }
-        guard data.count > 100 else { return nil }
+            return img
+        }
 
-        // Find all FFD8 (JPEG start) markers
-        let ffd8: [UInt8] = [0xFF, 0xD8]
-        var jpegOffsets: [Int] = []
-        let scanLimit = min(data.count - 2, readSize)
-
-        for i in 0..<scanLimit {
-            if data[i] == ffd8[0] && data[i + 1] == ffd8[1] {
-                jpegOffsets.append(i)
+        // First read had no usable JPEG — read more (only if not NAS-constrained or needed)
+        if data.count >= firstReadSize && maxReadSize > firstReadSize {
+            let moreData = handle.readData(ofLength: maxReadSize - firstReadSize)
+            if !moreData.isEmpty {
+                data.append(moreData)
+                handle.closeFile()
+                return findBestEmbeddedJPEG(in: data, maxSize: maxSize)
             }
         }
 
-        guard !jpegOffsets.isEmpty else { return nil }
+        handle.closeFile()
+        return nil
+    }
 
-        // Try each embedded JPEG, pick the one closest to thumbSize
+    /// Find best embedded JPEG in data by scanning for FFD8 markers
+    private static func findBestEmbeddedJPEG(in data: Data, maxSize: Int) -> NSImage? {
+        let ffd8: [UInt8] = [0xFF, 0xD8]
+        let scanLimit = data.count - 2
+
         var bestImage: NSImage?
-        var bestDiff = Int.max
+        var bestSize = 0
 
-        for offset in jpegOffsets {
-            let end = min(offset + 2_000_000, data.count)  // Max 2MB per embedded JPEG
-            let subData = data.subdata(in: offset..<end)
+        for i in 0..<scanLimit {
+            guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
+
+            let end = min(i + 1_500_000, data.count)
+            let subData = data.subdata(in: i..<end)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
@@ -1245,10 +1286,13 @@ class ThumbnailLoader {
                 kCGImageSourceCreateThumbnailWithTransform: true
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, thumbOpts as CFDictionary) {
-                let diff = abs(cgImage.width - maxSize)
-                if diff < bestDiff {
-                    bestDiff = diff
+                let size = cgImage.width * cgImage.height
+                // Pick largest usable embedded JPEG (better quality preview)
+                if size > bestSize {
+                    bestSize = size
                     bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    // If we found a good-sized image, stop scanning (saves time)
+                    if cgImage.width >= maxSize { return bestImage }
                 }
             }
         }

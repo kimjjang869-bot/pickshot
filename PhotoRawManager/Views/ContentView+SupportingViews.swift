@@ -875,13 +875,17 @@ struct StartupView: View {
                 HStack(spacing: 16) {
                     // Viewer
                     Button(action: {
+                        print("🟢 [DEBUG] Viewer button tapped")
                         store.startupMode = .viewer
                         store.shouldOpenFolderBrowser = true
                         let lastPath = UserDefaults.standard.string(forKey: "lastFolderPath") ?? ""
                         let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+                        print("🟢 [DEBUG] lastPath=\(lastPath), exists=\(FileManager.default.fileExists(atPath: lastPath))")
                         if !lastPath.isEmpty && FileManager.default.fileExists(atPath: lastPath) {
+                            print("🟢 [DEBUG] Loading last folder: \(lastPath)")
                             store.loadFolder(URL(fileURLWithPath: lastPath), restoreRatings: true)
                         } else {
+                            print("🟢 [DEBUG] Loading desktop: \(desktop.path)")
                             store.loadFolder(desktop, restoreRatings: true)
                         }
                     }) {
@@ -1516,6 +1520,9 @@ struct FullscreenView: View {
     @State private var image: NSImage?
     @State private var showInfo: Bool = true
     @State private var infoTimer: DispatchWorkItem?
+    @State private var loadWorkItem: DispatchWorkItem?
+    @State private var debounceWorkItem: DispatchWorkItem?
+    @State private var pendingPhotoID: UUID?
 
     private var currentPhoto: PhotoItem? {
         guard let id = store.selectedPhotoID,
@@ -1612,24 +1619,49 @@ struct FullscreenView: View {
         .background(FullscreenKeyHandler(store: store, isPresented: $isPresented, showInfo: $showInfo))
         .onAppear { loadCurrentPhoto() }
         .onChange(of: store.selectedPhotoID) { _ in
-            loadCurrentPhoto()
             flashInfo()
+            // Debounce rapid navigation (arrow key spam)
+            debounceWorkItem?.cancel()
+            let work = DispatchWorkItem { loadCurrentPhoto() }
+            debounceWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
     }
 
     private func loadCurrentPhoto() {
         guard let photo = currentPhoto, !photo.isFolder else { return }
+
+        // Cancel any in-flight load
+        loadWorkItem?.cancel()
+        let photoID = photo.id
+        pendingPhotoID = photoID
+
         let url = photo.jpgURL
-        DispatchQueue.global(qos: .userInitiated).async {
-            let img: NSImage?
-            let ext = url.pathExtension.lowercased()
-            if ["jpg", "jpeg"].contains(ext) {
-                img = NSImage(contentsOf: url)
-            } else {
-                img = PreviewImageCache.loadOptimized(url: url, maxPixel: PreviewImageCache.optimalPreviewSize())
-            }
-            DispatchQueue.main.async { self.image = img }
+        let maxPx = PreviewImageCache.optimalPreviewSize()
+
+        // Check cache first
+        let cacheKey = url.appendingPathExtension("fs")
+        if let cached = PreviewImageCache.shared.get(cacheKey) {
+            self.image = cached
+            return
         }
+
+        let work = DispatchWorkItem { [self] in
+            // All formats go through optimized loader (resolution-capped)
+            let img = PreviewImageCache.loadOptimized(url: url, maxPixel: maxPx)
+
+            guard self.pendingPhotoID == photoID else { return }
+
+            if let img = img {
+                PreviewImageCache.shared.set(cacheKey, image: img)
+            }
+            DispatchQueue.main.async {
+                guard self.pendingPhotoID == photoID else { return }
+                self.image = img
+            }
+        }
+        loadWorkItem = work
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func flashInfo() {

@@ -151,7 +151,7 @@ class FolderWatcherService {
         guard let enumerator = fm.enumerator(
             at: folder,
             includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
         ) else {
             return names
         }

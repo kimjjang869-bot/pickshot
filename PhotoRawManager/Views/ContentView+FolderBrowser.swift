@@ -21,11 +21,15 @@ struct FolderItem: Identifiable {
     static func loadChildren(of url: URL) -> [FolderItem] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
-        let dirs = contents
-            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        // Don't check sub-subfolders here (hasSubfolders defaults to true)
-        // Actual check happens lazily when user clicks to expand
+        // isDirectoryKey was prefetched above — resourceValues uses cached value, no extra stat()
+        var dirs: [URL] = []
+        dirs.reserveCapacity(contents.count / 4)
+        for item in contents {
+            if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                dirs.append(item)
+            }
+        }
+        dirs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         return dirs.map { FolderItem(url: $0, name: $0.lastPathComponent) }
     }
 
@@ -100,7 +104,7 @@ struct FolderBrowserView: View {
         }
     }
 
-    /// Auto-expand tree to show the currently loaded folder
+    /// Auto-expand tree to show the currently loaded folder (async to avoid blocking main thread)
     private func expandTreeToPath(_ targetURL: URL) {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let desktopURL = home.appendingPathComponent("Desktop")
@@ -113,27 +117,40 @@ struct FolderBrowserView: View {
             pathsToExpand.insert(current, at: 0)
         }
 
-        // Expand each folder in the path
-        for pathURL in pathsToExpand {
-            expandFolderInTree(pathURL)
+        // Load all children on background thread, then apply on main
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Pre-load all needed children off main thread
+            var childrenCache: [String: [FolderItem]] = [:]
+            for pathURL in pathsToExpand {
+                let children = FolderItem.loadChildren(of: pathURL)
+                childrenCache[pathURL.path] = children
+            }
+
+            DispatchQueue.main.async {
+                for pathURL in pathsToExpand {
+                    expandFolderInTree(pathURL, prefetchedChildren: childrenCache)
+                }
+            }
         }
     }
 
-    private func expandFolderInTree(_ targetURL: URL) {
+    private func expandFolderInTree(_ targetURL: URL, prefetchedChildren: [String: [FolderItem]]? = nil) {
         func expand(items: inout [FolderItem], depth: Int = 0, maxDepth: Int = 20) -> Bool {
             guard depth < maxDepth else { return false }
             for i in items.indices {
                 if items[i].url.path == targetURL.path {
                     if !items[i].isExpanded {
                         items[i].isExpanded = true
-                        items[i].children = FolderItem.loadChildren(of: items[i].url)
+                        items[i].children = prefetchedChildren?[items[i].url.path]
+                            ?? FolderItem.loadChildren(of: items[i].url)
                     }
                     return true
                 }
                 if targetURL.path.hasPrefix(items[i].url.path + "/") {
                     if !items[i].isExpanded {
                         items[i].isExpanded = true
-                        items[i].children = FolderItem.loadChildren(of: items[i].url)
+                        items[i].children = prefetchedChildren?[items[i].url.path]
+                            ?? FolderItem.loadChildren(of: items[i].url)
                     }
                     if var children = items[i].children {
                         if expand(items: &children, depth: depth + 1, maxDepth: maxDepth) {
