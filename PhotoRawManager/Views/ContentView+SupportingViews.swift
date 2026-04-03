@@ -485,6 +485,29 @@ struct KeyEventHandlingView: NSViewRepresentable {
     }
 }
 
+/// Copy selected photo files to macOS pasteboard (Finder-compatible Cmd+C)
+private func copySelectedFilesToPasteboard(store: PhotoStore) {
+    let selectedPhotos = store.photos.filter { store.selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }
+    guard !selectedPhotos.isEmpty else { return }
+
+    var urls: [URL] = []
+    for photo in selectedPhotos {
+        urls.append(photo.jpgURL)
+        if let rawURL = photo.rawURL {
+            urls.append(rawURL)
+        }
+    }
+
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.writeObjects(urls as [NSURL])
+
+    // Visual feedback
+    let count = selectedPhotos.count
+    let fileCount = urls.count
+    print("📋 [COPY] \(count)장 (\(fileCount)파일) 클립보드에 복사됨")
+}
+
 class KeyCaptureView: NSView {
     var showFullscreen: (() -> Void)?
     var store: PhotoStore? {
@@ -572,6 +595,10 @@ class KeyCaptureView: NSView {
                 return
             case "f":
                 showFullscreen?()
+                return
+            case "c":
+                // Cmd+C: Copy selected files to clipboard (Finder-compatible)
+                copySelectedFilesToPasteboard(store: store)
                 return
             default:
                 break

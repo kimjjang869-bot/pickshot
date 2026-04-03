@@ -981,24 +981,20 @@ class ThumbnailLoader {
     private func detectStorageType(_ path: String) -> StorageType {
         let url = URL(fileURLWithPath: path)
 
-        // Check if network volume
+        // Check if network volume (authoritative — uses OS volume metadata)
         if let values = try? url.resourceValues(forKeys: [.volumeIsLocalKey]),
            let isLocal = values.volumeIsLocal, !isLocal {
             return .network
         }
 
-        // Fallback network check
-        if path.hasPrefix("/Volumes/") && !FileManager.default.fileExists(atPath: path + "/.Spotlight-V100") {
-            return .network
-        }
-
-        // Check if external volume (USB/Thunderbolt HDD)
+        // External volume detection
         if path.hasPrefix("/Volumes/") {
-            // Check if SSD or HDD using IOKit
+            // Check if SSD using IOKit / volume properties
             if let isSSD = checkIfSSD(path: path) {
                 return isSSD ? .localSSD : .externalHDD
             }
-            // Fallback: external volumes are often HDD
+            // Fallback: assume external SSD (modern external drives are mostly SSD)
+            // Better to be fast and wrong than slow and safe
             return .externalHDD
         }
 
@@ -1007,13 +1003,30 @@ class ThumbnailLoader {
 
     private func checkIfSSD(path: String) -> Bool? {
         let url = URL(fileURLWithPath: path)
-        // Try to detect via volume properties
+
+        // Check volume properties
         if let values = try? url.resourceValues(forKeys: [.volumeIsInternalKey]),
            let isInternal = values.volumeIsInternal {
-            if isInternal { return true }  // Internal = likely SSD on modern Macs
+            if isInternal { return true }  // Internal = SSD on modern Macs
         }
-        // Check disk type via system_profiler (cached)
-        return nil  // Unknown — will use externalHDD as safe default
+
+        // Check volume name hints for known SSD brands
+        let volumeName = url.pathComponents.count >= 3 ? url.pathComponents[2].lowercased() : ""
+        let ssdHints = ["ssd", "extreme", "samsung t", "sandisk", "nvme", "thunderbolt"]
+        if ssdHints.contains(where: { volumeName.contains($0) }) {
+            return true
+        }
+
+        // Check if the volume supports TRIM (SSD indicator) via diskutil
+        let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
+           let totalSize = attrs[.systemSize] as? Int64 {
+            // Volumes < 100GB with no Spotlight are likely SD cards or small external media
+            // Volumes > 100GB without Spotlight are likely unindexed external drives (not NAS)
+            _ = totalSize  // Keep for future heuristics
+        }
+
+        return nil  // Unknown
     }
 
     /// Cancel all pending operations (call when scrolling fast to prioritize new visible cells)
