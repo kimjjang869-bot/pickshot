@@ -5,8 +5,6 @@ import SwiftUI
 final class UpdateService: ObservableObject {
     static let shared = UpdateService()
 
-    // MARK: - Published Properties
-
     @Published var isUpdateAvailable = false
     @Published var latestVersion = ""
     @Published var currentVersion = ""
@@ -16,64 +14,44 @@ final class UpdateService: ObservableObject {
     @Published var showUpdateSheet = false
     @Published var showUpToDateAlert = false
 
-    // MARK: - Google Drive 공개 링크
-    // version.json 파일 공개 링크 (직접 다운로드 형식)
-    // Google Drive 파일 공유 → "링크가 있는 모든 사용자" 설정 후
-    // https://drive.google.com/file/d/FILE_ID/view → FILE_ID 추출
-    // 직접 다운로드: https://drive.google.com/uc?export=download&id=FILE_ID
-
-    private let versionFileID = ""  // TODO: version.json 파일 ID 입력
+    private let githubAPI = "https://api.github.com/repos/kimjjang869-bot/pickshot/releases/latest"
     @AppStorage("skippedVersion") private var skippedVersion = ""
-
-    private var versionCheckURL: String {
-        "https://drive.google.com/uc?export=download&id=\(versionFileID)"
-    }
-
-    // MARK: - Init
 
     private init() {
         currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     }
 
-    // MARK: - Check for Update
-
     func checkForUpdate(userInitiated: Bool = false) {
-        guard !isChecking, !versionFileID.isEmpty else {
-            if userInitiated { showUpToDateAlert = true }
-            return
-        }
+        guard !isChecking else { return }
         isChecking = true
 
         Task {
             defer { isChecking = false }
-
-            guard let url = URL(string: versionCheckURL) else { return }
+            guard let url = URL(string: githubAPI) else { return }
 
             var request = URLRequest(url: url)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.timeoutInterval = 10
 
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
 
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else { return }
+                let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+                let version = release.tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
 
-                let info = try JSONDecoder().decode(UpdateInfo.self, from: data)
+                latestVersion = version
+                releaseNotes = release.body ?? ""
 
-                latestVersion = info.version
-                releaseNotes = info.notes ?? ""
-
-                // Google Drive DMG 공개 링크 (직접 다운로드)
-                if !info.dmgFileID.isEmpty {
-                    downloadURL = URL(string: "https://drive.google.com/uc?export=download&id=\(info.dmgFileID)&confirm=t")
-                } else if let directURL = info.downloadURL {
-                    downloadURL = URL(string: directURL)
+                // DMG 에셋 찾기, 없으면 릴리즈 페이지
+                if let dmg = release.assets?.first(where: { $0.name.hasSuffix(".dmg") }) {
+                    downloadURL = URL(string: dmg.browserDownloadURL)
+                } else {
+                    downloadURL = URL(string: release.htmlURL)
                 }
 
-                let hasUpdate = isNewerVersion(info.version, than: currentVersion)
-
-                if hasUpdate {
-                    if userInitiated || info.version != skippedVersion {
+                if isNewerVersion(version, than: currentVersion) {
+                    if userInitiated || version != skippedVersion {
                         isUpdateAvailable = true
                         showUpdateSheet = true
                     }
@@ -87,8 +65,6 @@ final class UpdateService: ObservableObject {
             }
         }
     }
-
-    // MARK: - Actions
 
     func openDownloadPage() {
         guard let url = downloadURL else { return }
@@ -105,47 +81,38 @@ final class UpdateService: ObservableObject {
         showUpdateSheet = false
     }
 
-    // MARK: - Version Comparison
-
     private func isNewerVersion(_ remote: String, than local: String) -> Bool {
-        let remoteParts = remote.split(separator: ".").compactMap { Int($0) }
-        let localParts = local.split(separator: ".").compactMap { Int($0) }
-
-        let maxCount = max(remoteParts.count, localParts.count)
-        for i in 0..<maxCount {
-            let r = i < remoteParts.count ? remoteParts[i] : 0
-            let l = i < localParts.count ? localParts[i] : 0
-            if r > l { return true }
-            if r < l { return false }
+        let r = remote.split(separator: ".").compactMap { Int($0) }
+        let l = local.split(separator: ".").compactMap { Int($0) }
+        for i in 0..<max(r.count, l.count) {
+            let rv = i < r.count ? r[i] : 0
+            let lv = i < l.count ? l[i] : 0
+            if rv > lv { return true }
+            if rv < lv { return false }
         }
         return false
     }
 }
 
-// MARK: - Update Info (Google Drive version.json)
-// version.json 예시:
-// {
-//   "version": "3.6",
-//   "dmgFileID": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ",
-//   "notes": "- 얼굴 감지 개선\n- 장면 분류 정확도 향상\n- 성능 최적화",
-//   "downloadURL": "https://example.com/PickShot.dmg"  // (선택) dmgFileID 대신 직접 URL
-// }
-
-private struct UpdateInfo: Decodable {
-    let version: String
-    let dmgFileID: String
-    let notes: String?
-    let downloadURL: String?  // dmgFileID 대신 직접 URL (선택)
+private struct GitHubRelease: Decodable {
+    let tagName: String
+    let htmlURL: String
+    let body: String?
+    let assets: [GitHubAsset]?
 
     enum CodingKeys: String, CodingKey {
-        case version, dmgFileID, notes, downloadURL
+        case tagName = "tag_name"
+        case htmlURL = "html_url"
+        case body, assets
     }
+}
 
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = try c.decode(String.self, forKey: .version)
-        dmgFileID = (try? c.decode(String.self, forKey: .dmgFileID)) ?? ""
-        notes = try? c.decode(String.self, forKey: .notes)
-        downloadURL = try? c.decode(String.self, forKey: .downloadURL)
+private struct GitHubAsset: Decodable {
+    let name: String
+    let browserDownloadURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
     }
 }
