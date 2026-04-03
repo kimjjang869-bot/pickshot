@@ -1142,6 +1142,47 @@ class ThumbnailLoader {
             .union(FileMatchingService.videoExtensions)
     }()
 
+    /// Read EXIF orientation from image file (1-8)
+    private static func readOrientation(url: URL) -> Int {
+        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
+        return props[kCGImagePropertyOrientation as String] as? Int ?? 1
+    }
+
+    /// Rotate NSImage based on EXIF orientation
+    private static func rotateImage(_ image: NSImage, orientation: Int) -> NSImage {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let cgImage = bitmap.cgImage else { return image }
+
+        let w = cgImage.width, h = cgImage.height
+        let swap = orientation >= 5 && orientation <= 8
+        let outW = swap ? h : w
+        let outH = swap ? w : h
+
+        let transform: CGAffineTransform
+        switch orientation {
+        case 2: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-w), y: 0)
+        case 3: transform = CGAffineTransform(translationX: CGFloat(w), y: CGFloat(h)).rotated(by: .pi)
+        case 4: transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: CGFloat(-h))
+        case 5: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
+        case 6: transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
+        case 7: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
+        case 8: transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
+        default: return image
+        }
+
+        guard let ctx = CGContext(data: nil, width: outW, height: outH,
+                                   bitsPerComponent: cgImage.bitsPerComponent, bytesPerRow: 0,
+                                   space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
+        ctx.concatenate(transform)
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let rotated = ctx.makeImage() else { return image }
+        return NSImage(cgImage: rotated, size: NSSize(width: outW, height: outH))
+    }
+
     private static func extractThumbnail(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
 
@@ -1162,7 +1203,16 @@ class ThumbnailLoader {
         // RAW: ALWAYS try embedded JPEG first (3MB read vs 40MB+ full decode)
         if isRAW {
             let t0 = CFAbsoluteTimeGetCurrent()
-            if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+            if var img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                // Apply RAW EXIF orientation to embedded JPEG (which may lack orientation tag)
+                let orient = readOrientation(url: url)
+                if orient >= 5 && orient <= 8 && img.size.width > img.size.height {
+                    // Should be portrait but embedded JPEG is landscape → rotate
+                    img = rotateImage(img, orientation: orient)
+                } else if orient >= 2 && orient <= 4 && img.size.width < img.size.height {
+                    // Mirrored/flipped cases
+                    img = rotateImage(img, orientation: orient)
+                }
                 let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 if ms > 300 { print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded OK)") }
                 return img
