@@ -1168,17 +1168,18 @@ class PhotoStore: ObservableObject {
         // 실내
         "indoor": "실내", "room": "실내", "interior": "실내",
         "office": "실내", "studio": "실내", "gym": "실내", "classroom": "실내",
-        // 음식/음료
-        "food": "음식", "meal": "음식", "dish": "음식", "cooking": "음식",
-        "kitchen": "음식", "sushi": "음식", "pizza": "음식", "cake": "음식",
-        "drink": "음료", "coffee": "음료", "wine": "음료", "beer": "음료",
-        "cocktail": "음료", "beverage": "음료", "cup": "음료", "tea": "음료",
-        // 동물/식물
-        "animal": "동물", "dog": "동물", "cat": "동물", "bird": "동물",
-        "pet": "동물", "wildlife": "동물", "horse": "동물", "fish": "동물",
-        "insect": "동물", "butterfly": "동물",
-        "flower": "식물/자연", "plant": "식물/자연", "garden": "식물/자연",
-        "tree": "식물/자연", "forest": "식물/자연", "leaf": "식물/자연", "botanical": "식물/자연",
+        // 음식/음료 (통합)
+        "food": "음식/음료", "meal": "음식/음료", "dish": "음식/음료", "cooking": "음식/음료",
+        "kitchen": "음식/음료", "sushi": "음식/음료", "pizza": "음식/음료", "cake": "음식/음료",
+        "dessert": "음식/음료", "restaurant": "음식/음료", "bakery": "음식/음료",
+        "drink": "음식/음료", "coffee": "음식/음료", "wine": "음식/음료", "beer": "음식/음료",
+        "cocktail": "음식/음료", "beverage": "음식/음료", "cup": "음식/음료", "tea": "음식/음료",
+        // 동물/식물 (통합)
+        "animal": "동물/식물", "dog": "동물/식물", "cat": "동물/식물", "bird": "동물/식물",
+        "pet": "동물/식물", "wildlife": "동물/식물", "horse": "동물/식물", "fish": "동물/식물",
+        "insect": "동물/식물", "butterfly": "동물/식물",
+        "flower": "동물/식물", "plant": "동물/식물", "garden": "동물/식물",
+        "tree": "동물/식물", "forest": "동물/식물", "leaf": "동물/식물", "botanical": "동물/식물",
         // 사물
         "car": "차량/교통", "vehicle": "차량/교통", "motorcycle": "차량/교통",
         "bicycle": "차량/교통", "airplane": "차량/교통", "train": "차량/교통", "boat": "차량/교통",
