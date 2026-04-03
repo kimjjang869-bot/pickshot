@@ -35,7 +35,7 @@ func extractFaceThumbnail(url: URL, maxSize: CGFloat = 80) -> NSImage? {
         return nil
     }
 
-    guard let face = faceRequest.results?.filter({ $0.confidence > 0.5 }).max(by: {
+    guard let face = faceRequest.results?.filter({ $0.confidence > 0.7 }).max(by: {
         $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
     }) else { return nil }
 
@@ -152,7 +152,8 @@ struct FaceGroupingService {
                 } catch { continue }
 
                 let avgSize = Float((allFaces[i].faceSize + allFaces[j].faceSize) / 2)
-                let threshold: Float = avgSize > 0.15 ? 0.65 : (avgSize > 0.08 ? 0.6 : 0.55)
+                // Stricter thresholds to reduce false grouping
+                let threshold: Float = avgSize > 0.15 ? 0.55 : (avgSize > 0.08 ? 0.50 : 0.45)
 
                 if distance < threshold {
                     localPairs.append(PairResult(i: i, j: j))
@@ -177,11 +178,11 @@ struct FaceGroupingService {
             clusterMap[root, default: []].append(i)
         }
 
-        // Convert to photo-level groups (only groups with 2+ distinct photos)
+        // Convert to photo-level groups (only groups with 3+ distinct photos — reduces noise)
         var groupID = 0
-        for (_, members) in clusterMap {
+        for (_, members) in clusterMap.sorted(by: { $0.value.count > $1.value.count }) {
             let photoIDs = Set(members.map { allFaces[$0].photoID })
-            if photoIDs.count >= 2 {
+            if photoIDs.count >= 3 {
                 for photoID in photoIDs {
                     result.assignments[photoID] = groupID
                 }
@@ -218,9 +219,10 @@ struct FaceGroupingService {
             try handler.perform([faceRequest])
         } catch { return [] }
 
-        guard let faces = faceRequest.results?.filter({ $0.confidence > 0.5 }), !faces.isEmpty else { return [] }
+        // Higher confidence threshold (0.7) to exclude false positives (hands, objects, patterns)
+        guard let faces = faceRequest.results?.filter({ $0.confidence > 0.7 }), !faces.isEmpty else { return [] }
 
-        // Sort by size descending, take up to 3 (was 5 — fewer = faster comparison)
+        // Sort by size descending, take up to 3
         let sortedFaces = faces.sorted {
             ($0.boundingBox.width * $0.boundingBox.height) > ($1.boundingBox.width * $1.boundingBox.height)
         }.prefix(3)
@@ -232,7 +234,10 @@ struct FaceGroupingService {
         for face in sortedFaces {
             let box = face.boundingBox
             let relativeSize = box.width * box.height
-            guard relativeSize > 0.01 else { continue }
+            // Skip tiny faces (< 2% of image) — too small to be reliable
+            guard relativeSize > 0.02 else { continue }
+            // Skip unrealistically large "faces" (> 80% of image) — likely false detection
+            guard relativeSize < 0.8 else { continue }
 
             let faceRect = CGRect(
                 x: box.origin.x * imgW,
