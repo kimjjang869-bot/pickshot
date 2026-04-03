@@ -70,6 +70,16 @@ extension ContentView {
                 }
 
                 if !store.photos.isEmpty {
+                    // Matching button
+                    Button(action: { store.showMatchingSheet = true }) {
+                        Label("매칭", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.purple)
+                    .help("파일명/JPG/AI 매칭 셀렉")
+
                     // G Select button
                     gSelectButton
 

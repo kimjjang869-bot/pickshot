@@ -302,6 +302,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $store.showBatchRename) { BatchRenameView() }
         .sheet(isPresented: $store.showExportSheet) { ExportView() }
+        .sheet(isPresented: $store.showMatchingSheet) { MatchingView(isPresented: $store.showMatchingSheet) }
         .sheet(isPresented: $store.showGoogleDrive) { GoogleDriveUploadView() }
         .sheet(isPresented: $store.showShortcutHelp) { ShortcutHelpView() }
         .sheet(isPresented: $store.showAbout) { AboutView() }

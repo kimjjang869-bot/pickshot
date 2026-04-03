@@ -387,6 +387,7 @@ struct PhotoPreviewView: View {
     @State private var focusMapImage: NSImage?
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
+    @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var aiError: String? = nil
@@ -423,6 +424,7 @@ struct PhotoPreviewView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
+                            .rotationEffect(.degrees(rotationAngle))
                             .overlay(
                                 Group {
                                     if showFocusMap, let focusImg = focusMapImage {
@@ -431,6 +433,7 @@ struct PhotoPreviewView: View {
                                             .aspectRatio(contentMode: .fit)
                                             .frame(width: isFitMode ? vSize.width : scaledW,
                                                    height: isFitMode ? vSize.height : scaledH)
+                                            .rotationEffect(.degrees(rotationAngle))
                                             .allowsHitTesting(false)
                                     }
                                 }
@@ -689,6 +692,41 @@ struct PhotoPreviewView: View {
 
                 Divider().frame(height: 20).opacity(0.2)
 
+                // Rotation buttons
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        rotationAngle = (rotationAngle - 90).truncatingRemainder(dividingBy: 360)
+                    }
+                }) {
+                    Image(systemName: "rotate.left")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+                .frame(height: AppTheme.buttonHeight)
+                .foregroundColor(rotationAngle != 0 ? .white : .secondary)
+                .background(rotationAngle != 0 ? Color.blue : Color.gray.opacity(0.2))
+                .clipShape(Capsule())
+                .help("왼쪽 90° 회전")
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        rotationAngle = (rotationAngle + 90).truncatingRemainder(dividingBy: 360)
+                    }
+                }) {
+                    Image(systemName: "rotate.right")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+                .frame(height: AppTheme.buttonHeight)
+                .foregroundColor(rotationAngle != 0 ? .white : .secondary)
+                .background(rotationAngle != 0 ? Color.blue : Color.gray.opacity(0.2))
+                .clipShape(Capsule())
+                .help("오른쪽 90° 회전")
+
+                Divider().frame(height: 20).opacity(0.2)
+
                 zoomBar
             }
             .padding(.horizontal, AppTheme.space8)
@@ -791,6 +829,7 @@ struct PhotoPreviewView: View {
             // so zoom position is maintained when switching photos
             correctionResult = nil
             isOriginal = true
+            rotationAngle = 0  // Reset rotation on photo switch
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil

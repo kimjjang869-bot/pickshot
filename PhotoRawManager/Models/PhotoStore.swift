@@ -131,6 +131,7 @@ class PhotoStore: ObservableObject {
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
     @Published var showExportSheet = false
+    @Published var showMatchingSheet = false
     @Published var showShortcutHelp = false
     @Published var showCompare = false
     @Published var showSlideshow = false

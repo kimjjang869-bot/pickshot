@@ -64,6 +64,10 @@
 		CV10001 = {isa = PBXBuildFile; fileRef = CV10002; };
 		CV10003 = {isa = PBXBuildFile; fileRef = CV10004; };
 		CV10005 = {isa = PBXBuildFile; fileRef = CV10006; };
+		49509F6E57E24C42A069B239 /* FilenameMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */; };
+		73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */; };
+		60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD92142A284546BD2E0466 /* AISimilarityService.swift */; };
+		939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997C658F4814B05A202D514 /* MatchingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -123,6 +127,10 @@
 		CV10002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Toolbar.swift"; sourceTree = "<group>"; };
 		CV10004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+FolderBrowser.swift"; sourceTree = "<group>"; };
 		CV10006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+SupportingViews.swift"; sourceTree = "<group>"; };
+		B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilenameMatchingService.swift; sourceTree = "<group>"; };
+		F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JPGReturnMatchingService.swift; sourceTree = "<group>"; };
+		F0AD92142A284546BD2E0466 /* AISimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISimilarityService.swift; sourceTree = "<group>"; };
+		5997C658F4814B05A202D514 /* MatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,6 +204,7 @@
 				A20036,
 				'B10055',
 				B10034,
+				5997C658F4814B05A202D514,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -219,6 +228,9 @@
 				A20039,
 				A20043,
 				DC10001,
+				B2A12130E1BE4A57BC7F1932,
+				F177AFEF49654E22BDB469B3,
+				F0AD92142A284546BD2E0466,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -301,6 +313,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,
+				60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */,
+				73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */,
+				49509F6E57E24C42A069B239 /* FilenameMatchingService.swift in Sources */,
 				A10001,
 				A10002,
 				A10003,
