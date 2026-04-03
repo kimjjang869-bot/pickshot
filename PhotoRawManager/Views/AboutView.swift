@@ -72,7 +72,7 @@ struct AboutView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: isSendingLog ? "arrow.up.circle" : "paperplane.fill")
                                         .font(.system(size: 11))
-                                    Text(isSendingLog ? "전송 중..." : "로그 보내기")
+                                    Text(isSendingLog ? "전송 중..." : "Google Drive 전송")
                                         .font(.system(size: 11, weight: .medium))
                                 }
                             }
@@ -80,11 +80,33 @@ struct AboutView: View {
                             .controlSize(.small)
                             .disabled(isSendingLog)
 
-                            if let msg = logSendResult {
-                                Text(msg)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(logSendSuccess ? .green : .red)
+                            Button(action: sendLogByEmail) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "envelope.fill")
+                                        .font(.system(size: 11))
+                                    Text("이메일 전송")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button(action: saveLogToDesktop) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "square.and.arrow.down")
+                                        .font(.system(size: 11))
+                                    Text("파일 저장")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        if let msg = logSendResult {
+                            Text(msg)
+                                .font(.system(size: 10))
+                                .foregroundColor(logSendSuccess ? .green : .red)
                         }
 
                         Text("성능 데이터(폴더 로딩 시간, 썸네일 속도, 메모리/CPU 사용량)를\n개발자에게 전송합니다. 개인정보는 포함되지 않습니다.")
@@ -116,6 +138,58 @@ struct AboutView: View {
                 isSendingLog = false
                 logSendSuccess = success
                 logSendResult = message
+            }
+        }
+    }
+
+    private func sendLogByEmail() {
+        // Flush log
+        AppLogger.log(.general, "로그 이메일 전송 요청")
+        let logFile = AppLogger.currentLogFile
+        guard FileManager.default.fileExists(atPath: logFile.path) else {
+            logSendResult = "로그 파일이 없습니다"
+            logSendSuccess = false
+            return
+        }
+
+        let fileName = "\(AppLogger.deviceName)_v\(AppLogger.appVersion)_log.txt"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.copyItem(at: logFile, to: tempURL)
+
+        // Open Mail.app with attachment via mailto + NSSharingService
+        let service = NSSharingService(named: .composeEmail)
+        service?.recipients = ["potokan@pickshot.app"]
+        service?.subject = "PickShot 로그 (\(AppLogger.deviceName) v\(AppLogger.appVersion))"
+        let body = "PickShot 성능 로그입니다.\n\n장치: \(AppLogger.deviceName)\nIP: \(AppLogger.localIP)\n버전: \(AppLogger.appVersion)"
+        service?.perform(withItems: [body, tempURL])
+
+        logSendResult = "이메일 앱이 열렸습니다"
+        logSendSuccess = true
+    }
+
+    private func saveLogToDesktop() {
+        AppLogger.log(.general, "로그 파일 저장 요청")
+        let logFile = AppLogger.currentLogFile
+        guard FileManager.default.fileExists(atPath: logFile.path) else {
+            logSendResult = "로그 파일이 없습니다"
+            logSendSuccess = false
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "로그 파일 저장"
+        panel.nameFieldStringValue = "\(AppLogger.deviceName)_v\(AppLogger.appVersion)_log.txt"
+        panel.allowedContentTypes = [.plainText]
+
+        if panel.runModal() == .OK, let saveURL = panel.url {
+            do {
+                try FileManager.default.copyItem(at: logFile, to: saveURL)
+                logSendResult = "저장 완료: \(saveURL.lastPathComponent)"
+                logSendSuccess = true
+            } catch {
+                logSendResult = "저장 실패: \(error.localizedDescription)"
+                logSendSuccess = false
             }
         }
     }
