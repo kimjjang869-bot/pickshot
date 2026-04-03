@@ -956,7 +956,8 @@ class ThumbnailLoader {
         switch type {
         case .localSSD:
             isNetworkMode = false
-            queue.maxConcurrentOperationCount = ProcessInfo.processInfo.activeProcessorCount * 2
+            // RAW decode is CPU-heavy; too many concurrent = resource contention
+            queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 12)
             AppLogger.log(.performance, "Local SSD: concurrency=\(queue.maxConcurrentOperationCount)")
         case .externalHDD:
             // HDD: seek time is bottleneck, moderate concurrency helps
