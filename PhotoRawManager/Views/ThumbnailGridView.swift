@@ -848,10 +848,11 @@ class ThumbnailCache {
 
     init() {
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        maxEntries = ramGB >= 16 ? 5000 : (ramGB >= 8 ? 2000 : 1000)
+        maxEntries = ramGB >= 16 ? 10000 : (ramGB >= 8 ? 5000 : 2000)
 
         memoryCache.countLimit = maxEntries
-        memoryCache.totalCostLimit = 100 * 1024 * 1024  // 100MB
+        // Use 20% of RAM for thumbnail cache (aggressive but safe - NSCache auto-evicts under pressure)
+        memoryCache.totalCostLimit = Int(ProcessInfo.processInfo.physicalMemory / 5)  // 20% RAM
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in
@@ -1277,19 +1278,18 @@ class ThumbnailLoader {
         return nil
     }
 
-    /// Find best embedded JPEG in data by scanning for FFD8 markers
+    /// Find best embedded JPEG in data by scanning for FFD8 markers (parallel)
     private static func findBestEmbeddedJPEG(in data: Data, maxSize: Int) -> NSImage? {
-        let ffd8: [UInt8] = [0xFF, 0xD8]
-        let scanLimit = data.count - 2
+        // Use parallel scanner for finding FFD8 markers
+        let offsets = ParallelFFD8Scanner.findMarkers(in: data, maxMarkers: 8)
+        guard !offsets.isEmpty else { return nil }
 
         var bestImage: NSImage?
         var bestSize = 0
 
-        for i in 0..<scanLimit {
-            guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-
-            let end = min(i + 1_500_000, data.count)
-            let subData = data.subdata(in: i..<end)
+        for offset in offsets {
+            let end = min(offset + 1_500_000, data.count)
+            let subData = data.subdata(in: offset..<end)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
@@ -1300,11 +1300,9 @@ class ThumbnailLoader {
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, thumbOpts as CFDictionary) {
                 let size = cgImage.width * cgImage.height
-                // Pick largest usable embedded JPEG (better quality preview)
                 if size > bestSize {
                     bestSize = size
                     bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    // If we found a good-sized image, stop scanning (saves time)
                     if cgImage.width >= maxSize { return bestImage }
                 }
             }

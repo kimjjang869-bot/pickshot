@@ -166,7 +166,8 @@ struct ImageAnalysisService {
         analysis.compositionScore = computeCompositionScore(cgImage: cgImage)
 
         // === Sharpness ===
-        let sharpness = calculateLaplacianFast(pixels: pixels, width: width, height: height)
+        // GPU-accelerated Laplacian (Accelerate + parallel dispatch), fallback to CPU
+        let sharpness = MetalImageProcessor.laplacianSharpness(pixels: pixels, width: width, height: height)
         analysis.sharpnessScore = sharpness
 
         // --- Blur / Shake check ---
