@@ -203,7 +203,8 @@ class PerformanceMonitor {
 
     private func logWarning(_ message: String) {
         writeLog("⚠️ \(message)")
-        // Also print to console for immediate visibility
+        // Also write to AppLogger file for remote diagnostics
+        AppLogger.log(.performance, message)
         print("PERF WARNING: \(message)")
     }
 

@@ -61,6 +61,39 @@ struct AboutView: View {
 
                     Divider()
 
+                    // Send Log button
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("진단")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(AppTheme.accent)
+
+                        HStack(spacing: 8) {
+                            Button(action: sendLog) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: isSendingLog ? "arrow.up.circle" : "paperplane.fill")
+                                        .font(.system(size: 11))
+                                    Text(isSendingLog ? "전송 중..." : "로그 보내기")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(isSendingLog)
+
+                            if let msg = logSendResult {
+                                Text(msg)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(logSendSuccess ? .green : .red)
+                            }
+                        }
+
+                        Text("성능 데이터(폴더 로딩 시간, 썸네일 속도, 메모리/CPU 사용량)를\n개발자에게 전송합니다. 개인정보는 포함되지 않습니다.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
                     Text("Copyright 2026. All rights reserved.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
@@ -68,7 +101,23 @@ struct AboutView: View {
                 .padding(16)
             }
         }
-        .frame(width: 420, height: 520)
+        .frame(width: 420, height: 580)
+    }
+
+    @State private var isSendingLog = false
+    @State private var logSendResult: String?
+    @State private var logSendSuccess = false
+
+    private func sendLog() {
+        isSendingLog = true
+        logSendResult = nil
+        AppLogger.sendLogToGoogleDrive { success, message in
+            DispatchQueue.main.async {
+                isSendingLog = false
+                logSendSuccess = success
+                logSendResult = message
+            }
+        }
     }
 
     private func changelogSection(_ title: String, items: [String]) -> some View {
