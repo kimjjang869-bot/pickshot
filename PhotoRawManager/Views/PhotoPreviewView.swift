@@ -853,13 +853,13 @@ struct PhotoPreviewView: View {
             }
 
             if store.isKeyRepeat {
-                // Key HELD DOWN: show cached preview ONLY (not thumbnails — they may have wrong orientation)
-                // If no cached preview, keep showing previous image until new one loads
+                // Key HELD DOWN: show cached preview or thumbnail for responsiveness
                 let previewKey = url.appendingPathExtension("orig")
                 if let cached = PreviewImageCache.shared.get(previewKey) {
                     image = cached
+                } else if let thumb = ThumbnailCache.shared.get(url) {
+                    image = thumb  // Low-res but instant — better than blank
                 }
-                // Don't use ThumbnailCache here — 160px thumbnails may have orientation issues
                 // Always schedule hi-res load (debounced)
                 hiResWorkItem?.cancel()
                 let capturedID = newID

@@ -1200,81 +1200,58 @@ class ThumbnailLoader {
 
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
-        // RAW: ALWAYS try embedded JPEG first (3MB read vs 40MB+ full decode)
-        if isRAW {
-            let t0 = CFAbsoluteTimeGetCurrent()
-            if var img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
-                // Check if CGImageSource reports correct orientation-applied dimensions
-                // Compare embedded JPEG aspect ratio with RAW's intended aspect ratio
-                let orient = readOrientation(url: url)
-                if orient >= 5 && orient <= 8 {
-                    // RAW says portrait (orientation 5-8 = rotated 90°)
-                    // If embedded JPEG is landscape (w > h), it needs rotation
-                    if img.size.width > img.size.height {
-                        img = rotateImage(img, orientation: orient)
-                    }
-                } else if orient == 1 {
-                    // RAW says normal (no rotation needed)
-                    // But some cameras store embedded JPEG already rotated
-                    // If RAW pixel W > H (landscape) but embedded is H > W (portrait), undo rotation
-                    let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-                    if let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary),
-                       let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                       let rawW = props[kCGImagePropertyPixelWidth as String] as? Int,
-                       let rawH = props[kCGImagePropertyPixelHeight as String] as? Int {
-                        let rawIsLandscape = rawW > rawH
-                        let imgIsLandscape = img.size.width > img.size.height
-                        if rawIsLandscape != imgIsLandscape {
-                            // Mismatch: embedded JPEG has wrong orientation, rotate to match RAW
-                            img = rotateImage(img, orientation: 6)  // 90° CW
+        // CGImageSource path FIRST — handles EXIF orientation automatically via Transform flag
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        if let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) {
+            let imageCount = CGImageSourceGetCount(source)
+
+            if isRAW {
+                // RAW Step 1: Try existing embedded thumbnail via CGImageSource (orientation auto-applied)
+                let embedOpts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: thumbSize,
+                    kCGImageSourceCreateThumbnailFromImageAlways: false,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCache: false
+                ]
+                for idx in 0..<imageCount {
+                    if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
+                        if cgImage.width >= 50 && cgImage.height >= 50 {
+                            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                         }
                     }
                 }
-                let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                if ms > 300 { print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded OK)") }
-                return img
-            }
-            let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⏱ [EMB] \(url.lastPathComponent): \(String(format: "%.0f", ms))ms (embedded FAIL → CGImageSource)")
-        }
 
-        // CGImageSource path
-        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else {
-            return nil
-        }
-        let imageCount = CGImageSourceGetCount(source)
-
-        if isRAW {
-            // RAW: try existing embedded thumbnail ONLY (no full decode for thumbnails)
-            let opts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: thumbSize,
-                kCGImageSourceCreateThumbnailFromImageAlways: false,
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceShouldCache: false
-            ]
-            // Try each image index for an existing thumbnail
-            for idx in 0..<imageCount {
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, opts as CFDictionary) {
+                // RAW Step 2: Generate thumbnail with subsample (orientation auto-applied)
+                let genOpts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: thumbSize,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceSubsampleFactor: 8,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCache: false
+                ]
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
                     return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 }
             }
+        }
 
-            // Last resort: decode at smallest possible size
-            let fallbackOpts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: thumbSize,
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceSubsampleFactor: 8,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceShouldCache: false
-            ]
-            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, fallbackOpts as CFDictionary) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        // RAW Step 3: Embedded JPEG extraction (last resort — for unsupported RAW formats)
+        if isRAW {
+            if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                return img
             }
-        } else {
+            return nil
+        }
+
+        // JPG/PNG path
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else {
+            return nil
+        }
+
+        if !isRAW {
             // JPG/PNG: use SubsampleFactor for 2-4x faster JPEG decode
             // SubsampleFactor: 2 = 1/2 size decode, 4 = 1/4 size decode
             let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
