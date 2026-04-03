@@ -12,23 +12,16 @@ struct FaceGroupResult {
 
 /// Extracts a face thumbnail from a photo for display in the group filter
 func extractFaceThumbnail(url: URL, maxSize: CGFloat = 80) -> NSImage? {
-    // Try hardware JPEG decode, fall back to CGImageSource
-    let isJPEG = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
-    let cgImage: CGImage
-    if isJPEG, HWJPEGDecoder.isAvailable, let hwImage = HWJPEGDecoder.decode(url: url, maxPixel: 1280) {
-        cgImage = hwImage
-    } else {
-        let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
-        let thumbOptions: [NSString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: 1280,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCache: false
-        ]
-        guard let swImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else { return nil }
-        cgImage = swImage
-    }
+    // Use 640px for face thumbnail extraction (fast + sufficient quality)
+    let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
+    let thumbOptions: [NSString: Any] = [
+        kCGImageSourceThumbnailMaxPixelSize: 640,
+        kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceShouldCache: false
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else { return nil }
 
     let faceRequest = VNDetectFaceRectanglesRequest()
     if #available(macOS 13.0, *) {
@@ -136,11 +129,21 @@ struct FaceGroupingService {
             else { parent[rb] = ra; rank[ra] += 1 }
         }
 
-        // Compare all pairs (for large sets, limit to reasonable count)
-        let maxCompare = min(allFaces.count, 5000)  // Cap for performance
-        for i in 0..<min(allFaces.count, maxCompare) {
-            for j in (i + 1)..<min(allFaces.count, maxCompare) {
-                // Skip if same photo
+        // Compare all pairs — parallelized for speed
+        let n = allFaces.count
+        let maxCompare = min(n, 5000)
+
+        // Pre-compute pairs to compare, then parallelize
+        struct PairResult {
+            let i: Int
+            let j: Int
+        }
+        let pairLock = NSLock()
+        var matchedPairs: [PairResult] = []
+
+        DispatchQueue.concurrentPerform(iterations: min(n, maxCompare)) { i in
+            var localPairs: [PairResult] = []
+            for j in (i + 1)..<min(n, maxCompare) {
                 if allFaces[i].photoID == allFaces[j].photoID { continue }
 
                 var distance: Float = 0
@@ -148,24 +151,23 @@ struct FaceGroupingService {
                     try allFaces[i].featurePrint.computeDistance(&distance, to: allFaces[j].featurePrint)
                 } catch { continue }
 
-                // Adaptive threshold based on face size
-                // Lower distance = more similar, so lower threshold = stricter
-                // Large faces have more detail so we can be more lenient (higher threshold)
-                // Small faces need more leniency too since they have less detail
                 let avgSize = Float((allFaces[i].faceSize + allFaces[j].faceSize) / 2)
-                let threshold: Float
-                if avgSize > 0.15 {
-                    threshold = 0.65  // Large faces: lenient (more detail available)
-                } else if avgSize > 0.08 {
-                    threshold = 0.6   // Medium faces: moderate
-                } else {
-                    threshold = 0.55  // Small faces: more lenient (less detail)
-                }
+                let threshold: Float = avgSize > 0.15 ? 0.65 : (avgSize > 0.08 ? 0.6 : 0.55)
 
                 if distance < threshold {
-                    union(i, j)
+                    localPairs.append(PairResult(i: i, j: j))
                 }
             }
+            if !localPairs.isEmpty {
+                pairLock.lock()
+                matchedPairs.append(contentsOf: localPairs)
+                pairLock.unlock()
+            }
+        }
+
+        // Apply unions (sequential — union-find is not thread-safe)
+        for pair in matchedPairs {
+            union(pair.i, pair.j)
         }
 
         // Build groups from union-find
@@ -191,28 +193,21 @@ struct FaceGroupingService {
         return result
     }
 
-    /// Extract ALL faces from a photo with feature prints (up to 5 largest)
+    /// Extract ALL faces from a photo with feature prints (up to 3 largest)
     private static func extractAllFaceFeaturePrints(url: URL) -> [(featurePrint: VNFeaturePrintObservation, relativeSize: CGFloat)] {
-        // Use 1280px for better face detection accuracy in group photos
-        // Try hardware JPEG decode, fall back to CGImageSource
-        let isJPEG = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
-        let cgImage: CGImage
-        if isJPEG, HWJPEGDecoder.isAvailable, let hwImage = HWJPEGDecoder.decode(url: url, maxPixel: 1280) {
-            cgImage = hwImage
-        } else {
-            let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return [] }
-            let thumbOptions: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: 1280,
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCache: false
-            ]
-            guard let swImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else { return [] }
-            cgImage = swImage
-        }
+        // Use 640px — sufficient for face detection, 4x faster than 1280px
+        let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return [] }
+        let thumbOptions: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: 640,
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceShouldCache: false
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else { return [] }
 
-        // Detect faces
+        // Batch: detect faces + feature prints in single handler
         let faceRequest = VNDetectFaceRectanglesRequest()
         if #available(macOS 13.0, *) {
             faceRequest.revision = VNDetectFaceRectanglesRequestRevision3
@@ -225,10 +220,10 @@ struct FaceGroupingService {
 
         guard let faces = faceRequest.results?.filter({ $0.confidence > 0.5 }), !faces.isEmpty else { return [] }
 
-        // Sort by size descending, take up to 5
+        // Sort by size descending, take up to 3 (was 5 — fewer = faster comparison)
         let sortedFaces = faces.sorted {
             ($0.boundingBox.width * $0.boundingBox.height) > ($1.boundingBox.width * $1.boundingBox.height)
-        }.prefix(5)
+        }.prefix(3)
 
         let imgW = CGFloat(cgImage.width)
         let imgH = CGFloat(cgImage.height)
@@ -237,8 +232,6 @@ struct FaceGroupingService {
         for face in sortedFaces {
             let box = face.boundingBox
             let relativeSize = box.width * box.height
-
-            // Skip very small faces (< 1% of image)
             guard relativeSize > 0.01 else { continue }
 
             let faceRect = CGRect(
@@ -248,11 +241,10 @@ struct FaceGroupingService {
                 height: box.height * imgH
             ).integral
 
-            // Expand by 15% for context
             let expanded = faceRect.insetBy(dx: -faceRect.width * 0.15, dy: -faceRect.height * 0.15)
             let clipped = expanded.intersection(CGRect(x: 0, y: 0, width: imgW, height: imgH))
 
-            guard clipped.width > 20, clipped.height > 20,
+            guard clipped.width > 15, clipped.height > 15,
                   let faceCrop = cgImage.cropping(to: clipped) else { continue }
 
             let fpRequest = VNGenerateImageFeaturePrintRequest()
