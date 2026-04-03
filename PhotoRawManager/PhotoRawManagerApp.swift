@@ -19,7 +19,10 @@ struct PhotoRawManagerApp: App {
                 }
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1440, height: 900)
+        .defaultSize(
+            width: (NSScreen.main?.visibleFrame.width ?? 1440) * 0.95,
+            height: (NSScreen.main?.visibleFrame.height ?? 900) * 0.95
+        )
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("PickShot 정보") {
