@@ -1202,19 +1202,10 @@ struct PhotoPreviewView: View {
                 // RAW: 2-stage loading
                 let optimalPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
 
-                // Read orientation from original RAW EXIF (embedded JPEGs may lack orientation tag)
-                let rawOrientation = Self.readRawOrientation(url: url)
-
                 // Stage 1: Fast load at 1200px for rapid navigation
-                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
-                // Apply RAW orientation if the loaded image appears unrotated
-                if let fast = fastImage, rawOrientation >= 5 && rawOrientation <= 8 {
-                    // Orientation 5-8 means width/height should be swapped
-                    // If image width > height but it should be portrait, rotate it
-                    if fast.size.width > fast.size.height {
-                        fastImage = Self.applyOrientation(fast, orientation: rawOrientation)
-                    }
-                }
+                // Note: loadOptimized uses kCGImageSourceCreateThumbnailWithTransform=true
+                // which handles EXIF orientation automatically. No manual rotation needed.
+                let fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
                 guard let fast = fastImage, self.pendingPhotoID == id else { return }
 
                 DispatchQueue.main.async {
@@ -1227,10 +1218,7 @@ struct PhotoPreviewView: View {
                 if optimalPx > 1200 {
                     guard self.pendingPhotoID == id else { return }
                     let targetPx = resolution > 0 ? optimalPx : rawHiResPx
-                    var hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
-                    if let hr = hiRes, rawOrientation >= 5 && rawOrientation <= 8, hr.size.width > hr.size.height {
-                        hiRes = Self.applyOrientation(hr, orientation: rawOrientation)
-                    }
+                    let hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
                     guard let hr = hiRes, self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: hr)
                     DispatchQueue.main.async {
