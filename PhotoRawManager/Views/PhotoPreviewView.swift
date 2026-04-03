@@ -388,6 +388,7 @@ struct PhotoPreviewView: View {
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
+    @State private var rotatedImage: NSImage?  // Actual rotated pixel data
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var aiError: String? = nil
@@ -418,13 +419,12 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
-                        Image(nsImage: image)
+                        Image(nsImage: rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
                             .aspectRatio(contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
-                            .rotationEffect(.degrees(rotationAngle))
                             .overlay(
                                 Group {
                                     if showFocusMap, let focusImg = focusMapImage {
@@ -433,7 +433,6 @@ struct PhotoPreviewView: View {
                                             .aspectRatio(contentMode: .fit)
                                             .frame(width: isFitMode ? vSize.width : scaledW,
                                                    height: isFitMode ? vSize.height : scaledH)
-                                            .rotationEffect(.degrees(rotationAngle))
                                             .allowsHitTesting(false)
                                     }
                                 }
@@ -693,35 +692,27 @@ struct PhotoPreviewView: View {
                 Divider().frame(height: 20).opacity(0.2)
 
                 // Rotation buttons
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        rotationAngle = (rotationAngle - 90).truncatingRemainder(dividingBy: 360)
-                    }
-                }) {
+                Button(action: { applyRotation(degrees: -90) }) {
                     Image(systemName: "rotate.left")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
                 .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(rotationAngle != 0 ? .white : .secondary)
-                .background(rotationAngle != 0 ? Color.blue : Color.gray.opacity(0.2))
+                .foregroundColor(rotatedImage != nil ? .white : .secondary)
+                .background(rotatedImage != nil ? Color.blue : Color.gray.opacity(0.2))
                 .clipShape(Capsule())
                 .help("왼쪽 90° 회전")
 
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        rotationAngle = (rotationAngle + 90).truncatingRemainder(dividingBy: 360)
-                    }
-                }) {
+                Button(action: { applyRotation(degrees: 90) }) {
                     Image(systemName: "rotate.right")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
                 .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(rotationAngle != 0 ? .white : .secondary)
-                .background(rotationAngle != 0 ? Color.blue : Color.gray.opacity(0.2))
+                .foregroundColor(rotatedImage != nil ? .white : .secondary)
+                .background(rotatedImage != nil ? Color.blue : Color.gray.opacity(0.2))
                 .clipShape(Capsule())
                 .help("오른쪽 90° 회전")
 
@@ -830,6 +821,7 @@ struct PhotoPreviewView: View {
             correctionResult = nil
             isOriginal = true
             rotationAngle = 0  // Reset rotation on photo switch
+            rotatedImage = nil
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil
@@ -1393,6 +1385,46 @@ struct PhotoPreviewView: View {
                 }
             }
         }
+    }
+
+    private func applyRotation(degrees: Double) {
+        guard let source = rotatedImage ?? image else { return }
+        rotationAngle += degrees
+
+        // Reset if back to 0
+        if rotationAngle.truncatingRemainder(dividingBy: 360) == 0 {
+            rotationAngle = 0
+            rotatedImage = nil
+            return
+        }
+
+        // Rotate the actual image pixels
+        guard let tiffData = source.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let cgImage = bitmap.cgImage else { return }
+
+        let w = cgImage.width
+        let h = cgImage.height
+        let isSwap = abs(degrees) == 90 || abs(degrees) == 270
+        let outW = isSwap ? h : w
+        let outH = isSwap ? w : h
+
+        let radians = degrees * .pi / 180.0
+        guard let context = CGContext(
+            data: nil, width: outW, height: outH,
+            bitsPerComponent: cgImage.bitsPerComponent,
+            bytesPerRow: 0,
+            space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: cgImage.bitmapInfo.rawValue
+        ) else { return }
+
+        context.translateBy(x: CGFloat(outW) / 2, y: CGFloat(outH) / 2)
+        context.rotate(by: CGFloat(radians))
+        context.translateBy(x: -CGFloat(w) / 2, y: -CGFloat(h) / 2)
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        guard let rotated = context.makeImage() else { return }
+        rotatedImage = NSImage(cgImage: rotated, size: NSSize(width: outW, height: outH))
     }
 
     private func reloadCurrentImage() {
