@@ -399,6 +399,7 @@ struct PhotoPreviewView: View {
     @State private var hiResWorkItem: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
 
+    private static let imageLoadQueue = DispatchQueue(label: "com.pickshot.preview.load", qos: .userInitiated)
     private var isFitMode: Bool { viewState.zoomPreset == .fit }
 
     var body: some View {
@@ -1214,8 +1215,8 @@ struct PhotoPreviewView: View {
 
         print("📷 [LOAD START] \(fileName) res=\(resolution) pendingID=\(id.uuidString.prefix(8))")
 
-        // 2-stage loading: fast preview first, then full-res
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Serial queue: only 1 image loads at a time (prevents memory spike)
+        Self.imageLoadQueue.async {
             guard self.pendingPhotoID == id else { return }
 
             let ext = url.pathExtension.lowercased()
