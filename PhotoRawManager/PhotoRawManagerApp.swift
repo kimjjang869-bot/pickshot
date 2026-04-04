@@ -12,12 +12,8 @@ struct PhotoRawManagerApp: App {
                 .task {
                     updateService.checkForUpdate(userInitiated: false)
                     PerformanceMonitor.shared.start()
-                    // Initialize Google OAuth credentials lazily (avoid keychain popup at launch)
-                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
-                        if GoogleDriveService.oauthClientID.isEmpty {
-                            GoogleDriveService.loadSecretsFromConfig()
-                        }
-                    }
+                    // Google OAuth credentials loaded on-demand when G Select is used
+                    // (removed from startup — was blocking main thread via Keychain)
                 }
         }
         .windowStyle(.titleBar)
