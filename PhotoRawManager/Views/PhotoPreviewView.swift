@@ -1249,15 +1249,23 @@ struct PhotoPreviewView: View {
                 let optimalPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
 
                 // Stage 1: Fast load at 1200px for rapid navigation
-                // Note: loadOptimized uses kCGImageSourceCreateThumbnailWithTransform=true
-                // which handles EXIF orientation automatically. No manual rotation needed.
-                let fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
+                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
+
+                // Fix orientation: compare with stableImageSize (which has correct orientation)
+                if let fast = fastImage, let stable = self.viewState.stableImageSize {
+                    let stableIsPortrait = stable.height > stable.width
+                    let fastIsPortrait = fast.size.height > fast.size.width
+                    if stableIsPortrait != fastIsPortrait {
+                        fastImage = Self.applyOrientation(fast, orientation: 6)
+                    }
+                }
+
                 guard let fast = fastImage, self.pendingPhotoID == id else { return }
 
                 DispatchQueue.main.async {
                     guard self.pendingPhotoID == id else { return }
                     self.image = fast
-                    self.lowResImage = fast  // Save for zoom-out restore
+                    self.lowResImage = fast
                 }
 
                 // Stage 2: Hi-res for RAW
@@ -1265,12 +1273,21 @@ struct PhotoPreviewView: View {
                 if optimalPx > 1200 {
                     guard self.pendingPhotoID == id else { return }
                     let targetPx = resolution > 0 ? optimalPx : rawHiResPx
-                    let hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+                    var hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+                    // Fix orientation
+                    if let hr = hiRes, let stable = self.viewState.stableImageSize {
+                        let stableIsPortrait = stable.height > stable.width
+                        let hrIsPortrait = hr.size.height > hr.size.width
+                        if stableIsPortrait != hrIsPortrait {
+                            hiRes = Self.applyOrientation(hr, orientation: 6)
+                        }
+                    }
                     guard let hr = hiRes, self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: hr)
                     DispatchQueue.main.async {
                         if self.pendingPhotoID == id {
                             self.image = hr
+                            self.lowResImage = hr
                         }
                     }
                 } else {
