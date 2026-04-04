@@ -72,51 +72,40 @@ struct ExportView: View {
             }
             .cornerRadius(8)
 
-            // RAW → JPG options — all inline rows
+            // RAW → JPG options
             if exportTarget == .rawToJpg {
                 VStack(spacing: 10) {
-                    // Row 1: Title + GPU badge
-                    HStack {
+                    // Single line: Title + Resolution + Quality + GPU badge
+                    HStack(spacing: 12) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 13))
+                            .font(.system(size: 12))
                             .foregroundColor(.orange)
-                        Text("RAW → JPG 변환")
-                            .font(.system(size: 13, weight: .semibold))
-                        Spacer()
-                        Text("GPU 가속")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.orange.opacity(0.12))
-                            .cornerRadius(4)
-                    }
-
-                    // Row 2: Resolution + Quality (single line)
-                    HStack(spacing: 0) {
                         Text("해상도")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .frame(width: 45, alignment: .trailing)
                         Picker("", selection: $convResolution) {
                             ForEach(RAWConversionService.Resolution.allCases, id: \.self) {
                                 Text($0.rawValue).tag($0)
                             }
                         }
-                        .frame(width: 100)
-                        .padding(.trailing, 16)
-
+                        .frame(width: 90)
                         Text("품질")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .frame(width: 30, alignment: .trailing)
                         Picker("", selection: $convQuality) {
                             ForEach(RAWConversionService.Quality.allCases, id: \.self) {
                                 Text($0.rawValue).tag($0)
                             }
                         }
-                        .frame(width: 130)
+                        .frame(width: 120)
                         Spacer()
+                        Text("GPU")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.12))
+                            .cornerRadius(3)
                     }
 
                     // Progress / Result
@@ -131,7 +120,6 @@ struct ExportView: View {
                                 .frame(width: 35)
                         }
                     }
-
                     if let result = convResult {
                         HStack(spacing: 6) {
                             Image(systemName: result.failed == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
