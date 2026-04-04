@@ -1513,27 +1513,45 @@ struct PhotoPreviewView: View {
             let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
             if isRAW {
-                // RAW: use CIRAWFilter for TRUE full-resolution decode (GPU accelerated)
-                if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url) {
-                    rawFilter.boostAmount = 0
-                    rawFilter.isGamutMappingEnabled = true
-                    // Scale to ~4000px for fast hi-res (not full 9504px which is too slow)
-                    let native = rawFilter.nativeSize
-                    let origMax = max(native.width, native.height)
-                    let targetPx: CGFloat = 4000
-                    if origMax > targetPx {
-                        rawFilter.scaleFactor = Float(targetPx / origMax)
-                    }
-                    if let output = rawFilter.outputImage {
-                        let ctx = CIContext(options: [.useSoftwareRenderer: false])
-                        if let cgImage = ctx.createCGImage(output, from: output.extent) {
-                            hiRes = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                // RAW: extract the LARGEST embedded JPEG (same color as preview)
+                // This preserves the camera's color processing (Picture Style)
+                // instead of CIRAWFilter which produces different colors
+                let handle: FileHandle? = try? FileHandle(forReadingFrom: url)
+                if let handle = handle {
+                    let data = handle.readData(ofLength: 10_000_000)  // Read up to 10MB for large embedded JPEG
+                    handle.closeFile()
+
+                    // Find all FFD8 markers and pick the largest embedded JPEG
+                    let ffd8: [UInt8] = [0xFF, 0xD8]
+                    var bestImage: NSImage? = nil
+                    var bestSize = 0
+
+                    for i in 0..<(data.count - 2) {
+                        guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
+                        let end = min(i + 8_000_000, data.count)
+                        let subData = data.subdata(in: i..<end)
+                        if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                           CGImageSourceGetCount(imgSource) > 0 {
+                            // Get full size (no maxPixel limit — we want the biggest embedded JPEG)
+                            let opts: [NSString: Any] = [
+                                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceShouldCacheImmediately: true
+                            ]
+                            if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
+                                let size = cgImage.width * cgImage.height
+                                if size > bestSize {
+                                    bestSize = size
+                                    bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                                }
+                            }
                         }
                     }
+                    hiRes = bestImage
                 }
             }
 
-            // JPG or RAW fallback: CGImageSource at full resolution
+            // JPG: load at full resolution directly
             if hiRes == nil {
                 if let nsImg = NSImage(contentsOf: url) {
                     hiRes = nsImg
