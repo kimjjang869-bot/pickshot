@@ -181,7 +181,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         // MARK: DataSource
 
         func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-            photos.count
+            fputs("[GRID] numberOfItems: \(photos.count)\n", stderr)
+            return photos.count
         }
 
         func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
