@@ -1634,38 +1634,41 @@ struct PhotoPreviewView: View {
 
         // RAW: extract largest embedded JPEG (same color as camera preview, fast)
         // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
-        // Memory-mapped file access (faster than FileHandle for large reads)
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-        let scanLimit = min(data.count, 8_000_000)
+        // Read only first 4MB with FileHandle (not whole file)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let data = handle.readData(ofLength: 4_000_000)
+        handle.closeFile()
 
+        // Find FFD8 markers — return FIRST large JPEG immediately (skip small thumbnails)
         let ffd8: [UInt8] = [0xFF, 0xD8]
-        var bestImage: NSImage? = nil
-        var bestSize = 0
+        let minAcceptSize = 1000  // Skip tiny thumbnails (< 1000px)
 
-        for i in 0..<(scanLimit - 2) {
+        for i in 0..<(data.count - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-            let end = min(i + 6_000_000, data.count)
+            let end = min(i + 3_500_000, data.count)
             let subData = data.subdata(in: i..<end)
-            if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
-               CGImageSourceGetCount(imgSource) > 0 {
-                // SubsampleFactor for fast JPEG decode (decode at 1/2 size = 4x fewer pixels = 4x faster)
-                let opts: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: 3600,
-                    kCGImageSourceSubsampleFactor: 2,  // Decode at half resolution (still sharp enough)
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true
-                ]
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
-                    let size = cgImage.width * cgImage.height
-                    if size > bestSize {
-                        bestSize = size
-                        bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    }
-                }
+            guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                  CGImageSourceGetCount(imgSource) > 0 else { continue }
+
+            // Check size first without decoding
+            let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
+            let w = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+            let h = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+            if max(w, h) < minAcceptSize { continue }  // Skip small thumbnails
+
+            // Decode with SubsampleFactor for speed
+            let opts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: 3600,
+                kCGImageSourceSubsampleFactor: 2,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true
+            ]
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
+                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             }
         }
-        return bestImage
+        return nil
     }
 
     private func reloadCurrentImage() {
