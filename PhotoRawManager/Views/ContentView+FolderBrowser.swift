@@ -988,7 +988,7 @@ enum FolderBrowserHelpers {
         return contents.filter { imageExts.contains($0.pathExtension.lowercased()) }.count
     }
 
-    /// Get disk capacity string (e.g. "450/1 TB")
+    /// Get disk capacity string (e.g. "2.53/4.00 TB")
     static func getDiskCapacity(url: URL) -> String {
         guard let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey]) else { return "" }
         let total = values.volumeTotalCapacity ?? 0
@@ -997,9 +997,9 @@ enum FolderBrowserHelpers {
         let totalGB = Double(total) / 1_000_000_000
         let usedGB = Double(used) / 1_000_000_000
         if totalGB >= 1000 {
-            return String(format: "%.0f/%.0f TB", usedGB / 1000, totalGB / 1000)
+            return String(format: "%.2f/%.2f TB", usedGB / 1000, totalGB / 1000)
         }
-        return String(format: "%.0f/%.0f GB", usedGB, totalGB)
+        return String(format: "%.1f/%.1f GB", usedGB, totalGB)
     }
 }
 
