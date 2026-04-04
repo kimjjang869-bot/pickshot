@@ -911,16 +911,7 @@ struct PhotoPreviewView: View {
             hiResWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
 
-            // If zoomed in, auto-load hi-res after low-res loads
-            let zoomPreset = viewState.zoomPreset
-            let customScale = viewState.customScale
-            if zoomPreset != .fit || customScale > 1.0 {
-                print("🔍 [ZOOM] photo changed while zoomed (preset=\(zoomPreset), scale=\(customScale)) → scheduling hi-res")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    guard self.pendingPhotoID == newID else { return }
-                    self.loadHiResForZoom()
-                }
-            }
+            // Hi-res auto-load is now triggered inside loadImageDirect completion
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1271,6 +1262,10 @@ struct PhotoPreviewView: View {
                     guard self.pendingPhotoID == id else { return }
                     self.image = fast
                     self.lowResImage = fast
+                    // Auto hi-res if zoomed in
+                    if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                        self.loadHiResForZoom()
+                    }
                 }
 
                 // Stage 2: Hi-res for RAW
