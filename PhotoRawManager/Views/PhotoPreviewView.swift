@@ -1634,16 +1634,15 @@ struct PhotoPreviewView: View {
 
         // RAW: extract largest embedded JPEG (same color as camera preview, fast)
         // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
-        // Read only first 4MB with FileHandle (not whole file)
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        let data = handle.readData(ofLength: 4_000_000)
-        handle.closeFile()
+        // mmap whole file (OS handles paging, no actual full read until accessed)
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        let scanLimit = min(data.count, 15_000_000)  // Scan up to 15MB for embedded JPEG
 
         // Find FFD8 markers — return FIRST large JPEG immediately (skip small thumbnails)
         let ffd8: [UInt8] = [0xFF, 0xD8]
         let minAcceptSize = 1000  // Skip tiny thumbnails (< 1000px)
 
-        for i in 0..<(data.count - 2) {
+        for i in 0..<(scanLimit - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
             let end = min(i + 3_500_000, data.count)
             let subData = data.subdata(in: i..<end)
@@ -1656,10 +1655,10 @@ struct PhotoPreviewView: View {
             let h = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
             if max(w, h) < minAcceptSize { continue }  // Skip small thumbnails
 
-            // Decode with SubsampleFactor for speed
+            // Decode at screen resolution (no SubsampleFactor — preserves quality)
+            let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
             let opts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: 3600,
-                kCGImageSourceSubsampleFactor: 2,
+                kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true
