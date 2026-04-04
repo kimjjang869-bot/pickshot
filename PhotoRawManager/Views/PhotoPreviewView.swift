@@ -861,6 +861,7 @@ struct PhotoPreviewView: View {
             isOriginal = true
             rotationAngle = 0
             rotatedImage = nil
+            let wasZoomed = !isFitMode  // Remember if we were zoomed before switching
             hiResImage = nil
             isHiResLoaded = false
             hiResLoadWork?.cancel()
@@ -911,7 +912,13 @@ struct PhotoPreviewView: View {
             hiResWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
 
-            // Debounce above handles all loading — no immediate load needed
+            // If we were zoomed in, auto-load hi-res for the new photo too
+            if wasZoomed {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    guard self.pendingPhotoID == newID else { return }
+                    self.loadHiResForZoom()
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1531,7 +1538,7 @@ struct PhotoPreviewView: View {
                 // instead of CIRAWFilter which produces different colors
                 let handle: FileHandle? = try? FileHandle(forReadingFrom: url)
                 if let handle = handle {
-                    let data = handle.readData(ofLength: 10_000_000)  // Read up to 10MB for large embedded JPEG
+                    let data = handle.readData(ofLength: 6_000_000)  // Read up to 6MB (most embedded JPEGs are < 5MB)
                     handle.closeFile()
 
                     // Find all FFD8 markers and pick the largest embedded JPEG
@@ -1545,8 +1552,9 @@ struct PhotoPreviewView: View {
                         let subData = data.subdata(in: i..<end)
                         if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                            CGImageSourceGetCount(imgSource) > 0 {
-                            // Get full size (no maxPixel limit — we want the biggest embedded JPEG)
+                            // Cap at 4000px for speed (full 8640px takes 2s+, 4000px takes ~0.5s)
                             let opts: [NSString: Any] = [
+                                kCGImageSourceThumbnailMaxPixelSize: 4000,
                                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
                                 kCGImageSourceShouldCacheImmediately: true
