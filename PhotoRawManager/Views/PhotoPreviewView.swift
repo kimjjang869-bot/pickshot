@@ -56,18 +56,16 @@ class PreviewImageCache {
     private let diskCacheDir: URL
 
     init() {
-        // Balanced cache: enough for fast navigation without memory pressure
+        // Conservative cache: prevent memory bloat (each preview ~5-20MB)
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
-            maxEntries = 200
+            maxEntries = 50
         } else if ramGB >= 32 {
-            maxEntries = 120
+            maxEntries = 30
         } else if ramGB >= 16 {
-            maxEntries = 80
-        } else if ramGB >= 8 {
-            maxEntries = 40
-        } else {
             maxEntries = 20
+        } else {
+            maxEntries = 10
         }
 
         // Setup disk cache directory
