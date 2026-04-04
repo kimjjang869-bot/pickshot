@@ -131,6 +131,7 @@ class PhotoStore: ObservableObject {
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
     @Published var showExportSheet = false
+    @Published var exportOpenAsRawConvert = false  // Open export sheet directly in RAW→JPG tab
     @Published var showMatchingSheet = false
     @Published var showShortcutHelp = false
     @Published var showCompare = false

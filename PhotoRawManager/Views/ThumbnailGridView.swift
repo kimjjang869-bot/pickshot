@@ -426,29 +426,10 @@ struct PhotoContextMenu: View {
             Label("내보내기 (\(targetCount)장)", systemImage: "square.and.arrow.up")
         }
 
-        // RAW → JPG conversion
+        // RAW → JPG conversion (opens export sheet in RAW→JPG tab)
         Button(action: {
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.canCreateDirectories = true
-            panel.message = "변환된 JPG를 저장할 폴더를 선택하세요"
-            guard panel.runModal() == .OK, let outputFolder = panel.url else { return }
-
-            let photos = targetIDs.compactMap { id -> PhotoItem? in
-                guard let idx = store._photoIndex[id] else { return nil }
-                return store.photos[idx]
-            }
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = RAWConversionService.batchConvert(
-                    photos: photos, outputFolder: outputFolder,
-                    resolution: .original, quality: .high
-                ) { _, _ in }
-                DispatchQueue.main.async {
-                    store.showToastMessage("🔄 \(result.succeeded)장 JPG 변환 완료")
-                    NSWorkspace.shared.open(outputFolder)
-                }
-            }
+            store.exportOpenAsRawConvert = true
+            store.showExportSheet = true
         }) {
             Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
         }

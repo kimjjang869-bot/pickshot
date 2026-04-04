@@ -4,8 +4,9 @@ struct ExportView: View {
     @EnvironmentObject var store: PhotoStore
     @Environment(\.dismiss) var dismiss
 
-    @State private var exportMode: ExportMode = .rated
+    @State private var exportMode: ExportMode = .selected
     @State private var exportTarget: ExportTarget = .folder
+    @State private var didApplyInitialTarget = false
     @State private var copyResult: CopyResult?
     @State private var isComplete = false
     @State private var jpgFolderName: String = "JPG"
@@ -44,18 +45,32 @@ struct ExportView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("사진 내보내기")
-                .font(.title2)
-                .fontWeight(.semibold)
+        VStack(spacing: 20) {
+            // Header
+            HStack {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 20))
+                    .foregroundColor(.accentColor)
+                Text("사진 내보내기")
+                    .font(.system(size: 20, weight: .bold))
+                Spacer()
+            }
 
-            // Export target
-            Picker("내보내기 방식", selection: $exportTarget) {
+            // Export target tabs
+            HStack(spacing: 0) {
                 ForEach(ExportTarget.allCases, id: \.self) { target in
-                    Text(target.rawValue).tag(target)
+                    Button(action: { exportTarget = target }) {
+                        Text(target.rawValue)
+                            .font(.system(size: 13, weight: exportTarget == target ? .bold : .medium))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(exportTarget == target ? Color.accentColor : Color.gray.opacity(0.15))
+                            .foregroundColor(exportTarget == target ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .pickerStyle(.segmented)
+            .cornerRadius(8)
 
             // RAW → JPG info
             if exportTarget == .rawToJpg {
@@ -136,12 +151,25 @@ struct ExportView: View {
             }
 
             // Export mode picker
-            Picker("내보내기 대상", selection: $exportMode) {
-                ForEach(ExportMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("대상")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(ExportMode.allCases, id: \.self) { mode in
+                        Button(action: { exportMode = mode }) {
+                            Text(mode.rawValue)
+                                .font(.system(size: 12, weight: exportMode == mode ? .bold : .regular))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(exportMode == mode ? Color.green : Color.gray.opacity(0.15))
+                                .foregroundColor(exportMode == mode ? .white : .primary)
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
-            .pickerStyle(.segmented)
 
             // Folder name customization (only for folder export)
             if exportTarget == .folder {
@@ -265,8 +293,15 @@ struct ExportView: View {
                 }
             }
         }
-        .padding(24)
-        .frame(width: 480)
+        .padding(28)
+        .frame(width: 580)
+        .onAppear {
+            if !didApplyInitialTarget && store.exportOpenAsRawConvert {
+                exportTarget = .rawToJpg
+                store.exportOpenAsRawConvert = false
+                didApplyInitialTarget = true
+            }
+        }
     }
 
     private func startConversion() {
