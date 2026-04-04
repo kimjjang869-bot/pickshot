@@ -1288,7 +1288,8 @@ struct PhotoPreviewView: View {
             // Stage 3: Prefetch ±20 images for instant navigation
             DispatchQueue.main.async {
                 guard self.pendingPhotoID == id else { return }
-                self.scheduleSmartPreload(currentID: id, resolution: resolution)
+                // Preload disabled — saves ~2GB memory on large folders
+                // self.scheduleSmartPreload(currentID: id, resolution: resolution)
             }
             } // autoreleasepool
         }

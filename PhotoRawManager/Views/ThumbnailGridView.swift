@@ -856,11 +856,11 @@ class ThumbnailCache {
 
     init() {
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        maxEntries = ramGB >= 16 ? 8000 : (ramGB >= 8 ? 4000 : 1500)
+        maxEntries = ramGB >= 16 ? 3000 : (ramGB >= 8 ? 1500 : 800)
 
         memoryCache.countLimit = maxEntries
-        // Cap thumbnail cache at 500MB (thumbnails are ~40KB each = ~12,000 thumbs)
-        memoryCache.totalCostLimit = 500 * 1024 * 1024  // 500MB max
+        // Cap thumbnail cache at 200MB
+        memoryCache.totalCostLimit = 200 * 1024 * 1024  // 200MB max
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in
