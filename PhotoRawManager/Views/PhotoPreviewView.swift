@@ -862,6 +862,7 @@ struct PhotoPreviewView: View {
             rotationAngle = 0
             rotatedImage = nil
             hiResImage = nil
+            lowResImage = nil  // Release previous hi-res memory
             isHiResLoaded = false
             hiResLoadWork?.cancel()
             viewState.loupeActive = false
@@ -1519,8 +1520,8 @@ struct PhotoPreviewView: View {
 
     private static func initHiResCache() {
         guard !hiResCacheInitialized else { return }
-        hiResCache.countLimit = 20  // Cache ±10 photos
-        hiResCache.totalCostLimit = 1024 * 1024 * 1024 * 2  // 2GB
+        hiResCache.countLimit = 5  // Small cache (hi-res images are large)
+        hiResCache.totalCostLimit = 500 * 1024 * 1024  // 500MB max
         hiResCacheInitialized = true
     }
 
@@ -1580,7 +1581,7 @@ struct PhotoPreviewView: View {
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
-                    self.prefetchHiResNeighbors()
+                    // No prefetch — saves memory (each hi-res is ~50MB)
                 } else {
                     fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
                 }
@@ -1659,7 +1660,10 @@ struct PhotoPreviewView: View {
             // Only decode if this is larger than what we already have
             guard pixels > bestPixels else { continue }
 
+            // Limit to screen resolution to save memory (50MP = 200MB, 3600px = 50MB)
+            let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
             let opts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true
