@@ -1508,21 +1508,35 @@ struct PhotoPreviewView: View {
         hiResLoadWork?.cancel()
         let work = DispatchWorkItem {
             let start = CFAbsoluteTimeGetCurrent()
-            // Load at FULL resolution — use large maxPixel to get actual hi-res
-            // This bypasses the normal 1200px stage1 and loads directly at screen*2 size
-            let targetPx: CGFloat = 5000  // Large enough for most RAW files
-            let sourceOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
             var hiRes: NSImage? = nil
-            if let source = CGImageSourceCreateWithURL(url as CFURL, sourceOpts as CFDictionary) {
-                let thumbOpts: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: targetPx,
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceShouldCache: false
-                ]
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
-                    hiRes = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            let ext = url.pathExtension.lowercased()
+            let isRAW = FileMatchingService.rawExtensions.contains(ext)
+
+            if isRAW {
+                // RAW: use CIRAWFilter for TRUE full-resolution decode (GPU accelerated)
+                if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url) {
+                    rawFilter.boostAmount = 0
+                    rawFilter.isGamutMappingEnabled = true
+                    // Scale to ~4000px for fast hi-res (not full 9504px which is too slow)
+                    let native = rawFilter.nativeSize
+                    let origMax = max(native.width, native.height)
+                    let targetPx: CGFloat = 4000
+                    if origMax > targetPx {
+                        rawFilter.scaleFactor = Float(targetPx / origMax)
+                    }
+                    if let output = rawFilter.outputImage {
+                        let ctx = CIContext(options: [.useSoftwareRenderer: false])
+                        if let cgImage = ctx.createCGImage(output, from: output.extent) {
+                            hiRes = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                        }
+                    }
+                }
+            }
+
+            // JPG or RAW fallback: CGImageSource at full resolution
+            if hiRes == nil {
+                if let nsImg = NSImage(contentsOf: url) {
+                    hiRes = nsImg
                 }
             }
             let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
