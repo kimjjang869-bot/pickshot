@@ -472,8 +472,8 @@ struct PhotoPreviewView: View {
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) { location in
                                 if isFitMode {
-                                    // Zoom to 250% centered on clicked point
-                                    let targetScale: CGFloat = 2.5
+                                    // Zoom to 350% centered on clicked point
+                                    let targetScale: CGFloat = 3.5
                                     viewState.zoomPreset = .p100  // Will be overridden
                                     viewState.customScale = targetScale
                                     // Calculate pan offset so clicked point stays at center
@@ -916,12 +916,8 @@ struct PhotoPreviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
         .onChange(of: viewState.zoomPreset) { newPreset in
-            handleZoomChange(isFit: newPreset == .fit)
-        }
-        .onChange(of: viewState.customScale) { newScale in
-            // If custom scale > 1.0, we're zoomed in → need hi-res
-            if newScale > 1.0 && !isHiResLoaded {
-                loadHiResForZoom()
+            if newPreset == .fit {
+                switchToLowRes()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
