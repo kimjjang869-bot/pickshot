@@ -83,10 +83,16 @@ struct ClaudeVisionService {
         return KeychainService.read(key: keychainKey)
     }
 
+    // Cached to avoid keychain read on every SwiftUI body evaluation
+    private static var _hasAPIKeyCache: Bool?
     static var hasAPIKey: Bool {
-        guard let key = getAPIKey() else { return false }
-        return !key.isEmpty
+        if let cached = _hasAPIKeyCache { return cached }
+        let result: Bool
+        if let key = getAPIKey() { result = !key.isEmpty } else { result = false }
+        _hasAPIKeyCache = result
+        return result
     }
+    static func invalidateAPIKeyCache() { _hasAPIKeyCache = nil }
 
     enum ClaudeVisionError: LocalizedError {
         case noAPIKey, imageLoadFailed, encodingFailed
