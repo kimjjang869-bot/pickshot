@@ -130,6 +130,10 @@ class PhotoStore: ObservableObject {
     var isPreloadingThumbs: Bool { thumbsLoaded < thumbsTotal && thumbsTotal > 0 }
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
+    @Published var conversionProgress: Double = 0
+    @Published var conversionTotal: Int = 0
+    @Published var conversionDone: Int = 0
+    var isConverting: Bool { conversionDone < conversionTotal && conversionTotal > 0 }
     @Published var showExportSheet = false
     @Published var exportOpenAsRawConvert = false  // Open export sheet directly in RAW→JPG tab
     @Published var showMatchingSheet = false

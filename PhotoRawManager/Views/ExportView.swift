@@ -318,6 +318,8 @@ struct ExportView: View {
         isConverting = true
         convProgress = 0
         convResult = nil
+        store.conversionTotal = photos.count
+        store.conversionDone = 0
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = RAWConversionService.batchConvert(
@@ -327,13 +329,17 @@ struct ExportView: View {
                 quality: convQuality
             ) { done, total in
                 convProgress = Double(done) / Double(total)
+                DispatchQueue.main.async {
+                    store.conversionDone = done
+                }
             }
 
             DispatchQueue.main.async {
                 isConverting = false
                 convResult = result
                 convProgress = 1.0
-                // Open output folder in Finder
+                store.conversionTotal = 0
+                store.conversionDone = 0
                 NSWorkspace.shared.open(outputFolder)
             }
         }

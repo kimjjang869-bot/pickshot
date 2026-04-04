@@ -54,7 +54,7 @@ extension ContentView {
 
                 Spacer()
 
-                // Thumbnail progress (before G Select)
+                // Thumbnail progress
                 if store.isPreloadingThumbs {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
@@ -66,6 +66,23 @@ extension ContentView {
                         Text("\(store.thumbsLoaded)/\(store.thumbsTotal)")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundColor(.secondary)
+                    }
+                }
+
+                // RAW→JPG conversion progress
+                if store.isConverting {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                        let progress = store.conversionTotal > 0 ? CGFloat(store.conversionDone) / CGFloat(store.conversionTotal) : 0
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 5)
+                            RoundedRectangle(cornerRadius: 3).fill(Color.orange).frame(width: 60 * progress, height: 5)
+                        }
+                        Text("\(store.conversionDone)/\(store.conversionTotal)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.orange)
                     }
                 }
 
