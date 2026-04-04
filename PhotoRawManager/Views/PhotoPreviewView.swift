@@ -918,7 +918,7 @@ struct PhotoPreviewView: View {
                 self.loadImageDirect(for: capturedURL, id: capturedID)
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: work)  // 20ms — fast preview
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)  // 30ms — fast but debounced
 
             // Hi-res auto-load is now triggered inside loadImageDirect completion
         }
@@ -1220,11 +1220,8 @@ struct PhotoPreviewView: View {
 
         print("📷 [LOAD START] \(fileName) res=\(resolution) pendingID=\(id.uuidString.prefix(8))")
 
-        // Cancel ALL pending loads — only the latest photo matters
-        Self.imageLoadQueue.cancelAllOperations()
-
-        Self.imageLoadQueue.addOperation {
-            autoreleasepool {
+        // Fast concurrent loading — pendingPhotoID handles cancellation
+        DispatchQueue.global(qos: .userInitiated).async {
             guard self.pendingPhotoID == id else { return }
 
             let ext = url.pathExtension.lowercased()
@@ -1301,13 +1298,11 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            // Stage 3: Prefetch ±20 images for instant navigation
+            // Prefetch neighbors for instant navigation
             DispatchQueue.main.async {
                 guard self.pendingPhotoID == id else { return }
-                // Preload disabled — saves ~2GB memory on large folders
-                // self.scheduleSmartPreload(currentID: id, resolution: resolution)
+                self.scheduleSmartPreload(currentID: id, resolution: resolution)
             }
-            } // autoreleasepool
         }
     }
 
