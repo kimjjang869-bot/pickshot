@@ -1,5 +1,6 @@
 import SwiftUI
 
+
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
 
@@ -997,16 +998,14 @@ class ThumbnailLoader {
         pendingCallbacks[url] = [completion]
         lock.unlock()
 
-        // Limit queue depth — cancel oldest if too many pending
-        if queue.operationCount > 30 {
+        // Simple: cancel all if queue building up
+        if queue.operationCount > 2 {
             queue.cancelAllOperations()
-            lock.lock()
-            pendingCallbacks.removeAll()
-            pendingCallbacks[url] = [completion]
-            lock.unlock()
         }
 
-        queue.addOperation { [weak self] in
+        let op = BlockOperation()
+        op.addExecutionBlock { [weak self, weak op] in
+            guard let op = op, !op.isCancelled else { return }
             // For NAS: skip expensive stat on cache miss path — use file path hash only
             // Disk cache uses modDate for invalidation, but for NAS the stat() is ~50-100ms per file
             let isNAS = ThumbnailLoader.shared.isNetworkMode
@@ -1038,7 +1037,8 @@ class ThumbnailLoader {
                 return
             }
 
-            // 3. Extract from file
+            // 3. Extract from file — check cancel before expensive I/O
+            guard !op.isCancelled else { return }
             let thumbStart = CFAbsoluteTimeGetCurrent()
             var image = Self.extractThumbnail(url: url)
             if image == nil && ThumbnailLoader.shared.isSlowDisk {
@@ -1062,16 +1062,17 @@ class ThumbnailLoader {
             let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
             self?.lock.unlock()
 
+            guard !op.isCancelled else { return }
             DispatchQueue.main.async {
                 if let image = image {
                     for cb in callbacks { cb(image) }
                 } else {
-                    // Still call callbacks with placeholder so progress tracking works
                     let placeholder = NSImage(size: NSSize(width: 1, height: 1))
                     for cb in callbacks { cb(placeholder) }
                 }
             }
         }
+        queue.addOperation(op)
     }
 
     private static var thumbSize: Int {
