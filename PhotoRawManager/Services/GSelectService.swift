@@ -21,7 +21,7 @@ class GSelectService: ObservableObject {
     @Published var showSetupSheet: Bool = false
 
     // Google Drive
-    @Published var isLoggedIn: Bool = GoogleDriveService.isLoggedIn
+    @Published var isLoggedIn: Bool = false  // Updated lazily to avoid keychain popup at launch
     @Published var driveFolderID: String? = nil
     @Published var uploadType: GSelectUploadType = .both
     @Published var pendingUploads: Int = 0  // uploads in progress
@@ -58,6 +58,8 @@ class GSelectService: ObservableObject {
 
     /// Show setup sheet before starting G Select
     func requestStartSession() {
+        // Refresh login state (lazy — avoids keychain at launch)
+        isLoggedIn = GoogleDriveService.isLoggedIn
         if !isLoggedIn {
             loginToGoogle()
             return

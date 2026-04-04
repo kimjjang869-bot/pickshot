@@ -12,9 +12,11 @@ struct PhotoRawManagerApp: App {
                 .task {
                     updateService.checkForUpdate(userInitiated: false)
                     PerformanceMonitor.shared.start()
-                    // Initialize Google OAuth credentials from Secrets.xcconfig file
-                    if GoogleDriveService.oauthClientID.isEmpty {
-                        GoogleDriveService.loadSecretsFromConfig()
+                    // Initialize Google OAuth credentials lazily (avoid keychain popup at launch)
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+                        if GoogleDriveService.oauthClientID.isEmpty {
+                            GoogleDriveService.loadSecretsFromConfig()
+                        }
                     }
                 }
         }

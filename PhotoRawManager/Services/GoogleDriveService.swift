@@ -409,9 +409,13 @@ class GoogleDriveService {
 
     // MARK: - OAuth 2.0
 
-    // OAuth credentials loaded from Keychain
-    static let oauthClientID = KeychainService.read(key: "gdrive_client_id") ?? ""
-    static let oauthClientSecret = KeychainService.read(key: "gdrive_client_secret") ?? ""
+    // OAuth credentials loaded lazily (avoids keychain popup at app launch)
+    static var oauthClientID: String {
+        KeychainService.read(key: "gdrive_client_id") ?? ""
+    }
+    static var oauthClientSecret: String {
+        KeychainService.read(key: "gdrive_client_secret") ?? ""
+    }
 
     static func setOAuthCredentials(clientID: String, clientSecret: String) {
         _ = KeychainService.save(key: "gdrive_client_id", value: clientID)
