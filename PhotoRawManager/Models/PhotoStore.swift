@@ -1102,7 +1102,7 @@ class PhotoStore: ObservableObject {
         let interval = now - lastMoveTime
         lastMoveTime = now
 
-        if interval < 0.03 && !shiftKey && !cmdKey {
+        if interval < 0.05 && !shiftKey && !cmdKey {
             // Accumulate offset and debounce
             pendingMoveOffset += offset
             moveThrottleWorkItem?.cancel()
@@ -1112,7 +1112,7 @@ class PhotoStore: ObservableObject {
                 self?.executeMoveSelection(by: totalOffset, shiftKey: false, cmdKey: false)
             }
             moveThrottleWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
             return
         }
 
