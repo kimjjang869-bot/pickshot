@@ -952,8 +952,8 @@ class ThumbnailLoader {
 
     init() {
         // Default for local SSD
-        queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 6)
-        queue.qualityOfService = .utility  // Lower priority — don't compete with UI
+        queue.maxConcurrentOperationCount = 4  // Low — prevent CPU/memory spike
+        queue.qualityOfService = .utility
     }
 
     /// Auto-detect NAS/network volume and increase concurrency
@@ -1070,6 +1070,15 @@ class ThumbnailLoader {
         }
         pendingCallbacks[url] = [completion]
         lock.unlock()
+
+        // Limit queue depth — cancel oldest if too many pending
+        if queue.operationCount > 30 {
+            queue.cancelAllOperations()
+            lock.lock()
+            pendingCallbacks.removeAll()
+            pendingCallbacks[url] = [completion]
+            lock.unlock()
+        }
 
         queue.addOperation { [weak self] in
             // For NAS: skip expensive stat on cache miss path — use file path hash only
