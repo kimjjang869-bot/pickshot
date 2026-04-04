@@ -6,50 +6,53 @@ struct ThumbnailGridView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    if store.filteredPhotos.isEmpty {
-                        VStack(spacing: 8) {
-                            Spacer().frame(height: 80)
-                            Image(systemName: store.folderURL != nil ? "photo.on.rectangle.angled" : "folder")
-                                .font(.system(size: 28))
-                                .foregroundColor(.white.opacity(0.1))
-                            Text(store.folderURL != nil ? "이미지 없음" : "폴더를 선택하세요")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.2))
+            if store.filteredPhotos.isEmpty {
+                emptyStateView
+            } else if store.viewMode == .grid && store.useAppKitGrid {
+                // High-performance NSCollectionView (has its own NSScrollView)
+                NSThumbnailCollectionView()
+                    .environmentObject(store)
+            } else {
+                // Fallback: SwiftUI LazyVGrid / List
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        if store.viewMode == .grid {
+                            gridView
+                        } else {
+                            listView
                         }
-                        .frame(maxWidth: .infinity)
-                    } else if store.viewMode == .grid {
-                        gridView
-                    } else {
-                        listView
+                    }
+                    .scrollIndicators(.visible)
+                    .onChange(of: store.scrollTrigger) { _ in
+                        guard let id = store.selectedPhotoID else { return }
+                        proxy.scrollTo(id, anchor: nil)
                     }
                 }
-                .scrollIndicators(.visible)
-                .onChange(of: store.scrollTrigger) { _ in
-                    guard let id = store.selectedPhotoID else { return }
-                    // anchor: nil → SwiftUI scrolls minimum amount to make item visible
-                    // Only scrolls when item is outside visible area
-                    proxy.scrollTo(id, anchor: nil)
-                }
-            }
-            .onAppear {
-                store.gridWidth = geo.size.width
-                updateActualColumns(width: geo.size.width)
-            }
-            .onChange(of: geo.size.width) { newWidth in
-                store.gridWidth = newWidth
-                updateActualColumns(width: newWidth)
             }
         }
+        .onAppear { updateActualColumns(width: nil) }
     }
 
-    private func updateActualColumns(width: CGFloat) {
+    private var emptyStateView: some View {
+        VStack(spacing: 8) {
+            Spacer().frame(height: 80)
+            Image(systemName: store.folderURL != nil ? "photo.on.rectangle.angled" : "folder")
+                .font(.system(size: 28))
+                .foregroundColor(.white.opacity(0.1))
+            Text(store.folderURL != nil ? "이미지 없음" : "폴더를 선택하세요")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.2))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func updateActualColumns(width: CGFloat?) {
+        let w = width ?? store.gridWidth
         let size = store.thumbnailSize
         let spacing: CGFloat = 12
         // Match GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)
         let cellWidth = size + spacing
-        let cols = max(1, Int(width / cellWidth))
+        let cols = max(1, Int(w / cellWidth))
         if store.actualColumnsPerRow != cols {
             store.actualColumnsPerRow = cols
         }

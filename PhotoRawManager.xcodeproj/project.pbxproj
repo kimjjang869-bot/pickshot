@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
 		61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E4A569DDF734271ED6268 /* UpdateService.swift */; };
+		'A10056' = {isa = PBXBuildFile; fileRef = 'B10056'; };
 		'A10001' = {isa = PBXBuildFile; fileRef = B10001; };
 		'A10002' = {isa = PBXBuildFile; fileRef = B10002; };
 		'A10003' = {isa = PBXBuildFile; fileRef = B10003; };
@@ -89,6 +90,7 @@
 		'B10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
 		'B10007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
 		'B10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGridView.swift; sourceTree = "<group>"; };
+		'B10056' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSThumbnailCollectionView.swift; sourceTree = "<group>"; };
 		'B10009' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
 		'B10010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
 		'B10011' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
@@ -185,6 +187,7 @@
 				CV10004,
 				CV10006,
 				B10008,
+				'B10056',
 				B10009,
 				B10010,
 				B10011,
@@ -368,6 +371,7 @@
 				A10034,
 				61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */,
 				1F05414884699B73642AF15D /* UpdateView.swift in Sources */,
+				'A10056',
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

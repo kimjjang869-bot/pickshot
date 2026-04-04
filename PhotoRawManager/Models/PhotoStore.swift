@@ -110,6 +110,9 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var viewMode: ViewMode = .grid
+    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
+    }
     @Published var thumbnailSize: CGFloat = 120
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
     @Published var qualityFilter: QualityFilter = .all { didSet { _cachedFiltered = nil; _cacheKey = "" } }
