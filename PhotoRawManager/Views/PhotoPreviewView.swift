@@ -468,16 +468,17 @@ struct PhotoPreviewView: View {
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) { location in
                                 if isFitMode {
-                                    // Zoom to 100% centered on clicked point
-                                    viewState.zoomPreset = .p100
-                                    viewState.customScale = 1.0
+                                    // Zoom to 200% centered on clicked point
+                                    let targetScale: CGFloat = 2.0
+                                    viewState.zoomPreset = .p100  // Will be overridden
+                                    viewState.customScale = targetScale
                                     // Calculate pan offset so clicked point stays at center
                                     let displayW = imgW * fitScale
                                     let displayH = imgH * fitScale
                                     let clickRelX = location.x - vSize.width / 2
                                     let clickRelY = location.y - vSize.height / 2
-                                    let newScaledW = imgW * fitScale * 1.0
-                                    let newScaledH = imgH * fitScale * 1.0
+                                    let newScaledW = imgW * fitScale * targetScale
+                                    let newScaledH = imgH * fitScale * targetScale
                                     let panX = -clickRelX * (newScaledW / displayW - 1)
                                     let panY = -clickRelY * (newScaledH / displayH - 1)
                                     let offset = clampPan(
@@ -487,7 +488,7 @@ struct PhotoPreviewView: View {
                                     )
                                     viewState.panOffset = CGPoint(x: offset.x, y: offset.y)
                                     viewState.dragStart = viewState.panOffset
-                                    viewState.magnifyBaseScale = 1.0
+                                    viewState.magnifyBaseScale = targetScale
                                     syncSlider()
                                 } else {
                                     // Reset to fit
