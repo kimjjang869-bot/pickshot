@@ -825,10 +825,9 @@ class PhotoStore: ObservableObject {
                         self?.scrollTrigger += 1
                     }
                 }
-                // Delay thumbnail preload so UI renders first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self?.preloadAllThumbnails()
-                }
+                // Thumbnails load on-demand via AsyncThumbnailView (LazyVGrid)
+                // Preloading ALL thumbnails causes 5GB+ memory spike on large folders
+                // self?.preloadAllThumbnails()
             }
 
             // Phase 2: Read EXIF on-demand only (not upfront)
