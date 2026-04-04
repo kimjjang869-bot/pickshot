@@ -72,55 +72,80 @@ struct ExportView: View {
             }
             .cornerRadius(8)
 
-            // RAW → JPG info
+            // RAW → JPG options
             if exportTarget == .rawToJpg {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Description
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 14))
                             .foregroundColor(.orange)
-                        Text("RAW 파일을 JPG로 변환합니다 (CIRAWFilter GPU 가속)")
-                            .font(.caption)
+                        Text("RAW → JPG 변환")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text("CIRAWFilter GPU 가속")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.15))
+                            .cornerRadius(4)
                     }
 
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
+                    // Resolution + Quality in aligned grid
+                    HStack(spacing: 24) {
+                        HStack(spacing: 8) {
                             Text("해상도")
-                                .font(.caption2).foregroundColor(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .frame(width: 40, alignment: .trailing)
                             Picker("", selection: $convResolution) {
                                 ForEach(RAWConversionService.Resolution.allCases, id: \.self) {
                                     Text($0.rawValue).tag($0)
                                 }
                             }
-                            .frame(width: 120)
+                            .frame(width: 100)
                         }
-                        VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
                             Text("품질")
-                                .font(.caption2).foregroundColor(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .frame(width: 30, alignment: .trailing)
                             Picker("", selection: $convQuality) {
                                 ForEach(RAWConversionService.Quality.allCases, id: \.self) {
                                     Text($0.rawValue).tag($0)
                                 }
                             }
-                            .frame(width: 140)
+                            .frame(width: 130)
                         }
                     }
 
+                    // Progress
                     if isConverting {
-                        ProgressView(value: convProgress)
-                            .progressViewStyle(.linear)
-                        Text("\(Int(convProgress * 100))% 변환 중...")
-                            .font(.caption).foregroundColor(.secondary)
+                        VStack(spacing: 4) {
+                            ProgressView(value: convProgress)
+                                .progressViewStyle(.linear)
+                                .tint(.orange)
+                            Text("\(Int(convProgress * 100))% 변환 중...")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                        }
                     }
 
+                    // Result
                     if let result = convResult {
-                        HStack {
+                        HStack(spacing: 6) {
                             Image(systemName: result.failed == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(result.failed == 0 ? .green : .orange)
-                            Text("\(result.succeeded)장 변환 완료 (\(String(format: "%.1f", result.totalTime))초)")
-                                .font(.caption)
+                            Text("\(result.succeeded)장 변환 완료")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("(\(String(format: "%.1f", result.totalTime))초)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
                             if result.failed > 0 {
-                                Text("(\(result.failed)장 실패)")
-                                    .font(.caption).foregroundColor(.red)
+                                Text("\(result.failed)장 실패")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
                             }
                         }
                     }
