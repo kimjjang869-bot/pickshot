@@ -847,98 +847,25 @@ struct ListRow: View {
 
 class ThumbnailCache {
     static let shared = ThumbnailCache()
-    private var cache: [URL: NSImage] = [:]
-    private let memoryCache = NSCache<NSURL, NSImage>()
-    private let lock = NSLock()
-    private let maxEntries: Int
-    private var accessOrder: [URL] = []
-    private var memoryPressureSource: DispatchSourceMemoryPressure?
+    // NSCache ONLY — auto-evicts under memory pressure (no Dictionary leak!)
+    private let cache = NSCache<NSURL, NSImage>()
 
     init() {
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        maxEntries = ramGB >= 16 ? 3000 : (ramGB >= 8 ? 1500 : 800)
-
-        memoryCache.countLimit = maxEntries
-        // Cap thumbnail cache at 200MB
-        memoryCache.totalCostLimit = 200 * 1024 * 1024  // 200MB max
-
-        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            let event = source.data
-            if event.contains(.critical) {
-                self.removeAll()
-            } else {
-                // .warning: evict 50%
-                self.lock.lock()
-                let removeCount = self.accessOrder.count / 2
-                if removeCount > 0 {
-                    let keysToRemove = Array(self.accessOrder.prefix(removeCount))
-                    self.accessOrder.removeFirst(removeCount)
-                    for key in keysToRemove {
-                        self.cache.removeValue(forKey: key)
-                        self.memoryCache.removeObject(forKey: key as NSURL)
-                    }
-                }
-                self.lock.unlock()
-            }
-        }
-        source.resume()
-        memoryPressureSource = source
+        cache.countLimit = 2000
+        cache.totalCostLimit = 300 * 1024 * 1024  // 300MB max
     }
 
     func get(_ url: URL) -> NSImage? {
-        // L1: NSCache (thread-safe, no lock needed)
-        if let image = memoryCache.object(forKey: url as NSURL) {
-            // Update LRU access order
-            lock.lock()
-            if let idx = accessOrder.firstIndex(of: url) {
-                accessOrder.remove(at: idx)
-                accessOrder.append(url)
-            }
-            lock.unlock()
-            return image
-        }
-        // L2: Dictionary
-        lock.lock()
-        defer { lock.unlock() }
-        if let image = cache[url] {
-            // Promote to L1
-            memoryCache.setObject(image, forKey: url as NSURL)
-            // Update LRU access order
-            if let idx = accessOrder.firstIndex(of: url) {
-                accessOrder.remove(at: idx)
-                accessOrder.append(url)
-            }
-            return image
-        }
-        return nil
+        return cache.object(forKey: url as NSURL)
     }
 
     func set(_ url: URL, image: NSImage) {
-        lock.lock()
-        if cache.count >= maxEntries {
-            // Remove ~20% least recently used
-            let removeCount = maxEntries / 5
-            let keysToRemove = Array(accessOrder.prefix(removeCount))
-            accessOrder.removeFirst(removeCount)
-            for key in keysToRemove {
-                cache.removeValue(forKey: key)
-                memoryCache.removeObject(forKey: key as NSURL)
-            }
-        }
-        cache[url] = image
-        memoryCache.setObject(image, forKey: url as NSURL)
-        accessOrder.append(url)
-        lock.unlock()
+        let cost = Int(image.size.width * image.size.height * 4)  // ~bytes
+        cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
     func removeAll() {
-        lock.lock()
-        cache.removeAll()
-        memoryCache.removeAllObjects()
-        accessOrder.removeAll()
-        lock.unlock()
+        cache.removeAllObjects()
     }
 }
 
