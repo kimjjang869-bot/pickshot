@@ -861,7 +861,6 @@ struct PhotoPreviewView: View {
             isOriginal = true
             rotationAngle = 0
             rotatedImage = nil
-            let wasZoomed = !isFitMode  // Remember if we were zoomed before switching
             hiResImage = nil
             isHiResLoaded = false
             hiResLoadWork?.cancel()
@@ -912,9 +911,12 @@ struct PhotoPreviewView: View {
             hiResWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
 
-            // If we were zoomed in, auto-load hi-res for the new photo too
-            if wasZoomed {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // If zoomed in, auto-load hi-res after low-res loads
+            let zoomPreset = viewState.zoomPreset
+            let customScale = viewState.customScale
+            if zoomPreset != .fit || customScale > 1.0 {
+                print("🔍 [ZOOM] photo changed while zoomed (preset=\(zoomPreset), scale=\(customScale)) → scheduling hi-res")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     guard self.pendingPhotoID == newID else { return }
                     self.loadHiResForZoom()
                 }
