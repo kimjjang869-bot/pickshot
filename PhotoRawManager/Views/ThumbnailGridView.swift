@@ -86,7 +86,7 @@ struct ThumbnailGridView: View {
         let columns = [GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)]
 
         let photos = store.filteredPhotos  // Compute once, not per-cell
-        return LazyVGrid(columns: columns, spacing: 12) {
+        return LazyVGrid(columns: columns, spacing: 10, pinnedViews: []) {
             ForEach(photos) { photo in
                 LazyThumbnailWrapper(
                     photo: photo,

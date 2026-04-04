@@ -197,7 +197,7 @@ struct ContentView: View {
                                                 Image(systemName: "photo")
                                                     .font(.system(size: 8))
                                                     .foregroundColor(AppTheme.textSecondary)
-                                                Slider(value: $store.thumbnailSize, in: 60...250, step: 10)
+                                                Slider(value: $store.thumbnailSize, in: 60...250, step: 20)
                                                     .frame(maxWidth: 120)
                                                     .help("썸네일 크기 조절")
                                                 Image(systemName: "photo")
@@ -242,10 +242,14 @@ struct ContentView: View {
                                 // Horizontal divider handle
                                 DragHandle(axis: .horizontal)
                                     .gesture(
-                                        DragGesture()
+                                        DragGesture(minimumDistance: 5)
                                             .onChanged { value in
+                                                // Throttle: only update every 4px to reduce LazyVGrid relayout
                                                 let newW = store.hSplitPosition + value.translation.width
-                                                store.hSplitPosition = max(200, min(newW, geo.size.width - 300))
+                                                let clamped = max(200, min(newW, geo.size.width - 300))
+                                                if abs(clamped - store.hSplitPosition) >= 4 {
+                                                    store.hSplitPosition = clamped
+                                                }
                                             }
                                     )
 
