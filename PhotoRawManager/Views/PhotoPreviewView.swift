@@ -1635,7 +1635,7 @@ struct PhotoPreviewView: View {
         // RAW: extract largest embedded JPEG (same color as camera preview, fast)
         // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        let data = handle.readData(ofLength: 12_000_000)
+        let data = handle.readData(ofLength: 8_000_000)  // 8MB (most embedded JPEGs start within 1MB)
         handle.closeFile()
 
         let ffd8: [UInt8] = [0xFF, 0xD8]
@@ -1644,11 +1644,14 @@ struct PhotoPreviewView: View {
 
         for i in 0..<(data.count - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-            let end = min(i + 8_000_000, data.count)
+            let end = min(i + 6_000_000, data.count)
             let subData = data.subdata(in: i..<end)
             if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                CGImageSourceGetCount(imgSource) > 0 {
+                // Limit decode size to screen resolution (no need for 50MP, screen is ~3600px max)
+                let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
                 let opts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceShouldCacheImmediately: true
