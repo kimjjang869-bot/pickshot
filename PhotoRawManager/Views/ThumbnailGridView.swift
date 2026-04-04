@@ -989,9 +989,15 @@ class ThumbnailLoader {
             completion(cached)
             return
         }
-        AppLogger.log(.thumbnail, "thumbnail cache MISS: \(url.lastPathComponent)")
+        // 2. Disk cache hit → load synchronously (fast, avoids queue delay on HDD)
+        let modDate = Self.fileModDate(url)
+        if let diskCached = DiskThumbnailCache.shared.get(url: url, modDate: modDate) {
+            ThumbnailCache.shared.set(url, image: diskCached)
+            completion(diskCached)
+            return
+        }
 
-        // Queue callback; if already loading, just add callback
+        // 3. Need to extract from file — queue it
         lock.lock()
         if pendingCallbacks[url] != nil {
             pendingCallbacks[url]?.append(completion)
