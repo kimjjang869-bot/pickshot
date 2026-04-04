@@ -3,9 +3,59 @@ import AppKit
 import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
+import Vision
 
 /// High-speed RAW → JPG batch conversion using CIRAWFilter (GPU) + CGImageDestination (HW JPEG encoder).
 struct RAWConversionService {
+
+    // MARK: - Sharpening
+
+    enum Sharpening: String, CaseIterable {
+        case off = "없음"
+        case light = "약하게"
+        case medium = "보통"
+        case strong = "강하게"
+
+        var radius: Float { switch self { case .off: return 0; case .light: return 1.5; case .medium: return 2.5; case .strong: return 4.0 } }
+        var intensity: Float { switch self { case .off: return 0; case .light: return 0.3; case .medium: return 0.5; case .strong: return 0.8 } }
+    }
+
+    // MARK: - Color Space
+
+    enum OutputColorSpace: String, CaseIterable {
+        case srgb = "sRGB"
+        case displayP3 = "Display P3"
+        case adobeRGB = "Adobe RGB"
+
+        var cgColorSpace: CGColorSpace {
+            switch self {
+            case .srgb: return CGColorSpace(name: CGColorSpace.sRGB)!
+            case .displayP3: return CGColorSpace(name: CGColorSpace.displayP3)!
+            case .adobeRGB: return CGColorSpace(name: CGColorSpace.adobeRGB1998)!
+            }
+        }
+    }
+
+    // MARK: - Filename Pattern
+
+    enum FilenamePattern: String, CaseIterable {
+        case original = "원본 유지"
+        case dateOriginal = "날짜_원본"
+        case prefixNumber = "접두사_번호"
+        case dateTimeNumber = "날짜_시간_번호"
+    }
+
+    // MARK: - Export Options
+
+    struct ExportOptions {
+        var resolution: Resolution = .original
+        var quality: Quality = .high
+        var sharpening: Sharpening = .off
+        var autoHorizon: Bool = false
+        var colorSpace: OutputColorSpace = .srgb
+        var filenamePattern: FilenamePattern = .original
+        var filenamePrefix: String = "Photo"
+    }
 
     enum Resolution: String, CaseIterable {
         case original = "원본"
@@ -61,15 +111,13 @@ struct RAWConversionService {
     static func batchConvert(
         photos: [PhotoItem],
         outputFolder: URL,
-        resolution: Resolution = .original,
-        quality: Quality = .high,
+        options: ExportOptions = ExportOptions(),
         cancelFlag: UnsafeMutablePointer<Bool>? = nil,
         progress: @escaping (Int, Int) -> Void
     ) -> ConversionResult {
         let startTime = CFAbsoluteTimeGetCurrent()
         let rawPhotos = photos.filter { !$0.isFolder && !$0.isParentFolder }
 
-        // Create output folder
         try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
         let total = rawPhotos.count
@@ -78,26 +126,44 @@ struct RAWConversionService {
         var failedFiles: [String] = []
         let lock = NSLock()
 
-        // Optimal concurrency: balance GPU load and I/O
         let cores = ProcessInfo.processInfo.activeProcessorCount
-        let concurrency = min(cores, 8)  // Cap at 8 to avoid VRAM contention
-        print("🔄 [RAW→JPG] Start: \(total) files, concurrency=\(concurrency), res=\(resolution.rawValue), quality=\(quality.rawValue)")
+        let concurrency = min(cores, 8)
+        print("🔄 [RAW→JPG] Start: \(total) files, sharp=\(options.sharpening.rawValue), horizon=\(options.autoHorizon), color=\(options.colorSpace.rawValue)")
+
+        // Pre-generate filenames
+        let dateStr = { () -> String in
+            let f = DateFormatter(); f.dateFormat = "yyyyMMdd"; return f.string(from: Date())
+        }()
+        let timeStr = { () -> String in
+            let f = DateFormatter(); f.dateFormat = "HHmm"; return f.string(from: Date())
+        }()
 
         DispatchQueue.concurrentPerform(iterations: total) { idx in
             autoreleasepool {
-                // Check cancellation
                 if cancelFlag?.pointee == true { return }
 
                 let photo = rawPhotos[idx]
-                let url = photo.rawURL ?? photo.jpgURL  // Prefer RAW, fallback to JPG
-                let outputName = url.deletingPathExtension().lastPathComponent + ".jpg"
+                let url = photo.rawURL ?? photo.jpgURL
+                let baseName = url.deletingPathExtension().lastPathComponent
+
+                // Generate output filename
+                let outputName: String
+                switch options.filenamePattern {
+                case .original:
+                    outputName = baseName + ".jpg"
+                case .dateOriginal:
+                    outputName = "\(dateStr)_\(baseName).jpg"
+                case .prefixNumber:
+                    outputName = "\(options.filenamePrefix)_\(String(format: "%04d", idx + 1)).jpg"
+                case .dateTimeNumber:
+                    outputName = "\(dateStr)_\(timeStr)_\(String(format: "%04d", idx + 1)).jpg"
+                }
                 let outputURL = outputFolder.appendingPathComponent(outputName)
 
                 let success = convertSingle(
                     inputURL: url,
                     outputURL: outputURL,
-                    maxPixel: resolution.maxPixel,
-                    jpegQuality: quality.value
+                    options: options
                 )
 
                 lock.lock()
@@ -126,22 +192,23 @@ struct RAWConversionService {
         return ConversionResult(succeeded: succeeded, failed: failed, totalTime: elapsed, failedFiles: failedFiles)
     }
 
-    /// Convert a single RAW file to JPG
+    /// Convert a single RAW file to JPG with all options
     private static func convertSingle(
         inputURL: URL,
         outputURL: URL,
-        maxPixel: CGFloat?,
-        jpegQuality: CGFloat
+        options: ExportOptions
     ) -> Bool {
+        let maxPixel = options.resolution.maxPixel
+        let jpegQuality = options.quality.value
+
         // Step 1: Load RAW with CIRAWFilter (GPU-accelerated demosaicing)
         let ciImage: CIImage?
 
         if #available(macOS 12.0, *) {
             if let rawFilter = CIRAWFilter(imageURL: inputURL) {
-                rawFilter.boostAmount = 0  // Preserve original look
+                rawFilter.boostAmount = 0
                 rawFilter.isGamutMappingEnabled = true
 
-                // Set scale factor for resize (faster than post-resize)
                 if let maxPx = maxPixel {
                     let props = rawFilter.nativeSize
                     let origMax = max(props.width, props.height)
@@ -152,7 +219,6 @@ struct RAWConversionService {
 
                 ciImage = rawFilter.outputImage
             } else {
-                // Fallback: CIImage direct load
                 ciImage = CIImage(contentsOf: inputURL)
             }
         } else {
@@ -161,7 +227,7 @@ struct RAWConversionService {
 
         guard var output = ciImage else { return false }
 
-        // Step 2: Resize if needed (and CIRAWFilter scaleFactor wasn't used)
+        // Step 2: Resize if needed
         if let maxPx = maxPixel {
             let extent = output.extent
             let origMax = max(extent.width, extent.height)
@@ -171,27 +237,68 @@ struct RAWConversionService {
             }
         }
 
-        // Step 3: Render to CGImage via Metal CIContext
+        // Step 3: Auto Horizon correction
+        if options.autoHorizon {
+            if let corrected = applyAutoHorizon(output) {
+                output = corrected
+            }
+        }
+
+        // Step 4: Sharpening (CIUnsharpMask — GPU accelerated)
+        if options.sharpening != .off {
+            if let sharp = CIFilter(name: "CIUnsharpMask") {
+                sharp.setValue(output, forKey: kCIInputImageKey)
+                sharp.setValue(options.sharpening.radius, forKey: kCIInputRadiusKey)
+                sharp.setValue(options.sharpening.intensity, forKey: kCIInputIntensityKey)
+                if let result = sharp.outputImage {
+                    output = result
+                }
+            }
+        }
+
+        // Step 5: Render to CGImage with target color space
+        let targetColorSpace = options.colorSpace.cgColorSpace
         let extent = output.extent
         guard let cgImage = ciContext.createCGImage(output, from: extent,
                                                      format: .RGBA8,
-                                                     colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) else {
+                                                     colorSpace: targetColorSpace) else {
             return false
         }
 
-        // Step 4: Write JPEG via CGImageDestination (HW-accelerated encoder)
+        // Step 6: Write JPEG via CGImageDestination
         guard let destination = CGImageDestinationCreateWithURL(
             outputURL as CFURL,
             UTType.jpeg.identifier as CFString,
             1, nil
         ) else { return false }
 
-        let options: [CFString: Any] = [
+        let destOptions: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: jpegQuality,
-            kCGImageDestinationOptimizeColorForSharing: true  // sRGB for maximum compatibility
+            kCGImageDestinationOptimizeColorForSharing: options.colorSpace == .srgb
         ]
 
-        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        CGImageDestinationAddImage(destination, cgImage, destOptions as CFDictionary)
         return CGImageDestinationFinalize(destination)
+    }
+
+    // MARK: - Auto Horizon (Vision-based)
+
+    private static func applyAutoHorizon(_ image: CIImage) -> CIImage? {
+        let request = VNDetectHorizonRequest()
+        let handler = VNImageRequestHandler(ciImage: image, options: [:])
+        do {
+            try handler.perform([request])
+        } catch { return nil }
+
+        guard let result = request.results?.first,
+              abs(result.angle) > 0.003 else { return nil }  // Skip if < 0.17°
+
+        let angle = result.angle  // radians
+        let straightened = image.transformed(by: CGAffineTransform(rotationAngle: CGFloat(angle)))
+
+        // Auto-crop to remove black edges from rotation
+        let cropInset = abs(CGFloat(angle)) * max(image.extent.width, image.extent.height) * 0.5
+        let cropped = straightened.extent.insetBy(dx: cropInset, dy: cropInset)
+        return straightened.cropped(to: cropped)
     }
 }

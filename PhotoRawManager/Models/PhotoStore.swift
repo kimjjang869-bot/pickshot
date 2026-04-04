@@ -119,7 +119,7 @@ class PhotoStore: ObservableObject {
     @Published var analysisOptions = AnalysisOptions()
     private var analysisCancel = false
     @Published var folderURL: URL?
-    @Published var hSplitPosition: CGFloat = 420
+    @Published var hSplitPosition: CGFloat = 500
     @Published var vSplitPosition: CGFloat = 950
     @Published var isLoading = false
     @Published var loadingProgress: Double = 0  // 0~1

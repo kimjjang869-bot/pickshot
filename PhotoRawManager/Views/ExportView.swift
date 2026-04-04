@@ -25,8 +25,7 @@ struct ExportView: View {
         case rawToJpg = "RAW → JPG 변환"
     }
 
-    @State private var convResolution: RAWConversionService.Resolution = .original
-    @State private var convQuality: RAWConversionService.Quality = .high
+    @State private var convOptions = RAWConversionService.ExportOptions()
 
     private var photosToExport: [PhotoItem] {
         switch exportMode {
@@ -66,34 +65,52 @@ struct ExportView: View {
             // RAW → JPG options
             if exportTarget == .rawToJpg {
                 VStack(spacing: 10) {
-                    // Resolution + Quality — centered
-                    HStack(spacing: 12) {
+                    // Row 1: Resolution + Quality
+                    HStack(spacing: 10) {
                         Spacer()
-                        Text("해상도")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                        Picker("", selection: $convResolution) {
-                            ForEach(RAWConversionService.Resolution.allCases, id: \.self) {
-                                Text($0.rawValue).tag($0)
-                            }
+                        Text("해상도").font(.system(size: 11)).foregroundColor(.secondary)
+                        Picker("", selection: $convOptions.resolution) {
+                            ForEach(RAWConversionService.Resolution.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }.frame(width: 85)
+                        Text("품질").font(.system(size: 11)).foregroundColor(.secondary)
+                        Picker("", selection: $convOptions.quality) {
+                            ForEach(RAWConversionService.Quality.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }.frame(width: 120)
+                        Text("GPU").font(.system(size: 9, weight: .bold)).foregroundColor(.orange)
+                            .padding(.horizontal, 5).padding(.vertical, 2).background(Color.orange.opacity(0.12)).cornerRadius(3)
+                        Spacer()
+                    }
+
+                    // Row 2: Sharpening + Color Space + Auto Horizon
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Text("샤프닝").font(.system(size: 11)).foregroundColor(.secondary)
+                        Picker("", selection: $convOptions.sharpening) {
+                            ForEach(RAWConversionService.Sharpening.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }.frame(width: 80)
+                        Text("색공간").font(.system(size: 11)).foregroundColor(.secondary)
+                        Picker("", selection: $convOptions.colorSpace) {
+                            ForEach(RAWConversionService.OutputColorSpace.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }.frame(width: 110)
+                        Toggle("수평", isOn: $convOptions.autoHorizon)
+                            .font(.system(size: 11))
+                            .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+
+                    // Row 3: Filename pattern
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Text("파일명").font(.system(size: 11)).foregroundColor(.secondary)
+                        Picker("", selection: $convOptions.filenamePattern) {
+                            ForEach(RAWConversionService.FilenamePattern.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }.frame(width: 120)
+                        if convOptions.filenamePattern == .prefixNumber {
+                            TextField("접두사", text: $convOptions.filenamePrefix)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 100)
+                                .font(.system(size: 11))
                         }
-                        .frame(width: 90)
-                        Text("품질")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                        Picker("", selection: $convQuality) {
-                            ForEach(RAWConversionService.Quality.allCases, id: \.self) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .frame(width: 130)
-                        Text("GPU")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.12))
-                            .cornerRadius(3)
                         Spacer()
                     }
 
@@ -377,8 +394,7 @@ struct ExportView: View {
             let result = RAWConversionService.batchConvert(
                 photos: photos,
                 outputFolder: outputFolder,
-                resolution: convResolution,
-                quality: convQuality,
+                options: convOptions,
                 cancelFlag: &cancelFlag
             ) { done, total in
                 DispatchQueue.main.async {
