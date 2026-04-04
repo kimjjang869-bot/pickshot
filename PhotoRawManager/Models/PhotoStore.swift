@@ -828,10 +828,10 @@ class PhotoStore: ObservableObject {
                         self?.scrollTrigger += 1
                     }
                 }
-                // Thumbnails load on-demand via LazyVGrid + AsyncThumbnailView
-                // Preloading caused CPU 700% + 7GB memory on 1500+ photo folders
-                self?.thumbsTotal = sorted.count
-                self?.thumbsLoaded = sorted.count
+                // Preload thumbnails with slight delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self?.preloadAllThumbnails()
+                }
             }
 
             // Phase 2: Read EXIF on-demand only (not upfront)
@@ -1121,8 +1121,8 @@ class PhotoStore: ObservableObject {
         let interval = now - lastMoveTime
         lastMoveTime = now
 
-        if interval < 0.05 && !shiftKey && !cmdKey {
-            // Accumulate offset and debounce
+        if interval < 0.08 && !shiftKey && !cmdKey {
+            // Accumulate offset and debounce — strong throttle for TourBox
             pendingMoveOffset += offset
             moveThrottleWorkItem?.cancel()
             let totalOffset = pendingMoveOffset
@@ -1131,7 +1131,7 @@ class PhotoStore: ObservableObject {
                 self?.executeMoveSelection(by: totalOffset, shiftKey: false, cmdKey: false)
             }
             moveThrottleWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
             return
         }
 

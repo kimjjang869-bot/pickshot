@@ -918,7 +918,7 @@ struct PhotoPreviewView: View {
                 self.loadImageDirect(for: capturedURL, id: capturedID)
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: work)  // 20ms — fast preview
 
             // Hi-res auto-load is now triggered inside loadImageDirect completion
         }

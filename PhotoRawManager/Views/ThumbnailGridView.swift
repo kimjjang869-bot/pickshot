@@ -882,7 +882,7 @@ class ThumbnailLoader {
 
     init() {
         // Default for local SSD
-        queue.maxConcurrentOperationCount = 2  // Low — prevent CPU/memory spike
+        queue.maxConcurrentOperationCount = 4  // Low — prevent CPU/memory spike
         queue.qualityOfService = .utility
     }
 
