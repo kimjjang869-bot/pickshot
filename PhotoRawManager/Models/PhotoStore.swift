@@ -135,6 +135,20 @@ class PhotoStore: ObservableObject {
     @Published var conversionDone: Int = 0
     @Published var conversionCancelled: Bool = false
     @Published var conversionResult: RAWConversionService.ConversionResult?
+    var conversionStartTime: CFAbsoluteTime = 0
+
+    /// Estimated time remaining for conversion
+    var conversionETA: String {
+        guard conversionDone > 0, conversionTotal > conversionDone else { return "" }
+        let elapsed = CFAbsoluteTimeGetCurrent() - conversionStartTime
+        let rate = Double(conversionDone) / elapsed
+        let remaining = Double(conversionTotal - conversionDone) / rate
+        if remaining < 60 {
+            return "\(Int(remaining))초 남음"
+        } else {
+            return "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초 남음"
+        }
+    }
     var isConverting: Bool { conversionDone < conversionTotal && conversionTotal > 0 && !conversionCancelled }
     @Published var showExportSheet = false
     @Published var exportOpenAsRawConvert = false  // Open export sheet directly in RAW→JPG tab

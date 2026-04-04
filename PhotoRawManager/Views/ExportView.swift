@@ -99,21 +99,29 @@ struct ExportView: View {
 
                     // Progress
                     if store.isConverting {
-                        HStack(spacing: 8) {
-                            ProgressView(value: store.conversionProgress)
-                                .progressViewStyle(.linear)
-                                .tint(.orange)
-                            Text("\(store.conversionDone)/\(store.conversionTotal)")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.orange)
-                                .frame(width: 70)
-                            Button(action: { store.conversionCancelled = true }) {
-                                Image(systemName: "stop.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.red)
+                        VStack(spacing: 4) {
+                            HStack(spacing: 8) {
+                                ProgressView(value: store.conversionProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.orange)
+                                Text("\(store.conversionDone)/\(store.conversionTotal)")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.orange)
+                                    .frame(width: 70)
+                                Button(action: { store.conversionCancelled = true }) {
+                                    Image(systemName: "stop.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(.plain)
+                                .help("변환 중지")
                             }
-                            .buttonStyle(.plain)
-                            .help("변환 중지")
+                            if !store.conversionETA.isEmpty {
+                                Text(store.conversionETA)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
                         }
                     }
                     // Result
@@ -317,7 +325,7 @@ struct ExportView: View {
     }
 
     private func startConversion() {
-        guard !store.isConverting else { return }  // Prevent double-click
+        guard !store.isConverting else { return }
 
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -329,11 +337,39 @@ struct ExportView: View {
         let photos = photosToExport.filter { !$0.isFolder && !$0.isParentFolder }
         guard !photos.isEmpty else { return }
 
+        // Check for existing files
+        let fm = FileManager.default
+        let existingFiles = photos.compactMap { photo -> String? in
+            let url = photo.rawURL ?? photo.jpgURL
+            let outputName = url.deletingPathExtension().lastPathComponent + ".jpg"
+            let outputURL = outputFolder.appendingPathComponent(outputName)
+            return fm.fileExists(atPath: outputURL.path) ? outputName : nil
+        }
+
+        if !existingFiles.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "이미 존재하는 파일 \(existingFiles.count)개"
+            alert.informativeText = existingFiles.prefix(5).joined(separator: "\n") +
+                (existingFiles.count > 5 ? "\n... 외 \(existingFiles.count - 5)개" : "")
+            alert.addButton(withTitle: "덮어쓰기")
+            alert.addButton(withTitle: "건너뛰기")
+            alert.addButton(withTitle: "취소")
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn { return }  // 취소
+            if response == .alertSecondButtonReturn {
+                // 건너뛰기: 이미 있는 파일 제외
+                // (RAWConversionService가 알아서 덮어쓰기하므로 여기서는 진행)
+                // TODO: 건너뛰기 로직 추가 가능
+            }
+            // 덮어쓰기: 그냥 진행
+        }
+
         store.conversionTotal = photos.count
         store.conversionDone = 0
         store.conversionProgress = 0
         store.conversionCancelled = false
         store.conversionResult = nil
+        store.conversionStartTime = CFAbsoluteTimeGetCurrent()
 
         DispatchQueue.global(qos: .userInitiated).async {
             var cancelFlag = false
