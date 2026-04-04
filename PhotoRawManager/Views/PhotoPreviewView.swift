@@ -399,7 +399,12 @@ struct PhotoPreviewView: View {
     @State private var hiResWorkItem: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
 
-    private static let imageLoadQueue = DispatchQueue(label: "com.pickshot.preview.load", qos: .userInitiated)
+    private static let imageLoadQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 1
+        q.qualityOfService = .userInitiated
+        return q
+    }()
     private var isFitMode: Bool { viewState.zoomPreset == .fit }
 
     var body: some View {
@@ -1215,8 +1220,10 @@ struct PhotoPreviewView: View {
 
         print("📷 [LOAD START] \(fileName) res=\(resolution) pendingID=\(id.uuidString.prefix(8))")
 
-        // Serial queue: only 1 image loads at a time (prevents memory spike)
-        Self.imageLoadQueue.async {
+        // Cancel ALL pending loads — only the latest photo matters
+        Self.imageLoadQueue.cancelAllOperations()
+
+        Self.imageLoadQueue.addOperation {
             autoreleasepool {
             guard self.pendingPhotoID == id else { return }
 
