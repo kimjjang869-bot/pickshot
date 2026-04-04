@@ -68,8 +68,8 @@ extension ContentView {
                             .foregroundColor(.green)
                         if !store.thumbsETA.isEmpty {
                             Text(store.thumbsETA)
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
                         }
                     }
                 }
@@ -90,8 +90,8 @@ extension ContentView {
                             .foregroundColor(.orange)
                         if !store.conversionETA.isEmpty {
                             Text(store.conversionETA)
-                                .font(.system(size: 8))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
                         }
                         Button(action: { store.conversionCancelled = true }) {
                             Image(systemName: "stop.fill")
