@@ -1279,26 +1279,26 @@ struct PhotoPreviewView: View {
                     }
                 }
 
-                // Stage 2: Hi-res for RAW
-                let rawHiResPx: CGFloat = 3600  // Higher for sharp zoom
-                if optimalPx > 1200 {
-                    guard self.pendingPhotoID == id else { return }
-                    let targetPx = resolution > 0 ? optimalPx : rawHiResPx
-                    var hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+                // Stage 2: Load largest embedded JPEG (for sharp zoom without extra loading)
+                guard self.pendingPhotoID == id else { return }
+                if let hiRes = Self.loadHiResImage(url: url) {
                     // Fix orientation
-                    if let hr = hiRes, let stable = self.viewState.stableImageSize {
+                    var finalHiRes = hiRes
+                    if let stable = self.viewState.stableImageSize {
                         let stableIsPortrait = stable.height > stable.width
-                        let hrIsPortrait = hr.size.height > hr.size.width
-                        if stableIsPortrait != hrIsPortrait {
-                            hiRes = Self.applyOrientation(hr, orientation: 6)
+                        let hiIsPortrait = hiRes.size.height > hiRes.size.width
+                        if stableIsPortrait != hiIsPortrait {
+                            finalHiRes = Self.applyOrientation(hiRes, orientation: 6)
                         }
                     }
-                    guard let hr = hiRes, self.pendingPhotoID == id else { return }
-                    PreviewImageCache.shared.set(cacheKey, image: hr)
+                    guard self.pendingPhotoID == id else { return }
+                    PreviewImageCache.shared.set(cacheKey, image: finalHiRes)
                     DispatchQueue.main.async {
                         if self.pendingPhotoID == id {
-                            self.image = hr
-                            self.lowResImage = hr
+                            self.image = finalHiRes
+                            self.lowResImage = finalHiRes
+                            self.hiResImage = finalHiRes  // Already hi-res!
+                            self.isHiResLoaded = true
                         }
                     }
                 } else {
