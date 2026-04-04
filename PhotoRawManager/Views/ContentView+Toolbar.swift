@@ -103,38 +103,32 @@ extension ContentView {
                 }
 
                 if !store.photos.isEmpty {
-                    // Matching button
-                    Button(action: { store.showMatchingSheet = true }) {
-                        Label("매칭", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.purple)
-                    .help("파일명/JPG/AI 매칭 셀렉")
-
-                    // G Select button
-                    gSelectButton
-
-                    Button(action: { store.showExportSheet = true }) {
-                        Label("내보내기", systemImage: "square.and.arrow.up")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(AppTheme.warning)
-                    .help("선택한 사진 내보내기 (Cmd+E)")
-
-                    // Analysis stop button (only visible when analyzing)
-                    if store.isAnalyzing {
-                        Button(action: { store.stopAnalysis() }) {
-                            Label("분석 중지", systemImage: "stop.fill")
-                                .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    // Right-side action group: consistent compact buttons
+                    HStack(spacing: 6) {
+                        // Matching button
+                        Button(action: { store.showMatchingSheet = true }) {
+                            Label("매칭", systemImage: "arrow.triangle.2.circlepath")
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(AppTheme.error)
-                        .help("품질 분석 중지")
+                        .buttonStyle(SecondaryButtonStyle(isCompact: true))
+                        .help("파일명/JPG/AI 매칭 셀렉")
+
+                        // G Select button
+                        gSelectButton
+
+                        Button(action: { store.showExportSheet = true }) {
+                            Label("내보내기", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(SecondaryButtonStyle(isCompact: true))
+                        .help("선택한 사진 내보내기 (Cmd+E)")
+
+                        // Analysis stop button (only visible when analyzing)
+                        if store.isAnalyzing {
+                            Button(action: { store.stopAnalysis() }) {
+                                Label("분석 중지", systemImage: "stop.fill")
+                            }
+                            .buttonStyle(DestructiveButtonStyle())
+                            .help("품질 분석 중지")
+                        }
                     }
                 }
 
@@ -148,7 +142,7 @@ extension ContentView {
 
             // === Row 2: Filters ===
             if !store.photos.isEmpty {
-                Divider()
+                Divider().opacity(0.3)
                 HStack(spacing: 6) {
                     // Sort menu
                     Menu {
@@ -162,36 +156,36 @@ extension ContentView {
                             }
                         }
                     } label: {
-                        toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
+                        filterChip(icon: store.sortMode.icon, text: store.sortMode.rawValue, active: false)
                     }
                     .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
-                    Divider().frame(height: 16).opacity(0.2)
+                    Divider().frame(height: 16).opacity(0.15)
 
-                    // Star filter - pill-shaped buttons
-                    HStack(spacing: 2) {
+                    // Star filter - compact pill-shaped buttons
+                    HStack(spacing: 1) {
                         ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
                             Button(action: { store.minimumRatingFilter = rating }) {
                                 Group {
                                     if rating == 0 {
                                         Text("All")
-                                            .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                            .font(.system(size: AppTheme.fontMicro, weight: .semibold))
                                     } else {
                                         HStack(spacing: 1) {
                                             Image(systemName: "star.fill")
-                                                .font(.system(size: 8))
+                                                .font(.system(size: 7))
                                             Text("\(rating)")
-                                                .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                                .font(.system(size: AppTheme.fontMicro, weight: .semibold))
                                         }
                                     }
                                 }
-                                .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
+                                .frame(width: 24, height: 22)
                             }
                             .buttonStyle(.plain)
-                            .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? .primary : AppTheme.starGold))
+                            .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? AppTheme.textSecondary : AppTheme.starGold))
                             .background(
                                 store.minimumRatingFilter == rating
-                                    ? AppTheme.starGold.opacity(0.85)
+                                    ? AppTheme.accent
                                     : AppTheme.toolbarButtonBg
                             )
                             .clipShape(Capsule())
@@ -199,20 +193,20 @@ extension ContentView {
                         }
                     }
 
-                    // SP (Space Pick) filter button - pill-shaped
+                    // SP (Space Pick) filter button - compact pill
                     Button(action: {
                         store.qualityFilter = store.qualityFilter == .spacePick ? .all : .spacePick
                     }) {
                         HStack(spacing: 2) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 9))
+                                .font(.system(size: 8))
                             Text("SP")
                                 .font(.system(size: AppTheme.fontMicro, weight: .black))
                         }
-                        .frame(height: AppTheme.pillSize)
+                        .frame(height: 22)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 5)
                     .foregroundColor(store.qualityFilter == .spacePick ? .white : AppTheme.error)
                     .background(
                         store.qualityFilter == .spacePick
@@ -222,41 +216,41 @@ extension ContentView {
                     .clipShape(Capsule())
                     .help("스페이스 셀렉 필터 (Space키로 선택, \(store.spacePickedCount)장)")
 
-                    Divider().frame(height: 16).opacity(0.2)
+                    Divider().frame(height: 16).opacity(0.15)
 
                     // Search bar
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 10))
+                            .font(.system(size: 9))
                             .foregroundColor(.secondary)
                         TextField("파일명 검색", text: $store.searchText)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 11))
-                            .frame(width: 120)
+                            .font(.system(size: AppTheme.fontCaption))
+                            .frame(width: 100)
                         if !store.searchText.isEmpty {
                             Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, 3)
                                 .padding(.vertical, 1)
-                                .background(Color.accentColor.opacity(0.8))
+                                .background(AppTheme.accent.opacity(0.85))
                                 .clipShape(Capsule())
                             Button(action: { store.searchText = "" }) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
                     .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
 
                     Spacer(minLength: 0)
 
-                    Divider().frame(height: 16).opacity(0.2)
+                    Divider().frame(height: 16).opacity(0.15)
 
                     // Quality filter
                     qualityFilterMenu
@@ -270,7 +264,7 @@ extension ContentView {
                     // AI Smart Classification
                     aiClassifyMenu
 
-                    Divider().frame(height: 16).opacity(0.2)
+                    Divider().frame(height: 16).opacity(0.15)
 
                     // Color label menu
                     Menu {
@@ -291,100 +285,66 @@ extension ContentView {
                             }
                         }
                     } label: {
-                        toolbarButton(icon: "tag.fill", text: "라벨", color: .teal, active: false)
+                        filterChip(icon: "tag.fill", text: "라벨", active: false)
                     }
                     .help("색상 라벨 지정")
 
                     // Batch rename button
                     Button(action: { store.showBatchRename = true }) {
-                        toolbarButton(icon: "pencil.line", text: "이름 변경", color: .mint, active: false)
+                        filterChip(icon: "pencil.line", text: "이름 변경", active: false)
                     }
                     .buttonStyle(.plain)
                     .help("파일 이름 일괄 변경 (날짜/번호 패턴)")
 
-                    Divider().frame(height: 16).opacity(0.2)
+                    Divider().frame(height: 16).opacity(0.15)
 
                     // Layout mode toggle
                     Button(action: {
                         let newMode: LayoutMode = store.layoutMode == .gridPreview ? .filmstrip : .gridPreview
                         store.setLayoutMode(newMode)
                     }) {
-                        toolbarButton(
+                        filterChip(
                             icon: store.layoutMode.icon,
                             text: store.layoutMode == .filmstrip ? "필름스트립" : "그리드",
-                            color: .indigo,
                             active: store.layoutMode == .filmstrip
                         )
                     }
                     .buttonStyle(.plain)
                     .help("레이아웃 모드 전환 (그리드+미리보기 / 필름스트립)")
 
-                    // Compare button
-                    Button(action: {
-                        if store.selectionCount >= 2 && store.selectionCount <= 4 {
-                            store.showCompare = true
-                        } else {
-                            DisabledGuide.showCompareDisabled(currentCount: store.selectionCount)
+                    // Icon-only utility buttons group
+                    HStack(spacing: 2) {
+                        // Compare button
+                        iconButton(icon: "square.split.2x1", enabled: store.selectionCount >= 2 && store.selectionCount <= 4) {
+                            if store.selectionCount >= 2 && store.selectionCount <= 4 {
+                                store.showCompare = true
+                            } else {
+                                DisabledGuide.showCompareDisabled(currentCount: store.selectionCount)
+                            }
                         }
-                    }) {
-                        Image(systemName: "square.split.2x1")
-                            .font(.system(size: AppTheme.iconSmall))
-                            .opacity(store.selectionCount >= 2 && store.selectionCount <= 4 ? 1 : 0.4)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("비교 보기 - 2~4장 선택 후 나란히 비교")
+                        .help("비교 보기 - 2~4장 선택 후 나란히 비교")
 
-                    // Map button
-                    Button(action: { store.showMap = true }) {
-                        Image(systemName: "map")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("GPS 지도 보기")
+                        // Map button
+                        iconButton(icon: "map") { store.showMap = true }
+                            .help("GPS 지도 보기")
 
-                    // Slideshow button
-                    Button(action: { store.showSlideshow = true }) {
-                        Image(systemName: "play.rectangle")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("슬라이드쇼 자동 재생 시작")
+                        // Slideshow button
+                        iconButton(icon: "play.rectangle") { store.showSlideshow = true }
+                            .help("슬라이드쇼 자동 재생 시작")
 
-                    // Theme toggle button
-                    Button(action: { store.isDarkMode.toggle() }) {
-                        Image(systemName: store.isDarkMode ? "sun.max" : "moon")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help(store.isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환")
+                        // Theme toggle button
+                        iconButton(icon: store.isDarkMode ? "sun.max" : "moon") { store.isDarkMode.toggle() }
+                            .help(store.isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환")
 
-                    // Help button
-                    Button(action: { store.showShortcutHelp = true }) {
-                        Image(systemName: "questionmark.circle")
-                            .font(.system(size: AppTheme.iconSmall))
+                        // Help button
+                        iconButton(icon: "questionmark.circle") { store.showShortcutHelp = true }
+                            .help("단축키 안내 보기 (Cmd+?)")
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("단축키 안내 보기 (Cmd+?)")
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // end Row 2
                 .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
             }
         }
     }
@@ -413,10 +373,9 @@ extension ContentView {
                 Label("품질 분석 실행...", systemImage: "wand.and.stars")
             }
         } label: {
-            toolbarButton(
+            filterChip(
                 icon: store.qualityFilter == .aiPick ? "sparkles" : "wand.and.stars",
                 text: store.qualityFilter == .all ? "품질" : store.qualityFilter.rawValue,
-                color: .purple,
                 active: store.qualityFilter != .all
             )
         }
@@ -455,10 +414,9 @@ extension ContentView {
                 }
                 .disabled(store.isClassifyingScenes)
             } label: {
-                toolbarButton(
+                filterChip(
                     icon: "eye.fill",
                     text: store.sceneTagFilter ?? "장면",
-                    color: .cyan,
                     active: store.sceneTagFilter != nil
                 )
             }
@@ -525,10 +483,9 @@ extension ContentView {
                 }
                 .disabled(store.isGroupingFaces)
             } label: {
-                toolbarButton(
+                filterChip(
                     icon: "person.2.fill",
                     text: store.faceGroupFilter != nil ? "인물 \((store.faceGroupFilter ?? 0) + 1)" : "인물",
-                    color: .orange,
                     active: store.faceGroupFilter != nil
                 )
             }
@@ -724,10 +681,9 @@ extension ContentView {
                           systemImage: "sparkles")
                 }
             } label: {
-                toolbarButton(
+                filterChip(
                     icon: "sparkles",
                     text: store.aiCategoryFilter != nil ? (store.aiCategoryFilter?.replacingOccurrences(of: "__usability__", with: "") ?? "AI") : "AI 분류",
-                    color: .purple,
                     active: store.aiCategoryFilter != nil
                 )
             }
@@ -772,20 +728,41 @@ extension ContentView {
         }
     }
 
-    // MARK: - Toolbar Button Helper
+    // MARK: - Toolbar Button Helpers
 
+    /// Legacy toolbar button (kept for backward compat)
     func toolbarButton(icon: String, text: String, color: Color, active: Bool) -> some View {
-        HStack(spacing: 4) {
+        filterChip(icon: icon, text: text, active: active, activeColor: color)
+    }
+
+    /// Compact filter chip for Row 2 — consistent height, font, and color scheme.
+    /// Active: accent-colored bg + white text. Inactive: subtle gray bg + secondary text.
+    func filterChip(icon: String, text: String, active: Bool, activeColor: Color = AppTheme.accent) -> some View {
+        HStack(spacing: 3) {
             Image(systemName: icon)
                 .font(.system(size: AppTheme.iconSmall))
             Text(text)
-                .font(.system(size: AppTheme.fontBody, weight: .medium))
+                .font(.system(size: AppTheme.fontCaption, weight: .medium))
+                .lineLimit(1)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .frame(height: AppTheme.buttonHeight)
-        .foregroundColor(active ? .white : color)
-        .background(active ? color : AppTheme.toolbarButtonBg)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .foregroundColor(active ? .white : AppTheme.textSecondary)
+        .background(active ? activeColor : AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
+    }
+
+    /// Small icon-only button for utility actions in Row 2.
+    func iconButton(icon: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: AppTheme.iconSmall))
+                .opacity(enabled ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+        .background(AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
     }
 
     // MARK: - Drag & Drop
