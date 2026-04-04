@@ -1468,8 +1468,10 @@ struct PhotoPreviewView: View {
 
     private func handleZoomChange(isFit: Bool) {
         if isFit {
+            print("🔍 [ZOOM] → fit: switching to low-res")
             switchToLowRes()
         } else if !isHiResLoaded {
+            print("🔍 [ZOOM] → zoomed: loading hi-res")
             loadHiResForZoom()
         }
     }
@@ -1479,13 +1481,17 @@ struct PhotoPreviewView: View {
         if let low = lowResImage {
             image = low
             isHiResLoaded = false
+            print("🔍 [ZOOM] low-res restored: \(Int(low.size.width))x\(Int(low.size.height))")
         }
     }
 
     private func loadHiResForZoom() {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
-        guard !isHiResLoaded else { return }
+        guard !isHiResLoaded else {
+            print("🔍 [ZOOM] hi-res already loaded")
+            return
+        }
 
         // If already have hi-res cached, use immediately
         if let hi = hiResImage {
@@ -1494,14 +1500,36 @@ struct PhotoPreviewView: View {
             return
         }
 
-        let url = selected.jpgURL
+        // Use RAW URL if available (better quality), otherwise JPG
+        let url = selected.rawURL ?? selected.jpgURL
         let photoID = selected.id
+        print("🔍 [ZOOM] loading hi-res for \(url.lastPathComponent)...")
 
         hiResLoadWork?.cancel()
         let work = DispatchWorkItem {
-            // Load at full resolution (or very large: 4000px for speed)
-            let hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: 4000)
-            guard self.pendingPhotoID == photoID else { return }
+            let start = CFAbsoluteTimeGetCurrent()
+            // Load at FULL resolution — use large maxPixel to get actual hi-res
+            // This bypasses the normal 1200px stage1 and loads directly at screen*2 size
+            let targetPx: CGFloat = 5000  // Large enough for most RAW files
+            let sourceOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+            var hiRes: NSImage? = nil
+            if let source = CGImageSourceCreateWithURL(url as CFURL, sourceOpts as CFDictionary) {
+                let thumbOpts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: targetPx,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCache: false
+                ]
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
+                    hiRes = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                }
+            }
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            guard self.pendingPhotoID == photoID else {
+                print("🔍 [ZOOM] hi-res cancelled (photo changed)")
+                return
+            }
 
             DispatchQueue.main.async {
                 guard self.pendingPhotoID == photoID else { return }
@@ -1509,6 +1537,9 @@ struct PhotoPreviewView: View {
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
+                    print("🔍 [ZOOM] hi-res loaded: \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms")
+                } else {
+                    print("🔍 [ZOOM] hi-res FAILED for \(url.lastPathComponent)")
                 }
             }
         }
