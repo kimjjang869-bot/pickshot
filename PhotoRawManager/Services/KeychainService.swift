@@ -26,11 +26,17 @@ struct KeychainService {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
         ]
         let status = SecItemAdd(addQuery as CFDictionary, nil)
+        cache[key] = value  // Update cache
         return status == errSecSuccess
     }
 
-    /// Read a string value from Keychain
+    // In-memory cache to avoid repeated Keychain reads (which block main thread)
+    private static var cache: [String: String?] = [:]
+
+    /// Read a string value from Keychain (cached after first read)
     static func read(key: String) -> String? {
+        if let cached = cache[key] { return cached }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -40,8 +46,14 @@ struct KeychainService {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let value: String?
+        if status == errSecSuccess, let data = result as? Data {
+            value = String(data: data, encoding: .utf8)
+        } else {
+            value = nil
+        }
+        cache[key] = value
+        return value
     }
 
     /// Delete a value from Keychain
@@ -52,6 +64,7 @@ struct KeychainService {
             kSecAttrAccount as String: key
         ]
         let status = SecItemDelete(query as CFDictionary)
+        cache.removeValue(forKey: key)  // Invalidate cache
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
