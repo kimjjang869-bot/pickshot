@@ -1538,7 +1538,7 @@ struct PhotoPreviewView: View {
                 // instead of CIRAWFilter which produces different colors
                 let handle: FileHandle? = try? FileHandle(forReadingFrom: url)
                 if let handle = handle {
-                    let data = handle.readData(ofLength: 6_000_000)  // Read up to 6MB (most embedded JPEGs are < 5MB)
+                    let data = handle.readData(ofLength: 20_000_000)  // Read up to 20MB for full-size embedded JPEG
                     handle.closeFile()
 
                     // Find all FFD8 markers and pick the largest embedded JPEG
@@ -1552,9 +1552,8 @@ struct PhotoPreviewView: View {
                         let subData = data.subdata(in: i..<end)
                         if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                            CGImageSourceGetCount(imgSource) > 0 {
-                            // Cap at 4000px for speed (full 8640px takes 2s+, 4000px takes ~0.5s)
+                            // Full resolution — no size limit for true pixel-peeping
                             let opts: [NSString: Any] = [
-                                kCGImageSourceThumbnailMaxPixelSize: 4000,
                                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
                                 kCGImageSourceShouldCacheImmediately: true
