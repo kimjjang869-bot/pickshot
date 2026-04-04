@@ -65,14 +65,25 @@ struct ExifInfoView: View {
         .onChange(of: photo.id) { _ in loadExif() }
     }
 
+    private static let exifQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 1
+        q.qualityOfService = .userInitiated
+        return q
+    }()
+
     /// Load EXIF independently — does NOT touch photos array
     private func loadExif() {
         let jpgURL = photo.jpgURL
         let rawURL = photo.rawURL
+        let photoID = photo.id
         let rawExts: Set<String> = ["arw","cr2","cr3","nef","nrw","raf","dng","orf","rw2","pef","srw","3fr","nefx"]
         let isRaw = rawExts.contains(jpgURL.pathExtension.lowercased())
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Cancel previous EXIF loads — only latest photo matters
+        Self.exifQueue.cancelAllOperations()
+
+        Self.exifQueue.addOperation {
             var exif = ExifService.extractExif(from: jpgURL)
             if exif == nil || (exif?.cameraModel == nil && isRaw), let rawURL = rawURL {
                 let re = ExifService.extractExif(from: rawURL)
