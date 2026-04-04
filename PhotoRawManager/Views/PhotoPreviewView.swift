@@ -893,30 +893,14 @@ struct PhotoPreviewView: View {
                 return
             }
 
-            // Fast path: show thumbnail instantly while loading
-            let previewKey = url.appendingPathExtension("orig")
-            if let cached = PreviewImageCache.shared.get(previewKey) {
-                image = cached
-                lowResImage = cached
-            } else if let thumb = ThumbnailCache.shared.get(url) {
+            // Show thumbnail instantly while full image loads
+            if let thumb = ThumbnailCache.shared.get(url) {
                 image = thumb
-                lowResImage = thumb
             }
 
-            // Debounce: wait 40ms before starting expensive RAW load
-            // If another photo change comes within 40ms, this load is cancelled
-            hiResWorkItem?.cancel()
-            let capturedID = newID
-            let capturedURL = url
-            let work = DispatchWorkItem {
-                guard self.pendingPhotoID == capturedID else { return }
-                self.viewState.stableImageSize = Self.readImageDimensions(url: capturedURL)
-                self.loadImageDirect(for: capturedURL, id: capturedID)
-            }
-            hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)  // 30ms — fast but debounced
-
-            // Hi-res auto-load is now triggered inside loadImageDirect completion
+            // Load immediately — no debounce (fastest response)
+            viewState.stableImageSize = Self.readImageDimensions(url: url)
+            loadImageDirect(for: url, id: newID)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }

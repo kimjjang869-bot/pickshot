@@ -1116,26 +1116,6 @@ class PhotoStore: ObservableObject {
         let list = filteredPhotos
         guard !list.isEmpty else { return }
 
-        // Throttle: if keys come faster than 30ms apart, batch them
-        let now = CFAbsoluteTimeGetCurrent()
-        let interval = now - lastMoveTime
-        lastMoveTime = now
-
-        if interval < 0.08 && !shiftKey && !cmdKey {
-            // Accumulate offset and debounce — strong throttle for TourBox
-            pendingMoveOffset += offset
-            moveThrottleWorkItem?.cancel()
-            let totalOffset = pendingMoveOffset
-            let work = DispatchWorkItem { [weak self] in
-                self?.pendingMoveOffset = 0
-                self?.executeMoveSelection(by: totalOffset, shiftKey: false, cmdKey: false)
-            }
-            moveThrottleWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
-            return
-        }
-
-        pendingMoveOffset = 0
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
     }
 
