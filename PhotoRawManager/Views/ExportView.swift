@@ -21,7 +21,14 @@ struct ExportView: View {
     enum ExportTarget: String, CaseIterable {
         case folder = "폴더 내보내기"
         case lightroom = "Lightroom 내보내기"
+        case rawToJpg = "RAW → JPG 변환"
     }
+
+    @State private var convResolution: RAWConversionService.Resolution = .original
+    @State private var convQuality: RAWConversionService.Quality = .high
+    @State private var convProgress: Double = 0
+    @State private var isConverting = false
+    @State private var convResult: RAWConversionService.ConversionResult?
 
     private var photosToExport: [PhotoItem] {
         switch exportMode {
@@ -49,6 +56,65 @@ struct ExportView: View {
                 }
             }
             .pickerStyle(.segmented)
+
+            // RAW → JPG info
+            if exportTarget == .rawToJpg {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.orange)
+                        Text("RAW 파일을 JPG로 변환합니다 (CIRAWFilter GPU 가속)")
+                            .font(.caption)
+                    }
+
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("해상도")
+                                .font(.caption2).foregroundColor(.secondary)
+                            Picker("", selection: $convResolution) {
+                                ForEach(RAWConversionService.Resolution.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .frame(width: 120)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("품질")
+                                .font(.caption2).foregroundColor(.secondary)
+                            Picker("", selection: $convQuality) {
+                                ForEach(RAWConversionService.Quality.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .frame(width: 140)
+                        }
+                    }
+
+                    if isConverting {
+                        ProgressView(value: convProgress)
+                            .progressViewStyle(.linear)
+                        Text("\(Int(convProgress * 100))% 변환 중...")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+
+                    if let result = convResult {
+                        HStack {
+                            Image(systemName: result.failed == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(result.failed == 0 ? .green : .orange)
+                            Text("\(result.succeeded)장 변환 완료 (\(String(format: "%.1f", result.totalTime))초)")
+                                .font(.caption)
+                            if result.failed > 0 {
+                                Text("(\(result.failed)장 실패)")
+                                    .font(.caption).foregroundColor(.red)
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(6)
+            }
 
             // Lightroom info
             if exportTarget == .lightroom {
@@ -187,8 +253,12 @@ struct ExportView: View {
                     }
                     .keyboardShortcut(.defaultAction)
                 } else {
-                    Button(exportTarget == .lightroom ? "Lightroom으로 내보내기" : "폴더 선택 후 내보내기") {
-                        startExport()
+                    Button(exportTarget == .rawToJpg ? "JPG 변환 시작" : (exportTarget == .lightroom ? "Lightroom으로 내보내기" : "폴더 선택 후 내보내기")) {
+                        if exportTarget == .rawToJpg {
+                            startConversion()
+                        } else {
+                            startExport()
+                        }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(photos.isEmpty || store.isExporting)
@@ -197,6 +267,41 @@ struct ExportView: View {
         }
         .padding(24)
         .frame(width: 480)
+    }
+
+    private func startConversion() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.message = "변환된 JPG를 저장할 폴더를 선택하세요"
+        guard panel.runModal() == .OK, let outputFolder = panel.url else { return }
+
+        let photos = photosToExport.filter { !$0.isFolder && !$0.isParentFolder }
+        guard !photos.isEmpty else { return }
+
+        isConverting = true
+        convProgress = 0
+        convResult = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = RAWConversionService.batchConvert(
+                photos: photos,
+                outputFolder: outputFolder,
+                resolution: convResolution,
+                quality: convQuality
+            ) { done, total in
+                convProgress = Double(done) / Double(total)
+            }
+
+            DispatchQueue.main.async {
+                isConverting = false
+                convResult = result
+                convProgress = 1.0
+                // Open output folder in Finder
+                NSWorkspace.shared.open(outputFolder)
+            }
+        }
     }
 
     private func startExport() {

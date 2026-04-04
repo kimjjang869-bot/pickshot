@@ -68,6 +68,7 @@
 		73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */; };
 		60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD92142A284546BD2E0466 /* AISimilarityService.swift */; };
 		939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997C658F4814B05A202D514 /* MatchingView.swift */; };
+		80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -131,6 +132,7 @@
 		F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JPGReturnMatchingService.swift; sourceTree = "<group>"; };
 		F0AD92142A284546BD2E0466 /* AISimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISimilarityService.swift; sourceTree = "<group>"; };
 		5997C658F4814B05A202D514 /* MatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchingView.swift; sourceTree = "<group>"; };
+		C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAWConversionService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -231,6 +233,7 @@
 				B2A12130E1BE4A57BC7F1932,
 				F177AFEF49654E22BDB469B3,
 				F0AD92142A284546BD2E0466,
+				C1432F55F1D147C6BD5D6B21,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -313,6 +316,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
 				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,
 				60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */,
 				73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */,
