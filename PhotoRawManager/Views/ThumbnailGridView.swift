@@ -952,8 +952,8 @@ class ThumbnailLoader {
 
     init() {
         // Default for local SSD
-        queue.maxConcurrentOperationCount = ProcessInfo.processInfo.activeProcessorCount * 2
-        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 6)
+        queue.qualityOfService = .utility  // Lower priority — don't compete with UI
     }
 
     /// Auto-detect NAS/network volume and increase concurrency
@@ -965,7 +965,7 @@ class ThumbnailLoader {
         case .localSSD:
             isNetworkMode = false
             // RAW decode is CPU-heavy; too many concurrent = resource contention
-            queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 12)
+            queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 6)
             AppLogger.log(.performance, "Local SSD: concurrency=\(queue.maxConcurrentOperationCount)")
         case .externalHDD:
             // HDD: seek time is bottleneck, moderate concurrency helps
