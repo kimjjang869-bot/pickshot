@@ -110,7 +110,7 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var viewMode: ViewMode = .grid
-    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? false {
+    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? true {
         didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
     }
     @Published var thumbnailSize: CGFloat = 120
@@ -203,16 +203,16 @@ class PhotoStore: ObservableObject {
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
     @Published var showFolderBrowser: Bool = true
-    @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? false {
+    @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
-    @Published var showFileExtension: Bool = UserDefaults.standard.object(forKey: "showFileExtension") as? Bool ?? false {
+    @Published var showFileExtension: Bool = UserDefaults.standard.object(forKey: "showFileExtension") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileExtension, forKey: "showFileExtension") }
     }
     @Published var folderHistory: [URL] = []
     @Published var folderHistoryIndex: Int = -1
     @Published var photosToRemove: Set<UUID> = []
-    @Published var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? false {
+    @Published var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? true {
         didSet { UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode") }
     }
 

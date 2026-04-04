@@ -45,6 +45,9 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
         // Initial data load
         coordinator.photos = store.filteredPhotos
+        coordinator.photosVersion = store.photosVersion
+        collectionView.reloadData()
+        fputs("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n", stderr)
         coordinator.thumbnailSize = store.thumbnailSize
         coordinator.showFileExtension = store.showFileExtension
         coordinator.showFileTypeBadge = store.showFileTypeBadge
@@ -56,6 +59,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         let coordinator = context.coordinator
         guard let collectionView = coordinator.collectionView else { return }
         coordinator.store = store
+
+        fputs("[GRID] update: old=\(coordinator.photos.count) new=\(store.filteredPhotos.count) ver=\(store.photosVersion) frame=\(Int(scrollView.frame.width))x\(Int(scrollView.frame.height))\n", stderr)
 
         let newPhotos = store.filteredPhotos
         let newSize = store.thumbnailSize
