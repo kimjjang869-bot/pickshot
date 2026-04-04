@@ -1553,9 +1553,11 @@ struct PhotoPreviewView: View {
 
         let url = hiResURL
         let photoID = selected.id
+        fputs("[HIRES] url=\(url.lastPathComponent) hasRealJPG=\(hasRealJPG) jpgURL=\(selected.jpgURL.lastPathComponent) rawURL=\(selected.rawURL?.lastPathComponent ?? "nil")\n", stderr)
 
         hiResLoadWork?.cancel()
         let work = DispatchWorkItem {
+            let t0 = CFAbsoluteTimeGetCurrent()
             var hiRes = Self.loadHiResImage(url: url)
             guard self.pendingPhotoID == photoID else { return }
 
@@ -1571,12 +1573,16 @@ struct PhotoPreviewView: View {
 
             DispatchQueue.main.async {
                 guard self.pendingPhotoID == photoID else { return }
+                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 if let hi = hiRes {
+                    fputs("[HIRES] loaded \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms\n", stderr)
                     Self.hiResCache.setObject(hi, forKey: url as NSURL)
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
-                    self.prefetchHiResNeighbors()  // Prefetch ±3
+                    self.prefetchHiResNeighbors()
+                } else {
+                    fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
                 }
             }
         }
@@ -1626,37 +1632,36 @@ struct PhotoPreviewView: View {
             return NSImage(contentsOf: url)
         }
 
-        // RAW: use CGImageSource with SubsampleFactor for speed + Transform for orientation
-        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
-
-        // Get original dimensions to calculate subsample factor
-        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
-        let origW = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
-        let origH = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
-        let origMax = max(origW, origH)
-
-        // Target: screen retina resolution (sharp enough for zoom, fast to decode)
+        // RAW: CIRAWFilter with scaleFactor for GPU-accelerated decode at screen resolution
         let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
         let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        let targetPx = Int(screenMax * retinaScale)
+        let targetPx = screenMax * retinaScale  // ~3200 on 1440p, ~5760 on 5K
 
-        // SubsampleFactor: decode at reduced resolution (2x, 4x, 8x faster)
-        var subsample = 1
-        if origMax > targetPx * 4 { subsample = 4 }
-        else if origMax > targetPx * 2 { subsample = 2 }
-
-        var thumbOpts: [NSString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: targetPx,
-            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,  // Handles orientation!
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceShouldCache: false
-        ]
-        if subsample > 1 {
-            thumbOpts[kCGImageSourceSubsampleFactor] = subsample
+        if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url) {
+            rawFilter.boostAmount = 0
+            rawFilter.isGamutMappingEnabled = true
+            let native = rawFilter.nativeSize
+            let origMax = max(native.width, native.height)
+            if origMax > targetPx {
+                rawFilter.scaleFactor = Float(targetPx / origMax)
+            }
+            if let output = rawFilter.outputImage {
+                let ctx = CIContext(options: [.useSoftwareRenderer: false])
+                if let cgImage = ctx.createCGImage(output, from: output.extent) {
+                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                }
+            }
         }
 
+        // Fallback: CGImageSource
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
+        let thumbOpts: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: Int(targetPx),
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
         if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
             return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }
