@@ -1634,24 +1634,24 @@ struct PhotoPreviewView: View {
 
         // RAW: extract largest embedded JPEG (same color as camera preview, fast)
         // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        let data = handle.readData(ofLength: 8_000_000)  // 8MB (most embedded JPEGs start within 1MB)
-        handle.closeFile()
+        // Memory-mapped file access (faster than FileHandle for large reads)
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        let scanLimit = min(data.count, 8_000_000)
 
         let ffd8: [UInt8] = [0xFF, 0xD8]
         var bestImage: NSImage? = nil
         var bestSize = 0
 
-        for i in 0..<(data.count - 2) {
+        for i in 0..<(scanLimit - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
             let end = min(i + 6_000_000, data.count)
             let subData = data.subdata(in: i..<end)
             if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                CGImageSourceGetCount(imgSource) > 0 {
-                // Limit decode size to screen resolution (no need for 50MP, screen is ~3600px max)
-                let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
+                // SubsampleFactor for fast JPEG decode (decode at 1/2 size = 4x fewer pixels = 4x faster)
                 let opts: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
+                    kCGImageSourceThumbnailMaxPixelSize: 3600,
+                    kCGImageSourceSubsampleFactor: 2,  // Decode at half resolution (still sharp enough)
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceShouldCacheImmediately: true
