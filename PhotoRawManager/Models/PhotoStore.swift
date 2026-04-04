@@ -126,8 +126,18 @@ class PhotoStore: ObservableObject {
     @Published var loadingStatus: String = ""
     @Published var thumbsLoaded: Int = 0
     @Published var thumbsTotal: Int = 0
-    private var thumbsGeneration: Int = 0  // Incremented on folder switch to discard stale callbacks
+    private var thumbsGeneration: Int = 0
+    var thumbsStartTime: CFAbsoluteTime = 0
     var isPreloadingThumbs: Bool { thumbsLoaded < thumbsTotal && thumbsTotal > 0 }
+    var thumbsETA: String {
+        guard thumbsLoaded > 0, thumbsTotal > thumbsLoaded else { return "" }
+        let elapsed = CFAbsoluteTimeGetCurrent() - thumbsStartTime
+        guard elapsed > 0.5 else { return "" }  // Wait 0.5s before showing ETA
+        let rate = Double(thumbsLoaded) / elapsed
+        let remaining = Double(thumbsTotal - thumbsLoaded) / rate
+        if remaining < 60 { return "\(Int(remaining))초" }
+        return "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
+    }
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
     @Published var conversionProgress: Double = 0
@@ -833,12 +843,13 @@ class PhotoStore: ObservableObject {
         let urls = photos.map { $0.jpgURL }
         thumbsTotal = urls.count
         thumbsLoaded = 0
-        let generation = thumbsGeneration  // Capture current generation
+        thumbsStartTime = CFAbsoluteTimeGetCurrent()
+        let generation = thumbsGeneration
 
         let totalCount = urls.count
         var completedCount = 0
         let lock = NSLock()
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let startTime = thumbsStartTime
 
         let rawCount = urls.filter { FileMatchingService.rawExtensions.contains($0.pathExtension.lowercased()) }.count
         let jpgCount = urls.filter { FileMatchingService.jpgExtensions.contains($0.pathExtension.lowercased()) }.count
@@ -854,8 +865,8 @@ class PhotoStore: ObservableObject {
                 let current = completedCount
                 lock.unlock()
 
-                // Update UI every 10 items or at completion
-                if current % 10 == 0 || current == totalCount {
+                // Update UI every 5 items or at completion (smooth progress)
+                if current % 5 == 0 || current == totalCount {
                     let elapsed = CFAbsoluteTimeGetCurrent() - startTime
                     let rate = elapsed > 0 ? Double(current) / elapsed : 0
                     DispatchQueue.main.async { [weak self] in

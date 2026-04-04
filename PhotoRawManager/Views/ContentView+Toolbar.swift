@@ -54,18 +54,23 @@ extension ContentView {
 
                 Spacer()
 
-                // Thumbnail progress
+                // Thumbnail progress — wider bar + ETA
                 if store.isPreloadingThumbs {
-                    HStack(spacing: 4) {
-                        ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
                         let progress = store.thumbsTotal > 0 ? CGFloat(store.thumbsLoaded) / CGFloat(store.thumbsTotal) : 0
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 5)
-                            RoundedRectangle(cornerRadius: 3).fill(Color.green).frame(width: 60 * progress, height: 5)
+                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 120, height: 6)
+                            RoundedRectangle(cornerRadius: 3).fill(Color.green).frame(width: 120 * progress, height: 6)
                         }
-                        Text("\(store.thumbsLoaded)/\(store.thumbsTotal)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.secondary)
+                        Text(String(format: "%03d/%03d", store.thumbsLoaded, store.thumbsTotal))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.green)
+                        if !store.thumbsETA.isEmpty {
+                            Text(store.thumbsETA)
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
 
