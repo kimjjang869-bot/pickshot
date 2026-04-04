@@ -132,7 +132,7 @@ struct CompareView: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 900, idealWidth: 1400, minHeight: 600, idealHeight: 900)
         .onExitCommand { dismiss() }
         .background(CompareKeyHandler(onLeft: { cyclePhotos(direction: -1) }, onRight: { cyclePhotos(direction: 1) }))
     }

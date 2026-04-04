@@ -222,6 +222,38 @@ extension ContentView {
                     .clipShape(Capsule())
                     .help("스페이스 셀렉 필터 (Space키로 선택, \(store.spacePickedCount)장)")
 
+                    Divider().frame(height: 16).opacity(0.2)
+
+                    // Search bar
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("파일명 검색", text: $store.searchText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11))
+                            .frame(width: 120)
+                        if !store.searchText.isEmpty {
+                            Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.8))
+                                .clipShape(Capsule())
+                            Button(action: { store.searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(AppTheme.toolbarButtonBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
                     Spacer(minLength: 0)
 
                     Divider().frame(height: 16).opacity(0.2)

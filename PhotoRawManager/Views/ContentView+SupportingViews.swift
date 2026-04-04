@@ -570,95 +570,112 @@ class KeyCaptureView: NSView {
         }
 
         let chars = event.charactersIgnoringModifiers ?? ""
+        let keyCode = event.keyCode
         let hasCmd = event.modifierFlags.contains(.command)
+        let hasShift = event.modifierFlags.contains(.shift)
+
+        // Helper: match by chars OR keyCode for Korean IME compatibility
+        func charOrCode(_ c: String, _ code: UInt16) -> Bool {
+            return chars == c || keyCode == code
+        }
 
         // Cmd shortcuts
         if hasCmd {
-            switch chars {
-            case "=", "+":
+            if chars == "=" || chars == "+" || keyCode == 24 {
                 NotificationCenter.default.post(name: .zoomIn, object: nil)
                 return
-            case "-":
+            } else if chars == "-" || keyCode == 27 {
                 NotificationCenter.default.post(name: .zoomOut, object: nil)
                 return
-            case "a":
+            } else if charOrCode("a", 0) {
                 store.selectAll()
                 return
-            case "d":
+            } else if charOrCode("d", 2) {
                 store.deselectAll()
                 return
-            case "/", "?":
+            } else if chars == "/" || chars == "?" || keyCode == 44 {
                 store.showShortcutHelp = true
                 return
-            case "z":
+            } else if charOrCode("z", 6) {
                 store.undo()
                 return
-            case "f":
+            } else if charOrCode("f", 3) {
                 showFullscreen?()
                 return
-            case "c":
+            } else if charOrCode("c", 8) {
                 // Cmd+C: Copy selected files to clipboard (Finder-compatible)
                 copySelectedFilesToPasteboard(store: store)
                 return
-            default:
-                break
             }
         }
 
-        // Rating + Color labels
-        switch chars {
-        case "7":
+        // Color labels (6-9)
+        if charOrCode("7", 26) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.red) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.red, for: id) }
-        case "8":
+            return
+        } else if charOrCode("8", 28) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.orange) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.orange, for: id) }
-        case "9":
+            return
+        } else if charOrCode("9", 25) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.yellow) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.yellow, for: id) }
-        case "6":
+            return
+        } else if charOrCode("6", 22) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.none) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.none, for: id) }
-        default: break
+            return
         }
 
         // Rating - skip if folder/parent selected
         let selectedIsFolder = store.selectedPhoto?.isFolder == true || store.selectedPhoto?.isParentFolder == true
-        switch chars {
-        case "1":
-            guard !selectedIsFolder else { break }
+
+        if charOrCode("1", 18) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(1) }
             else if let id = store.selectedPhotoID { store.setRating(1, for: id) }
-        case "2":
-            guard !selectedIsFolder else { break }
+            return
+        } else if charOrCode("2", 19) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(2) }
             else if let id = store.selectedPhotoID { store.setRating(2, for: id) }
-        case "3":
-            guard !selectedIsFolder else { break }
+            return
+        } else if charOrCode("3", 20) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(3) }
             else if let id = store.selectedPhotoID { store.setRating(3, for: id) }
-        case "4":
-            guard !selectedIsFolder else { break }
+            return
+        } else if charOrCode("4", 21) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(4) }
             else if let id = store.selectedPhotoID { store.setRating(4, for: id) }
-        case "5":
-            guard !selectedIsFolder else { break }
+            return
+        } else if charOrCode("5", 23) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(5) }
             else if let id = store.selectedPhotoID { store.setRating(5, for: id) }
-        case "0":
-            guard !selectedIsFolder else { break }
+            return
+        } else if charOrCode("0", 29) {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 { store.setRatingForSelected(0) }
             else if let id = store.selectedPhotoID { store.setRating(0, for: id) }
-        case " ":
-            guard !selectedIsFolder else { break }
-            // Spacebar: toggle space pick
+            return
+        }
+
+        // Spacebar: toggle space pick
+        if chars == " " || keyCode == 49 {
+            guard !selectedIsFolder else { return }
             if store.selectionCount > 1 {
                 store.toggleSpacePickForSelected()
             } else if let id = store.selectedPhotoID {
                 store.toggleSpacePick(for: id)
             }
-        case "g":
-            // G Select: instantly copy to Google Drive
+            return
+        }
+
+        // G Select: instantly copy to Google Drive
+        if charOrCode("g", 5) && !hasCmd {
             let gService = GSelectService.shared
             if gService.isActive {
                 if store.selectionCount > 1 {
@@ -676,70 +693,85 @@ class KeyCaptureView: NSView {
                 // Not active - show setup
                 gService.requestStartSession()
             }
-        case "h":
-            // Toggle histogram overlay
+            return
+        }
+
+        // H: Toggle histogram overlay
+        if charOrCode("h", 4) && !hasCmd {
             NotificationCenter.default.post(name: .toggleHistogram, object: nil)
-        case "i":
-            // Toggle metadata overlay (nomacs-style)
+            return
+        }
+
+        // I: Toggle metadata overlay (nomacs-style)
+        if charOrCode("i", 34) && !hasCmd {
             store.toggleMetadataOverlay()
-        case "c":
-            // Compare mode: 2~4 photos selected
+            return
+        }
+
+        // C: Compare mode (2~4 photos selected)
+        if charOrCode("c", 8) && !hasCmd {
             if store.selectionCount >= 2 && store.selectionCount <= 4 {
                 store.showCompare = true
             }
-        case "p":
-            // Quick Look preview
-            toggleQuickLook()
-        case "?", "/":
-            // Shortcut help (non-Cmd ? key)
-            store.showShortcutHelp = true
-        default:
-            let hasShift = event.modifierFlags.contains(.shift)
-            let hasCmd = event.modifierFlags.contains(.command)
-            store.isKeyRepeat = event.isARepeat
-            switch event.keyCode {
-            case 123: store.selectLeft(shift: hasShift, cmd: hasCmd)    // <-
-            case 124: store.selectRight(shift: hasShift, cmd: hasCmd)   // ->
-            case 125: store.selectDown(shift: hasShift, cmd: hasCmd)    // down
-            case 126: store.selectUp(shift: hasShift, cmd: hasCmd)      // up
-            case 36:  // Enter
-                if hasCmd {
-                    // Cmd+Enter: toggle fullscreen filmstrip
-                    let newMode: LayoutMode = store.layoutMode == .gridPreview ? .filmstrip : .gridPreview
-                    store.setLayoutMode(newMode)
-                    if newMode == .filmstrip {
-                        // Hide folder tree in filmstrip fullscreen
-                        store.showFolderBrowser = false
-                    } else {
-                        store.showFolderBrowser = true
-                    }
-                    NSApp.keyWindow?.toggleFullScreen(nil)
-                } else {
-                    // Enter: open folder/parent folder
-                    if let photo = store.selectedPhoto {
-                        if photo.isParentFolder, let parent = store.folderURL?.deletingLastPathComponent() {
-                            store.loadFolder(parent, restoreRatings: true)
-                        } else if photo.isFolder {
-                            store.loadFolder(photo.jpgURL, restoreRatings: true)
-                        }
-                    }
-                }
-            case 51, 117:  // Backspace / Delete
-                guard !store.selectedPhotoIDs.isEmpty else { break }
-                let selectedPhotos = store.photos.filter { store.selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }
-                guard !selectedPhotos.isEmpty else { break }
+            return
+        }
 
-                let deleteOriginal = UserDefaults.standard.bool(forKey: "deleteOriginalFile")
-                if deleteOriginal {
-                    // Show serious warning
-                    store.pendingDeleteIDs = store.selectedPhotoIDs
-                    store.showDeleteOriginalConfirm = true
+        // P: Quick Look preview
+        if charOrCode("p", 35) && !hasCmd {
+            toggleQuickLook()
+            return
+        }
+
+        // ?, /: Shortcut help (non-Cmd)
+        if (chars == "?" || chars == "/" || keyCode == 44) && !hasCmd {
+            store.showShortcutHelp = true
+            return
+        }
+
+        // Arrow keys, Enter, Delete (keyCode-only)
+        store.isKeyRepeat = event.isARepeat
+        switch keyCode {
+        case 123: store.selectLeft(shift: hasShift, cmd: hasCmd)    // <-
+        case 124: store.selectRight(shift: hasShift, cmd: hasCmd)   // ->
+        case 125: store.selectDown(shift: hasShift, cmd: hasCmd)    // down
+        case 126: store.selectUp(shift: hasShift, cmd: hasCmd)      // up
+        case 36:  // Enter
+            if hasCmd {
+                // Cmd+Enter: toggle fullscreen filmstrip
+                let newMode: LayoutMode = store.layoutMode == .gridPreview ? .filmstrip : .gridPreview
+                store.setLayoutMode(newMode)
+                if newMode == .filmstrip {
+                    // Hide folder tree in filmstrip fullscreen
+                    store.showFolderBrowser = false
                 } else {
-                    // Just remove from thumbnail list (no file deletion)
-                    store.removePhotosFromList(ids: store.selectedPhotoIDs)
+                    store.showFolderBrowser = true
                 }
-            default: super.keyDown(with: event)
+                NSApp.keyWindow?.toggleFullScreen(nil)
+            } else {
+                // Enter: open folder/parent folder
+                if let photo = store.selectedPhoto {
+                    if photo.isParentFolder, let parent = store.folderURL?.deletingLastPathComponent() {
+                        store.loadFolder(parent, restoreRatings: true)
+                    } else if photo.isFolder {
+                        store.loadFolder(photo.jpgURL, restoreRatings: true)
+                    }
+                }
             }
+        case 51, 117:  // Backspace / Delete
+            guard !store.selectedPhotoIDs.isEmpty else { break }
+            let selectedPhotos = store.photos.filter { store.selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }
+            guard !selectedPhotos.isEmpty else { break }
+
+            let deleteOriginal = UserDefaults.standard.bool(forKey: "deleteOriginalFile")
+            if deleteOriginal {
+                // Show serious warning
+                store.pendingDeleteIDs = store.selectedPhotoIDs
+                store.showDeleteOriginalConfirm = true
+            } else {
+                // Just remove from thumbnail list (no file deletion)
+                store.removePhotosFromList(ids: store.selectedPhotoIDs)
+            }
+        default: super.keyDown(with: event)
         }
     }
 }
@@ -1550,6 +1582,7 @@ struct FullscreenView: View {
     @State private var loadWorkItem: DispatchWorkItem?
     @State private var debounceWorkItem: DispatchWorkItem?
     @State private var pendingPhotoID: UUID?
+    @State private var dragOffset: CGFloat = 0
 
     private var currentPhoto: PhotoItem? {
         guard let id = store.selectedPhotoID,
@@ -1558,17 +1591,25 @@ struct FullscreenView: View {
         return store.photos[idx]
     }
 
+    private var photoCounter: (index: Int, total: Int)? {
+        guard let photo = currentPhoto else { return nil }
+        let filtered = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        guard let idx = filtered.firstIndex(where: { $0.id == photo.id }) else { return nil }
+        return (idx + 1, filtered.count)
+    }
+
     var body: some View {
         ZStack {
             // Black background
             Color.black.ignoresSafeArea()
 
-            // Photo
+            // Photo with swipe offset
             if let image = image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(x: dragOffset)
             }
 
             // SP border (red, thick)
@@ -1585,69 +1626,36 @@ struct FullscreenView: View {
                     .ignoresSafeArea()
             }
 
-            // Info overlay (top-right)
+            // Info overlay (top-right) - filename only, auto-hides
             if showInfo, let photo = currentPhoto {
                 VStack {
                     HStack {
                         Spacer()
                         VStack(alignment: .trailing, spacing: 6) {
-                            // Filename
                             Text(photo.jpgURL.lastPathComponent)
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.white)
-
-                            // Rating stars
-                            if photo.rating > 0 {
-                                HStack(spacing: 2) {
-                                    ForEach(1...5, id: \.self) { i in
-                                        Image(systemName: i <= photo.rating ? "star.fill" : "star")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(i <= photo.rating ? .yellow : .gray.opacity(0.5))
-                                    }
-                                }
-                            }
-
-                            // SP badge
-                            if photo.isSpacePicked {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 14))
-                                    Text("SP")
-                                        .font(.system(size: 14, weight: .bold))
-                                }
-                                .foregroundColor(.red)
-                            }
-
-                            // Photo counter
-                            let filtered = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
-                            if let idx = filtered.firstIndex(where: { $0.id == photo.id }) {
-                                Text("\(idx + 1) / \(filtered.count)")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
                         }
+                        .padding(12)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(8)
                         .padding(16)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(10)
-                        .padding(20)
                     }
                     Spacer()
-
-                    // Bottom hint
-                    HStack {
-                        Text("<- -> 이동  |  1-5 별점  |  Space 셀렉  |  Esc 닫기  |  I 정보 토글")
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.4))
-                    }
-                    .padding(.bottom, 12)
                 }
             }
+
+            // Bottom bar overlay - always visible
+            VStack {
+                Spacer()
+                fullscreenBottomBar
+            }
         }
+        .gesture(swipeGesture)
         .background(FullscreenKeyHandler(store: store, isPresented: $isPresented, showInfo: $showInfo))
         .onAppear { loadCurrentPhoto() }
         .onChange(of: store.selectedPhotoID) { _ in
             flashInfo()
-            // Debounce rapid navigation (arrow key spam)
             debounceWorkItem?.cancel()
             let work = DispatchWorkItem { loadCurrentPhoto() }
             debounceWorkItem = work
@@ -1655,10 +1663,134 @@ struct FullscreenView: View {
         }
     }
 
+    // MARK: - Bottom Bar
+
+    private var fullscreenBottomBar: some View {
+        HStack(spacing: 0) {
+            // Photo counter (left)
+            if let counter = photoCounter {
+                Text("\(counter.index) / \(counter.total)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 90, alignment: .leading)
+            } else {
+                Spacer().frame(width: 90)
+            }
+
+            Spacer()
+
+            // Star rating buttons + SP button (center)
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { rating in
+                    Button(action: { setRating(rating) }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: isRatingActive(rating) ? "star.fill" : "star")
+                                .font(.system(size: 14))
+                            Text("\(rating)")
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundColor(isRatingActive(rating) ? .black : .white.opacity(0.8))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isRatingActive(rating) ? Color.yellow : Color.white.opacity(0.15))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: 1, height: 24)
+                    .padding(.horizontal, 4)
+
+                // SP button
+                Button(action: { toggleSP() }) {
+                    Text("SP")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundColor(isSPActive ? .white : .white.opacity(0.8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isSPActive ? Color.red : Color.white.opacity(0.15))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+
+            // Hint (right)
+            Text("Esc 닫기")
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.35))
+                .frame(width: 90, alignment: .trailing)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.0), Color.black.opacity(0.7)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 80)
+            .offset(y: -20)
+        )
+    }
+
+    private func isRatingActive(_ rating: Int) -> Bool {
+        currentPhoto?.rating == rating
+    }
+
+    private var isSPActive: Bool {
+        currentPhoto?.isSpacePicked == true
+    }
+
+    private func setRating(_ rating: Int) {
+        guard let id = store.selectedPhotoID,
+              let idx = store._photoIndex[id],
+              idx < store.photos.count,
+              !store.photos[idx].isFolder else { return }
+        // Toggle off if same rating tapped again
+        store.photos[idx].rating = store.photos[idx].rating == rating ? 0 : rating
+    }
+
+    private func toggleSP() {
+        guard let id = store.selectedPhotoID,
+              let idx = store._photoIndex[id],
+              idx < store.photos.count,
+              !store.photos[idx].isFolder else { return }
+        store.photos[idx].isSpacePicked.toggle()
+    }
+
+    // MARK: - Swipe Gesture
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 50)
+            .onChanged { value in
+                dragOffset = value.translation.width * 0.3
+            }
+            .onEnded { value in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    dragOffset = 0
+                }
+                if value.translation.width < -50 {
+                    store.selectRight()
+                } else if value.translation.width > 50 {
+                    store.selectLeft()
+                }
+            }
+    }
+
+    // MARK: - Image Loading
+
     private func loadCurrentPhoto() {
         guard let photo = currentPhoto, !photo.isFolder else { return }
 
-        // Cancel any in-flight load
         loadWorkItem?.cancel()
         let photoID = photo.id
         pendingPhotoID = photoID
@@ -1666,7 +1798,6 @@ struct FullscreenView: View {
         let url = photo.jpgURL
         let maxPx = PreviewImageCache.optimalPreviewSize()
 
-        // Check cache first
         let cacheKey = url.appendingPathExtension("fs")
         if let cached = PreviewImageCache.shared.get(cacheKey) {
             self.image = cached
@@ -1674,7 +1805,6 @@ struct FullscreenView: View {
         }
 
         let work = DispatchWorkItem { [self] in
-            // All formats go through optimized loader (resolution-capped)
             let img = PreviewImageCache.loadOptimized(url: url, maxPixel: maxPx)
 
             guard self.pendingPhotoID == photoID else { return }

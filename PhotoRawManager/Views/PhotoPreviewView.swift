@@ -466,6 +466,38 @@ struct PhotoPreviewView: View {
                                 : nil
                             )
                             .contentShape(Rectangle())
+                            .onTapGesture(count: 2) { location in
+                                if isFitMode {
+                                    // Zoom to 100% centered on clicked point
+                                    viewState.zoomPreset = .p100
+                                    viewState.customScale = 1.0
+                                    // Calculate pan offset so clicked point stays at center
+                                    let displayW = imgW * fitScale
+                                    let displayH = imgH * fitScale
+                                    let clickRelX = location.x - vSize.width / 2
+                                    let clickRelY = location.y - vSize.height / 2
+                                    let newScaledW = imgW * fitScale * 1.0
+                                    let newScaledH = imgH * fitScale * 1.0
+                                    let panX = -clickRelX * (newScaledW / displayW - 1)
+                                    let panY = -clickRelY * (newScaledH / displayH - 1)
+                                    let offset = clampPan(
+                                        pan: CGPoint(x: panX, y: panY),
+                                        scaledSize: CGSize(width: newScaledW, height: newScaledH),
+                                        viewSize: vSize
+                                    )
+                                    viewState.panOffset = CGPoint(x: offset.x, y: offset.y)
+                                    viewState.dragStart = viewState.panOffset
+                                    viewState.magnifyBaseScale = 1.0
+                                    syncSlider()
+                                } else {
+                                    // Reset to fit
+                                    viewState.zoomPreset = .fit
+                                    viewState.panOffset = .zero
+                                    viewState.dragStart = .zero
+                                    viewState.magnifyBaseScale = 1.0
+                                    syncSlider()
+                                }
+                            }
                             .onTapGesture { location in
                                 // Loupe disabled - feature removed for stability
                                 if false {

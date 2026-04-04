@@ -218,6 +218,9 @@ class PhotoStore: ObservableObject {
     @Published var aiClassifyProgress: (Int, Int) = (0, 0)
     @Published var aiCategoryFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }   // 카테고리별 필터
 
+    // Search
+    @Published var searchText: String = "" { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+
     // MARK: - Undo Stack
     private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool])] = []
     private let maxUndoSteps = 20
@@ -632,6 +635,7 @@ class PhotoStore: ObservableObject {
         let sceneTag = sceneTagFilter
         let fgID = faceGroupFilter
         let aiCat = aiCategoryFilter
+        let search = searchText.lowercased()
         let aiUsabilityLevel: String?
         let aiCatValue: String?
         if let cat = aiCat {
@@ -691,6 +695,8 @@ class PhotoStore: ObservableObject {
             // AI category filter
             if let level = aiUsabilityLevel, photo.aiUsability != level { continue }
             if let cat = aiCatValue, photo.aiCategory != cat { continue }
+            // Search filter (filename, case-insensitive)
+            if !search.isEmpty && !photo.fileName.lowercased().contains(search) { continue }
 
             files.append(photo)
         }
