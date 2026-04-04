@@ -825,9 +825,10 @@ class PhotoStore: ObservableObject {
                         self?.scrollTrigger += 1
                     }
                 }
-                // Thumbnails load on-demand via AsyncThumbnailView (LazyVGrid)
-                // Preloading ALL thumbnails causes 5GB+ memory spike on large folders
-                // self?.preloadAllThumbnails()
+                // Preload thumbnails — but limit batch size to prevent memory spike
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self?.preloadAllThumbnails()
+                }
             }
 
             // Phase 2: Read EXIF on-demand only (not upfront)
@@ -860,7 +861,14 @@ class PhotoStore: ObservableObject {
         let jpgCount = urls.filter { FileMatchingService.jpgExtensions.contains($0.pathExtension.lowercased()) }.count
         print("📊 [THUMB] Start preload: \(totalCount) files (JPG:\(jpgCount) RAW:\(rawCount)), concurrency=\(ThumbnailLoader.shared.queue.maxConcurrentOperationCount)")
 
-        for url in urls {
+        // Batch loading: 50 at a time to prevent memory spike
+        let batchSize = 50
+        func loadBatch(startIndex: Int) {
+            let end = min(startIndex + batchSize, totalCount)
+            guard startIndex < end else { return }
+
+            for i in startIndex..<end {
+                let url = urls[i]
             ThumbnailLoader.shared.load(url: url) { [weak self] _ in
                 // Discard stale callbacks from previous folder
                 guard let self = self, self.thumbsGeneration == generation else { return }
@@ -883,9 +891,16 @@ class PhotoStore: ObservableObject {
                     } else if current % 50 == 0 {
                         print("📊 [THUMB] Progress: \(current)/\(totalCount) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) files/s)")
                     }
+                    // Start next batch when current batch is done
+                    if current == end {
+                        loadBatch(startIndex: end)
+                    }
                 }
             }
-        }
+            } // end for
+        } // end func loadBatch
+
+        loadBatch(startIndex: 0)
     }
 
     func runQualityAnalysis() {
