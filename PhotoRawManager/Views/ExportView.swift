@@ -69,11 +69,9 @@ struct ExportView: View {
             // RAW → JPG options
             if exportTarget == .rawToJpg {
                 VStack(spacing: 10) {
-                    // Single line: Title + Resolution + Quality + GPU badge
+                    // Resolution + Quality — centered
                     HStack(spacing: 12) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 12))
-                            .foregroundColor(.orange)
+                        Spacer()
                         Text("해상도")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
@@ -91,8 +89,7 @@ struct ExportView: View {
                                 Text($0.rawValue).tag($0)
                             }
                         }
-                        .frame(width: 120)
-                        Spacer()
+                        .frame(width: 130)
                         Text("GPU")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.orange)
@@ -100,6 +97,7 @@ struct ExportView: View {
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.12))
                             .cornerRadius(3)
+                        Spacer()
                     }
 
                     // Progress / Result
