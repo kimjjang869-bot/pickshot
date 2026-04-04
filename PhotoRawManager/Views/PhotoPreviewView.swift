@@ -1280,38 +1280,9 @@ struct PhotoPreviewView: View {
                     }
                 }
 
-                // Stage 2: Load largest embedded JPEG (cancelable)
-                guard self.pendingPhotoID == id else { return }
-
-                // Quick cancel check before expensive I/O
-                let hiRes: NSImage?
-                if self.pendingPhotoID == id {
-                    hiRes = Self.loadHiResImage(url: url)
-                } else {
-                    return
-                }
-
-                guard self.pendingPhotoID == id else { return }
-
-                if var finalHiRes = hiRes {
-                    // Fix orientation: compare with Stage 1 image
-                    if let fast = fastImage {
-                        let fastIsPortrait = fast.size.height > fast.size.width
-                        let hiIsPortrait = finalHiRes.size.height > finalHiRes.size.width
-                        if fastIsPortrait != hiIsPortrait {
-                            finalHiRes = Self.applyOrientation(finalHiRes, orientation: 6)
-                        }
-                    }
-                    guard self.pendingPhotoID == id else { return }
-                    PreviewImageCache.shared.set(cacheKey, image: finalHiRes)
-                    DispatchQueue.main.async {
-                        if self.pendingPhotoID == id {
-                            self.image = finalHiRes
-                            self.lowResImage = finalHiRes
-                            self.hiResImage = finalHiRes
-                            self.isHiResLoaded = true
-                        }
-                    }
+                // No Stage 2 — hi-res loads on-demand when user zooms in
+                // This prevents CPU/memory spike when rapidly browsing
+                if false {
                 } else {
                     PreviewImageCache.shared.set(cacheKey, image: fast)
                 }
