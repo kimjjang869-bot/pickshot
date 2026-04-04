@@ -1632,40 +1632,37 @@ struct PhotoPreviewView: View {
             return NSImage(contentsOf: url)
         }
 
-        // RAW: CIRAWFilter with scaleFactor for GPU-accelerated decode at screen resolution
-        let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
-        let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        let targetPx = screenMax * retinaScale  // ~3200 on 1440p, ~5760 on 5K
+        // RAW: extract largest embedded JPEG (same color as camera preview, fast)
+        // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let data = handle.readData(ofLength: 12_000_000)
+        handle.closeFile()
 
-        if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url) {
-            rawFilter.boostAmount = 0
-            rawFilter.isGamutMappingEnabled = true
-            let native = rawFilter.nativeSize
-            let origMax = max(native.width, native.height)
-            if origMax > targetPx {
-                rawFilter.scaleFactor = Float(targetPx / origMax)
-            }
-            if let output = rawFilter.outputImage {
-                let ctx = CIContext(options: [.useSoftwareRenderer: false])
-                if let cgImage = ctx.createCGImage(output, from: output.extent) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let ffd8: [UInt8] = [0xFF, 0xD8]
+        var bestImage: NSImage? = nil
+        var bestSize = 0
+
+        for i in 0..<(data.count - 2) {
+            guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
+            let end = min(i + 8_000_000, data.count)
+            let subData = data.subdata(in: i..<end)
+            if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+               CGImageSourceGetCount(imgSource) > 0 {
+                let opts: [NSString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true
+                ]
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
+                    let size = cgImage.width * cgImage.height
+                    if size > bestSize {
+                        bestSize = size
+                        bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    }
                 }
             }
         }
-
-        // Fallback: CGImageSource
-        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
-        let thumbOpts: [NSString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: Int(targetPx),
-            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        }
-        return nil
+        return bestImage
     }
 
     private func reloadCurrentImage() {
