@@ -1263,6 +1263,10 @@ struct PhotoPreviewView: View {
                         if self.pendingPhotoID == id {
                             self.image = finalHR
                             self.lowResImage = finalHR
+                            // If zoomed in, load full resolution for sharp viewing
+                            if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                                self.loadHiResForZoom()
+                            }
                         }
                     }
                 } else if false {
