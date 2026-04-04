@@ -879,7 +879,7 @@ class ThumbnailLoader {
 
     init() {
         // Default for local SSD
-        queue.maxConcurrentOperationCount = 4  // Low — prevent CPU/memory spike
+        queue.maxConcurrentOperationCount = 2  // Low — prevent CPU/memory spike
         queue.qualityOfService = .utility
     }
 
@@ -998,10 +998,7 @@ class ThumbnailLoader {
         pendingCallbacks[url] = [completion]
         lock.unlock()
 
-        // Simple: cancel all if queue building up
-        if queue.operationCount > 2 {
-            queue.cancelAllOperations()
-        }
+        // No queue limiting — let NSCache handle memory
 
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
