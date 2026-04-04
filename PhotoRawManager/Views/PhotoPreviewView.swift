@@ -884,7 +884,11 @@ struct PhotoPreviewView: View {
             let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
             if let cached = PreviewImageCache.shared.get(cacheKey) {
                 image = cached
-                lowResImage = cached  // Save as low-res reference
+                lowResImage = cached
+                // Even on cache hit, load hi-res if zoomed
+                if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
+                    loadHiResForZoom()
+                }
                 return
             }
 
@@ -1226,11 +1230,14 @@ struct PhotoPreviewView: View {
                 DispatchQueue.main.async {
                     if self.pendingPhotoID == id {
                         self.image = full
-                        print("📷 [FULL-RES JPG] \(fileName) size=\(Int(full.size.width))x\(Int(full.size.height))")
+                        self.lowResImage = full
+                        // Auto hi-res if zoomed (JPG full-res is already hi-res, but RAW pair may exist)
+                        if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                            self.loadHiResForZoom()
+                        }
                     }
                 }
             } else if isJPG {
-                // JPG with explicit resolution cap
                 let optimalPx = CGFloat(resolution)
                 let img = PreviewImageCache.loadOptimized(url: url, maxPixel: optimalPx)
                 guard let loaded = img, self.pendingPhotoID == id else { return }
@@ -1238,6 +1245,10 @@ struct PhotoPreviewView: View {
                 DispatchQueue.main.async {
                     if self.pendingPhotoID == id {
                         self.image = loaded
+                        self.lowResImage = loaded
+                        if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                            self.loadHiResForZoom()
+                        }
                     }
                 }
             } else {
