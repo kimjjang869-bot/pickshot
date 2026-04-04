@@ -379,7 +379,11 @@ struct PhotoPreviewView: View {
     @EnvironmentObject var store: PhotoStore
     @StateObject private var viewState = PreviewViewState()
 
-    @State private var image: NSImage?
+    @State private var image: NSImage?          // Currently displayed image (low-res or hi-res)
+    @State private var lowResImage: NSImage?     // Fast preview (1200px) — used at fit zoom
+    @State private var hiResImage: NSImage?      // Full resolution — loaded on zoom in
+    @State private var isHiResLoaded = false      // Whether hi-res is currently active
+    @State private var hiResLoadWork: DispatchWorkItem?
     @State private var loadingURL: URL?
     @State private var showCorrectionPanel = false
     @State private var correctionResult: CorrectionResult?
@@ -490,13 +494,15 @@ struct PhotoPreviewView: View {
                                     viewState.dragStart = viewState.panOffset
                                     viewState.magnifyBaseScale = targetScale
                                     syncSlider()
+                                    loadHiResForZoom()  // Load full resolution
                                 } else {
-                                    // Reset to fit
+                                    // Reset to fit → switch back to low-res
                                     viewState.zoomPreset = .fit
                                     viewState.panOffset = .zero
                                     viewState.dragStart = .zero
                                     viewState.magnifyBaseScale = 1.0
                                     syncSlider()
+                                    switchToLowRes()  // Restore fast preview
                                 }
                             }
                             .onTapGesture { location in
@@ -855,6 +861,9 @@ struct PhotoPreviewView: View {
             isOriginal = true
             rotationAngle = 0
             rotatedImage = nil
+            hiResImage = nil
+            isHiResLoaded = false
+            hiResLoadWork?.cancel()
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil
@@ -875,6 +884,7 @@ struct PhotoPreviewView: View {
             let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
             if let cached = PreviewImageCache.shared.get(cacheKey) {
                 image = cached
+                lowResImage = cached  // Save as low-res reference
                 return
             }
 
@@ -882,8 +892,10 @@ struct PhotoPreviewView: View {
             let previewKey = url.appendingPathExtension("orig")
             if let cached = PreviewImageCache.shared.get(previewKey) {
                 image = cached
+                lowResImage = cached
             } else if let thumb = ThumbnailCache.shared.get(url) {
                 image = thumb
+                lowResImage = thumb
             }
 
             // Debounce: wait 40ms before starting expensive RAW load
@@ -903,6 +915,15 @@ struct PhotoPreviewView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
+        .onChange(of: viewState.zoomPreset) { newPreset in
+            handleZoomChange(isFit: newPreset == .fit)
+        }
+        .onChange(of: viewState.customScale) { newScale in
+            // If custom scale > 1.0, we're zoomed in → need hi-res
+            if newScale > 1.0 && !isHiResLoaded {
+                loadHiResForZoom()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
         .sheet(isPresented: $showAIResult) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1236,6 +1257,7 @@ struct PhotoPreviewView: View {
                 DispatchQueue.main.async {
                     guard self.pendingPhotoID == id else { return }
                     self.image = fast
+                    self.lowResImage = fast  // Save for zoom-out restore
                 }
 
                 // Stage 2: Hi-res for RAW
@@ -1440,6 +1462,58 @@ struct PhotoPreviewView: View {
 
         guard let rotated = context.makeImage() else { return }
         rotatedImage = NSImage(cgImage: rotated, size: NSSize(width: outW, height: outH))
+    }
+
+    // MARK: - Zoom-aware Resolution Switching
+
+    private func handleZoomChange(isFit: Bool) {
+        if isFit {
+            switchToLowRes()
+        } else if !isHiResLoaded {
+            loadHiResForZoom()
+        }
+    }
+
+    private func switchToLowRes() {
+        hiResLoadWork?.cancel()
+        if let low = lowResImage {
+            image = low
+            isHiResLoaded = false
+        }
+    }
+
+    private func loadHiResForZoom() {
+        guard let selected = store.selectedPhoto,
+              !selected.isFolder, !selected.isParentFolder else { return }
+        guard !isHiResLoaded else { return }
+
+        // If already have hi-res cached, use immediately
+        if let hi = hiResImage {
+            image = hi
+            isHiResLoaded = true
+            return
+        }
+
+        let url = selected.jpgURL
+        let photoID = selected.id
+
+        hiResLoadWork?.cancel()
+        let work = DispatchWorkItem {
+            // Load at full resolution (or very large: 4000px for speed)
+            let hiRes = PreviewImageCache.loadOptimized(url: url, maxPixel: 4000)
+            guard self.pendingPhotoID == photoID else { return }
+
+            DispatchQueue.main.async {
+                guard self.pendingPhotoID == photoID else { return }
+                if let hi = hiRes {
+                    self.hiResImage = hi
+                    self.image = hi
+                    self.isHiResLoaded = true
+                }
+            }
+        }
+        hiResLoadWork = work
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func reloadCurrentImage() {
