@@ -818,11 +818,9 @@ struct PhotoPreviewView: View {
             hiResWorkItem?.cancel()
             preloadWork?.cancel()
 
-            // Keep panOffset, dragStart, zoomPreset, and customScale
-            // so zoom position is maintained when switching photos
             correctionResult = nil
             isOriginal = true
-            rotationAngle = 0  // Reset rotation on photo switch
+            rotationAngle = 0
             rotatedImage = nil
             viewState.loupeActive = false
             viewState.loupePosition = nil
@@ -832,7 +830,6 @@ struct PhotoPreviewView: View {
             focusMapImage = nil
 
             guard let selected = store.selectedPhoto else { return }
-            // Skip folders - don't try to load preview for folder items
             guard !selected.isFolder && !selected.isParentFolder else {
                 self.image = nil
                 return
@@ -840,40 +837,36 @@ struct PhotoPreviewView: View {
             let url = selected.jpgURL
             loadingURL = url
 
-            print("🔄 [PHOTO CHANGED] \(url.lastPathComponent) id=\(newID.uuidString.prefix(8)) isKeyRepeat=\(store.isKeyRepeat) currentImage=\(image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil")")
-
-            viewState.stableImageSize = Self.readImageDimensions(url: url)
-
+            // Fast path: cache hit → show immediately (no debounce needed)
             let res = store.previewResolution
             let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
             if let cached = PreviewImageCache.shared.get(cacheKey) {
-                print("🔄 [CACHE HIT] \(url.lastPathComponent) size=\(Int(cached.size.width))x\(Int(cached.size.height))")
                 image = cached
                 return
             }
 
-            if store.isKeyRepeat {
-                // Key HELD DOWN: show cached preview or thumbnail for responsiveness
-                let previewKey = url.appendingPathExtension("orig")
-                if let cached = PreviewImageCache.shared.get(previewKey) {
-                    image = cached
-                } else if let thumb = ThumbnailCache.shared.get(url) {
-                    image = thumb  // Low-res but instant — better than blank
-                }
-                // Always schedule hi-res load (debounced)
-                hiResWorkItem?.cancel()
-                let capturedID = newID
-                let capturedURL = url
-                let work = DispatchWorkItem {
-                    guard self.pendingPhotoID == capturedID else { return }
-                    self.loadImageDirect(for: capturedURL, id: capturedID)
-                }
-                hiResWorkItem = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
-            } else {
-                // Actual key press or mouse click: full quality load
-                loadImageDirect(for: url, id: newID)
+            // Fast path: show thumbnail instantly while loading
+            let previewKey = url.appendingPathExtension("orig")
+            if let cached = PreviewImageCache.shared.get(previewKey) {
+                image = cached
+            } else if let thumb = ThumbnailCache.shared.get(url) {
+                image = thumb
             }
+
+            // Debounce: wait 40ms before starting expensive RAW load
+            // If another photo change comes within 40ms, this load is cancelled
+            hiResWorkItem?.cancel()
+            let capturedID = newID
+            let capturedURL = url
+            let work = DispatchWorkItem {
+                guard self.pendingPhotoID == capturedID else { return }
+                self.viewState.stableImageSize = Self.readImageDimensions(url: capturedURL)
+                self.loadImageDirect(for: capturedURL, id: capturedID)
+            }
+            hiResWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
+
+            // Debounce above handles all loading — no immediate load needed
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
