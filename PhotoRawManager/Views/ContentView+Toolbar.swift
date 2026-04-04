@@ -83,6 +83,12 @@ extension ContentView {
                         Text("\(store.conversionDone)/\(store.conversionTotal)")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundColor(.orange)
+                        Button(action: { store.conversionCancelled = true }) {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 

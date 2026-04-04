@@ -27,9 +27,6 @@ struct ExportView: View {
 
     @State private var convResolution: RAWConversionService.Resolution = .original
     @State private var convQuality: RAWConversionService.Quality = .high
-    @State private var convProgress: Double = 0
-    @State private var isConverting = false
-    @State private var convResult: RAWConversionService.ConversionResult?
 
     private var photosToExport: [PhotoItem] {
         switch exportMode {
@@ -100,19 +97,27 @@ struct ExportView: View {
                         Spacer()
                     }
 
-                    // Progress / Result
-                    if isConverting {
+                    // Progress
+                    if store.isConverting {
                         HStack(spacing: 8) {
-                            ProgressView(value: convProgress)
+                            ProgressView(value: store.conversionProgress)
                                 .progressViewStyle(.linear)
                                 .tint(.orange)
-                            Text("\(Int(convProgress * 100))%")
+                            Text("\(store.conversionDone)/\(store.conversionTotal)")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.orange)
-                                .frame(width: 35)
+                                .frame(width: 70)
+                            Button(action: { store.conversionCancelled = true }) {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help("변환 중지")
                         }
                     }
-                    if let result = convResult {
+                    // Result
+                    if let result = store.conversionResult {
                         HStack(spacing: 6) {
                             Image(systemName: result.failed == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(result.failed == 0 ? .green : .orange)
@@ -296,7 +301,7 @@ struct ExportView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(photos.isEmpty || store.isExporting)
+                    .disabled(photos.isEmpty || store.isExporting || store.isConverting)
                 }
             }
         }
@@ -312,6 +317,8 @@ struct ExportView: View {
     }
 
     private func startConversion() {
+        guard !store.isConverting else { return }  // Prevent double-click
+
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -322,32 +329,37 @@ struct ExportView: View {
         let photos = photosToExport.filter { !$0.isFolder && !$0.isParentFolder }
         guard !photos.isEmpty else { return }
 
-        isConverting = true
-        convProgress = 0
-        convResult = nil
         store.conversionTotal = photos.count
         store.conversionDone = 0
+        store.conversionProgress = 0
+        store.conversionCancelled = false
+        store.conversionResult = nil
 
         DispatchQueue.global(qos: .userInitiated).async {
+            var cancelFlag = false
+
             let result = RAWConversionService.batchConvert(
                 photos: photos,
                 outputFolder: outputFolder,
                 resolution: convResolution,
-                quality: convQuality
+                quality: convQuality,
+                cancelFlag: &cancelFlag
             ) { done, total in
-                convProgress = Double(done) / Double(total)
                 DispatchQueue.main.async {
                     store.conversionDone = done
+                    store.conversionProgress = Double(done) / Double(total)
+                    // Propagate cancel from UI
+                    if store.conversionCancelled { cancelFlag = true }
                 }
             }
 
             DispatchQueue.main.async {
-                isConverting = false
-                convResult = result
-                convProgress = 1.0
+                store.conversionResult = result
                 store.conversionTotal = 0
                 store.conversionDone = 0
-                NSWorkspace.shared.open(outputFolder)
+                if !store.conversionCancelled {
+                    NSWorkspace.shared.open(outputFolder)
+                }
             }
         }
     }

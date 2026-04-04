@@ -133,7 +133,9 @@ class PhotoStore: ObservableObject {
     @Published var conversionProgress: Double = 0
     @Published var conversionTotal: Int = 0
     @Published var conversionDone: Int = 0
-    var isConverting: Bool { conversionDone < conversionTotal && conversionTotal > 0 }
+    @Published var conversionCancelled: Bool = false
+    @Published var conversionResult: RAWConversionService.ConversionResult?
+    var isConverting: Bool { conversionDone < conversionTotal && conversionTotal > 0 && !conversionCancelled }
     @Published var showExportSheet = false
     @Published var exportOpenAsRawConvert = false  // Open export sheet directly in RAW→JPG tab
     @Published var showMatchingSheet = false

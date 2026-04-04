@@ -57,12 +57,13 @@ struct RAWConversionService {
         return CIContext(options: [.useSoftwareRenderer: false])
     }()
 
-    /// Batch convert RAW files to JPG
+    /// Batch convert RAW files to JPG (supports cancellation via cancelFlag)
     static func batchConvert(
         photos: [PhotoItem],
         outputFolder: URL,
         resolution: Resolution = .original,
         quality: Quality = .high,
+        cancelFlag: UnsafeMutablePointer<Bool>? = nil,
         progress: @escaping (Int, Int) -> Void
     ) -> ConversionResult {
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -84,6 +85,9 @@ struct RAWConversionService {
 
         DispatchQueue.concurrentPerform(iterations: total) { idx in
             autoreleasepool {
+                // Check cancellation
+                if cancelFlag?.pointee == true { return }
+
                 let photo = rawPhotos[idx]
                 let url = photo.rawURL ?? photo.jpgURL  // Prefer RAW, fallback to JPG
                 let outputName = url.deletingPathExtension().lastPathComponent + ".jpg"
