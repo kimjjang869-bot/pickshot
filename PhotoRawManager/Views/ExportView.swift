@@ -45,26 +45,20 @@ struct ExportView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             // Header
-            HStack {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20))
-                    .foregroundColor(.accentColor)
-                Text("사진 내보내기")
-                    .font(.system(size: 20, weight: .bold))
-                Spacer()
-            }
+            Text("사진 내보내기")
+                .font(.system(size: 18, weight: .bold))
 
-            // Export target tabs
+            // Export target tabs — full width
             HStack(spacing: 0) {
                 ForEach(ExportTarget.allCases, id: \.self) { target in
                     Button(action: { exportTarget = target }) {
                         Text(target.rawValue)
                             .font(.system(size: 13, weight: exportTarget == target ? .bold : .medium))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(exportTarget == target ? Color.accentColor : Color.gray.opacity(0.15))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(exportTarget == target ? Color.accentColor : Color.gray.opacity(0.12))
                             .foregroundColor(exportTarget == target ? .white : .primary)
                     }
                     .buttonStyle(.plain)
@@ -133,10 +127,11 @@ struct ExportView: View {
                         }
                     }
                 }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
                 .background(Color.orange.opacity(0.08))
-                .cornerRadius(6)
+                .cornerRadius(8)
             }
 
             // Lightroom info
@@ -158,26 +153,21 @@ struct ExportView: View {
                 .cornerRadius(6)
             }
 
-            // Export mode picker — single line
-            HStack(spacing: 8) {
-                Text("대상")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 30, alignment: .trailing)
+            // Export mode picker — centered, full width
+            HStack(spacing: 0) {
                 ForEach(ExportMode.allCases, id: \.self) { mode in
                     Button(action: { exportMode = mode }) {
                         Text(mode.rawValue)
                             .font(.system(size: 12, weight: exportMode == mode ? .bold : .regular))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(exportMode == mode ? Color.green : Color.gray.opacity(0.15))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(exportMode == mode ? Color.green : Color.gray.opacity(0.12))
                             .foregroundColor(exportMode == mode ? .white : .primary)
-                            .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
                 }
-                Spacer()
             }
+            .cornerRadius(8)
 
             // Folder name customization (only for folder export)
             if exportTarget == .folder {
@@ -275,27 +265,38 @@ struct ExportView: View {
                 .cornerRadius(8)
             }
 
-            HStack {
-                Button("닫기") {
-                    dismiss()
+            HStack(spacing: 12) {
+                Button(action: { dismiss() }) {
+                    Text("닫기")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 100, height: 36)
                 }
+                .buttonStyle(.bordered)
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
                 if isComplete {
-                    Button("완료") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        Text("완료")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 180, height: 36)
                     }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                 } else {
-                    Button(exportTarget == .rawToJpg ? "JPG 변환 시작" : (exportTarget == .lightroom ? "Lightroom으로 내보내기" : "폴더 선택 후 내보내기")) {
+                    Button(action: {
                         if exportTarget == .rawToJpg {
                             startConversion()
                         } else {
                             startExport()
                         }
+                    }) {
+                        Text(exportTarget == .rawToJpg ? "JPG 변환 시작" : (exportTarget == .lightroom ? "Lightroom 내보내기" : "폴더 선택 후 내보내기"))
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 180, height: 36)
                     }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(photos.isEmpty || store.isExporting)
                 }
