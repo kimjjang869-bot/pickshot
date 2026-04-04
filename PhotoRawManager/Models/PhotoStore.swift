@@ -825,10 +825,10 @@ class PhotoStore: ObservableObject {
                         self?.scrollTrigger += 1
                     }
                 }
-                // Preload thumbnails — but limit batch size to prevent memory spike
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self?.preloadAllThumbnails()
-                }
+                // Thumbnails load on-demand via LazyVGrid + AsyncThumbnailView
+                // Preloading caused CPU 700% + 7GB memory on 1500+ photo folders
+                self?.thumbsTotal = sorted.count
+                self?.thumbsLoaded = sorted.count
             }
 
             // Phase 2: Read EXIF on-demand only (not upfront)
@@ -846,9 +846,11 @@ class PhotoStore: ObservableObject {
 
     /// Preload all thumbnails in background
     private func preloadAllThumbnails() {
+        // Only preload from disk cache (no RAW extraction — that's on-demand only)
+        // This prevents CPU 700% + 7GB memory spike on large folders
         let urls = photos.map { $0.jpgURL }
         thumbsTotal = urls.count
-        thumbsLoaded = 0
+        thumbsLoaded = urls.count  // Show as complete (on-demand loads individually)
         thumbsStartTime = CFAbsoluteTimeGetCurrent()
         let generation = thumbsGeneration
 
