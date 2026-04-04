@@ -77,12 +77,14 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         coordinator.showFileExtension = newShowExt
         coordinator.showFileTypeBadge = newShowBadge
 
-        // Data changed - full reload
-        let oldIDs = coordinator.photos.map { $0.id }
-        let newIDs = newPhotos.map { $0.id }
-        if oldIDs != newIDs || optionsChanged {
+        // Data changed - full reload (check version + count + IDs)
+        let photosChanged = coordinator.photos.count != newPhotos.count ||
+            coordinator.photosVersion != store.photosVersion ||
+            optionsChanged
+        if photosChanged {
             coordinator.isBatchUpdating = true
             coordinator.photos = newPhotos
+            coordinator.photosVersion = store.photosVersion
             collectionView.reloadData()
             coordinator.isBatchUpdating = false
             // Restore selection after reload
@@ -160,6 +162,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         var collectionView: NSCollectionView?
         var scrollView: NSScrollView?
         var photos: [PhotoItem] = []
+        var photosVersion: Int = -1
         var thumbnailSize: CGFloat = 120
         var showFileExtension: Bool = true
         var showFileTypeBadge: Bool = true

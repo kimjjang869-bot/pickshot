@@ -76,12 +76,21 @@ struct ClaudeVisionService {
         _ = KeychainService.save(key: keychainKey, value: key)
     }
 
+    private static var _apiKeyCache: String?
+    private static var _apiKeyCacheChecked = false
+
     static func getAPIKey() -> String? {
+        if _apiKeyCacheChecked { return _apiKeyCache }
         // Try Keychain first, then migrate from UserDefaults
-        if let key = KeychainService.read(key: keychainKey) { return key }
+        if let key = KeychainService.read(key: keychainKey) {
+            _apiKeyCache = key; _apiKeyCacheChecked = true; return key
+        }
         KeychainService.migrateFromUserDefaults(userDefaultsKey: legacyDefaultsKey, keychainKey: keychainKey)
-        return KeychainService.read(key: keychainKey)
+        let key = KeychainService.read(key: keychainKey)
+        _apiKeyCache = key; _apiKeyCacheChecked = true
+        return key
     }
+    static func invalidateAPIKeyCache() { _apiKeyCacheChecked = false; _hasAPIKeyCache = nil }
 
     // Cached to avoid keychain read on every SwiftUI body evaluation
     private static var _hasAPIKeyCache: Bool?
@@ -92,8 +101,6 @@ struct ClaudeVisionService {
         _hasAPIKeyCache = result
         return result
     }
-    static func invalidateAPIKeyCache() { _hasAPIKeyCache = nil }
-
     enum ClaudeVisionError: LocalizedError {
         case noAPIKey, imageLoadFailed, encodingFailed
         case requestFailed(String), invalidResponse, apiError(String)
