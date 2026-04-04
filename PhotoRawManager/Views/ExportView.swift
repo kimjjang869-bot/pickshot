@@ -394,7 +394,13 @@ struct ExportView: View {
                 store.conversionTotal = 0
                 store.conversionDone = 0
                 if !store.conversionCancelled {
-                    NSWorkspace.shared.open(outputFolder)
+                    // Show converted files in Finder (single window, files selected)
+                    let jpgFiles = (try? FileManager.default.contentsOfDirectory(at: outputFolder, includingPropertiesForKeys: nil))?.filter { $0.pathExtension.lowercased() == "jpg" } ?? []
+                    if !jpgFiles.isEmpty {
+                        NSWorkspace.shared.activateFileViewerSelecting(jpgFiles)
+                    } else {
+                        NSWorkspace.shared.open(outputFolder)
+                    }
                 }
             }
         }
