@@ -1615,46 +1615,36 @@ struct PhotoPreviewView: View {
     }
 
     /// Static hi-res loader (reusable for prefetch)
+    /// Uses CIRAWFilter.previewImage for fastest RAW preview extraction (Apple optimized)
     private static func loadHiResImage(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
         if isRAW {
-            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-            let data = handle.readData(ofLength: 12_000_000)
-            handle.closeFile()
-
-            let ffd8: [UInt8] = [0xFF, 0xD8]
-            var bestImage: NSImage? = nil
-            var bestSize = 0
-            let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
-            let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
-            let hiResTarget = Int(screenMax * retinaScale)
-
-            for i in 0..<(data.count - 2) {
-                guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-                let end = min(i + 8_000_000, data.count)
-                let subData = data.subdata(in: i..<end)
-                if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
-                   CGImageSourceGetCount(imgSource) > 0 {
-                    var opts: [NSString: Any] = [
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceShouldCacheImmediately: true
-                    ]
-                    opts[kCGImageSourceThumbnailMaxPixelSize] = hiResTarget
-                    if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
-                        let size = cgImage.width * cgImage.height
-                        if size > bestSize {
-                            bestSize = size
-                            bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                        }
-                    }
+            // Method 1: CIRAWFilter.previewImage — fastest (Apple optimized, no byte scanning)
+            if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url),
+               let preview = rawFilter.previewImage {
+                let ctx = CIContext(options: [.useSoftwareRenderer: false])
+                if let cgImage = ctx.createCGImage(preview, from: preview.extent) {
+                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 }
             }
-            return bestImage
+
+            // Method 2: CGImageSource full decode (fallback)
+            let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+            if let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary) {
+                let thumbOpts: [NSString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true
+                ]
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
+                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                }
+            }
+            return nil
         } else {
-            // JPG: load directly
+            // JPG: load directly (fastest)
             return NSImage(contentsOf: url)
         }
     }
