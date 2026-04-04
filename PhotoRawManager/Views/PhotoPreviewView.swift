@@ -1280,7 +1280,7 @@ struct PhotoPreviewView: View {
                 }
 
                 // Stage 2: Hi-res for RAW
-                let rawHiResPx: CGFloat = 2878
+                let rawHiResPx: CGFloat = 3600  // Higher for sharp zoom
                 if optimalPx > 1200 {
                     guard self.pendingPhotoID == id else { return }
                     let targetPx = resolution > 0 ? optimalPx : rawHiResPx
@@ -1638,36 +1638,40 @@ struct PhotoPreviewView: View {
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
         let scanLimit = min(data.count, 15_000_000)  // Scan up to 15MB for embedded JPEG
 
-        // Find FFD8 markers — return FIRST large JPEG immediately (skip small thumbnails)
+        // Find ALL FFD8 markers, pick the LARGEST embedded JPEG
         let ffd8: [UInt8] = [0xFF, 0xD8]
-        let minAcceptSize = 1000  // Skip tiny thumbnails (< 1000px)
+        var bestImage: NSImage? = nil
+        var bestPixels = 0
 
         for i in 0..<(scanLimit - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-            let end = min(i + 3_500_000, data.count)
+            let end = min(i + 10_000_000, data.count)
             let subData = data.subdata(in: i..<end)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
-            // Check size first without decoding
+            // Check size without full decode
             let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
             let w = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
             let h = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
-            if max(w, h) < minAcceptSize { continue }  // Skip small thumbnails
+            let pixels = w * h
 
-            // Decode at screen resolution (no SubsampleFactor — preserves quality)
-            let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
+            // Only decode if this is larger than what we already have
+            guard pixels > bestPixels else { continue }
+
             let opts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                bestPixels = cgImage.width * cgImage.height
+                bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                // If we found a really big one (>= 3000px), stop scanning
+                if max(cgImage.width, cgImage.height) >= 3000 { break }
             }
         }
-        return nil
+        return bestImage
     }
 
     private func reloadCurrentImage() {
