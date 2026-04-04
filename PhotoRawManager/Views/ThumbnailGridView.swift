@@ -45,8 +45,8 @@ struct ThumbnailGridView: View {
 
     private func updateActualColumns(width: CGFloat) {
         let size = store.thumbnailSize
-        let spacing: CGFloat = 8
-        // Match GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 8)
+        let spacing: CGFloat = 12
+        // Match GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)
         let cellWidth = size + spacing
         let cols = max(1, Int(width / cellWidth))
         if store.actualColumnsPerRow != cols {
@@ -83,10 +83,10 @@ struct ThumbnailGridView: View {
 
     private var gridView: some View {
         let size = store.thumbnailSize
-        let columns = [GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 8)]
+        let columns = [GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)]
 
         let photos = store.filteredPhotos  // Compute once, not per-cell
-        return LazyVGrid(columns: columns, spacing: 8) {
+        return LazyVGrid(columns: columns, spacing: 12) {
             ForEach(photos) { photo in
                 LazyThumbnailWrapper(
                     photo: photo,
@@ -424,6 +424,33 @@ struct PhotoContextMenu: View {
             store.showExportSheet = true
         }) {
             Label("내보내기 (\(targetCount)장)", systemImage: "square.and.arrow.up")
+        }
+
+        // RAW → JPG conversion
+        Button(action: {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.message = "변환된 JPG를 저장할 폴더를 선택하세요"
+            guard panel.runModal() == .OK, let outputFolder = panel.url else { return }
+
+            let photos = targetIDs.compactMap { id -> PhotoItem? in
+                guard let idx = store._photoIndex[id] else { return nil }
+                return store.photos[idx]
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = RAWConversionService.batchConvert(
+                    photos: photos, outputFolder: outputFolder,
+                    resolution: .original, quality: .high
+                ) { _, _ in }
+                DispatchQueue.main.async {
+                    store.showToastMessage("🔄 \(result.succeeded)장 JPG 변환 완료")
+                    NSWorkspace.shared.open(outputFolder)
+                }
+            }
+        }) {
+            Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
         }
 
         // Copy to Finder (with recent folders)
