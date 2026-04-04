@@ -1522,8 +1522,10 @@ struct PhotoPreviewView: View {
             return
         }
 
-        // Use RAW URL if available (better quality), otherwise JPG
-        let url = selected.rawURL ?? selected.jpgURL
+        // Prefer JPG (fast load, same color as preview) over RAW embedded (slow 50MP decode)
+        let hasJPG = selected.jpgURL.pathExtension.lowercased() != selected.rawURL?.pathExtension.lowercased()
+        let url = (hasJPG && !FileMatchingService.rawExtensions.contains(selected.jpgURL.pathExtension.lowercased()))
+            ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
         let photoID = selected.id
         print("🔍 [ZOOM] loading hi-res for \(url.lastPathComponent)...")
 
@@ -1540,7 +1542,7 @@ struct PhotoPreviewView: View {
                 // instead of CIRAWFilter which produces different colors
                 let handle: FileHandle? = try? FileHandle(forReadingFrom: url)
                 if let handle = handle {
-                    let data = handle.readData(ofLength: 20_000_000)  // Read up to 20MB for full-size embedded JPEG
+                    let data = handle.readData(ofLength: 12_000_000)  // Read up to 12MB
                     handle.closeFile()
 
                     // Find all FFD8 markers and pick the largest embedded JPEG
@@ -1554,12 +1556,16 @@ struct PhotoPreviewView: View {
                         let subData = data.subdata(in: i..<end)
                         if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                            CGImageSourceGetCount(imgSource) > 0 {
-                            // Full resolution — no size limit for true pixel-peeping
-                            let opts: [NSString: Any] = [
+                            // Screen-optimal size: retina screen * zoom level
+                            let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
+                            let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                            let hiResTarget = Int(screenMax * retinaScale)  // ~5760 on 5K, ~2880 on 1440p
+                            var opts: [NSString: Any] = [
                                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
                                 kCGImageSourceShouldCacheImmediately: true
                             ]
+                            opts[kCGImageSourceThumbnailMaxPixelSize] = hiResTarget
                             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
                                 let size = cgImage.width * cgImage.height
                                 if size > bestSize {
