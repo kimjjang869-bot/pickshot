@@ -1513,116 +1513,150 @@ struct PhotoPreviewView: View {
         }
     }
 
+    // MARK: - Hi-Res Cache (for zoom)
+    private static var hiResCache = NSCache<NSURL, NSImage>()
+    private static var hiResCacheInitialized = false
+
+    private static func initHiResCache() {
+        guard !hiResCacheInitialized else { return }
+        hiResCache.countLimit = 20  // Cache ±10 photos
+        hiResCache.totalCostLimit = 1024 * 1024 * 1024 * 2  // 2GB
+        hiResCacheInitialized = true
+    }
+
     private func loadHiResForZoom() {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
-        guard !isHiResLoaded else {
-            print("🔍 [ZOOM] hi-res already loaded")
+        guard !isHiResLoaded else { return }
+
+        Self.initHiResCache()
+
+        // Check hi-res cache first → instant
+        let hasJPG = !FileMatchingService.rawExtensions.contains(selected.jpgURL.pathExtension.lowercased())
+        let hiResURL = hasJPG ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
+
+        if let cached = Self.hiResCache.object(forKey: hiResURL as NSURL) {
+            image = cached
+            hiResImage = cached
+            isHiResLoaded = true
+            prefetchHiResNeighbors()  // Prefetch next photos
             return
         }
 
-        // If already have hi-res cached, use immediately
+        // If already have hi-res from this session
         if let hi = hiResImage {
             image = hi
             isHiResLoaded = true
             return
         }
 
-        // Prefer JPG (fast load, same color as preview) over RAW embedded (slow 50MP decode)
-        let hasJPG = selected.jpgURL.pathExtension.lowercased() != selected.rawURL?.pathExtension.lowercased()
-        let url = (hasJPG && !FileMatchingService.rawExtensions.contains(selected.jpgURL.pathExtension.lowercased()))
-            ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
+        let url = hiResURL
         let photoID = selected.id
-        print("🔍 [ZOOM] loading hi-res for \(url.lastPathComponent)...")
 
         hiResLoadWork?.cancel()
         let work = DispatchWorkItem {
-            let start = CFAbsoluteTimeGetCurrent()
-            var hiRes: NSImage? = nil
-            let ext = url.pathExtension.lowercased()
-            let isRAW = FileMatchingService.rawExtensions.contains(ext)
+            var hiRes = Self.loadHiResImage(url: url)
+            guard self.pendingPhotoID == photoID else { return }
 
-            if isRAW {
-                // RAW: extract the LARGEST embedded JPEG (same color as preview)
-                // This preserves the camera's color processing (Picture Style)
-                // instead of CIRAWFilter which produces different colors
-                let handle: FileHandle? = try? FileHandle(forReadingFrom: url)
-                if let handle = handle {
-                    let data = handle.readData(ofLength: 12_000_000)  // Read up to 12MB
-                    handle.closeFile()
-
-                    // Find all FFD8 markers and pick the largest embedded JPEG
-                    let ffd8: [UInt8] = [0xFF, 0xD8]
-                    var bestImage: NSImage? = nil
-                    var bestSize = 0
-
-                    for i in 0..<(data.count - 2) {
-                        guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-                        let end = min(i + 8_000_000, data.count)
-                        let subData = data.subdata(in: i..<end)
-                        if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
-                           CGImageSourceGetCount(imgSource) > 0 {
-                            // Screen-optimal size: retina screen * zoom level
-                            let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
-                            let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
-                            let hiResTarget = Int(screenMax * retinaScale)  // ~5760 on 5K, ~2880 on 1440p
-                            var opts: [NSString: Any] = [
-                                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceShouldCacheImmediately: true
-                            ]
-                            opts[kCGImageSourceThumbnailMaxPixelSize] = hiResTarget
-                            if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
-                                let size = cgImage.width * cgImage.height
-                                if size > bestSize {
-                                    bestSize = size
-                                    bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                                }
-                            }
-                        }
-                    }
-                    // Match orientation to the current low-res preview
-                    // If lowRes is portrait but embedded is landscape (or vice versa), rotate
-                    if var img = bestImage, let low = self.lowResImage {
-                        let lowIsPortrait = low.size.height > low.size.width
-                        let hiIsPortrait = img.size.height > img.size.width
-                        if lowIsPortrait != hiIsPortrait {
-                            // Mismatch — rotate 90° CW to match
-                            img = Self.applyOrientation(img, orientation: 6)
-                        }
-                        hiRes = img
-                    } else {
-                        hiRes = bestImage
-                    }
+            // Fix orientation: match lowRes aspect ratio
+            if var img = hiRes, let low = self.lowResImage {
+                let lowIsPortrait = low.size.height > low.size.width
+                let hiIsPortrait = img.size.height > img.size.width
+                if lowIsPortrait != hiIsPortrait {
+                    img = Self.applyOrientation(img, orientation: 6)
+                    hiRes = img
                 }
-            }
-
-            // JPG: load at full resolution directly
-            if hiRes == nil {
-                if let nsImg = NSImage(contentsOf: url) {
-                    hiRes = nsImg
-                }
-            }
-            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-            guard self.pendingPhotoID == photoID else {
-                print("🔍 [ZOOM] hi-res cancelled (photo changed)")
-                return
             }
 
             DispatchQueue.main.async {
                 guard self.pendingPhotoID == photoID else { return }
                 if let hi = hiRes {
+                    Self.hiResCache.setObject(hi, forKey: url as NSURL)
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
-                    print("🔍 [ZOOM] hi-res loaded: \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms")
-                } else {
-                    print("🔍 [ZOOM] hi-res FAILED for \(url.lastPathComponent)")
+                    self.prefetchHiResNeighbors()  // Prefetch ±3
                 }
             }
         }
         hiResLoadWork = work
         DispatchQueue.global(qos: .userInitiated).async(execute: work)
+    }
+
+    /// Prefetch hi-res for ±3 neighboring photos (background)
+    private func prefetchHiResNeighbors() {
+        let list = store.filteredPhotos
+        guard let currentID = store.selectedPhotoID,
+              let currentIdx = list.firstIndex(where: { $0.id == currentID }) else { return }
+
+        let range = 3
+        let start = max(0, currentIdx - range)
+        let end = min(list.count - 1, currentIdx + range)
+
+        DispatchQueue.global(qos: .utility).async {
+            for i in start...end {
+                if i == currentIdx { continue }
+                let photo = list[i]
+                guard !photo.isFolder, !photo.isParentFolder else { continue }
+
+                let hasJPG = !FileMatchingService.rawExtensions.contains(photo.jpgURL.pathExtension.lowercased())
+                let url = hasJPG ? photo.jpgURL : (photo.rawURL ?? photo.jpgURL)
+
+                // Skip if already cached
+                if Self.hiResCache.object(forKey: url as NSURL) != nil { continue }
+
+                // Load hi-res
+                let img = Self.loadHiResImage(url: url)
+                if let img = img {
+                    Self.hiResCache.setObject(img, forKey: url as NSURL)
+                }
+            }
+        }
+    }
+
+    /// Static hi-res loader (reusable for prefetch)
+    private static func loadHiResImage(url: URL) -> NSImage? {
+        let ext = url.pathExtension.lowercased()
+        let isRAW = FileMatchingService.rawExtensions.contains(ext)
+
+        if isRAW {
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            let data = handle.readData(ofLength: 12_000_000)
+            handle.closeFile()
+
+            let ffd8: [UInt8] = [0xFF, 0xD8]
+            var bestImage: NSImage? = nil
+            var bestSize = 0
+            let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
+            let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
+            let hiResTarget = Int(screenMax * retinaScale)
+
+            for i in 0..<(data.count - 2) {
+                guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
+                let end = min(i + 8_000_000, data.count)
+                let subData = data.subdata(in: i..<end)
+                if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                   CGImageSourceGetCount(imgSource) > 0 {
+                    var opts: [NSString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+                    opts[kCGImageSourceThumbnailMaxPixelSize] = hiResTarget
+                    if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
+                        let size = cgImage.width * cgImage.height
+                        if size > bestSize {
+                            bestSize = size
+                            bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                        }
+                    }
+                }
+            }
+            return bestImage
+        } else {
+            // JPG: load directly
+            return NSImage(contentsOf: url)
+        }
     }
 
     private func reloadCurrentImage() {
