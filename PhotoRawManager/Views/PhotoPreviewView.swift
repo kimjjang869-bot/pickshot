@@ -1277,9 +1277,25 @@ struct PhotoPreviewView: View {
                     }
                 }
 
-                // No Stage 2 — hi-res loads on-demand when user zooms in
-                // This prevents CPU/memory spike when rapidly browsing
-                if false {
+                // Stage 2: Higher res preview (2400px — good enough for most screens)
+                guard self.pendingPhotoID == id else { return }
+                let stage2Px: CGFloat = 2400
+                if optimalPx > 1200, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
+                    var finalHR = hr
+                    if let stable = self.viewState.stableImageSize {
+                        let sp = stable.height > stable.width
+                        let hp = hr.size.height > hr.size.width
+                        if sp != hp { finalHR = Self.applyOrientation(hr, orientation: 6) }
+                    }
+                    guard self.pendingPhotoID == id else { return }
+                    PreviewImageCache.shared.set(cacheKey, image: finalHR)
+                    DispatchQueue.main.async {
+                        if self.pendingPhotoID == id {
+                            self.image = finalHR
+                            self.lowResImage = finalHR
+                        }
+                    }
+                } else if false {
                 } else {
                     PreviewImageCache.shared.set(cacheKey, image: fast)
                 }

@@ -847,12 +847,11 @@ struct ListRow: View {
 
 class ThumbnailCache {
     static let shared = ThumbnailCache()
-    // NSCache ONLY — auto-evicts under memory pressure (no Dictionary leak!)
     private let cache = NSCache<NSURL, NSImage>()
 
     init() {
-        cache.countLimit = 2000
-        cache.totalCostLimit = 300 * 1024 * 1024  // 300MB max
+        cache.countLimit = 1500
+        cache.totalCostLimit = 400 * 1024 * 1024  // 400MB
     }
 
     func get(_ url: URL) -> NSImage? {
@@ -860,7 +859,7 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        let cost = Int(image.size.width * image.size.height * 4)  // ~bytes
+        let cost = max(1, Int(image.size.width * image.size.height) / 256)  // Approximate KB
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
