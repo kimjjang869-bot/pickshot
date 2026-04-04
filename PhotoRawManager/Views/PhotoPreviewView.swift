@@ -468,8 +468,8 @@ struct PhotoPreviewView: View {
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) { location in
                                 if isFitMode {
-                                    // Zoom to 200% centered on clicked point
-                                    let targetScale: CGFloat = 2.0
+                                    // Zoom to 250% centered on clicked point
+                                    let targetScale: CGFloat = 2.5
                                     viewState.zoomPreset = .p100  // Will be overridden
                                     viewState.customScale = targetScale
                                     // Calculate pan offset so clicked point stays at center
