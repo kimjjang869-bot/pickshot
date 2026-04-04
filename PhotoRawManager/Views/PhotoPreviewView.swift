@@ -890,10 +890,6 @@ struct PhotoPreviewView: View {
             if let cached = PreviewImageCache.shared.get(cacheKey) {
                 image = cached
                 lowResImage = cached
-                // Even on cache hit, load hi-res if zoomed
-                if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
-                    loadHiResForZoom()
-                }
                 return
             }
 
@@ -1242,9 +1238,6 @@ struct PhotoPreviewView: View {
                     guard self.pendingPhotoID == id else { return }
                     self.image = loaded
                     self.lowResImage = loaded
-                    if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                        self.loadHiResForZoom()
-                    }
                 }
             } else {
                 // RAW: 2-stage loading
@@ -1268,10 +1261,6 @@ struct PhotoPreviewView: View {
                     guard self.pendingPhotoID == id else { return }
                     self.image = fast
                     self.lowResImage = fast
-                    // Auto hi-res if zoomed in
-                    if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                        self.loadHiResForZoom()
-                    }
                 }
 
                 // Stage 2: Higher res preview (2400px — good enough for most screens)
