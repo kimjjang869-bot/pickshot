@@ -1217,38 +1217,29 @@ struct PhotoPreviewView: View {
 
         // Serial queue: only 1 image loads at a time (prevents memory spike)
         Self.imageLoadQueue.async {
+            autoreleasepool {
             guard self.pendingPhotoID == id else { return }
 
             let ext = url.pathExtension.lowercased()
             let isJPG = ["jpg", "jpeg"].contains(ext)
 
-            // JPG with resolution==0 ("original"): load at FULL resolution
-            if isJPG && resolution == 0 {
-                let fullImage = NSImage(contentsOf: url)
-                guard let full = fullImage, self.pendingPhotoID == id else { return }
-                PreviewImageCache.shared.set(cacheKey, image: full)
-                DispatchQueue.main.async {
-                    if self.pendingPhotoID == id {
-                        self.image = full
-                        self.lowResImage = full
-                        // Auto hi-res if zoomed (JPG full-res is already hi-res, but RAW pair may exist)
-                        if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                            self.loadHiResForZoom()
-                        }
-                    }
+            if isJPG {
+                // JPG: load at target resolution
+                let targetPx = resolution > 0 ? CGFloat(resolution) : 0
+                let img: NSImage?
+                if targetPx == 0 {
+                    img = NSImage(contentsOf: url)
+                } else {
+                    img = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
                 }
-            } else if isJPG {
-                let optimalPx = CGFloat(resolution)
-                let img = PreviewImageCache.loadOptimized(url: url, maxPixel: optimalPx)
                 guard let loaded = img, self.pendingPhotoID == id else { return }
                 PreviewImageCache.shared.set(cacheKey, image: loaded)
                 DispatchQueue.main.async {
-                    if self.pendingPhotoID == id {
-                        self.image = loaded
-                        self.lowResImage = loaded
-                        if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                            self.loadHiResForZoom()
-                        }
+                    guard self.pendingPhotoID == id else { return }
+                    self.image = loaded
+                    self.lowResImage = loaded
+                    if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                        self.loadHiResForZoom()
                     }
                 }
             } else {
@@ -1292,6 +1283,7 @@ struct PhotoPreviewView: View {
                 guard self.pendingPhotoID == id else { return }
                 self.scheduleSmartPreload(currentID: id, resolution: resolution)
             }
+            } // autoreleasepool
         }
     }
 
