@@ -1531,9 +1531,10 @@ struct PhotoPreviewView: View {
 
         Self.initHiResCache()
 
-        // Check hi-res cache first → instant
-        let hasJPG = !FileMatchingService.rawExtensions.contains(selected.jpgURL.pathExtension.lowercased())
-        let hiResURL = hasJPG ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
+        // Prefer JPG (fast + correct orientation) over RAW
+        let jpgExt = selected.jpgURL.pathExtension.lowercased()
+        let hasRealJPG = !FileMatchingService.rawExtensions.contains(jpgExt)
+        let hiResURL = hasRealJPG ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
 
         if let cached = Self.hiResCache.object(forKey: hiResURL as NSURL) {
             image = cached
@@ -1615,38 +1616,51 @@ struct PhotoPreviewView: View {
     }
 
     /// Static hi-res loader (reusable for prefetch)
-    /// Uses CIRAWFilter.previewImage for fastest RAW preview extraction (Apple optimized)
+    /// Strategy: JPG direct (fastest) → RAW CGImageSource with SubsampleFactor (fast + orientation correct)
     private static func loadHiResImage(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
-        if isRAW {
-            // Method 1: CIRAWFilter.previewImage — fastest (Apple optimized, no byte scanning)
-            if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: url),
-               let preview = rawFilter.previewImage {
-                let ctx = CIContext(options: [.useSoftwareRenderer: false])
-                if let cgImage = ctx.createCGImage(preview, from: preview.extent) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                }
-            }
-
-            // Method 2: CGImageSource full decode (fallback)
-            let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-            if let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary) {
-                let thumbOpts: [NSString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true
-                ]
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                }
-            }
-            return nil
-        } else {
-            // JPG: load directly (fastest)
+        if !isRAW {
+            // JPG/PNG: NSImage loads at full resolution with correct orientation (~0.1s)
             return NSImage(contentsOf: url)
         }
+
+        // RAW: use CGImageSource with SubsampleFactor for speed + Transform for orientation
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
+
+        // Get original dimensions to calculate subsample factor
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+        let origW = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+        let origH = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+        let origMax = max(origW, origH)
+
+        // Target: screen retina resolution (sharp enough for zoom, fast to decode)
+        let screenMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
+        let retinaScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let targetPx = Int(screenMax * retinaScale)
+
+        // SubsampleFactor: decode at reduced resolution (2x, 4x, 8x faster)
+        var subsample = 1
+        if origMax > targetPx * 4 { subsample = 4 }
+        else if origMax > targetPx * 2 { subsample = 2 }
+
+        var thumbOpts: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: targetPx,
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,  // Handles orientation!
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceShouldCache: false
+        ]
+        if subsample > 1 {
+            thumbOpts[kCGImageSourceSubsampleFactor] = subsample
+        }
+
+        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) {
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        return nil
     }
 
     private func reloadCurrentImage() {
