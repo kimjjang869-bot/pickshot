@@ -1547,7 +1547,19 @@ struct PhotoPreviewView: View {
                             }
                         }
                     }
-                    hiRes = bestImage
+                    // Apply RAW orientation to embedded JPEG (which may lack orientation tag)
+                    if var img = bestImage {
+                        let orient = Self.readRawOrientation(url: url)
+                        if orient >= 5 && orient <= 8 && img.size.width > img.size.height {
+                            // Should be portrait but embedded is landscape → rotate
+                            img = Self.applyOrientation(img, orientation: orient)
+                        } else if orient >= 5 && orient <= 8 && img.size.width < img.size.height {
+                            // Already portrait — ok
+                        } else if orient >= 2 && orient <= 4 {
+                            img = Self.applyOrientation(img, orientation: orient)
+                        }
+                        hiRes = img
+                    }
                 }
             }
 
