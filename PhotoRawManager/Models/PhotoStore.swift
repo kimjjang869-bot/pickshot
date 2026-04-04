@@ -1072,10 +1072,40 @@ class PhotoStore: ObservableObject {
     /// Anchor for shift-range selection
     private var shiftAnchorIndex: Int?
 
+    private var moveThrottleWorkItem: DispatchWorkItem?
+    private var pendingMoveOffset: Int = 0
+    private var lastMoveTime: CFAbsoluteTime = 0
+
     private func moveSelection(by offset: Int, shiftKey: Bool = false, cmdKey: Bool = false) {
         let list = filteredPhotos
         guard !list.isEmpty else { return }
-        AppLogger.log(.selection, "moveSelection: offset=\(offset) columnsPerRow=\(columnsPerRow) gridWidth=\(Int(gridWidth)) thumbSize=\(Int(thumbnailSize))\(shiftKey ? " +Shift" : "")\(cmdKey ? " +Cmd" : "")")
+
+        // Throttle: if keys come faster than 30ms apart, batch them
+        let now = CFAbsoluteTimeGetCurrent()
+        let interval = now - lastMoveTime
+        lastMoveTime = now
+
+        if interval < 0.03 && !shiftKey && !cmdKey {
+            // Accumulate offset and debounce
+            pendingMoveOffset += offset
+            moveThrottleWorkItem?.cancel()
+            let totalOffset = pendingMoveOffset
+            let work = DispatchWorkItem { [weak self] in
+                self?.pendingMoveOffset = 0
+                self?.executeMoveSelection(by: totalOffset, shiftKey: false, cmdKey: false)
+            }
+            moveThrottleWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
+            return
+        }
+
+        pendingMoveOffset = 0
+        executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
+    }
+
+    private func executeMoveSelection(by offset: Int, shiftKey: Bool, cmdKey: Bool) {
+        let list = filteredPhotos
+        guard !list.isEmpty else { return }
 
         ensureFilteredIndex()
 
