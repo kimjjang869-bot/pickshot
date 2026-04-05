@@ -771,9 +771,10 @@ class AggressiveImageCache {
     private let lock = NSLock()
 
     init() {
-        // Use up to 40% of available RAM for image cache
+        // Use up to 40% of available RAM for image cache, 최대 8GB 제한
         let totalRAM = ProcessInfo.processInfo.physicalMemory
-        let cacheLimit = Int(totalRAM / 5 * 2)  // 40% of RAM
+        let maxCacheBytes = UInt64(8) * 1024 * 1024 * 1024  // 8GB cap
+        let cacheLimit = Int(min(totalRAM / 5 * 2, maxCacheBytes))  // 40% of RAM, max 8GB
         cache.totalCostLimit = cacheLimit
 
         // Allow many entries

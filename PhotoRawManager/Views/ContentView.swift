@@ -454,6 +454,14 @@ extension View {
 struct BackupProgressBar: View {
     @ObservedObject var session: BackupSession
     let service: MemoryCardBackupService
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        if bytes >= 1_073_741_824 {
+            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+        } else {
+            return String(format: "%.0f MB", Double(bytes) / 1_048_576)
+        }
+    }
     @State private var dragOffset: CGSize = .zero
     @State private var position: CGPoint = .zero
 
@@ -467,6 +475,9 @@ struct BackupProgressBar: View {
                 HStack {
                     Text("\(session.volumeName) 백업 중...")
                         .font(.system(size: 12, weight: .semibold))
+                    Text(formatBytes(session.totalBytes))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                     Spacer()
                     Text("\(session.done)/\(session.total)")
                         .font(.system(size: 11, design: .monospaced))

@@ -141,17 +141,20 @@ struct FaceGroupingService {
         let pairLock = NSLock()
         var matchedPairs: [PairResult] = []
 
+        // allFaces 스냅샷 — concurrentPerform 중 읽기 전용으로 사용
+        let facesSnapshot = allFaces
+
         DispatchQueue.concurrentPerform(iterations: min(n, maxCompare)) { i in
             var localPairs: [PairResult] = []
             for j in (i + 1)..<min(n, maxCompare) {
-                if allFaces[i].photoID == allFaces[j].photoID { continue }
+                if facesSnapshot[i].photoID == facesSnapshot[j].photoID { continue }
 
                 var distance: Float = 0
                 do {
-                    try allFaces[i].featurePrint.computeDistance(&distance, to: allFaces[j].featurePrint)
+                    try facesSnapshot[i].featurePrint.computeDistance(&distance, to: facesSnapshot[j].featurePrint)
                 } catch { continue }
 
-                let avgSize = Float((allFaces[i].faceSize + allFaces[j].faceSize) / 2)
+                let avgSize = Float((facesSnapshot[i].faceSize + facesSnapshot[j].faceSize) / 2)
                 // Balanced thresholds: strict enough to avoid false grouping, lenient enough to catch same person
                 let threshold: Float = avgSize > 0.15 ? 0.62 : (avgSize > 0.08 ? 0.58 : 0.52)
 

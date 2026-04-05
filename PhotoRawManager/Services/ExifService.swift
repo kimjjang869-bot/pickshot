@@ -18,7 +18,7 @@ struct ExifService {
     /// Uses kCGImageSourceShouldCache: false to avoid loading image data.
     /// Results are cached in memory.
     static func extractExif(from url: URL) -> ExifData? {
-        // Check cache first
+        // TOCTOU 방지: 락을 유지한 채 캐시 확인 → I/O → 캐시 저장
         cacheLock.lock()
         if let cached = exifCache[url] {
             cacheLock.unlock()
@@ -44,8 +44,12 @@ struct ExifService {
             }
         }
 
-        // Store in cache
+        // 캐시 저장 — 중복 I/O 방지를 위해 이미 캐시된 값이 있으면 그것을 반환
         cacheLock.lock()
+        if let existing = exifCache[url] {
+            cacheLock.unlock()
+            return existing
+        }
         exifCache[url] = data
         cacheLock.unlock()
 

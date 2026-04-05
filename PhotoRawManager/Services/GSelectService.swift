@@ -82,15 +82,15 @@ class GSelectService: ObservableObject {
 
         // Create folder on Google Drive
         GoogleDriveService.createFolder(name: folderName, accessToken: token) { [weak self] folderId, error in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 if let folderId = folderId {
                     self?.driveFolderID = folderId
                     self?.isActive = true
                     self?.showSetupSheet = false
 
                     // Create share link for the folder
-                    GoogleDriveService.createShareLink(fileId: folderId, accessToken: token) { link, _ in
-                        DispatchQueue.main.async {
+                    GoogleDriveService.createShareLink(fileId: folderId, accessToken: token) { [weak self] link, _ in
+                        DispatchQueue.main.async { [weak self] in
                             self?.shareLink = link
                             // Generate client web viewer link
                             if let token = GoogleDriveService.savedAccessToken {

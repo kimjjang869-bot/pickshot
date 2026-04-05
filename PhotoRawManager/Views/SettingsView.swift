@@ -130,8 +130,9 @@ struct GeneralSettingsTab: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
             autoOpenLastFolder = true; showFileTypeBadge = true; showFileExtension = true
-            windowStartSize = "default"; appLanguage = "ko"; appearance = "system"
-            showNotifications = true; autoSaveOnExit = true
+            deleteOriginalFile = false; windowStartSize = "default"; appLanguage = "ko"
+            appearance = "system"; showNotifications = true; autoSaveOnExit = true
+            autoBackupEnabled = false
         }
     }
 }

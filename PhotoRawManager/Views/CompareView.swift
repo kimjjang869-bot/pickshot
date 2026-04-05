@@ -83,7 +83,6 @@ struct CompareView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape)
-                    .keyboardShortcut(.cancelAction)
             }
             .padding(12)
 

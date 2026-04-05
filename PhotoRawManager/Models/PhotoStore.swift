@@ -91,7 +91,7 @@ class PhotoStore: ObservableObject {
     @Published var photos: [PhotoItem] = [] {
         didSet {
             guard !_suppressDidSet else { return }
-            photosVersion += 1; _cachedFiltered = nil; _cacheKey = ""; rebuildIndex()
+            photosVersion += 1; filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock(); rebuildIndex()
         }
     }
     @Published var selectedPhotoID: UUID?
@@ -103,11 +103,11 @@ class PhotoStore: ObservableObject {
     var isKeyRepeat: Bool = false
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
-    @Published var minimumRatingFilter: Int = 0 { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var minimumRatingFilter: Int = 0 { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
-            _cachedFiltered = nil; _cacheKey = ""
-            _filteredIndex.removeAll(); _filteredIndexVersion = ""
+            filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""
+            _filteredIndex.removeAll(); _filteredIndexVersion = ""; filterLock.unlock()
             UserDefaults.standard.set(sortMode.rawValue, forKey: "savedSortMode")
             scrollTrigger += 1
         }
@@ -118,12 +118,18 @@ class PhotoStore: ObservableObject {
     }
     @Published var thumbnailSize: CGFloat = 120
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
-    @Published var qualityFilter: QualityFilter = .all { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var qualityFilter: QualityFilter = .all { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var isAnalyzing = false
     @Published var analyzeProgress: Double = 0
     @Published var showAnalysisOptions = false
     @Published var analysisOptions = AnalysisOptions()
-    private var analysisCancel = false
+    // analysisCancel: 백그라운드 스레드에서 읽고 메인 스레드에서 쓰므로 lock 보호
+    private var _analysisCancel = false
+    private let analysisCancelLock = NSLock()
+    private var analysisCancel: Bool {
+        get { analysisCancelLock.lock(); defer { analysisCancelLock.unlock() }; return _analysisCancel }
+        set { analysisCancelLock.lock(); _analysisCancel = newValue; analysisCancelLock.unlock() }
+    }
     @Published var folderURL: URL?
     // 화면 크기에 맞게 자동 조절
     @Published var hSplitPosition: CGFloat = {
@@ -180,12 +186,12 @@ class PhotoStore: ObservableObject {
     @Published var showCompare = false
     @Published var showDualViewer = false
     @Published var showSlideshow = false
-    @Published var colorLabelFilter: ColorLabel = .none { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var colorLabelFilter: ColorLabel = .none { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
-    @Published var sceneTagFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }
-    @Published var keywordFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var sceneTagFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var keywordFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var isClassifyingScenes: Bool = false
     @Published var classifyProgress: Double = 0
     @Published var layoutMode: LayoutMode = .gridPreview
@@ -206,9 +212,9 @@ class PhotoStore: ObservableObject {
     }
     @Published var showDeleteOriginalConfirm: Bool = false
     var pendingDeleteIDs: Set<UUID> = []
-    var faceGroups: [Int: [UUID]] = [:]  // Not @Published
-    var faceThumbnails: [Int: NSImage] = [:]  // Not @Published - accessed directly, no re-render trigger
-    @Published var faceGroupFilter: Int? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var faceGroups: [Int: [UUID]] = [:]
+    @Published var faceThumbnails: [Int: NSImage] = [:]
+    @Published var faceGroupFilter: Int? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
     @Published var showGoogleDrive: Bool = false
@@ -244,10 +250,10 @@ class PhotoStore: ObservableObject {
     // AI Smart Classification
     @Published var isAIClassifying: Bool = false
     @Published var aiClassifyProgress: (Int, Int) = (0, 0)
-    @Published var aiCategoryFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }   // 카테고리별 필터
+    @Published var aiCategoryFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }   // 카테고리별 필터
 
     // Search
-    @Published var searchText: String = "" { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var searchText: String = "" { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
 
     // MARK: - Undo Stack
     struct FileMove { let sourceURL: URL; let destURL: URL }
@@ -777,12 +783,16 @@ class PhotoStore: ObservableObject {
     }
 
     // Cached filtered results - invalidated when inputs change
+    // filterLock: _cachedFiltered / _filteredIndex 동시 접근 보호
+    private let filterLock = NSLock()
     private var _cachedFiltered: [PhotoItem]?
     private var _cacheKey: String = ""
 
     func invalidateCache() {
+        filterLock.lock()
         _cachedFiltered = nil
         _cacheKey = ""
+        filterLock.unlock()
         photosVersion += 1
     }
 
@@ -798,9 +808,12 @@ class PhotoStore: ObservableObject {
 
     var filteredPhotos: [PhotoItem] {
         let key = "\(photosVersion)"
+        filterLock.lock()
         if key == _cacheKey, let cached = _cachedFiltered {
+            filterLock.unlock()
             return cached
         }
+        filterLock.unlock()
 
         // Capture filter values once to avoid repeated property access
         let minRating = minimumRatingFilter
@@ -882,16 +895,20 @@ class PhotoStore: ObservableObject {
         folders.sort { $0.jpgURL.lastPathComponent < $1.jpgURL.lastPathComponent }
         let sortedFiles = sortPhotos(files)
         let final = parentItems + folders + sortedFiles
+        filterLock.lock()
         _cachedFiltered = final
         _cacheKey = key
+        filterLock.unlock()
         return final
     }
 
     func invalidateFilterCache() {
+        filterLock.lock()
         _cachedFiltered = nil
         _cacheKey = ""
         _filteredIndex.removeAll()
         _filteredIndexVersion = ""
+        filterLock.unlock()
     }
 
     private func sortPhotos(_ list: [PhotoItem]) -> [PhotoItem] {
@@ -1436,6 +1453,7 @@ class PhotoStore: ObservableObject {
 
     private func ensureFilteredIndex() {
         let list = filteredPhotos
+        filterLock.lock()
         let key = _cacheKey
         if _filteredIndexVersion != key || _filteredIndex.isEmpty {
             _filteredIndex.removeAll(keepingCapacity: true)
@@ -1444,6 +1462,7 @@ class PhotoStore: ObservableObject {
             }
             _filteredIndexVersion = key
         }
+        filterLock.unlock()
     }
 
     /// Anchor for shift-range selection

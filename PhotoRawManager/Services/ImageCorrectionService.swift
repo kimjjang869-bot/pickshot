@@ -215,9 +215,9 @@ struct ImageCorrectionService {
             let faceRequest = VNDetectFaceRectanglesRequest()
             try? faceHandler.perform([faceRequest])
 
-            if let faces = faceRequest.results, !faces.isEmpty {
+            if let faces = faceRequest.results, !faces.isEmpty,
+               let largest = faces.max(by: { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }) {
                 // 가장 큰 얼굴의 밝기 측정
-                let largest = faces.max(by: { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height })!
                 let faceRect = CGRect(
                     x: largest.boundingBox.origin.x * image.extent.width,
                     y: largest.boundingBox.origin.y * image.extent.height,

@@ -183,6 +183,7 @@ struct AIAnalysisView: View {
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
         .cornerRadius(8)
+        .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 
     private func aiButton(title: String, icon: String, color: Color, locked: Bool = false, action: @escaping () -> Void) -> some View {

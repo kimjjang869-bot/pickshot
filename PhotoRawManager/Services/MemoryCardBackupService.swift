@@ -19,6 +19,7 @@ class BackupSession: ObservableObject, Identifiable {
 
     var startTime: CFAbsoluteTime = 0
     var bytesCopied: Int64 = 0
+    @Published var totalBytes: Int64 = 0  // 총 용량
 
     var progress: Double {
         total > 0 ? Double(done) / Double(total) : 0
@@ -70,6 +71,10 @@ class MemoryCardBackupService: ObservableObject {
     var destinationURL: URL?
 
     private var volumeObserver: NSObjectProtocol?
+
+    deinit {
+        stopMonitoring()
+    }
 
     private static let photoExtensions: Set<String> = [
         "jpg", "jpeg", "arw", "cr2", "cr3", "nef", "nrw", "raf",
@@ -167,6 +172,9 @@ class MemoryCardBackupService: ObservableObject {
         destinationURL = destination
         let session = BackupSession(volumeURL: sourceVolume, destinationURL: destination)
         session.total = photos.count
+        session.totalBytes = photos.reduce(Int64(0)) { sum, url in
+            sum + ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0)
+        }
         session.startTime = CFAbsoluteTimeGetCurrent()
 
         DispatchQueue.main.async {

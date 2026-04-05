@@ -165,9 +165,9 @@ struct SmartCropService {
         let faces = detectFaces(cgImage: cgImage)
         let attention = detectAttentionArea(cgImage: cgImage)
 
-        if !faces.isEmpty {
+        if !faces.isEmpty,
+           let largestFace = faces.max(by: { $0.width * $0.height < $1.width * $1.height }) {
             // 가장 큰 얼굴 중심 (70%) + 어텐션 중심 (30%)
-            let largestFace = faces.max(by: { $0.width * $0.height < $1.width * $1.height })!
             let faceCenter = CGPoint(x: largestFace.midX, y: largestFace.midY)
 
             if let att = attention {
