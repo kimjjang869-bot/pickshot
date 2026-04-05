@@ -1422,14 +1422,16 @@ class PhotoStore: ObservableObject {
             onQuickPreview?(photo.jpgURL)
         }
 
-        // Prefetch nearby
-        prefetchNearby(list: list, centerIndex: newIndex, range: 5)
+        // 비대칭 프리페치: 앞 3장 + 뒤 1장 (JPG만, RAW 제외)
+        prefetchNearby(list: list, centerIndex: newIndex, aheadCount: 3, behindCount: 1)
     }
 
-    private func prefetchNearby(list: [PhotoItem], centerIndex: Int, range: Int) {
+    /// 비대칭 프리페치: 탐색 방향에 따라 앞쪽 더 많이 프리페치
+    /// RAW 파일은 RawCamera 디모자이킹으로 CPU 폭발하므로 스킵
+    private func prefetchNearby(list: [PhotoItem], centerIndex: Int, aheadCount: Int, behindCount: Int) {
         var urls: [URL] = []
-        let start = max(0, centerIndex - range)
-        let end = min(list.count - 1, centerIndex + range)
+        let start = max(0, centerIndex - behindCount)
+        let end = min(list.count - 1, centerIndex + aheadCount)
         guard end >= start else { return }
         for i in start...end {
             if i == centerIndex { continue }

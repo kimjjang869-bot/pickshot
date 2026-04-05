@@ -83,12 +83,15 @@
 		6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */; };
 		89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */; };
 		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
+		SR10001 /* SuperResolutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SR10002 /* SuperResolutionService.swift */; };
 		901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */; };
 		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
 		UG10001 /* UprightGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = UG10002 /* UprightGuideView.swift */; };
 		FC10001 /* FaceCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10002 /* FaceCompareView.swift */; };
 		BP10001 /* BatchProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10002 /* BatchProcessService.swift */; };
 		BP10003 /* BatchProcessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10004 /* BatchProcessView.swift */; };
+		SC10001 /* SmartCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SC10002 /* SmartCropService.swift */; };
+			AE10001 /* AIEnhanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE10002 /* AIEnhanceService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -165,6 +168,7 @@
 		C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupService.swift; sourceTree = "<group>"; };
 		915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupView.swift; sourceTree = "<group>"; };
 		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
+		SR10002 /* SuperResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperResolutionService.swift; sourceTree = "<group>"; };
 		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
 		81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = NIMAAesthetic.mlpackage; sourceTree = "<group>"; };
 		UG10002 /* UprightGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
@@ -173,6 +177,8 @@
 		CR10002 /* CropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropView.swift; sourceTree = "<group>"; };
 		BP10002 /* BatchProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessService.swift; sourceTree = "<group>"; };
 		BP10004 /* BatchProcessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessView.swift; sourceTree = "<group>"; };
+		SC10002 /* SmartCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCropService.swift; sourceTree = "<group>"; };
+			AE10002 /* AIEnhanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEnhanceService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -293,6 +299,9 @@
 				XMP10002,
 				KWT10002 /* KeywordTaggingService.swift */,
 				BP10002 /* BatchProcessService.swift */,
+				SR10002 /* SuperResolutionService.swift */,
+				SC10002 /* SmartCropService.swift */,
+				AE10002 /* AIEnhanceService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -379,6 +388,7 @@
 				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
 				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
 				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
+				SR10001 /* SuperResolutionService.swift in Sources */,
 				89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */,
 				6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */,
 				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,
@@ -446,6 +456,8 @@
 				BP10001 /* BatchProcessService.swift in Sources */,
 				BP10003 /* BatchProcessView.swift in Sources */,
 				CR10001 /* CropView.swift in Sources */,
+				SC10001 /* SmartCropService.swift in Sources */,
+				AE10001 /* AIEnhanceService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

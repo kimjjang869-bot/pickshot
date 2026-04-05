@@ -10,6 +10,10 @@ struct CorrectionOptions {
     var autoUpright: Bool
     var faceBalance: Bool
     var skinSmoothing: Bool
+    var aiEnhance: Bool              // AI 자동보정 (NPU 가속)
+    var denoise: Bool                // AI 디노이즈
+    var denoiseStrength: Float       // 디노이즈 강도 (0.0~1.0)
+    var personAwareEnhance: Bool     // 인물 인식 선택적 보정
 
     init() {
         let d = UserDefaults.standard
@@ -19,6 +23,10 @@ struct CorrectionOptions {
         autoUpright = d.object(forKey: "corr_autoUpright") as? Bool ?? false
         faceBalance = d.object(forKey: "corr_faceBalance") as? Bool ?? false
         skinSmoothing = d.object(forKey: "corr_skinSmoothing") as? Bool ?? false
+        aiEnhance = d.object(forKey: "corr_aiEnhance") as? Bool ?? false
+        denoise = d.object(forKey: "corr_denoise") as? Bool ?? false
+        denoiseStrength = d.object(forKey: "corr_denoiseStrength") as? Float ?? 0.5
+        personAwareEnhance = d.object(forKey: "corr_personAwareEnhance") as? Bool ?? false
     }
 
     func save() {
@@ -29,6 +37,10 @@ struct CorrectionOptions {
         d.set(autoUpright, forKey: "corr_autoUpright")
         d.set(faceBalance, forKey: "corr_faceBalance")
         d.set(skinSmoothing, forKey: "corr_skinSmoothing")
+        d.set(aiEnhance, forKey: "corr_aiEnhance")
+        d.set(denoise, forKey: "corr_denoise")
+        d.set(denoiseStrength, forKey: "corr_denoiseStrength")
+        d.set(personAwareEnhance, forKey: "corr_personAwareEnhance")
     }
 }
 
@@ -52,7 +64,7 @@ struct ImageCorrectionService {
 
         // 수평/원근만 할 때는 CIImage 색공간 변환을 피하기 위해 별도 처리
         let onlyGeometry = options.autoHorizon || options.autoUpright
-        let needsColor = options.autoLevel || options.autoWhiteBalance || options.faceBalance || options.skinSmoothing
+        let needsColor = options.autoLevel || options.autoWhiteBalance || options.faceBalance || options.skinSmoothing || options.aiEnhance || options.denoise || options.personAwareEnhance
 
         guard let originalImage = CIImage(contentsOf: url) else { return result }
         var image = originalImage
@@ -237,6 +249,26 @@ struct ImageCorrectionService {
                 image = smoothed
                 result.applied.append("피부 스무딩")
             }
+        }
+
+        // 5. AI 자동보정 (NPU 가속 또는 고급 CIFilter)
+        if options.aiEnhance {
+            image = AIEnhanceService.enhance(image: image)
+            let method = AIEnhanceService.isAIModelAvailable ? "NPU" : "CIFilter"
+            result.applied.append("AI 자동보정 (\(method))")
+        }
+
+        // 6. AI 디노이즈 (NPU 가속 또는 CIFilter)
+        if options.denoise {
+            image = AIEnhanceService.denoise(image: image, strength: options.denoiseStrength)
+            let pct = Int(options.denoiseStrength * 100)
+            result.applied.append("AI 디노이즈 (\(pct)%)")
+        }
+
+        // 7. 인물 인식 선택적 보정 (Vision 세그멘테이션)
+        if options.personAwareEnhance {
+            image = AIEnhanceService.enhanceWithPersonMask(image: image)
+            result.applied.append("인물 인식 보정")
         }
 
         // Render final image — orientation 보존

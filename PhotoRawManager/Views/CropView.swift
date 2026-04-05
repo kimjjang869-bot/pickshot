@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreImage
 
 // MARK: - CropView
 
@@ -14,6 +15,9 @@ struct CropView: View {
     @State private var dragHandle: DragHandle? = nil
     @State private var dragStartRect: CGRect = .zero
     @State private var dragStartPoint: CGPoint = .zero
+    @State private var showHeatmap: Bool = false
+    @State private var heatmapImage: NSImage?
+    @State private var isComputingSmartCrop: Bool = false
 
     enum AspectRatio: String, CaseIterable, Identifiable {
         case free = "자유"
@@ -61,7 +65,7 @@ struct CropView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            // Aspect ratio presets
+            // 비율 프리셋 + 스마트 크롭
             HStack(spacing: 6) {
                 ForEach(AspectRatio.allCases) { ratio in
                     Button(action: { selectAspectRatio(ratio) }) {
@@ -75,6 +79,46 @@ struct CropView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                Divider()
+                    .frame(height: 20)
+
+                // 스마트 크롭 버튼
+                Button(action: { performSmartCrop() }) {
+                    HStack(spacing: 4) {
+                        if isComputingSmartCrop {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "sparkle.magnifyingglass")
+                                .font(.system(size: 11))
+                        }
+                        Text("스마트 크롭")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.purple.opacity(0.2))
+                    .foregroundColor(.purple)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isComputingSmartCrop || image == nil)
+                .help("AI가 최적 크롭 영역을 자동으로 제안합니다")
+
+                // 히트맵 오버레이 토글
+                Button(action: { toggleHeatmap() }) {
+                    Image(systemName: showHeatmap ? "eye.fill" : "eye.slash")
+                        .font(.system(size: 11))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(showHeatmap ? Color.red.opacity(0.2) : Color.gray.opacity(0.15))
+                        .foregroundColor(showHeatmap ? .red : .secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(image == nil)
+                .help("어텐션 히트맵 오버레이 표시/숨김")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
@@ -102,6 +146,16 @@ struct CropView: View {
                         // Grid lines (rule of thirds)
                         gridLines(fitted: fitted)
                             .frame(width: fitted.width, height: fitted.height)
+
+                        // 어텐션 히트맵 오버레이
+                        if showHeatmap, let heatmap = heatmapImage {
+                            Image(nsImage: heatmap)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: fitted.width, height: fitted.height)
+                                .opacity(0.45)
+                                .allowsHitTesting(false)
+                        }
 
                         // Drag handles
                         dragHandles(fitted: fitted)
@@ -486,6 +540,60 @@ struct CropView: View {
 
         if CGImageDestinationFinalize(dest) {
             AppLogger.log(.export, "Crop saved: \(destURL.lastPathComponent) (\(cgImage.width)x\(cgImage.height))")
+        }
+    }
+
+    // MARK: - Smart Crop
+
+    /// AI 기반 최적 크롭 영역 계산 및 적용
+    private func performSmartCrop() {
+        guard let sourceImage = image,
+              let cgImage = sourceImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        isComputingSmartCrop = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let suggested = SmartCropService.suggestCrop(
+                cgImage: cgImage,
+                aspectRatio: aspectRatio.ratio
+            )
+
+            DispatchQueue.main.async {
+                // 애니메이션으로 크롭 영역 이동
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    cropRect = suggested
+                }
+                isComputingSmartCrop = false
+            }
+        }
+    }
+
+    /// 어텐션 히트맵 오버레이 토글
+    private func toggleHeatmap() {
+        if showHeatmap {
+            showHeatmap = false
+            return
+        }
+
+        guard let sourceImage = image,
+              let cgImage = sourceImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        // 히트맵이 없으면 생성
+        if heatmapImage == nil {
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let heatmapCI = SmartCropService.attentionHeatmap(cgImage: cgImage) {
+                    let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+                    if let cgResult = ciContext.createCGImage(heatmapCI, from: heatmapCI.extent) {
+                        let nsImage = NSImage(cgImage: cgResult, size: NSSize(width: cgResult.width, height: cgResult.height))
+                        DispatchQueue.main.async {
+                            heatmapImage = nsImage
+                            showHeatmap = true
+                        }
+                    }
+                }
+            }
+        } else {
+            showHeatmap = true
         }
     }
 

@@ -171,9 +171,10 @@ class PreviewImageCache {
     }
 
     /// Prefetch previews at given resolution
+    /// 프리페치 전용 큐: 최대 2개 동시 작업 (CPU 과부하 방지)
     private static let prefetchQueue: OperationQueue = {
         let q = OperationQueue()
-        q.maxConcurrentOperationCount = 4
+        q.maxConcurrentOperationCount = 2
         q.qualityOfService = .userInitiated
         return q
     }()
@@ -225,7 +226,11 @@ class PreviewImageCache {
     }
 
     static func loadOptimized(url: URL, maxPixel: CGFloat) -> NSImage? {
-        let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        // I/O와 디코딩 파이프라인 오버랩 (ShouldCacheImmediately)
+        let sourceOptions: [NSString: Any] = [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
 
         let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
@@ -239,7 +244,14 @@ class PreviewImageCache {
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
         // JPG: load at original size if smaller than maxPixel
+        // 5MB 이상 파일은 mmap 사용 (디스크 I/O 오버헤드 감소)
         if isJPG && origMax > 0 && origMax <= Int(maxPixel) {
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            if fileSize > 5_000_000 {
+                if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+                    return NSImage(data: data)
+                }
+            }
             return NSImage(contentsOf: url)
         }
 
@@ -270,14 +282,8 @@ class PreviewImageCache {
                 }
             }
 
-            // Strategy 2: Generate thumbnail with SubsampleFactor for faster JPEG decode
-            let origMax = max(origW, origH)
-            var subsample = 1
-            let targetPx = Int(effectiveMaxPx)
-            if origMax > targetPx * 8 { subsample = 8 }
-            else if origMax > targetPx * 4 { subsample = 4 }
-            else if origMax > targetPx * 2 { subsample = 2 }
-
+            // Strategy 2: 프리뷰용 SubsampleFactor 최적화
+            // JPG 프리뷰: SubsampleFactor 2 사용 (전체 디코딩 대비 2배 빠름, 줌 모드 제외)
             var genOpts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -285,8 +291,9 @@ class PreviewImageCache {
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceShouldCache: false
             ]
-            if isJPG && subsample > 1 {
-                genOpts[kCGImageSourceSubsampleFactor as NSString] = subsample
+            if isJPG {
+                // 프리뷰 모드: SubsampleFactor 2 고정 (I/O와 디코딩 파이프라인 최적화)
+                genOpts[kCGImageSourceSubsampleFactor as NSString] = 2
             }
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
                 return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
@@ -1746,7 +1753,11 @@ struct PhotoPreviewView: View {
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
         if !isRAW {
-            // JPG/PNG: NSImage loads at full resolution with correct orientation (~0.1s)
+            // JPG/PNG: 전체 해상도 로딩. 5MB 이상은 mmap 사용 (디스크 I/O 최적화)
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            if fileSize > 5_000_000, let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+                return NSImage(data: data)
+            }
             return NSImage(contentsOf: url)
         }
 
@@ -1812,7 +1823,9 @@ struct PhotoPreviewView: View {
             let keys = Array(_dimensionCache.keys.prefix(removeCount))
             for key in keys { _dimensionCache.removeValue(forKey: key) }
         }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        // 헤더만 읽기 — ShouldCacheImmediately로 I/O 파이프라인 최적화
+        let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: true]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, dimOpts as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
               let w = props[kCGImagePropertyPixelWidth as String] as? Int,
               let h = props[kCGImagePropertyPixelHeight as String] as? Int,
@@ -1831,7 +1844,7 @@ struct PhotoPreviewView: View {
 
     /// Read EXIF orientation from a RAW file (1-8, default 1)
     private static func readRawOrientation(url: URL) -> Int {
-        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false, kCGImageSourceShouldCacheImmediately: true]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
         return props[kCGImagePropertyOrientation as String] as? Int ?? 1
@@ -1927,7 +1940,7 @@ struct PhotoPreviewView: View {
         }
 
         // Strategy 2: CGImageSource embedded JPEG (for older macOS or unsupported RAW)
-        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false, kCGImageSourceShouldCacheImmediately: true]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
         let imageCount = CGImageSourceGetCount(source)
 
@@ -2492,6 +2505,89 @@ struct CorrectionOptionsView: View {
             .toggleStyle(.checkbox)
             .help("색온도/틴트 자동 보정")
 
+            // MARK: - NPU 고급 보정
+            Divider()
+
+            Text("NPU 고급 보정")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            Toggle(isOn: $options.aiEnhance) {
+                HStack(spacing: 8) {
+                    Image(systemName: "brain")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.purple)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("AI 보정")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("NPU 가속 자동 화질 향상")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("Neural Engine 기반 자동 화질 향상")
+
+            Toggle(isOn: $options.denoise) {
+                HStack(spacing: 8) {
+                    Image(systemName: "dot.radiowaves.right")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.teal)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("디노이즈")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("고감도 노이즈 제거")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("AI 기반 노이즈 제거")
+
+            // 디노이즈 강도 슬라이더 (디노이즈 활성 시에만 표시)
+            if options.denoise {
+                HStack(spacing: 8) {
+                    Spacer()
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("강도")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(Int(options.denoiseStrength * 100))%")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        Slider(value: $options.denoiseStrength, in: 0...1, step: 0.05)
+                            .controlSize(.small)
+                    }
+                }
+                .padding(.leading, 8)
+            }
+
+            Toggle(isOn: $options.personAwareEnhance) {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.rectangle")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.indigo)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("인물 인식 보정")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("배경/인물 영역 분리 후 선택적 보정")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("인물 세그멘테이션 기반 선택적 보정")
+
             // Result info
             if let r = result {
                 Divider()
@@ -2666,6 +2762,49 @@ struct BatchCorrectionView: View {
                 Label("자동 화이트밸런스", systemImage: "thermometer.medium").font(.system(size: 12))
             }.toggleStyle(.checkbox).disabled(isProcessing)
             .help("색온도/틴트 자동 보정")
+
+            // NPU 고급 보정
+            Divider()
+
+            Text("NPU 고급 보정")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            Toggle(isOn: $options.aiEnhance) {
+                Label("AI 보정", systemImage: "brain").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("NPU 가속 자동 화질 향상")
+
+            Toggle(isOn: $options.denoise) {
+                Label("디노이즈", systemImage: "dot.radiowaves.right").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("AI 기반 노이즈 제거")
+
+            if options.denoise {
+                HStack(spacing: 8) {
+                    Spacer().frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("강도")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(Int(options.denoiseStrength * 100))%")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        Slider(value: $options.denoiseStrength, in: 0...1, step: 0.05)
+                            .controlSize(.small)
+                    }
+                }
+                .padding(.leading, 8)
+                .disabled(isProcessing)
+            }
+
+            Toggle(isOn: $options.personAwareEnhance) {
+                Label("인물 인식 보정", systemImage: "person.crop.rectangle").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("인물 세그멘테이션 기반 선택적 보정")
 
             Divider()
 

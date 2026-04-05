@@ -71,8 +71,11 @@ struct HWJPEGDecoder {
     }
 
     /// Decode JPEG from file URL using hardware acceleration (falls back to software).
+    /// 5MB 이상 파일은 mmap 사용 (디스크 I/O 오버헤드 감소)
     static func decode(url: URL, maxPixel: CGFloat? = nil) -> CGImage? {
-        guard let data = try? Data(contentsOf: url) else {
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        let readOptions: Data.ReadingOptions = fileSize > 5_000_000 ? .mappedIfSafe : []
+        guard let data = try? Data(contentsOf: url, options: readOptions) else {
             logger.error("Failed to read JPEG data from \(url.path)")
             return nil
         }
@@ -216,7 +219,9 @@ struct HWJPEGDecoder {
     // MARK: Software Fallback
 
     private static func _decodeSoftware(jpegData: Data, maxPixel: CGFloat?) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(jpegData as CFData, nil) else { return nil }
+        // I/O와 디코딩 파이프라인 오버랩
+        let srcOpts: [CFString: Any] = [kCGImageSourceShouldCacheImmediately: true]
+        guard let source = CGImageSourceCreateWithData(jpegData as CFData, srcOpts as CFDictionary) else { return nil }
 
         var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
