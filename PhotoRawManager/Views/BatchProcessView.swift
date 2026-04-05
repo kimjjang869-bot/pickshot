@@ -173,6 +173,12 @@ struct BatchProcessView: View {
                         }
                     }
 
+                    if outputFormat == .tiff16 {
+                        Text("RAW 파일이 있으면 16비트 깊이를 유지합니다")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
                     Divider()
 
                     // Watermark section

@@ -252,6 +252,33 @@ struct PreviewSettingsTab: View {
                     }
                     .padding(4)
                 }
+
+                Divider()
+                HStack {
+                    Button("되돌리기") {
+                        previewMaxResolution = "original"
+                        rawPreviewMode = "fast"
+                        colorProfile = "display"
+                        previewCacheSize = 20.0
+                        defaultThumbnailSize = 150.0
+                        defaultViewMode = "gridPreview"
+                        defaultSortMode = "captureTime"
+                        showHistogramByDefault = false
+                        showExifByDefault = false
+                        enableTransition = true
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .help("모든 미리보기 설정을 기본값으로 초기화")
+
+                    Spacer()
+
+                    Button("확인") {
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                }
+                .padding(.top, 8)
             }
             .padding(20)
         }
@@ -312,6 +339,28 @@ struct ExportSettingsTab: View {
                     }
                     .padding(4)
                 }
+
+                Divider()
+                HStack {
+                    Button("되돌리기") {
+                        defaultExportPath = ""
+                        autoLaunchLightroom = false
+                        createXMPSidecar = true
+                        openFinderAfterExport = true
+                        exportFolderStructure = "rawOnly"
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .help("모든 내보내기 설정을 기본값으로 초기화")
+
+                    Spacer()
+
+                    Button("확인") {
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                }
+                .padding(.top, 8)
             }
             .padding(20)
         }
@@ -759,6 +808,25 @@ struct CacheSettingsTab: View {
                         Text("삭제 후 다음 로딩 시 캐시가 다시 생성됩니다").font(.system(size: 11)).foregroundColor(.secondary)
                     }.padding(4)
                 }
+
+                Divider()
+                HStack {
+                    Button("되돌리기") {
+                        thumbnailCacheMaxGB = 2.0
+                        customCachePath = ""
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .help("모든 캐시 설정을 기본값으로 초기화")
+
+                    Spacer()
+
+                    Button("확인") {
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                }
+                .padding(.top, 8)
             }.padding(20)
         }
         .onAppear { refreshCacheSizes() }
@@ -934,6 +1002,29 @@ struct PerformanceOptimizeTab: View {
                         settingRow("디스크 캐시 제한", "\(String(format: "%.1f", thumbnailCacheMaxGB))GB")
                     }.padding(4)
                 }
+
+                Divider()
+                HStack {
+                    Button("되돌리기") {
+                        previewMaxResolution = "original"
+                        previewCacheSize = 20.0
+                        defaultThumbnailSize = 150.0
+                        thumbnailCacheMaxGB = 2.0
+                        selectedProfile = ""
+                        applied = false
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .help("모든 성능 최적화 설정을 기본값으로 초기화")
+
+                    Spacer()
+
+                    Button("확인") {
+                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                }
+                .padding(.top, 8)
             }.padding(20)
         }
     }
@@ -1071,6 +1162,7 @@ struct PerformanceOptimizeTab: View {
 
         selectedProfile = profile
         applied = true
+        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
     }
 }
 

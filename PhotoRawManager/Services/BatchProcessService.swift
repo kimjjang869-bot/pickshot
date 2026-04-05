@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import ImageIO
 import UniformTypeIdentifiers
+import CoreImage
 
 struct BatchProcessService {
 
@@ -21,12 +22,13 @@ struct BatchProcessService {
         case jpeg = "JPEG"
         case png = "PNG"
         case tiff = "TIFF"
+        case tiff16 = "16bit TIFF"
 
         var utType: UTType {
             switch self {
             case .jpeg: return .jpeg
             case .png: return .png
-            case .tiff: return .tiff
+            case .tiff, .tiff16: return .tiff
             }
         }
 
@@ -34,7 +36,7 @@ struct BatchProcessService {
             switch self {
             case .jpeg: return "jpg"
             case .png: return "png"
-            case .tiff: return "tiff"
+            case .tiff, .tiff16: return "tiff"
             }
         }
     }
@@ -85,6 +87,11 @@ struct BatchProcessService {
     // MARK: - Single Image Processing
 
     private static func processOne(photo: PhotoItem, options: Options, destination: URL) -> Bool {
+        // For 16-bit TIFF, use RAW source if available with CIRAWFilter
+        if options.format == .tiff16 {
+            return processOne16bit(photo: photo, options: options, destination: destination)
+        }
+
         let sourceURL = photo.jpgURL
 
         // Load via CGImageSource (fast, no color conversion)
@@ -142,6 +149,110 @@ struct BatchProcessService {
             .appendingPathExtension(options.format.fileExtension)
 
         return saveImage(resultImage, to: outputURL, format: options.format, quality: options.quality)
+    }
+
+    // MARK: - 16-bit TIFF Processing
+
+    private static func processOne16bit(photo: PhotoItem, options: Options, destination: URL) -> Bool {
+        // Prefer RAW source for maximum bit depth; fall back to JPG
+        let sourceURL = photo.rawURL ?? photo.jpgURL
+
+        let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!])
+
+        // Try loading as RAW via CIRAWFilter for full 16-bit depth
+        var ciImage: CIImage?
+        if #available(macOS 13.0, *), let rawFilter = CIRAWFilter(imageURL: sourceURL) {
+            rawFilter.extendedDynamicRangeAmount = 0  // standard range
+            ciImage = rawFilter.outputImage
+        }
+
+        // Fallback: load via CIImage
+        if ciImage == nil {
+            ciImage = CIImage(contentsOf: sourceURL)
+        }
+
+        guard var outputCI = ciImage else { return false }
+
+        let origExtent = outputCI.extent
+        let origW = Int(origExtent.width)
+        let origH = Int(origExtent.height)
+
+        // Calculate target size
+        let (targetW, targetH) = calculateTargetSize(
+            origW: origW, origH: origH,
+            requestW: options.targetWidth, requestH: options.targetHeight,
+            maintainAspect: options.maintainAspect
+        )
+
+        // Apply resize if needed
+        if targetW != origW || targetH != origH {
+            let scaleX = CGFloat(targetW) / CGFloat(origW)
+            let scaleY = CGFloat(targetH) / CGFloat(origH)
+            outputCI = outputCI.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+        }
+
+        // Render to 16-bit CGImage
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let cgImage = ciContext.createCGImage(
+            outputCI,
+            from: outputCI.extent,
+            format: .RGBA16,
+            colorSpace: colorSpace
+        ) else { return false }
+
+        // If watermark needed, draw it on a 16-bit context
+        let finalImage: CGImage
+        if !options.watermarkText.isEmpty {
+            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Big.rawValue)
+            guard let context = CGContext(
+                data: nil,
+                width: targetW,
+                height: targetH,
+                bitsPerComponent: 16,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo.rawValue
+            ) else { return false }
+
+            context.interpolationQuality = .high
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetW, height: targetH))
+
+            drawWatermark(
+                context: context,
+                width: targetW,
+                height: targetH,
+                text: options.watermarkText,
+                position: options.watermarkPosition,
+                opacity: options.watermarkOpacity,
+                fontSize: options.watermarkFontSize
+            )
+
+            guard let result = context.makeImage() else { return false }
+            finalImage = result
+        } else {
+            finalImage = cgImage
+        }
+
+        // Save as 16-bit TIFF
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let outputURL = destination
+            .appendingPathComponent(baseName)
+            .appendingPathExtension("tiff")
+
+        guard let dest = CGImageDestinationCreateWithURL(
+            outputURL as CFURL,
+            UTType.tiff.identifier as CFString,
+            1,
+            nil
+        ) else { return false }
+
+        let properties: [CFString: Any] = [
+            kCGImagePropertyDepth: 16,
+            kCGImagePropertyColorModel: kCGImagePropertyColorModelRGB
+        ]
+
+        CGImageDestinationAddImage(dest, finalImage, properties as CFDictionary)
+        return CGImageDestinationFinalize(dest)
     }
 
     // MARK: - Helpers

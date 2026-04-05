@@ -153,6 +153,16 @@ class PreviewImageCache {
         return FileManager.default.fileExists(atPath: diskKey(for: url).path)
     }
 
+    func remove(url: URL) {
+        lock.lock()
+        cache.removeValue(forKey: url)
+        accessOrder.removeAll(where: { $0 == url })
+        lock.unlock()
+        // Also remove from disk cache
+        let diskPath = diskKey(for: url)
+        try? FileManager.default.removeItem(at: diskPath)
+    }
+
     func clearCache() {
         lock.lock()
         cache.removeAll()
@@ -1472,6 +1482,95 @@ struct PhotoPreviewView: View {
     }
 
     private func applyRotation(degrees: Double) {
+        guard let selected = store.selectedPhoto else { return }
+        let fileURL = selected.jpgURL
+        let ext = fileURL.pathExtension.lowercased()
+        let isJPEG = (ext == "jpg" || ext == "jpeg")
+
+        if isJPEG {
+            applyLosslessRotation(fileURL: fileURL, degrees: degrees)
+        } else {
+            applyPixelRotation(degrees: degrees)
+        }
+    }
+
+    /// Lossless JPEG rotation by modifying EXIF orientation tag (no re-encoding)
+    private func applyLosslessRotation(fileURL: URL, degrees: Double) {
+        let clockwise = (degrees == 90 || degrees == -270)
+
+        // Orientation mapping for 90 deg clockwise:  1->6, 2->5, 3->8, 4->7, 5->4, 6->3, 7->2, 8->1
+        let cwMap: [Int: Int] = [1:6, 2:5, 3:8, 4:7, 5:4, 6:3, 7:2, 8:1]
+        // Orientation mapping for 90 deg counter-clockwise: 1->8, 2->7, 3->6, 4->5, 5->2, 6->1, 7->4, 8->3
+        let ccwMap: [Int: Int] = [1:8, 2:7, 3:6, 4:5, 5:2, 6:1, 7:4, 8:3]
+        let map = clockwise ? cwMap : ccwMap
+
+        // Read current EXIF orientation from the file
+        guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else { return }
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        let currentOrientation = (properties?[kCGImagePropertyOrientation] as? Int) ?? 1
+        let newOrientation = map[currentOrientation] ?? (clockwise ? 6 : 8)
+
+        // Get the UTI of the source
+        guard let sourceUTI = CGImageSourceGetType(imageSource) else { return }
+
+        // Create destination — write to temp file then replace
+        let tempURL = fileURL.deletingLastPathComponent()
+            .appendingPathComponent(".\(fileURL.lastPathComponent).tmp")
+
+        guard let destination = CGImageDestinationCreateWithURL(
+            tempURL as CFURL, sourceUTI, CGImageSourceGetCount(imageSource), nil
+        ) else { return }
+
+        // Copy all images with updated orientation on the first one
+        let count = CGImageSourceGetCount(imageSource)
+        for i in 0..<count {
+            if i == 0 {
+                // Merge existing properties with new orientation
+                var updatedProps = (CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]) ?? [:]
+                updatedProps[kCGImagePropertyOrientation] = newOrientation
+
+                // Also update TIFF and EXIF orientation sub-dictionaries
+                if var tiffDict = updatedProps[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+                    tiffDict[kCGImagePropertyTIFFOrientation] = newOrientation
+                    updatedProps[kCGImagePropertyTIFFDictionary] = tiffDict
+                }
+
+                CGImageDestinationAddImageFromSource(destination, imageSource, 0, updatedProps as CFDictionary)
+            } else {
+                CGImageDestinationAddImageFromSource(destination, imageSource, i, nil)
+            }
+        }
+
+        guard CGImageDestinationFinalize(destination) else {
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
+
+        // Replace original with modified file
+        do {
+            _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: tempURL)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
+
+        // Clear caches and reload the image
+        PreviewImageCache.shared.remove(url: fileURL)
+        rotationAngle = 0
+        rotatedImage = nil
+
+        // Reload the image from disk
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let reloaded = NSImage(contentsOf: fileURL) else { return }
+            DispatchQueue.main.async {
+                self.image = reloaded
+                self.lowResImage = reloaded
+            }
+        }
+    }
+
+    /// Fallback: pixel-based rotation for non-JPEG files
+    private func applyPixelRotation(degrees: Double) {
         guard let source = rotatedImage ?? image else { return }
         rotationAngle += degrees
 
