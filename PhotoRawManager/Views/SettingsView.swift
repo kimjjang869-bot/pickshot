@@ -2,36 +2,40 @@ import SwiftUI
 
 struct SettingsView: View {
     var body: some View {
-        TabView {
-            GeneralSettingsTab()
-                .tabItem {
-                    Label("일반", systemImage: "gear")
-                }
+        VStack(spacing: 0) {
+            TabView {
+                GeneralSettingsTab()
+                    .tabItem { Label("일반", systemImage: "gear") }
+                PreviewSettingsTab()
+                    .tabItem { Label("미리보기", systemImage: "photo") }
+                ExportSettingsTab()
+                    .tabItem { Label("내보내기", systemImage: "square.and.arrow.up") }
+                CacheSettingsTab()
+                    .tabItem { Label("캐시", systemImage: "internaldrive") }
+                PerformanceOptimizeTab()
+                    .tabItem { Label("성능 최적화", systemImage: "bolt.circle") }
+                ShortcutsSettingsTab()
+                    .tabItem { Label("단축키", systemImage: "keyboard") }
+            }
 
-            PreviewSettingsTab()
-                .tabItem {
-                    Label("미리보기", systemImage: "photo")
+            // 하단 고정 버튼
+            Divider()
+            HStack {
+                Button("되돌리기") {
+                    NotificationCenter.default.post(name: .init("SettingsResetTab"), object: nil)
                 }
+                .help("현재 탭 설정을 기본값으로 초기화")
 
-            ExportSettingsTab()
-                .tabItem {
-                    Label("내보내기", systemImage: "square.and.arrow.up")
-                }
+                Spacer()
 
-            CacheSettingsTab()
-                .tabItem {
-                    Label("캐시", systemImage: "internaldrive")
+                Button("확인") {
+                    NotificationCenter.default.post(name: .init("SettingsChanged"), object: nil)
                 }
-
-            PerformanceOptimizeTab()
-                .tabItem {
-                    Label("성능 최적화", systemImage: "bolt.circle")
-                }
-
-            ShortcutsSettingsTab()
-                .tabItem {
-                    Label("단축키", systemImage: "keyboard")
-                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
         }
         .frame(width: 550, height: 520)
     }
@@ -121,32 +125,13 @@ struct GeneralSettingsTab: View {
                     .padding(4)
                 }
 
-                // Apply / Reset buttons
-                HStack {
-                    Button("초기화") {
-                        autoOpenLastFolder = true
-                        showFileTypeBadge = true
-                        showFileExtension = true
-                        windowStartSize = "default"
-                        appLanguage = "ko"
-                        appearance = "system"
-                        showNotifications = true
-                        autoSaveOnExit = true
-                        NotificationCenter.default.post(name: .init("SettingsChanged"), object: nil)
-                    }
-                    .help("모든 일반 설정을 기본값으로 초기화")
-
-                    Spacer()
-
-                    Button("적용") {
-                        NotificationCenter.default.post(name: .init("SettingsChanged"), object: nil)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .help("변경된 설정을 즉시 적용합니다")
-                }
-                .padding(.top, 8)
             }
             .padding(20)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
+            autoOpenLastFolder = true; showFileTypeBadge = true; showFileExtension = true
+            windowStartSize = "default"; appLanguage = "ko"; appearance = "system"
+            showNotifications = true; autoSaveOnExit = true
         }
     }
 }
@@ -253,34 +238,14 @@ struct PreviewSettingsTab: View {
                     .padding(4)
                 }
 
-                Divider()
-                HStack {
-                    Button("되돌리기") {
-                        previewMaxResolution = "original"
-                        rawPreviewMode = "fast"
-                        colorProfile = "display"
-                        previewCacheSize = 20.0
-                        defaultThumbnailSize = 150.0
-                        defaultViewMode = "gridPreview"
-                        defaultSortMode = "captureTime"
-                        showHistogramByDefault = false
-                        showExifByDefault = false
-                        enableTransition = true
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .help("모든 미리보기 설정을 기본값으로 초기화")
-
-                    Spacer()
-
-                    Button("확인") {
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return)
-                }
-                .padding(.top, 8)
             }
             .padding(20)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
+            previewMaxResolution = "original"; rawPreviewMode = "fast"; colorProfile = "display"
+            previewCacheSize = 20.0; defaultThumbnailSize = 150.0
+            defaultViewMode = "gridPreview"; defaultSortMode = "captureTime"
+            showHistogramByDefault = false; showExifByDefault = false; enableTransition = true
         }
     }
 }
@@ -340,29 +305,12 @@ struct ExportSettingsTab: View {
                     .padding(4)
                 }
 
-                Divider()
-                HStack {
-                    Button("되돌리기") {
-                        defaultExportPath = ""
-                        autoLaunchLightroom = false
-                        createXMPSidecar = true
-                        openFinderAfterExport = true
-                        exportFolderStructure = "rawOnly"
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .help("모든 내보내기 설정을 기본값으로 초기화")
-
-                    Spacer()
-
-                    Button("확인") {
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return)
-                }
-                .padding(.top, 8)
             }
             .padding(20)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
+            defaultExportPath = ""; autoLaunchLightroom = false
+            createXMPSidecar = true; openFinderAfterExport = true; exportFolderStructure = "rawOnly"
         }
     }
 
@@ -809,27 +757,12 @@ struct CacheSettingsTab: View {
                     }.padding(4)
                 }
 
-                Divider()
-                HStack {
-                    Button("되돌리기") {
-                        thumbnailCacheMaxGB = 2.0
-                        customCachePath = ""
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .help("모든 캐시 설정을 기본값으로 초기화")
-
-                    Spacer()
-
-                    Button("확인") {
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return)
-                }
-                .padding(.top, 8)
             }.padding(20)
         }
         .onAppear { refreshCacheSizes() }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
+            thumbnailCacheMaxGB = 2.0; customCachePath = ""
+        }
     }
 
     private func cacheRow(icon: String, label: String, size: String, color: Color) -> some View {
@@ -1003,29 +936,10 @@ struct PerformanceOptimizeTab: View {
                     }.padding(4)
                 }
 
-                Divider()
-                HStack {
-                    Button("되돌리기") {
-                        previewMaxResolution = "original"
-                        previewCacheSize = 20.0
-                        defaultThumbnailSize = 150.0
-                        thumbnailCacheMaxGB = 2.0
-                        selectedProfile = ""
-                        applied = false
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .help("모든 성능 최적화 설정을 기본값으로 초기화")
-
-                    Spacer()
-
-                    Button("확인") {
-                        NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return)
-                }
-                .padding(.top, 8)
             }.padding(20)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
+            resetDefaults()
         }
     }
 
@@ -1163,6 +1077,14 @@ struct PerformanceOptimizeTab: View {
         selectedProfile = profile
         applied = true
         NotificationCenter.default.post(name: Notification.Name("SettingsChanged"), object: nil)
+    }
+}
+
+extension PerformanceOptimizeTab {
+    func resetDefaults() {
+        previewMaxResolution = "original"; previewCacheSize = 20.0
+        defaultThumbnailSize = 150.0; thumbnailCacheMaxGB = 2.0
+        selectedProfile = ""; applied = false
     }
 }
 

@@ -856,8 +856,18 @@ class ThumbnailCache {
     private let cache = NSCache<NSURL, NSImage>()
 
     init() {
-        cache.countLimit = 1500
-        cache.totalCostLimit = 400 * 1024 * 1024  // 400MB
+        // RAM에 맞게 캐시 크기 설정 (2000장 이상 빠른 탐색 지원)
+        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
+        if ramGB >= 64 {
+            cache.countLimit = 5000
+            cache.totalCostLimit = 1200 * 1024 * 1024  // 1.2GB
+        } else if ramGB >= 32 {
+            cache.countLimit = 3000
+            cache.totalCostLimit = 800 * 1024 * 1024   // 800MB
+        } else {
+            cache.countLimit = 1500
+            cache.totalCostLimit = 400 * 1024 * 1024   // 400MB
+        }
     }
 
     func get(_ url: URL) -> NSImage? {
@@ -1097,7 +1107,7 @@ class ThumbnailLoader {
 
     /// Read EXIF orientation from image file (1-8)
     private static func readOrientation(url: URL) -> Int {
-        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false, kCGImageSourceShouldCacheImmediately: true]
+        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
         return props[kCGImagePropertyOrientation as String] as? Int ?? 1
@@ -1154,11 +1164,7 @@ class ThumbnailLoader {
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
         // CGImageSource path FIRST — handles EXIF orientation automatically via Transform flag
-        // I/O와 디코딩 파이프라인 오버랩 (ShouldCacheImmediately)
-        let srcOpts: [NSString: Any] = [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceShouldCacheImmediately: true
-        ]
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
         if let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) {
             let imageCount = CGImageSourceGetCount(source)
 
@@ -1209,9 +1215,18 @@ class ThumbnailLoader {
         }
 
         if !isRAW {
-            // JPG/PNG: 그리드 썸네일은 항상 SubsampleFactor 8 사용 (최대 속도)
-            // 200px 썸네일에 전체 JPEG 디코딩은 낭비 → 1/8 크기로 디코딩 후 리사이즈
-            let isJPG = ["jpg", "jpeg"].contains(ext)
+            // JPG/PNG: use SubsampleFactor for 2-4x faster JPEG decode
+            // SubsampleFactor: 2 = 1/2 size decode, 4 = 1/4 size decode
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+            let origW = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+            let origH = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+            let origMax = max(origW, origH)
+
+            // Calculate optimal subsample factor
+            var subsample = 1
+            if origMax > thumbSize * 8 { subsample = 8 }       // 6000px+ → 1/8 decode
+            else if origMax > thumbSize * 4 { subsample = 4 }  // 800px+ → 1/4 decode
+            else if origMax > thumbSize * 2 { subsample = 2 }  // 400px+ → 1/2 decode
 
             var options: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: thumbSize,
@@ -1220,9 +1235,8 @@ class ThumbnailLoader {
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceShouldCache: false
             ]
-            // JPG 그리드 썸네일: 항상 최대 서브샘플링 (8) 적용
-            if isJPG {
-                options[kCGImageSourceSubsampleFactor as NSString] = 8
+            if subsample > 1 {
+                options[kCGImageSourceSubsampleFactor as NSString] = subsample
             }
 
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {

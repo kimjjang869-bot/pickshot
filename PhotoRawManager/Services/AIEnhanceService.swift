@@ -83,54 +83,43 @@ struct AIEnhanceService {
         return nil
     }
 
-    /// 고급 CIFilter 파이프라인 (프로 편집 시뮬레이션)
+    /// 고급 CIFilter 파이프라인 (자연스러운 보정)
     private static func enhanceWithFilters(image: CIImage) -> CIImage {
         var result = image
 
-        // 1. 컬러 컨트롤: 약간의 대비 + 채도 향상
-        if let filter = CIFilter(name: "CIColorControls") {
-            filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(1.05), forKey: "inputContrast")       // +0.05 미세 대비
-            filter.setValue(Float(1.08), forKey: "inputSaturation")     // +0.08 미세 채도
-            if let output = filter.outputImage {
-                result = output
-            }
-        }
-
-        // 2. Vibrance: 채도보다 자연스러운 색감 향상
-        if let filter = CIFilter(name: "CIVibrance") {
-            filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(0.15), forKey: "inputAmount")  // 자연스러운 수준
-            if let output = filter.outputImage {
-                result = output
-            }
-        }
-
-        // 3. 하이라이트/섀도우 복구: 다이나믹 레인지 확보
+        // 1. 하이라이트/섀도우 복구: 다이나믹 레인지 확보 (가장 자연스러운 보정)
         if let filter = CIFilter(name: "CIHighlightShadowAdjust") {
             filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(0.8), forKey: "inputHighlightAmount")   // 하이라이트 -0.2
-            filter.setValue(Float(0.3), forKey: "inputShadowAmount")     // 섀도우 +0.3
+            filter.setValue(Float(0.9), forKey: "inputHighlightAmount")   // 하이라이트 -0.1 (미세)
+            filter.setValue(Float(0.15), forKey: "inputShadowAmount")     // 섀도우 +0.15 (미세)
             if let output = filter.outputImage {
                 result = output
             }
         }
 
-        // 4. 톤 커브: 부드러운 S커브 (필름 느낌 대비)
+        // 2. Vibrance만 사용 (채도+대비 중첩 방지, 이미 포화된 색은 건드리지 않음)
+        if let filter = CIFilter(name: "CIVibrance") {
+            filter.setValue(result, forKey: kCIInputImageKey)
+            filter.setValue(Float(0.08), forKey: "inputAmount")  // 매우 미세
+            if let output = filter.outputImage {
+                result = output
+            }
+        }
+
+        // 3. 톤 커브: 아주 부드러운 S커브 (거의 직선에 가까움)
         if let filter = CIFilter(name: "CIToneCurve") {
             filter.setValue(result, forKey: kCIInputImageKey)
-            // 부드러운 S커브: 섀도우 살짝 올리고, 하이라이트 살짝 내림
             filter.setValue(CIVector(x: 0.0, y: 0.0), forKey: "inputPoint0")
-            filter.setValue(CIVector(x: 0.25, y: 0.28), forKey: "inputPoint1")  // 섀도우 리프트
+            filter.setValue(CIVector(x: 0.25, y: 0.27), forKey: "inputPoint1")  // 섀도우 +0.02
             filter.setValue(CIVector(x: 0.5, y: 0.5), forKey: "inputPoint2")    // 미드톤 유지
-            filter.setValue(CIVector(x: 0.75, y: 0.72), forKey: "inputPoint3")  // 하이라이트 롤오프
+            filter.setValue(CIVector(x: 0.75, y: 0.73), forKey: "inputPoint3")  // 하이라이트 -0.02
             filter.setValue(CIVector(x: 1.0, y: 1.0), forKey: "inputPoint4")
             if let output = filter.outputImage {
                 result = output
             }
         }
 
-        // 5. 화이트밸런스 자동 보정: 평균 색상 분석 기반
+        // 4. 화이트밸런스: 편차 큰 경우만 보정
         result = autoWhiteBalanceByAverage(image: result)
 
         return result
@@ -331,25 +320,15 @@ struct AIEnhanceService {
         return blendFilter.outputImage ?? enhance(image: image)
     }
 
-    /// 인물 영역 보정: 피부톤 보존, 약간 따뜻한 톤
+    /// 인물 영역 보정: 피부톤 보존, 아주 약간 따뜻한 톤
     private static func enhancePerson(image: CIImage) -> CIImage {
         var result = image
 
-        // 미세한 따뜻한 톤 (피부 보정)
+        // 매우 미세한 따뜻한 톤 (피부 보정)
         if let filter = CIFilter(name: "CITemperatureAndTint") {
             filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(CIVector(x: 6200, y: 0), forKey: "inputNeutral")
+            filter.setValue(CIVector(x: 6350, y: 0), forKey: "inputNeutral")
             filter.setValue(CIVector(x: 6500, y: 0), forKey: "inputTargetNeutral")
-            if let output = filter.outputImage {
-                result = output
-            }
-        }
-
-        // 약간의 대비 + Vibrance (자연스러운 피부)
-        if let filter = CIFilter(name: "CIColorControls") {
-            filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(1.03), forKey: "inputContrast")
-            filter.setValue(Float(1.0), forKey: "inputSaturation")    // 피부 채도 유지
             if let output = filter.outputImage {
                 result = output
             }
@@ -358,34 +337,24 @@ struct AIEnhanceService {
         return result
     }
 
-    /// 배경 영역 보정: 공격적 색감 보정 + 미세 블러
+    /// 배경 영역 보정: 약간의 색감 보정 + 미세 블러
     private static func enhanceBackground(image: CIImage) -> CIImage {
         var result = image
 
-        // 더 공격적인 색감 보정
-        if let filter = CIFilter(name: "CIColorControls") {
-            filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(1.08), forKey: "inputContrast")
-            filter.setValue(Float(1.12), forKey: "inputSaturation")
-            if let output = filter.outputImage {
-                result = output
-            }
-        }
-
+        // 배경 색감 약간만 강화
         if let filter = CIFilter(name: "CIVibrance") {
             filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(0.2), forKey: "inputAmount")
+            filter.setValue(Float(0.1), forKey: "inputAmount")
             if let output = filter.outputImage {
                 result = output
             }
         }
 
-        // 미세 블러 (보케 효과 시뮬레이션)
+        // 미세 블러 (보케 효과 — 아주 약하게)
         if let filter = CIFilter(name: "CIGaussianBlur") {
             filter.setValue(result, forKey: kCIInputImageKey)
-            filter.setValue(Float(2.0), forKey: "inputRadius")  // 미세한 블러
+            filter.setValue(Float(1.0), forKey: "inputRadius")  // 1px만
             if let output = filter.outputImage {
-                // 블러로 확장된 영역을 원본 크기로 크롭
                 result = output.cropped(to: image.extent)
             }
         }

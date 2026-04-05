@@ -1517,27 +1517,76 @@ class PhotoStore: ObservableObject {
             onQuickPreview?(photo.jpgURL)
         }
 
-        // 비대칭 프리페치: 앞 3장 + 뒤 1장 (JPG만, RAW 제외)
-        prefetchNearby(list: list, centerIndex: newIndex, aheadCount: 3, behindCount: 1)
+        // 프리페치 스로틀: 100ms 간격으로만 실행 (매 이동마다 하면 오버헤드)
+        thumbPrefetchWork?.cancel()
+        let capturedIndex = newIndex
+        let capturedList = list
+        let work = DispatchWorkItem { [weak self] in
+            self?.prefetchNearby(list: capturedList, centerIndex: capturedIndex, range: 5)
+            self?.prefetchThumbnailsBoth(list: capturedList, centerIndex: capturedIndex, count: 30)
+        }
+        thumbPrefetchWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
+    private var thumbPrefetchWork: DispatchWorkItem? {
+        get { objc_getAssociatedObject(self, &Self.thumbPrefetchWorkKey) as? DispatchWorkItem }
+        set { objc_setAssociatedObject(self, &Self.thumbPrefetchWorkKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+    private static var thumbPrefetchWorkKey: UInt8 = 0
 
-    /// 비대칭 프리페치: 탐색 방향에 따라 앞쪽 더 많이 프리페치
-    /// RAW 파일은 RawCamera 디모자이킹으로 CPU 폭발하므로 스킵
-    private func prefetchNearby(list: [PhotoItem], centerIndex: Int, aheadCount: Int, behindCount: Int) {
+    private func prefetchNearby(list: [PhotoItem], centerIndex: Int, range: Int) {
         var urls: [URL] = []
-        let start = max(0, centerIndex - behindCount)
-        let end = min(list.count - 1, centerIndex + aheadCount)
+        let start = max(0, centerIndex - range)
+        let end = min(list.count - 1, centerIndex + range)
         guard end >= start else { return }
         for i in start...end {
             if i == centerIndex { continue }
             let url = list[i].jpgURL
-            // RAW 파일은 프리페치 스킵 (RawCamera 디모자이킹 CPU 폭발 방지)
+            // RAW 파일은 고해상도 프리페치 스킵 (RawCamera 디모자이킹 CPU 폭발 방지)
             let ext = url.pathExtension.lowercased()
             if FileMatchingService.rawExtensions.contains(ext) { continue }
             urls.append(url)
         }
         guard !urls.isEmpty else { return }
         PreviewImageCache.shared.prefetch(urls: urls)
+    }
+
+    /// RAW 임베디드 썸네일 프리페치 (이동 방향으로 미리 채움, 병렬 추출)
+    private static let thumbPrefetchQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 4  // 4개 병렬 추출
+        q.qualityOfService = .userInitiated
+        return q
+    }()
+
+    private func prefetchThumbnailsBoth(list: [PhotoItem], centerIndex: Int, count: Int) {
+        Self.thumbPrefetchQueue.cancelAllOperations()
+
+        // 앞뒤 count장씩 수집 (가까운 것부터)
+        var indices: [Int] = []
+        for offset in 1...count {
+            let fwd = centerIndex + offset
+            let bwd = centerIndex - offset
+            if fwd < list.count { indices.append(fwd) }
+            if bwd >= 0 { indices.append(bwd) }
+        }
+
+        for i in indices {
+            let url = list[i].jpgURL
+            if ThumbnailCache.shared.get(url) != nil { continue }
+            let op = BlockOperation {
+                let opts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: 1200,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
+                let ns = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                ThumbnailCache.shared.set(url, image: ns)
+            }
+            Self.thumbPrefetchQueue.addOperation(op)
+        }
     }
 
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }
