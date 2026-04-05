@@ -33,6 +33,9 @@ struct ExifData {
     var pictureStyle: String?       // "Standard", "Portrait", "Vivid", "Classic Chrome" 등
     var pictureStyleColorSpace: String?  // "sRGB", "Adobe RGB"
 
+    // Camera/XMP Rating (0-5)
+    var rating: Int?
+
     var hasGPS: Bool {
         latitude != nil && longitude != nil
     }
@@ -91,6 +94,7 @@ struct QualityAnalysis {
     var shadowClipping: Double = 0
     var sharpRegionRatio: Double = 0
     var compositionScore: Double = 0
+    var nimaScore: Double = 0          // NIMA 미적 품질 점수 (1~10)
     var detectedIntent: ShootingIntent?
     var isAnalyzed: Bool = false
 
@@ -98,8 +102,17 @@ struct QualityAnalysis {
         issues.filter { $0.affectsGrade }
     }
 
-    /// 0-100 단일 점수. 선명도(40%) + 노출(30%) + 구도(30%)
+    /// 0-100 단일 점수. NIMA 기반 (있으면) 또는 기존 방식
     var score: Int {
+        // NIMA 점수가 있으면 우선 사용 (1~10 → 10~100)
+        if nimaScore > 0 {
+            let base = nimaScore * 10  // 1~10 → 10~100
+            let badPenalty = Double(gradingIssues.filter { $0.severity == .bad }.count) * 10
+            let warnPenalty = Double(gradingIssues.filter { $0.severity == .warning }.count) * 5
+            return max(0, min(100, Int(base - badPenalty - warnPenalty)))
+        }
+
+        // 기존 방식 (NIMA 없을 때 fallback)
         // 선명도: 0-100 (sharpnessScore 일반적으로 0~200 범위)
         let sharpness = min(100, sharpnessScore / 2.0) * 0.4
 
@@ -152,34 +165,28 @@ struct QualityAnalysis {
 
 enum ColorLabel: String, CaseIterable {
     case none = "없음"
-    case red = "빨강"
     case orange = "주황"
     case yellow = "노랑"
     case green = "초록"
     case blue = "파랑"
-    case purple = "보라"
 
     var color: Color? {
         switch self {
         case .none: return nil
-        case .red: return .red
         case .orange: return .orange
         case .yellow: return .yellow
         case .green: return .green
         case .blue: return .blue
-        case .purple: return .purple
         }
     }
 
     var key: String {
         switch self {
-        case .none: return "6"
-        case .red: return "7"
-        case .orange: return "8"
-        case .yellow: return "9"
-        case .green: return ""
-        case .blue: return ""
-        case .purple: return ""
+        case .none: return ""
+        case .orange: return "6"
+        case .yellow: return "7"
+        case .green: return "8"
+        case .blue: return "9"
         }
     }
 }

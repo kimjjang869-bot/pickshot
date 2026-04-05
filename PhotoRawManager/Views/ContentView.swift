@@ -7,26 +7,12 @@ struct ContentView: View {
     @State private var folderBrowserExpanded: Bool = false
     @State private var folderBrowserWidth: CGFloat = 250
     @State private var showFullscreen: Bool = false
+    @State private var dualWindow: NSWindow?
 
     // G Select state (used by toolbar extension)
     @ObservedObject var gSelect = GSelectService.shared
     @State var linkCopied = false
     @State var showGSelectQR = false
-
-    private func openFullscreenWindow() {
-        let fullscreenView = FullscreenView(isPresented: $showFullscreen)
-            .environmentObject(store)
-        let hostingController = NSHostingController(rootView: fullscreenView)
-        let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = .black
-        window.setFrame(NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900), display: true)
-        window.level = .floating
-        window.makeKeyAndOrderFront(nil)
-        window.toggleFullScreen(nil)
-    }
 
     private var folderSizeText: String {
         guard !store.photos.isEmpty else { return "" }
@@ -78,8 +64,11 @@ struct ContentView: View {
                 // No photos loaded and not in viewer mode - show startup screen
                 StartupView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if showFullscreen {
+                // 전체화면 모드 — 같은 윈도우에서 UI만 교체
+                FullscreenView(isPresented: $showFullscreen)
             } else {
-                // Viewer mode - show toolbar + folder browser always, content or empty state
+                // Viewer mode
                 toolbar
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -204,11 +193,12 @@ struct ContentView: View {
                                                     .font(.system(size: 12))
                                                     .foregroundColor(AppTheme.textSecondary)
                                             }
+
                                         }
 
                                         Spacer()
 
-                                        // Center: Selection / Total count
+                                        // Selection / Total / Folder size (붙여서 표시)
                                         HStack(spacing: 6) {
                                             if store.selectionCount > 0 {
                                                 Text("선택: \(store.selectionCount)장")
@@ -220,18 +210,16 @@ struct ContentView: View {
                                             Text("전체: \(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)장")
                                                 .foregroundColor(.yellow)
                                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                        }
 
-                                        Spacer()
+                                            Text("·").foregroundColor(AppTheme.textDim)
 
-                                        // Right: Folder size
-                                        HStack(spacing: 4) {
                                             Image(systemName: "internaldrive")
                                                 .font(.system(size: 10))
+                                                .foregroundColor(.white)
                                             Text(folderSizeText)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.white)
                                         }
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
@@ -278,11 +266,11 @@ struct ContentView: View {
                                                     }
                                             )
 
-                                        // Metadata + AI
+                                        // Metadata
                                         ScrollView {
                                             VStack(spacing: 12) {
                                                 ExifInfoView(photo: photo)
-                                                AIAnalysisView(photo: photo)
+                                                // AIAnalysisView — 아직 구현 전, 숨김
                                             }
                                             .padding()
                                         }
@@ -310,6 +298,18 @@ struct ContentView: View {
         .sheet(isPresented: $store.showGoogleDrive) { GoogleDriveUploadView() }
         .sheet(isPresented: $store.showShortcutHelp) { ShortcutHelpView() }
         .sheet(isPresented: $store.showAbout) { AboutView() }
+        .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
+        .sheet(isPresented: $store.showStats) { StatsDashboardView() }
+        // AutoCullView 제거 — 기존 전체화면 모드(F키)가 동일 기능 제공
+        .sheet(isPresented: $store.showTimeline) { TimelineView() }
+        .sheet(isPresented: Binding(
+            get: { MemoryCardBackupService.shared.showBackupPrompt },
+            set: { MemoryCardBackupService.shared.showBackupPrompt = $0 }
+        )) { MemoryCardBackupPromptView() }
+        .sheet(isPresented: Binding(
+            get: { MemoryCardBackupService.shared.showBackupResult },
+            set: { MemoryCardBackupService.shared.showBackupResult = $0 }
+        )) { MemoryCardBackupResultView() }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
         } message: {
@@ -365,7 +365,7 @@ struct ContentView: View {
             handleDrop(providers: providers)
         }
         .preferredColorScheme(store.isDarkMode ? .dark : .light)
-        .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen = true }))
+        .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen = true }, onHideFullscreen: { showFullscreen = false }))
         .overlay(alignment: .bottom) {
             if store.showToast {
                 Text(store.toastMessage)
@@ -381,9 +381,53 @@ struct ContentView: View {
                     .animation(.easeInOut(duration: 0.3), value: store.showToast)
             }
         }
-        .onChange(of: showFullscreen) { show in
+        .onChange(of: store.showDualViewer) { show in
             if show {
-                openFullscreenWindow()
+                openDualViewer()
+            } else {
+                dualWindow?.close()
+                dualWindow = nil
+            }
+        }
+    }
+
+    private func openDualViewer() {
+        guard dualWindow == nil else { return }
+        let dualView = DualViewerContent()
+            .environmentObject(store)
+        let hostingController = NSHostingController(rootView: dualView)
+        let screen = NSScreen.screens.count > 1 ? NSScreen.screens[1] : NSScreen.main!
+        let window = NSWindow(contentViewController: hostingController)
+        window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.title = "PickShot 뷰어"
+        window.backgroundColor = .black
+        window.setFrame(CGRect(x: screen.frame.midX - 600, y: screen.frame.midY - 400, width: 1200, height: 800), display: true)
+        window.makeKeyAndOrderFront(nil)
+        // 윈도우 닫힘 감지
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [self] _ in
+            self.store.showDualViewer = false
+            self.dualWindow = nil
+        }
+        dualWindow = window
+    }
+}
+
+// MARK: - Dual Viewer Content
+
+struct DualViewerContent: View {
+    @EnvironmentObject var store: PhotoStore
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let photo = store.selectedPhoto, !photo.isFolder, !photo.isParentFolder {
+                PhotoPreviewView(photo: photo)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "display.2").font(.system(size: 48)).foregroundColor(.gray)
+                    Text("메인 뷰어에서 사진을 선택하세요").font(.system(size: 16)).foregroundColor(.gray)
+                }
             }
         }
     }
@@ -396,3 +440,5 @@ extension View {
         }
     }
 }
+
+

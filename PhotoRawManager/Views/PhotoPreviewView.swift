@@ -176,16 +176,19 @@ class PreviewImageCache {
 
         let screenPx = Self.optimalPreviewSize()
         for url in urls {
-            // Prefetch always loads at screen-optimized size for speed.
-            // Use a resolution-specific cache key so it NEVER collides with
-            // full-resolution "orig" entries from loadImageDirect.
+            // RAW 프리페치 스킵 — RawCamera 디모자이킹이 CPU 폭발 유발
+            let ext = url.pathExtension.lowercased()
+            if FileMatchingService.rawExtensions.contains(ext) { continue }
+
             let maxPx: CGFloat = resolution > 0 ? CGFloat(resolution) : screenPx
             let key = url.appendingPathExtension("r\(Int(maxPx))")
             if has(key) { continue }
             Self.prefetchQueue.addOperation { [weak self] in
-                guard let self = self, !self.has(key) else { return }
-                let img = Self.loadOptimized(url: url, maxPixel: maxPx)
-                if let img = img { self.set(key, image: img) }
+                autoreleasepool {
+                    guard let self = self, !self.has(key) else { return }
+                    let img = Self.loadOptimized(url: url, maxPixel: maxPx)
+                    if let img = img { self.set(key, image: img) }
+                }
             }
         }
     }
@@ -698,67 +701,31 @@ struct PhotoPreviewView: View {
                 .help("스페이스 셀렉 토글 (Space)")
 
                 // Focus Map toggle
-                Button(action: {
-                    showFocusMap.toggle()
-                    if showFocusMap {
-                        generateFocusMap()
-                    } else {
-                        focusMapImage = nil
-                    }
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "viewfinder")
-                            .font(.system(size: 10))
-                        Text("초점")
-                            .font(.system(size: AppTheme.fontCaption, weight: .medium))
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(showFocusMap ? .white : .orange)
-                .background(showFocusMap ? Color.orange : AppTheme.mutedOrange)
-                .clipShape(Capsule())
-                .help("초점 맞은 영역 표시 (빨강=선명, 투명=흐림)")
-
-                // Histogram toggle
-                Button(action: { showHistogram.toggle() }) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 10))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(showHistogram ? .white : .purple)
-                .background(showHistogram ? Color.purple : AppTheme.mutedPurple)
-                .clipShape(Capsule())
-                .help("히스토그램 표시/숨기기")
-
                 Divider().frame(height: 20).opacity(0.2)
 
                 // Rotation buttons
                 Button(action: { applyRotation(degrees: -90) }) {
                     Image(systemName: "rotate.left")
-                        .font(.system(size: 10))
+                        .font(.system(size: AppTheme.iconSmall))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 6)
-                .frame(height: AppTheme.buttonHeight)
+                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                .contentShape(Rectangle())
                 .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : Color.gray.opacity(0.2))
-                .clipShape(Capsule())
+                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help("왼쪽 90° 회전")
 
                 Button(action: { applyRotation(degrees: 90) }) {
                     Image(systemName: "rotate.right")
-                        .font(.system(size: 10))
+                        .font(.system(size: AppTheme.iconSmall))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 6)
-                .frame(height: AppTheme.buttonHeight)
+                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                .contentShape(Rectangle())
                 .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : Color.gray.opacity(0.2))
-                .clipShape(Capsule())
+                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help("오른쪽 90° 회전")
 
                 Divider().frame(height: 20).opacity(0.2)
@@ -797,11 +764,29 @@ struct PhotoPreviewView: View {
             loadImageDirect(for: photo.jpgURL, id: photo.id)
             viewState.magnifyBaseScale = viewState.customScale
 
-            // 빠른 탐색 콜백: 썸네일만 즉시 표시 (디스크 I/O 제로)
+            // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
             store.onQuickPreview = { [self] url in
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
                 }
+                // 멈추면 고화질 로딩 (debounce)
+                self.preloadWork?.cancel()
+                self.hiResWorkItem?.cancel()
+                let photoID = self.pendingPhotoID
+                let work = DispatchWorkItem {
+                    guard self.pendingPhotoID == photoID else { return }
+                    self.viewState.stableImageSize = Self.readImageDimensions(url: url)
+                    self.loadImageDirect(for: url, id: photoID ?? UUID())
+                    // 확대 상태면 hi-res도 트리거
+                    if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            guard self.pendingPhotoID == photoID else { return }
+                            self.loadHiResForZoom()
+                        }
+                    }
+                }
+                self.preloadWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
             }
 
             // Scroll wheel zoom monitor (only when mouse is over preview)
@@ -910,6 +895,14 @@ struct PhotoPreviewView: View {
             // Load immediately — no debounce (fastest response)
             viewState.stableImageSize = Self.readImageDimensions(url: url)
             loadImageDirect(for: url, id: newID)
+
+            // 확대 상태에서 사진 이동 시 hi-res 트리거
+            if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
+                hiResWorkItem?.cancel()
+                let work = DispatchWorkItem { loadHiResForZoom() }
+                hiResWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1091,6 +1084,11 @@ struct PhotoPreviewView: View {
                         viewState.zoomPreset = .fit
                     } else {
                         viewState.zoomPreset = ZoomPreset.fromScale(scale) ?? .p100
+                        // 확대 시 고화질 로딩 (debounce)
+                        hiResWorkItem?.cancel()
+                        let work = DispatchWorkItem { loadHiResForZoom() }
+                        hiResWorkItem = work
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
                     }
                 }
                 .onTapGesture(count: 2) {
@@ -1171,6 +1169,7 @@ struct PhotoPreviewView: View {
             viewState.customScale = next
             viewState.zoomPreset = ZoomPreset.fromScale(next) ?? .p150
             syncSlider()
+            loadHiResForZoom()
         }
     }
 
@@ -2262,6 +2261,24 @@ struct CorrectionOptionsView: View {
             .toggleStyle(.checkbox)
             .help("수평선 자동 보정")
 
+            Toggle(isOn: $options.autoUpright) {
+                HStack(spacing: 8) {
+                    Image(systemName: "perspective")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.cyan)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("원근 보정 (Upright)")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("건축물 수직선을 자동으로 세움")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("건축 사진 수직선 원근 보정")
+
             Toggle(isOn: $options.autoLevel) {
                 HStack(spacing: 8) {
                     Image(systemName: "sun.max")
@@ -2391,9 +2408,15 @@ struct CorrectionOptionsView: View {
             }
 
             DispatchQueue.main.async {
+                if correctionResult.applied.isEmpty {
+                    // 보정할 항목 없음
+                    correctionResult.applied.append("보정할 항목이 감지되지 않았습니다")
+                }
                 result = correctionResult
                 isCorrecting = false
-                onApply(correctionResult)
+                if correctionResult.correctedImage != nil {
+                    onApply(correctionResult)
+                }
             }
         }
     }
@@ -2440,6 +2463,11 @@ struct BatchCorrectionView: View {
                 Label("수평/수직 보정", systemImage: "level").font(.system(size: 12))
             }.toggleStyle(.checkbox).disabled(isProcessing)
             .help("수평선 자동 보정")
+
+            Toggle(isOn: $options.autoUpright) {
+                Label("원근 보정 (Upright)", systemImage: "perspective").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("건축 사진 수직선 원근 보정")
 
             Toggle(isOn: $options.autoLevel) {
                 Label("자동 노출 보정", systemImage: "sun.max").font(.system(size: 12))

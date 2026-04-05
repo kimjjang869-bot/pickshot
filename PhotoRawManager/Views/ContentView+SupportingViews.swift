@@ -468,11 +468,13 @@ struct AnalysisProgressBar: View {
 struct KeyEventHandlingView: NSViewRepresentable {
     let store: PhotoStore
     var onFullscreen: (() -> Void)?
+    var onHideFullscreen: (() -> Void)?
 
     func makeNSView(context: Context) -> KeyCaptureView {
         let view = KeyCaptureView()
         view.store = store
         view.showFullscreen = onFullscreen
+        view.hideFullscreen = onHideFullscreen
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
         }
@@ -510,6 +512,7 @@ private func copySelectedFilesToPasteboard(store: PhotoStore) {
 
 class KeyCaptureView: NSView {
     var showFullscreen: (() -> Void)?
+    var hideFullscreen: (() -> Void)?
     var store: PhotoStore? {
         didSet { touchBarProvider.store = store }
     }
@@ -579,6 +582,12 @@ class KeyCaptureView: NSView {
             return chars == c || keyCode == code
         }
 
+        // Esc → 전체화면 닫기
+        if keyCode == 53 {
+            hideFullscreen?()
+            return
+        }
+
         // Cmd shortcuts
         if hasCmd {
             if chars == "=" || chars == "+" || keyCode == 24 {
@@ -600,7 +609,10 @@ class KeyCaptureView: NSView {
                 store.undo()
                 return
             } else if charOrCode("f", 3) {
-                showFullscreen?()
+                showFullscreen?()  // 전체화면 토글
+                return
+            } else if keyCode == 36 { // Cmd+Enter → 전체화면 닫기
+                hideFullscreen?()
                 return
             } else if charOrCode("c", 8) {
                 // Cmd+C: Copy selected files to clipboard (Finder-compatible)
@@ -609,22 +621,22 @@ class KeyCaptureView: NSView {
             }
         }
 
-        // Color labels (6-9)
-        if charOrCode("7", 26) {
-            if store.selectionCount > 1 { store.setColorLabelForSelected(.red) }
-            else if let id = store.selectedPhotoID { store.setColorLabel(.red, for: id) }
-            return
-        } else if charOrCode("8", 28) {
+        // Color labels: 6=주황, 7=노랑, 8=초록, 9=파랑
+        if charOrCode("6", 22) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.orange) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.orange, for: id) }
             return
-        } else if charOrCode("9", 25) {
+        } else if charOrCode("7", 26) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.yellow) }
             else if let id = store.selectedPhotoID { store.setColorLabel(.yellow, for: id) }
             return
-        } else if charOrCode("6", 22) {
-            if store.selectionCount > 1 { store.setColorLabelForSelected(.none) }
-            else if let id = store.selectedPhotoID { store.setColorLabel(.none, for: id) }
+        } else if charOrCode("8", 28) {
+            if store.selectionCount > 1 { store.setColorLabelForSelected(.green) }
+            else if let id = store.selectedPhotoID { store.setColorLabel(.green, for: id) }
+            return
+        } else if charOrCode("9", 25) {
+            if store.selectionCount > 1 { store.setColorLabelForSelected(.blue) }
+            else if let id = store.selectedPhotoID { store.setColorLabel(.blue, for: id) }
             return
         }
 
@@ -705,6 +717,12 @@ class KeyCaptureView: NSView {
         // I: Toggle metadata overlay (nomacs-style)
         if charOrCode("i", 34) && !hasCmd {
             store.toggleMetadataOverlay()
+            return
+        }
+
+        // D: Dual viewer toggle
+        if charOrCode("d", 2) && !hasCmd {
+            store.showDualViewer.toggle()
             return
         }
 
@@ -1576,13 +1594,8 @@ struct BreadcrumbPathView: View {
 struct FullscreenView: View {
     @EnvironmentObject var store: PhotoStore
     @Binding var isPresented: Bool
-    @State private var image: NSImage?
     @State private var showInfo: Bool = true
     @State private var infoTimer: DispatchWorkItem?
-    @State private var loadWorkItem: DispatchWorkItem?
-    @State private var debounceWorkItem: DispatchWorkItem?
-    @State private var pendingPhotoID: UUID?
-    @State private var dragOffset: CGFloat = 0
 
     private var currentPhoto: PhotoItem? {
         guard let id = store.selectedPhotoID,
@@ -1600,67 +1613,59 @@ struct FullscreenView: View {
 
     var body: some View {
         ZStack {
-            // Black background
             Color.black.ignoresSafeArea()
 
-            // Photo with swipe offset
-            if let image = image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(x: dragOffset)
-            }
-
-            // SP border (red, thick)
-            if let photo = currentPhoto, photo.isSpacePicked {
-                Rectangle()
-                    .stroke(Color.red, lineWidth: 8)
-                    .ignoresSafeArea()
-            }
-
-            // Rating border (yellow)
-            if let photo = currentPhoto, photo.rating > 0 {
-                Rectangle()
-                    .stroke(Color.yellow.opacity(0.6), lineWidth: 4)
-                    .ignoresSafeArea()
-            }
-
-            // Info overlay (top-right) - filename only, auto-hides
-            if showInfo, let photo = currentPhoto {
-                VStack {
-                    HStack {
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 6) {
-                            Text(photo.jpgURL.lastPathComponent)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white)
+            // 뷰어 엔진 그대로 사용 — 클릭하면 확대/선명하게
+            if let photo = currentPhoto {
+                PhotoPreviewView(photo: photo)
+                    .overlay(
+                        Group {
+                            if photo.isSpacePicked {
+                                RoundedRectangle(cornerRadius: 0).strokeBorder(Color.red, lineWidth: 12).allowsHitTesting(false)
+                            } else if photo.rating > 0 {
+                                RoundedRectangle(cornerRadius: 0).strokeBorder(Color.yellow.opacity(0.7), lineWidth: 8).allowsHitTesting(false)
+                            }
                         }
-                        .padding(12)
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(8)
-                        .padding(16)
+                    )
+            }
+
+            // Top: 카운터 + 파일명 + 닫기
+            VStack {
+                HStack {
+                    if let counter = photoCounter {
+                        Text("\(counter.index) / \(counter.total)")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(8).background(Color.black.opacity(0.5)).cornerRadius(6).padding(12)
                     }
                     Spacer()
+                    if showInfo, let photo = currentPhoto {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text(photo.jpgURL.lastPathComponent).font(.system(size: 13, weight: .medium)).foregroundColor(.white)
+                            if let q = photo.quality, q.isAnalyzed {
+                                HStack(spacing: 4) {
+                                    Circle().fill(q.overallGrade == .good ? Color.green : q.overallGrade == .average ? Color.orange : Color.red).frame(width: 8, height: 8)
+                                    Text("\(q.score)점").font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
+                                }
+                            }
+                        }
+                        .padding(8).background(Color.black.opacity(0.5)).cornerRadius(6)
+                    }
+                    Button(action: { isPresented = false }) {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 24)).foregroundColor(.white.opacity(0.6))
+                    }.buttonStyle(.plain).padding(12).help("Esc 또는 Cmd+Enter")
                 }
+                Spacer()
             }
 
-            // Bottom bar overlay - always visible
-            VStack {
+            // Bottom: 필름스트립 + 바
+            VStack(spacing: 0) {
                 Spacer()
+                fullscreenFilmstrip
                 fullscreenBottomBar
             }
         }
-        .gesture(swipeGesture)
-        .background(FullscreenKeyHandler(store: store, isPresented: $isPresented, showInfo: $showInfo))
-        .onAppear { loadCurrentPhoto() }
-        .onChange(of: store.selectedPhotoID) { _ in
-            flashInfo()
-            debounceWorkItem?.cancel()
-            let work = DispatchWorkItem { loadCurrentPhoto() }
-            debounceWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
-        }
+        .onChange(of: store.selectedPhotoID) { _ in flashInfo() }
     }
 
     // MARK: - Bottom Bar
@@ -1724,7 +1729,7 @@ struct FullscreenView: View {
             Spacer()
 
             // Hint (right)
-            Text("Esc 닫기")
+            Text("⌘↩ 닫기")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.35))
                 .frame(width: 90, alignment: .trailing)
@@ -1740,6 +1745,46 @@ struct FullscreenView: View {
             .frame(height: 80)
             .offset(y: -20)
         )
+    }
+
+    // MARK: - Filmstrip
+
+    private var fullscreenFilmstrip: some View {
+        let photos = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        let currentIdx = photos.firstIndex(where: { $0.id == store.selectedPhotoID }) ?? 0
+        let start = max(0, currentIdx - 3)
+        let end = min(photos.count - 1, currentIdx + 3)
+
+        return HStack {
+            Spacer()
+            HStack(spacing: 3) {
+                if start <= end {
+                    ForEach(start...end, id: \.self) { i in
+                        let photo = photos[i]
+                        let isCurrent = i == currentIdx
+                        ZStack {
+                            if let thumb = ThumbnailCache.shared.get(photo.jpgURL) {
+                                Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
+                                    .frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38).clipped()
+                            } else {
+                                Rectangle().fill(Color.gray.opacity(0.3)).frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
+                            }
+                            if photo.isSpacePicked {
+                                RoundedRectangle(cornerRadius: 2).strokeBorder(Color.red, lineWidth: 2)
+                                    .frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
+                            }
+                        }
+                        .cornerRadius(3)
+                        .opacity(isCurrent ? 1.0 : 0.5)
+                        .overlay(isCurrent ? RoundedRectangle(cornerRadius: 3).stroke(Color.white, lineWidth: 2) : nil)
+                        .onTapGesture { store.selectPhoto(photo.id, cmdKey: false) }
+                    }
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Color.black.opacity(0.5)).cornerRadius(8)
+            .padding(.trailing, 16).padding(.bottom, 4)
+        }
     }
 
     private func isRatingActive(_ rating: Int) -> Bool {
@@ -1767,60 +1812,6 @@ struct FullscreenView: View {
         store.photos[idx].isSpacePicked.toggle()
     }
 
-    // MARK: - Swipe Gesture
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 50)
-            .onChanged { value in
-                dragOffset = value.translation.width * 0.3
-            }
-            .onEnded { value in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    dragOffset = 0
-                }
-                if value.translation.width < -50 {
-                    store.selectRight()
-                } else if value.translation.width > 50 {
-                    store.selectLeft()
-                }
-            }
-    }
-
-    // MARK: - Image Loading
-
-    private func loadCurrentPhoto() {
-        guard let photo = currentPhoto, !photo.isFolder else { return }
-
-        loadWorkItem?.cancel()
-        let photoID = photo.id
-        pendingPhotoID = photoID
-
-        let url = photo.jpgURL
-        let maxPx = PreviewImageCache.optimalPreviewSize()
-
-        let cacheKey = url.appendingPathExtension("fs")
-        if let cached = PreviewImageCache.shared.get(cacheKey) {
-            self.image = cached
-            return
-        }
-
-        let work = DispatchWorkItem { [self] in
-            let img = PreviewImageCache.loadOptimized(url: url, maxPixel: maxPx)
-
-            guard self.pendingPhotoID == photoID else { return }
-
-            if let img = img {
-                PreviewImageCache.shared.set(cacheKey, image: img)
-            }
-            DispatchQueue.main.async {
-                guard self.pendingPhotoID == photoID else { return }
-                self.image = img
-            }
-        }
-        loadWorkItem = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
-    }
-
     private func flashInfo() {
         showInfo = true
         infoTimer?.cancel()
@@ -1830,71 +1821,4 @@ struct FullscreenView: View {
     }
 }
 
-// MARK: - Fullscreen Keyboard Handler
-
-struct FullscreenKeyHandler: NSViewRepresentable {
-    let store: PhotoStore
-    @Binding var isPresented: Bool
-    @Binding var showInfo: Bool
-
-    func makeNSView(context: Context) -> FullscreenKeyView {
-        let view = FullscreenKeyView()
-        view.store = store
-        view.dismiss = { isPresented = false }
-        view.toggleInfo = { showInfo.toggle() }
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-        return view
-    }
-
-    func updateNSView(_ nsView: FullscreenKeyView, context: Context) {
-        nsView.store = store
-    }
-
-    class FullscreenKeyView: NSView {
-        var store: PhotoStore?
-        var dismiss: (() -> Void)?
-        var toggleInfo: (() -> Void)?
-        override var acceptsFirstResponder: Bool { true }
-
-        override func keyDown(with event: NSEvent) {
-            guard let store = store else { return }
-
-            switch event.keyCode {
-            case 53: // Esc - close fullscreen
-                dismiss?()
-            case 3: // F - also close (Cmd+F toggle)
-                if event.modifierFlags.contains(.command) { dismiss?() }
-            case 123: // <- prev
-                store.selectLeft()
-            case 124: // -> next
-                store.selectRight()
-            case 125: // down next
-                store.selectRight()
-            case 126: // up prev
-                store.selectLeft()
-            case 49: // Space - SP toggle
-                if let id = store.selectedPhotoID, let idx = store._photoIndex[id] {
-                    guard !store.photos[idx].isFolder else { return }
-                    store.photos[idx].isSpacePicked.toggle()
-                }
-            case 18: setRating(1) // 1
-            case 19: setRating(2) // 2
-            case 20: setRating(3) // 3
-            case 21: setRating(4) // 4
-            case 23: setRating(5) // 5
-            case 29: setRating(0) // 0
-            case 34: // I - toggle info
-                toggleInfo?()
-            default: break
-            }
-        }
-
-        private func setRating(_ rating: Int) {
-            guard let store = store,
-                  let id = store.selectedPhotoID,
-                  let idx = store._photoIndex[id] else { return }
-            guard !store.photos[idx].isFolder else { return }
-            store.photos[idx].rating = rating
-        }
-    }
-}
+// FullscreenKeyHandler 제거 — 같은 윈도우에서 기존 KeyCaptureView가 처리

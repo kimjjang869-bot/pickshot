@@ -55,7 +55,7 @@ struct FolderBrowserView: View {
     @State private var favorites: [URL] = []
     @State private var recentFolders: [URL] = []
     @State private var folderViewMode: FolderViewMode = .tree
-    @State private var favoritesHeight: CGFloat = 150
+    @State private var favoritesHeight: CGFloat = 550
     @State private var currentIconFolder: URL?
     @State private var iconFolderContents: [FolderItem] = []
 
@@ -91,6 +91,31 @@ struct FolderBrowserView: View {
         }
     }
 
+    private func renameFolderWithDialog(url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "폴더 이름 변경"
+        alert.informativeText = "새 이름을 입력하세요"
+        alert.addButton(withTitle: "변경")
+        alert.addButton(withTitle: "취소")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.stringValue = url.lastPathComponent
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = input.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !newName.isEmpty, newName != url.lastPathComponent else { return }
+            let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
+            do {
+                try FileManager.default.moveItem(at: url, to: newURL)
+                refreshRootItems()
+                favorites = store.loadFavoriteFolders()
+                store.showToastMessage("'\(newName)'으로 변경 완료")
+            } catch {
+                store.showToastMessage("이름 변경 실패: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func refreshRootItems() {
         DispatchQueue.global(qos: .userInitiated).async {
             let items = buildRootItems()
@@ -100,6 +125,10 @@ struct FolderBrowserView: View {
                 rootItems = items
                 favorites = favs
                 recentFolders = recents
+                // rootItems 로드 완료 후 현재 폴더 경로로 트리 확장
+                if let url = store.folderURL {
+                    expandTreeToPath(url)
+                }
             }
         }
     }
@@ -249,13 +278,32 @@ struct FolderBrowserView: View {
 
             Divider()
 
-            // Folder tree (scrollable)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    folderTreeSection
+            // Folder tree (scrollable, auto-scroll to current folder)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        folderTreeSection
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
+                .onChange(of: store.folderURL) { newURL in
+                    guard let url = newURL else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(url.path, anchor: .center)
+                        }
+                    }
+                }
+                .onAppear {
+                    if let url = store.folderURL {
+                        for delay in [1.0, 1.5, 2.0] {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                proxy.scrollTo(url.path, anchor: .center)
+                            }
+                        }
+                    }
+                }
             }
 
             // Drag handle to resize favorites area
@@ -375,13 +423,13 @@ struct FolderBrowserView: View {
                         store.loadFolder(url, restoreRatings: true)
                     }
                     .contextMenu {
+                        Button("이름 변경") { renameFolderWithDialog(url: url) }
+                        Divider()
                         Button("즐겨찾기에서 제거") {
                             store.removeFavoriteFolder(url)
                             favorites = store.loadFavoriteFolders()
                         }
-                        Button("Finder에서 열기") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        Button("Finder에서 열기") { NSWorkspace.shared.open(url) }
                     }
                     .help(url.path)
                 }
@@ -804,6 +852,7 @@ struct FolderRowView: View {
     @State private var showEjectConfirm: Bool = false
     @State private var ejectResult: String?
     @State private var imageCount: Int?
+    @State private var isDropTarget: Bool = false
 
     private var isExternalVolume: Bool {
         item.url.path.hasPrefix("/Volumes") && level == 0
@@ -812,17 +861,18 @@ struct FolderRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
-                // Disclosure triangle
+                // Disclosure triangle — 히트 영역 확대
                 if item.hasSubfolders {
                     Button(action: { toggleExpand() }) {
                         Image(systemName: item.isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.secondary)
-                            .frame(width: 16, height: 16)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Spacer().frame(width: 16)
+                    Spacer().frame(width: 22)
                 }
 
                 // Folder icon + name + spacer = entire clickable area (generous padding)
@@ -901,6 +951,15 @@ struct FolderRowView: View {
                 Text(ejectResult ?? "")
             }
             .cornerRadius(4)
+            .id(item.url.path)  // ScrollViewReader 스크롤 대상
+            .onDrop(of: [.fileURL], delegate: FolderDropDelegate(
+                store: store,
+                destination: item.url,
+                isTargeted: $isDropTarget
+            ))
+            .overlay(
+                isDropTarget ? RoundedRectangle(cornerRadius: 4).strokeBorder(Color.accentColor, lineWidth: 2) : nil
+            )
             .contextMenu {
                 Button("즐겨찾기에 추가") { onAddFavorite(item.url) }
                 Button("Finder에서 열기") { NSWorkspace.shared.open(item.url) }
@@ -936,27 +995,47 @@ struct FolderRowView: View {
 
     private func toggleExpand() {
         if item.isExpanded {
-            AppLogger.log(.folder, "folder collapsed: \(item.name)")
             item.isExpanded = false
-        } else {
-            AppLogger.log(.folder, "folder expanding: \(item.name)")
+        } else if item.children != nil {
+            // children이 이미 로드됨 → 즉시 펼치기
             item.isExpanded = true
-            if item.children == nil {
-                let expandStart = CFAbsoluteTimeGetCurrent()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let children = FolderItem.loadChildren(of: item.url)
-                    let expandElapsed = (CFAbsoluteTimeGetCurrent() - expandStart) * 1000
-                    AppLogger.log(.folder, "folder expanded: \(item.name) → \(children.count) children in \(String(format: "%.1f", expandElapsed))ms")
-                    DispatchQueue.main.async {
+        } else {
+            // children 로딩 후 펼치기
+            let url = item.url
+            DispatchQueue.global(qos: .userInitiated).async {
+                let children = FolderItem.loadChildren(of: url)
+                DispatchQueue.main.async {
+                    if children.isEmpty {
+                        item.hasSubfolders = false
+                    } else {
                         item.children = children
-                        // Update hasSubfolders based on actual result
-                        if children.isEmpty {
-                            item.hasSubfolders = false
-                            item.isExpanded = false
-                        }
+                        item.isExpanded = true
                     }
                 }
             }
+        }
+    }
+
+    private func handleFileDrop(providers: [NSItemProvider], destination: URL) {
+        var fileURLs: [URL] = []
+        let group = DispatchGroup()
+
+        for provider in providers {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                defer { group.leave() }
+                guard let data = item as? Data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                // 폴더가 아닌 파일만
+                if !url.hasDirectoryPath {
+                    fileURLs.append(url)
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            guard !fileURLs.isEmpty else { return }
+            store.movePhotosToFolder(fileURLs: fileURLs, destination: destination)
         }
     }
 
@@ -1069,5 +1148,53 @@ struct ProjectFolderCount: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Folder Drop Delegate (파일 이동)
+
+struct FolderDropDelegate: DropDelegate {
+    let store: PhotoStore
+    let destination: URL
+    @Binding var isTargeted: Bool
+
+    func dropEntered(info: DropInfo) {
+        isTargeted = true
+    }
+
+    func dropExited(info: DropInfo) {
+        isTargeted = false
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        return info.hasItemsConforming(to: [.fileURL])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        let providers = info.itemProviders(for: [.fileURL])
+        var fileURLs: [URL] = []
+        let group = DispatchGroup()
+
+        for provider in providers {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                defer { group.leave() }
+                guard let data = item as? Data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil),
+                      !url.hasDirectoryPath else { return }
+                fileURLs.append(url)
+            }
+        }
+
+        group.notify(queue: .main) {
+            guard !fileURLs.isEmpty else { return }
+            store.movePhotosToFolder(fileURLs: fileURLs, destination: destination)
+        }
+        return true
     }
 }

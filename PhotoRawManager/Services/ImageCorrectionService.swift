@@ -4,9 +4,10 @@ import CoreImage
 import Vision
 
 struct CorrectionOptions {
-    var autoLevel: Bool = true
-    var autoWhiteBalance: Bool = true
-    var autoHorizon: Bool = true
+    var autoLevel: Bool = false         // 노출/톤 보정
+    var autoWhiteBalance: Bool = false  // 화이트밸런스 보정
+    var autoHorizon: Bool = true        // 수평 보정
+    var autoUpright: Bool = false       // 원근 보정 (수직선 보정)
 }
 
 struct CorrectionResult {
@@ -27,28 +28,68 @@ struct ImageCorrectionService {
     static func autoCorrect(url: URL, options: CorrectionOptions) -> CorrectionResult {
         var result = CorrectionResult()
 
+        // 수평/원근만 할 때는 CIImage 색공간 변환을 피하기 위해 별도 처리
+        let onlyGeometry = options.autoHorizon || options.autoUpright
+        let needsColor = options.autoLevel || options.autoWhiteBalance
+
         guard let originalImage = CIImage(contentsOf: url) else { return result }
         var image = originalImage
 
-        // 1. Auto Horizon (straighten)
+        // 1. Auto Horizon — Vision 프레임워크
         if options.autoHorizon {
-            let angle = detectHorizonAngle(image: image)
-            if abs(angle) > 0.3 {
-                let radians = angle * .pi / 180.0
+            let handler = VNImageRequestHandler(ciImage: image, options: [:])
+            let horizonRequest = VNDetectHorizonRequest()
+            do {
+                try handler.perform([horizonRequest])
+            } catch {
+                AppLogger.log(.general, "Horizon detect error: \(error)")
+            }
+
+            let observation = horizonRequest.results?.first
+            let rawAngle = observation?.angle ?? 0
+            let angleDeg = rawAngle * 180.0 / .pi
+            AppLogger.log(.general, "Horizon: raw=\(String(format: "%.4f", rawAngle))rad deg=\(String(format: "%.2f", angleDeg))° results=\(horizonRequest.results?.count ?? 0)")
+
+            if abs(angleDeg) > 0.3 && abs(angleDeg) < 5.0, let obs = observation {
                 if let filter = CIFilter(name: "CIStraightenFilter") {
                     filter.setValue(image, forKey: kCIInputImageKey)
-                    filter.setValue(Float(-radians), forKey: "inputAngle")
+                    filter.setValue(Float(obs.angle), forKey: "inputAngle")
                     if let output = filter.outputImage {
                         image = output
-                        result.horizonAngle = angle
-                        result.applied.append("수평 보정 (\(String(format: "%.1f", angle))°)")
+                        result.horizonAngle = angleDeg
+                        result.applied.append("수평 보정 (\(String(format: "%.1f", angleDeg))°)")
                     }
                 }
             }
         }
 
-        // 2. Apple Auto Enhancement (exposure, tone, vibrance, face balance, red-eye)
-        if options.autoLevel || options.autoWhiteBalance {
+        // 1.5 Auto Upright (수직선 원근 보정)
+        if options.autoUpright {
+            let (uprighted, tiltAngle, applied) = PerspectiveCorrectionService.autoUpright(image: image)
+            if applied {
+                image = uprighted
+                result.applied.append("원근 보정 (\(String(format: "%.1f", tiltAngle))°)")
+            }
+        }
+
+        // 기하 보정만 했고 색감 보정 안 할 때 → 여기서 리턴 (색공간 변환 방지)
+        if onlyGeometry && !needsColor && result.applied.isEmpty {
+            // 아무 보정도 안 됨
+            return result
+        }
+        if onlyGeometry && !needsColor && !result.applied.isEmpty {
+            // 기하 보정만 적용 → 색 변환 없이 렌더링
+            let oriented = image.oriented(forExifOrientation: Int32(
+                originalImage.properties[kCGImagePropertyOrientation as String] as? Int ?? 1
+            ))
+            if let cgImage = context.createCGImage(oriented, from: oriented.extent) {
+                result.correctedImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            return result
+        }
+
+        // 2. Apple Auto Enhancement — 색감 보정이 켜진 경우만
+        if needsColor {
             var enhanceOptions: [CIImageAutoAdjustmentOption: Any] = [:]
             // Provide orientation for accurate face detection
             if let orientation = originalImage.properties[kCGImagePropertyOrientation as String] {
@@ -120,8 +161,12 @@ struct ImageCorrectionService {
             }
         }
 
-        // Render final image
-        if let cgImage = context.createCGImage(image, from: image.extent) {
+        // Render final image — orientation 보존
+        // CIImage에서 orientation을 적용한 상태로 렌더링
+        let oriented = image.oriented(forExifOrientation: Int32(
+            originalImage.properties[kCGImagePropertyOrientation as String] as? Int ?? 1
+        ))
+        if let cgImage = context.createCGImage(oriented, from: oriented.extent) {
             result.correctedImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }
 

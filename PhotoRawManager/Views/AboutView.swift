@@ -41,22 +41,36 @@ struct AboutView: View {
 
                     Divider()
 
-                    // v3.0 Changelog
-                    changelogSection("v3.0 새로운 기능", items: [
+                    // v5.0 Changelog
+                    changelogSection("v5.0 새로운 기능", items: [
+                        "스마트 셀렉 — 연사 베스트샷 자동 선택 (Cmd+Shift+S)",
+                        "전체화면 컬링 모드 (Cmd+F) + 필름스트립",
+                        "타임라인 뷰 — 촬영 시간대별 그룹화",
+                        "셀렉 통계 대시보드",
+                        "Before/After 보정 비교 슬라이더",
+                        "메모리카드 자동 백업 (DCIM 감지 → 안전 복사)",
+                        "캐시 관리 설정 (크기 제한/경로 변경/삭제)",
+                        "빠른 탐색 최적화 (onQuickPreview 썸네일 즉시 표시)",
+                        "마지막 폴더 자동 복원 + 폴더 트리 자동 스크롤",
+                        "RAW 프리페치 스킵 (CPU/메모리 최적화)",
+                    ])
+
+                    changelogSection("v3.6 주요 개선", items: [
+                        "Apple Vision 프레임워크 (수평보정/장면분류/인물분석)",
+                        "품질 시스템 3단계 (좋음/보통/문제) + 100점 단일 점수",
+                        "AI Pick: 75점 이상 자동 추천",
+                        "RAW → JPG 배치 변환 + 리사이즈",
+                        "내보내기 폴더명 커스텀",
+                    ])
+
+                    changelogSection("v3.0 기반 기능", items: [
                         "필름스트립 레이아웃 모드",
                         "Vision 장면 분류 (인물/풍경/음식/건물 등)",
-                        "얼굴 그룹핑",
-                        "GPS 지도 뷰",
-                        "배치 이름 변경",
-                        "슬라이드쇼 전환 효과",
-                        "히스토그램 오버레이 (H키)",
-                        "메타데이터 오버레이 (I키)",
-                        "Quick Look 미리보기 (P키)",
-                        "Google Drive 업로드/공유",
-                        "Touch Bar 지원",
-                        "실시간 폴더 감시",
-                        "CIRAWFilter 초고속 RAW 로딩",
-                        "macOS 네이티브 API 최적화",
+                        "얼굴 그룹핑 + GPS 지도 뷰",
+                        "히스토그램/메타데이터 오버레이 (H/I키)",
+                        "Google Drive 업로드 + G Select 웹 뷰어",
+                        "HW JPEG 디코더 + Metal GPU 가속",
+                        "실시간 폴더 감시 + USB 테더링",
                     ])
 
                     Divider()

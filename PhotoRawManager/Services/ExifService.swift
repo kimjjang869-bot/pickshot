@@ -240,6 +240,18 @@ struct ExifService {
         // Picture Style / Creative Look / Film Simulation
         data.pictureStyle = extractPictureStyle(properties: properties, make: data.cameraMake)
 
+        // Rating (카메라 또는 XMP에서 설정된 별점)
+        // IPTC: StarRating, XMP: Rating, TIFF: Rating
+        if let r = properties["Rating"] as? Int, r > 0, r <= 5 {
+            data.rating = r
+        } else if let iptc = properties[kCGImagePropertyIPTCDictionary as String] as? [String: Any],
+                  let r = iptc["StarRating"] as? Int, r > 0, r <= 5 {
+            data.rating = r
+        } else if let xmp = properties["{XMP}"] as? [String: Any],
+                  let r = xmp["Rating"] as? Int, r > 0, r <= 5 {
+            data.rating = r
+        }
+
         // Also check MakerNote AF info via SubjectDistRange or other tags
         if data.afPoint == nil {
             // Try SubjectLocation (older tag)

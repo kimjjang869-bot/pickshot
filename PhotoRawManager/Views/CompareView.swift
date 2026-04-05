@@ -76,7 +76,13 @@ struct CompareView: View {
                     .cornerRadius(4)
                 }
 
-                Button("닫기") { dismiss() }
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(12)
@@ -303,42 +309,34 @@ struct SyncedCompareImage: View {
                         .resizable()
                         .interpolation(.medium)
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: scaledW, height: scaledH)
+                        .frame(width: max(scaledW, vSize.width), height: max(scaledH, vSize.height))
                         .offset(x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0)
                         .frame(width: vSize.width, height: vSize.height, alignment: .center)
                         .clipped()
+                        .contentShape(Rectangle())
                         .gesture(
-                            isZoomed ?
                             DragGesture()
                                 .onChanged { value in
+                                    guard isZoomed else { return }
                                     let start = isSynced ? dragStart : localDragStart
                                     let newOffset = CGPoint(
                                         x: start.x + value.translation.width,
                                         y: start.y + value.translation.height
                                     )
-                                    if isSynced {
-                                        syncOffset = newOffset
-                                    } else {
-                                        localOffset = newOffset
-                                    }
+                                    if isSynced { syncOffset = newOffset }
+                                    else { localOffset = newOffset }
                                 }
                                 .onEnded { _ in
+                                    guard isZoomed else { return }
                                     let clamped = clampPan(
                                         pan: isSynced ? syncOffset : localOffset,
                                         scaledSize: CGSize(width: scaledW, height: scaledH),
                                         viewSize: vSize
                                     )
-                                    let finalOffset = CGPoint(x: clamped.x, y: clamped.y)
-                                    if isSynced {
-                                        syncOffset = finalOffset
-                                        dragStart = finalOffset
-                                    } else {
-                                        localOffset = finalOffset
-                                        localDragStart = finalOffset
-                                    }
+                                    if isSynced { syncOffset = clamped; dragStart = clamped }
+                                    else { localOffset = clamped; localDragStart = clamped }
                                 }
-                            : nil
                         )
                 } else {
                     Rectangle()
@@ -351,9 +349,17 @@ struct SyncedCompareImage: View {
     }
 
     private func loadImage() {
+        let capturedURL = url
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let img = PreviewImageCache.loadOptimized(url: url, maxPixel: 2000) else { return }
-            DispatchQueue.main.async { image = img }
+            autoreleasepool {
+                // 썸네일 캐시에서 즉시 표시
+                if let thumb = ThumbnailCache.shared.get(capturedURL) {
+                    DispatchQueue.main.async { image = thumb }
+                }
+                // 고화질 로딩
+                guard let img = PreviewImageCache.loadOptimized(url: capturedURL, maxPixel: 2000) else { return }
+                DispatchQueue.main.async { image = img }
+            }
         }
     }
 

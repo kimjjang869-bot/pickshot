@@ -34,6 +34,15 @@ struct PhotoRawManagerApp: App {
                 .disabled(updateService.isChecking)
             }
             CommandMenu("셀렉") {
+                Button("스마트 셀렉...") {
+                    store.previewSmartSelect()
+                    store.showSmartSelect = true
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(store.photos.isEmpty)
+
+                Divider()
+
                 Button("셀렉 내보내기...") {
                     let folderName = store.folderURL?.lastPathComponent ?? "PickShot"
                     if let url = PickshotFileService.exportSelection(photos: store.photos, folderName: folderName) {

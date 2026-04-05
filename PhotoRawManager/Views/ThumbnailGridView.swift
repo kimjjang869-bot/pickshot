@@ -34,20 +34,22 @@ struct ThumbnailGridView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 8) {
-            Spacer().frame(height: 80)
+        VStack(spacing: 12) {
+            Spacer()
             Image(systemName: store.folderURL != nil ? "photo.on.rectangle.angled" : "folder")
-                .font(.system(size: 28))
-                .foregroundColor(.white.opacity(0.1))
-            Text(store.folderURL != nil ? "이미지 없음" : "폴더를 선택하세요")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.2))
+                .font(.system(size: 40))
+                .foregroundColor(.white.opacity(0.3))
+            Text(store.folderURL != nil ? "표시할 이미지가 없습니다" : "폴더를 선택하세요")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(maxWidth: .infinity)
     }
 
     private func updateActualColumns(width: CGFloat?) {
-        let w = width ?? store.gridWidth
+        let w = width ?? store.hSplitPosition
         let size = store.thumbnailSize
         let spacing: CGFloat = 12
         // Match GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)
@@ -1452,13 +1454,11 @@ struct MultiFileDragView: NSViewRepresentable {
 
 extension MultiFileDragView.DragOverlayNSView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        return context == .outsideApplication ? [.copy] : .copy
+        return context == .outsideApplication ? [.copy, .move] : [.move, .copy]
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        if operation != [] {
-            store?.showToastMessage("📂 파일 복사 완료")
-        }
+        // 앱 내부 이동은 PhotoStore.movePhotosToFolder에서 처리
     }
 }
 

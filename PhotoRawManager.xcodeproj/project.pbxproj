@@ -70,6 +70,17 @@
 		60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD92142A284546BD2E0466 /* AISimilarityService.swift */; };
 		939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997C658F4814B05A202D514 /* MatchingView.swift */; };
 		80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */; };
+		F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */; };
+		DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */; };
+		407359AEFF87A32478B0C70D /* BeforeAfterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F49681BEC836F7F64D3D25 /* BeforeAfterView.swift */; };
+		2AFCCDB6F3124685F4658A9E /* StatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */; };
+		F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C8DC3227F94E990E2676A /* AutoCullView.swift */; };
+		3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B8111B82E42D81DC67D2E /* TimelineView.swift */; };
+		6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */; };
+		89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */; };
+		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
+		901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */; };
+		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -135,6 +146,17 @@
 		F0AD92142A284546BD2E0466 /* AISimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISimilarityService.swift; sourceTree = "<group>"; };
 		5997C658F4814B05A202D514 /* MatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchingView.swift; sourceTree = "<group>"; };
 		C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAWConversionService.swift; sourceTree = "<group>"; };
+		DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectService.swift; sourceTree = "<group>"; };
+		52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectView.swift; sourceTree = "<group>"; };
+		24F49681BEC836F7F64D3D25 /* BeforeAfterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeforeAfterView.swift; sourceTree = "<group>"; };
+		A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsDashboardView.swift; sourceTree = "<group>"; };
+		4E8C8DC3227F94E990E2676A /* AutoCullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoCullView.swift; sourceTree = "<group>"; };
+		FE4B8111B82E42D81DC67D2E /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
+		C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupService.swift; sourceTree = "<group>"; };
+		915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupView.swift; sourceTree = "<group>"; };
+		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
+		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
+		81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = NIMAAesthetic.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +197,7 @@
 			children = (
 				B10003,
 				B10004,
+				81F5C27DF3F5D27545AA8F87,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -210,6 +233,12 @@
 				'B10055',
 				B10034,
 				5997C658F4814B05A202D514,
+				52C34EB4DBCFE9DC1FB1EDC3,
+				24F49681BEC836F7F64D3D25,
+				A3CF055E61383353C2CCA322,
+				4E8C8DC3227F94E990E2676A,
+				FE4B8111B82E42D81DC67D2E,
+				915A24B2FA4BE98570A5A738,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -237,6 +266,10 @@
 				F177AFEF49654E22BDB469B3,
 				F0AD92142A284546BD2E0466,
 				C1432F55F1D147C6BD5D6B21,
+				DB0149CC8D993C1D6A7E1943,
+				C74A91831108ED991CD31ADE,
+				18B9AD88F78788103034A9CD,
+				1F28915B9DB29857371992AB,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -308,7 +341,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10013,
+				A10013,				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
+
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,6 +354,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
+				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
+				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
+				89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */,
+				6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */,
 				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,
 				60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */,
 				73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */,
@@ -372,6 +410,12 @@
 				61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */,
 				1F05414884699B73642AF15D /* UpdateView.swift in Sources */,
 				'A10056',
+				F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */,
+				DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */,
+				407359AEFF87A32478B0C70D /* BeforeAfterView.swift in Sources */,
+				2AFCCDB6F3124685F4658A9E /* StatsDashboardView.swift in Sources */,
+				F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */,
+				3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -494,7 +538,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -505,7 +549,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 5.0;
+				MARKETING_VERSION = 6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -522,7 +566,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -533,7 +577,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 5.0;
+				MARKETING_VERSION = 6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

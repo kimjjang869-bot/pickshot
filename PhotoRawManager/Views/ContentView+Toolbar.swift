@@ -103,6 +103,9 @@ extension ContentView {
                 }
 
                 if !store.photos.isEmpty {
+                    // G Select button (먼저)
+                    gSelectButton
+
                     // Matching button
                     Button(action: { store.showMatchingSheet = true }) {
                         Label("매칭", systemImage: "arrow.triangle.2.circlepath")
@@ -112,9 +115,6 @@ extension ContentView {
                     .controlSize(.small)
                     .tint(.purple)
                     .help("파일명/JPG/AI 매칭 셀렉")
-
-                    // G Select button
-                    gSelectButton
 
                     Button(action: { store.showExportSheet = true }) {
                         Label("내보내기", systemImage: "square.and.arrow.up")
@@ -138,8 +138,7 @@ extension ContentView {
                     }
                 }
 
-                SubscriptionBadge()
-                APIUsageGauge()
+                // SubscriptionBadge / APIUsageGauge 숨김
             }
             .fixedSize(horizontal: false, vertical: true)
             // end Row 1
@@ -258,49 +257,13 @@ extension ContentView {
 
                     Divider().frame(height: 16).opacity(0.2)
 
-                    // Quality filter
+                    // AI 분류 (품질 + 장면 통합)
                     qualityFilterMenu
-
-                    // Scene tag filter
-                    sceneTagFilterMenu
 
                     // Face group filter
                     faceGroupFilterMenu
 
-                    // AI Smart Classification
-                    aiClassifyMenu
-
                     Divider().frame(height: 16).opacity(0.2)
-
-                    // Color label menu
-                    Menu {
-                        ForEach(ColorLabel.allCases, id: \.self) { label in
-                            Button(action: {
-                                if store.selectionCount > 1 {
-                                    store.setColorLabelForSelected(label)
-                                } else if let id = store.selectedPhotoID {
-                                    store.setColorLabel(label, for: id)
-                                }
-                            }) {
-                                HStack {
-                                    if let c = label.color {
-                                        Circle().fill(c).frame(width: 10, height: 10)
-                                    }
-                                    Text(label.rawValue)
-                                }
-                            }
-                        }
-                    } label: {
-                        toolbarButton(icon: "tag.fill", text: "라벨", color: .teal, active: false)
-                    }
-                    .help("색상 라벨 지정")
-
-                    // Batch rename button
-                    Button(action: { store.showBatchRename = true }) {
-                        toolbarButton(icon: "pencil.line", text: "이름 변경", color: .mint, active: false)
-                    }
-                    .buttonStyle(.plain)
-                    .help("파일 이름 일괄 변경 (날짜/번호 패턴)")
 
                     Divider().frame(height: 16).opacity(0.2)
 
@@ -318,6 +281,17 @@ extension ContentView {
                     }
                     .buttonStyle(.plain)
                     .help("레이아웃 모드 전환 (그리드+미리보기 / 필름스트립)")
+
+                    // Dual Viewer
+                    Button(action: { store.showDualViewer.toggle() }) {
+                        Image(systemName: "display.2").font(.system(size: AppTheme.iconSmall))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                    .foregroundColor(store.showDualViewer ? .accentColor : .secondary)
+                    .background(store.showDualViewer ? AppTheme.accent.opacity(0.15) : AppTheme.toolbarButtonBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .help("듀얼 스크린 뷰어 (D)")
 
                     // Compare button
                     Button(action: {
@@ -409,66 +383,41 @@ extension ContentView {
                 Label("문제 있음", systemImage: "exclamationmark.triangle")
             }
             Divider()
+            Divider()
             Button(action: { store.showAnalysisOptions = true }) {
-                Label("품질 분석 실행...", systemImage: "wand.and.stars")
+                Label("PickShot AI 분류 실행...", systemImage: "wand.and.stars")
             }
+            Divider()
+            // 장면 분류 필터
+            let tags = store.availableSceneTags
+            if !tags.isEmpty {
+                ForEach(tags, id: \.self) { tag in
+                    Button(action: { store.sceneTagFilter = store.sceneTagFilter == tag ? nil : tag }) {
+                        Label(tag, systemImage: store.sceneTagFilter == tag ? "checkmark" : "")
+                    }
+                }
+                Divider()
+            }
+            Button(action: { store.classifyScenes() }) {
+                Label(store.isClassifyingScenes ? "분류 중..." : "API AI 분류 실행", systemImage: "eye.fill")
+            }
+            .disabled(store.isClassifyingScenes)
         } label: {
             toolbarButton(
                 icon: store.qualityFilter == .aiPick ? "sparkles" : "wand.and.stars",
-                text: store.qualityFilter == .all ? "품질" : store.qualityFilter.rawValue,
+                text: store.sceneTagFilter != nil ? store.sceneTagFilter! :
+                      (store.qualityFilter == .all ? "AI" : store.qualityFilter.rawValue),
                 color: .purple,
-                active: store.qualityFilter != .all
+                active: store.qualityFilter != .all || store.sceneTagFilter != nil
             )
         }
-        .help("품질 필터 (AI추천/양호/문제)")
+        .help("AI 분류 + 품질 필터")
         .popover(isPresented: $store.showAnalysisOptions) {
             AnalysisOptionsView(store: store)
         }
-    }
 
-    // MARK: - Scene Tag Filter Menu
-
-    var sceneTagFilterMenu: some View {
-        let tags = store.availableSceneTags
-        let hasClassified = !tags.isEmpty
-
-        return HStack(spacing: 4) {
-            Menu {
-                Button(action: { store.sceneTagFilter = nil }) {
-                    Label("전체", systemImage: store.sceneTagFilter == nil ? "checkmark" : "")
-                }
-                Divider()
-                if hasClassified {
-                    ForEach(tags, id: \.self) { tag in
-                        Button(action: { store.sceneTagFilter = tag }) {
-                            Label(tag, systemImage: store.sceneTagFilter == tag ? "checkmark" : "")
-                        }
-                    }
-                } else {
-                    Button(action: { store.classifyScenes() }) {
-                        Label("장면 분류 실행", systemImage: "eye.fill")
-                    }
-                }
-                Divider()
-                Button(action: { store.classifyScenes() }) {
-                    Label(store.isClassifyingScenes ? "분류 중..." : "장면 분류", systemImage: "eye.fill")
-                }
-                .disabled(store.isClassifyingScenes)
-            } label: {
-                toolbarButton(
-                    icon: "eye.fill",
-                    text: store.sceneTagFilter ?? "장면",
-                    color: .cyan,
-                    active: store.sceneTagFilter != nil
-                )
-            }
-            .help("장면 태그 필터")
-
-            if store.isClassifyingScenes {
-                ProgressView()
-                    .scaleEffect(0.5)
-                    .frame(width: 14, height: 14)
-            }
+        if store.isClassifyingScenes || store.isAnalyzing {
+            ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
         }
     }
 

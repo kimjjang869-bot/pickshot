@@ -3,6 +3,7 @@ import SwiftUI
 import ImageIO
 import Vision
 
+
 // MARK: - Analysis Options
 
 struct AnalysisOptions {
@@ -124,8 +125,8 @@ class PhotoStore: ObservableObject {
     @Published var analysisOptions = AnalysisOptions()
     private var analysisCancel = false
     @Published var folderURL: URL?
-    @Published var hSplitPosition: CGFloat = 500
-    @Published var vSplitPosition: CGFloat = 950
+    @Published var hSplitPosition: CGFloat = 650
+    @Published var vSplitPosition: CGFloat = 1500
     @Published var isLoading = false
     @Published var loadingProgress: Double = 0  // 0~1
     @Published var loadingStatus: String = ""
@@ -170,6 +171,7 @@ class PhotoStore: ObservableObject {
     @Published var showMatchingSheet = false
     @Published var showShortcutHelp = false
     @Published var showCompare = false
+    @Published var showDualViewer = false
     @Published var showSlideshow = false
     @Published var colorLabelFilter: ColorLabel = .none { didSet { _cachedFiltered = nil; _cacheKey = "" } }
     @Published var slideshowInterval: Double = 3.0
@@ -204,6 +206,15 @@ class PhotoStore: ObservableObject {
     @Published var showGoogleDrive: Bool = false
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
+    @Published var showSmartSelect: Bool = false
+    @Published var showStats: Bool = false
+    @Published var showAutoCull: Bool = false
+    @Published var showTimeline: Bool = false
+    @Published var smartSelectResult: SmartSelectService.Result?
+    @Published var smartSelectConfig: SmartSelectService.Config = SmartSelectService.Config()
+    // Memory Card Backup
+    let backupService = MemoryCardBackupService.shared
+
     @Published var showFolderBrowser: Bool = true
     @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
@@ -278,6 +289,22 @@ class PhotoStore: ObservableObject {
             sortMode = mode
         }
         setupFolderWatcher()
+
+        // 메모리카드 자동 백업 모니터링
+        if UserDefaults.standard.bool(forKey: "autoBackupEnabled") {
+            backupService.startMonitoring()
+        }
+
+        // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
+        if let lastPath = defaults.string(forKey: lastFolderKey),
+           !lastPath.isEmpty,
+           FileManager.default.fileExists(atPath: lastPath) {
+            startupMode = .viewer
+            shouldOpenFolderBrowser = true
+            DispatchQueue.main.async {
+                self.restoreLastSession()
+            }
+        }
     }
 
     func setLayoutMode(_ mode: LayoutMode) {
@@ -365,10 +392,38 @@ class PhotoStore: ObservableObject {
     }
 
     private func applySavedRatings() {
-        guard let ratings = defaults.dictionary(forKey: ratingsKey) as? [String: Int] else { return }
+        let savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
+
         for i in 0..<photos.count {
-            if let saved = ratings[photos[i].fileName] {
+            let fileName = photos[i].fileName
+
+            // 저장된 별점 (PickShot에서 매긴 것)
+            if let saved = savedRatings?[fileName] {
                 photos[i].rating = saved
+            }
+        }
+
+        // 백그라운드: EXIF Rating 읽기 (저장된 별점 없는 사진만)
+        let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var exifRatings: [UUID: Int] = [:]
+            for (id, url, currentRating) in photosSnapshot {
+                guard currentRating == 0 else { continue }
+                if let exif = ExifService.extractExif(from: url), let r = exif.rating, r > 0 {
+                    exifRatings[id] = r
+                }
+            }
+            guard !exifRatings.isEmpty else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for (id, rating) in exifRatings {
+                    if let idx = self._photoIndex[id], idx < self.photos.count, self.photos[idx].rating == 0 {
+                        self.photos[idx].rating = rating
+                    }
+                }
+                if !exifRatings.isEmpty {
+                    AppLogger.log(.general, "EXIF Rating 적용: \(exifRatings.count)장")
+                }
             }
         }
     }
@@ -560,6 +615,61 @@ class PhotoStore: ObservableObject {
 
         // Remove from list
         removePhotosFromList(ids: ids)
+    }
+
+    /// 선택된 사진 파일을 대상 폴더로 이동
+    func movePhotosToFolder(fileURLs: [URL], destination: URL) {
+        let fm = FileManager.default
+        var moved = 0
+        var failed = 0
+        var movedIDs = Set<UUID>()
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            for srcURL in fileURLs {
+                let destURL = destination.appendingPathComponent(srcURL.lastPathComponent)
+                do {
+                    if fm.fileExists(atPath: destURL.path) {
+                        // 같은 이름 파일 존재 → 스킵
+                        failed += 1
+                        continue
+                    }
+                    try fm.moveItem(at: srcURL, to: destURL)
+                    moved += 1
+
+                    // photos 배열에서 해당 파일 찾아서 ID 수집
+                    if let photo = self.photos.first(where: {
+                        $0.jpgURL.path == srcURL.path || $0.rawURL?.path == srcURL.path
+                    }) {
+                        // JPG+RAW 쌍의 다른 파일도 이동
+                        if photo.jpgURL.path == srcURL.path, let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                            let rawDest = destination.appendingPathComponent(rawURL.lastPathComponent)
+                            try? fm.moveItem(at: rawURL, to: rawDest)
+                        } else if photo.rawURL?.path == srcURL.path {
+                            let jpgDest = destination.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                            if !fm.fileExists(atPath: jpgDest.path) {
+                                try? fm.moveItem(at: photo.jpgURL, to: jpgDest)
+                            }
+                        }
+                        movedIDs.insert(photo.id)
+                    }
+                } catch {
+                    failed += 1
+                    AppLogger.log(.general, "File move failed: \(srcURL.lastPathComponent) → \(error.localizedDescription)")
+                }
+            }
+
+            DispatchQueue.main.async {
+                // 이동된 사진 목록에서 제거
+                if !movedIDs.isEmpty {
+                    self.removePhotosFromList(ids: movedIDs)
+                }
+                let msg = "\(moved)장 이동 완료" + (failed > 0 ? " (\(failed)장 실패)" : "")
+                self.showToastMessage(msg)
+                AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
+            }
+        }
     }
 
     func idx(_ id: UUID) -> Int? {
@@ -961,6 +1071,41 @@ class PhotoStore: ObservableObject {
 
                 // Run duplicate grouping after analysis
                 self.findDuplicates()
+
+                // NIMA 미적 점수 분석 (모델 있을 때만)
+                if NIMAService.isAvailable {
+                    self.runNIMAScoring()
+                }
+            }
+        }
+    }
+
+    private func runNIMAScoring() {
+        let photoSnapshots = photos.filter { !$0.isFolder && !$0.isParentFolder }
+        guard !photoSnapshots.isEmpty else { return }
+
+        AppLogger.log(.general, "NIMA: \(photoSnapshots.count)장 미적 점수 분석 시작")
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let scores = NIMAService.scoreBatch(
+                photos: photoSnapshots,
+                cancelCheck: { false },
+                progress: { _ in }
+            )
+
+            guard !scores.isEmpty else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                var updated = false
+                for (id, nimaScore) in scores {
+                    if let idx = self._photoIndex[id], idx < self.photos.count {
+                        self.photos[idx].quality?.nimaScore = nimaScore
+                        updated = true
+                    }
+                }
+                if updated {
+                    AppLogger.log(.general, "NIMA: \(scores.count)장 점수 적용 완료")
+                }
             }
         }
     }
@@ -991,6 +1136,27 @@ class PhotoStore: ObservableObject {
 
     func stopAnalysis() {
         analysisCancel = true
+    }
+
+    // MARK: - Smart Auto-Select
+
+    func previewSmartSelect() {
+        smartSelectResult = SmartSelectService.detectAndSelect(photos: photos, config: smartSelectConfig)
+    }
+
+    func applySmartSelect() {
+        guard let result = smartSelectResult, !result.selectedIndices.isEmpty else { return }
+        pushUndo(action: "스마트 셀렉", photoIDs: Set(result.selectedIndices.map { photos[$0].id }))
+        for idx in result.selectedIndices {
+            guard idx < photos.count else { continue }
+            photos[idx].isSpacePicked = true
+        }
+        saveRatings()
+        showToastMessage("\(result.selectedCount)장 베스트샷 셀렉 완료")
+    }
+
+    var hasAnalyzedForSmartSelect: Bool {
+        photos.contains { $0.quality?.isAnalyzed == true }
     }
 
     func setRating(_ rating: Int, for photoID: UUID) {
@@ -1189,8 +1355,13 @@ class PhotoStore: ObservableObject {
         guard end >= start else { return }
         for i in start...end {
             if i == centerIndex { continue }
-            urls.append(list[i].jpgURL)
+            let url = list[i].jpgURL
+            // RAW 파일은 프리페치 스킵 (RawCamera 디모자이킹 CPU 폭발 방지)
+            let ext = url.pathExtension.lowercased()
+            if FileMatchingService.rawExtensions.contains(ext) { continue }
+            urls.append(url)
         }
+        guard !urls.isEmpty else { return }
         PreviewImageCache.shared.prefetch(urls: urls)
     }
 

@@ -17,21 +17,6 @@ struct ExifInfoView: View {
 
                 if let e = loadedRawExif ?? loadedExif {
                     shootingLine(e)
-
-                    // Picture Style / Creative Look
-                    if let style = e.pictureStyle {
-                        HStack(spacing: 6) {
-                            Image(systemName: "paintpalette.fill")
-                                .font(.system(size: 9))
-                                .foregroundColor(.purple)
-                            Text(style)
-                                .font(.system(size: AppTheme.fontBody, weight: .medium))
-                                .foregroundColor(.purple)
-                        }
-                        .padding(.horizontal, AppTheme.space12)
-                        .padding(.vertical, 3)
-                    }
-
                     sectionDivider
                 }
 
@@ -242,143 +227,92 @@ struct ExifInfoView: View {
         }
     }
 
-    // MARK: - Line 1: Header
+    // MARK: - Line 1: 카메라 · 렌즈 · ISO · 셔터 · 조리개 · 화각 | 날짜
 
     private var headerLine: some View {
         let e = displayExif
         return HStack(spacing: 0) {
-            // Camera + Lens
-            VStack(alignment: .leading, spacing: 2) {
-                if let model = e?.cameraModel {
-                    Text(model)
-                        .font(.system(size: AppTheme.fontHeading, weight: .bold))
+            if let model = e?.cameraModel {
+                Text(model).font(.system(size: AppTheme.fontBody, weight: .bold))
+            }
+            if let lens = e?.lensModel {
+                cellDot
+                Text(lens).font(.system(size: AppTheme.fontCaption)).foregroundColor(.secondary).lineLimit(1)
+            }
+            if let exif = loadedRawExif ?? loadedExif {
+                if let iso = exif.iso {
+                    cellDot; settingItem(value: "\(iso)", label: "ISO", color: iso > 6400 ? .red : iso > 3200 ? .orange : .accentColor)
                 }
-                if let lens = e?.lensModel {
-                    Text(lens)
-                        .font(.system(size: AppTheme.fontBody))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // Date
-            if let date = e?.dateTaken {
-                Text("\(formatDate(date))  \(formatTime(date))")
-                    .font(.system(size: AppTheme.fontBody, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary.opacity(0.6))
-            }
-        }
-        .padding(.horizontal, AppTheme.space12)
-        .padding(.vertical, AppTheme.space8)
-    }
-
-    // MARK: - Line 2: Shooting Settings
-
-    private func shootingLine(_ exif: ExifData) -> some View {
-        HStack(spacing: 0) {
-            if let iso = exif.iso {
-                settingItem(value: "\(iso)", label: "ISO",
-                            color: iso > 6400 ? .red : iso > 3200 ? .orange : .accentColor)
-            }
-            if let shutter = exif.shutterSpeed {
-                cellDot
-                settingItem(value: shutter, label: "셔터", color: .accentColor)
-            }
-            if let aperture = exif.aperture {
-                cellDot
-                settingItem(value: String(format: "f/%.1f", aperture), label: "조리개", color: .accentColor)
-            }
-            if let focal = exif.focalLength {
-                cellDot
-                settingItem(value: String(format: "%.0fmm", focal), label: "초점", color: .accentColor)
+                if let shutter = exif.shutterSpeed { cellDot; settingItem(value: shutter, label: "셔터", color: .accentColor) }
+                if let aperture = exif.aperture { cellDot; settingItem(value: String(format: "f/%.1f", aperture), label: "", color: .accentColor) }
+                if let focal = exif.focalLength { cellDot; settingItem(value: String(format: "%.0fmm", focal), label: "", color: .accentColor) }
             }
 
             Spacer(minLength: 4)
 
-            // Resolution + MP (right aligned)
-            let re = displayExif
-            if let w = re?.imageWidth, let h = re?.imageHeight {
-                let mp = Double(w * h) / 1_000_000.0
-                Text("\(w)x\(h)")
-                    .font(.system(size: AppTheme.fontSubhead, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                Text(String(format: " %.0fMP", mp))
-                    .font(.system(size: AppTheme.fontSubhead, weight: .bold))
-                    .foregroundColor(.secondary)
+            if let date = e?.dateTaken {
+                Text("\(formatDate(date)) \(formatTime(date))")
+                    .font(.system(size: AppTheme.fontCaption, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.6))
             }
         }
         .padding(.horizontal, AppTheme.space12)
-        .padding(.vertical, AppTheme.space8)
+        .padding(.vertical, 5)
     }
 
-    // MARK: - Line 3: File Info
+    // shootingLine은 headerLine에 통합됨
+    private func shootingLine(_ exif: ExifData) -> some View { EmptyView() }
+
+    // MARK: - Line 2: 파일 뱃지 | 픽처스타일 + 해상도
 
     private var fileLine: some View {
         let quality = jpgQualityLabel
         let e = displayExif
 
         return HStack(spacing: 0) {
-            // JPG pill badge
-            HStack(spacing: 4) {
-                Text(quality.label)
-                    .font(.system(size: AppTheme.fontCaption, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(quality.color.opacity(0.85))
-                    .clipShape(Capsule())
-                Text(jpgFileSizeStr)
-                    .font(.system(size: AppTheme.fontCaption, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
-
-            cellDot
-
-            // RAW pill badge
-            if photo.hasRAW, let rawURL = photo.rawURL {
-                HStack(spacing: 4) {
-                    Text(rawURL.pathExtension.uppercased())
-                        .font(.system(size: AppTheme.fontCaption, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.85))
-                        .clipShape(Capsule())
-                    Text(rawFileSizeStr)
-                        .font(.system(size: AppTheme.fontCaption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
+            // RAW만 있으면 RAW만, 둘 다 있으면 둘 다
+            if photo.isRawOnly {
+                // RAW only
+                let ext = photo.jpgURL.pathExtension.uppercased()
+                Text(ext).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(Color.orange.opacity(0.85)).clipShape(Capsule())
+                Text(" \(jpgFileSizeStr)").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
+            } else if photo.hasRAW, let rawURL = photo.rawURL {
+                // JPG + RAW
+                Text(quality.label).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(quality.color.opacity(0.85)).clipShape(Capsule())
+                Text(" \(jpgFileSizeStr)").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
+                cellDot
+                Text(rawURL.pathExtension.uppercased()).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(Color.green.opacity(0.85)).clipShape(Capsule())
+                Text(" \(rawFileSizeStr)").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
             } else {
-                Text("RAW 없음")
-                    .font(.system(size: AppTheme.fontCaption))
-                    .foregroundColor(.secondary.opacity(0.6))
+                // JPG only
+                Text(quality.label).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(quality.color.opacity(0.85)).clipShape(Capsule())
+                Text(" \(jpgFileSizeStr)").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
             }
 
             Spacer(minLength: 4)
 
-            // Specs: bit | DPI | color space
-            if let bit = e?.bitDepth {
-                Text("\(bit)bit")
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
-            if let dpi = e?.dpiX {
+            // 오른쪽: 픽처스타일 + 해상도 + bit + color
+            if let style = e?.pictureStyle {
+                HStack(spacing: 3) {
+                    Image(systemName: "paintpalette.fill").font(.system(size: 8)).foregroundColor(.purple)
+                    Text(style).font(.system(size: AppTheme.fontCaption, weight: .medium)).foregroundColor(.purple)
+                }
                 cellDot
-                Text("\(dpi)dpi")
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
             }
-            if let profile = displayColorProfile {
-                cellDot
-                Text(profile)
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
-                    .foregroundColor(.secondary)
+            if let w = e?.imageWidth, let h = e?.imageHeight {
+                let mp = Double(w * h) / 1_000_000.0
+                Text("\(w)x\(h) \(String(format: "%.0fMP", mp))")
+                    .font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
             }
+            if let bit = e?.bitDepth { cellDot; Text("\(bit)bit").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary) }
+            if let profile = displayColorProfile { cellDot; Text(profile).font(.system(size: AppTheme.fontCaption)).foregroundColor(.secondary) }
         }
         .padding(.horizontal, AppTheme.space12)
-        .padding(.vertical, AppTheme.space8)
+        .padding(.vertical, 5)
     }
 
     // MARK: - Small Components
