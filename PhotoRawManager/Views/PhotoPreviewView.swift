@@ -873,7 +873,6 @@ struct PhotoPreviewView: View {
         }
         .onChange(of: store.selectedPhotoID) { newID in
             guard let newID = newID else { return }
-            fputs("[OC] \(store.selectedPhoto?.fileName ?? "?") repeat=\(store.isKeyRepeat)\n", stderr)
             pendingPhotoID = newID
             hiResWorkItem?.cancel()
             preloadWork?.cancel()
@@ -907,8 +906,7 @@ struct PhotoPreviewView: View {
             if let cached = PreviewImageCache.shared.get(cacheKey) {
                 image = cached
                 lowResImage = cached
-                // 캐시 히트해도 단일 입력이면 아래 로직 계속 실행 (고화질 보장)
-                if store.isKeyRepeat { return }
+                // 캐시 히트 → 아래 debounce 로직으로 계속 진행 (멈추면 고화질 보장)
             }
 
             // Show thumbnail instantly while full image loads
@@ -916,38 +914,16 @@ struct PhotoPreviewView: View {
                 image = thumb
             }
 
-            // debounce로 고화질 로딩 (빠른 이동 시 0.4초 후, 단일 입력은 즉시)
+            // 항상 즉시 고화질 로딩 (투어박스/키보드/마우스 동일)
             preloadWork?.cancel()
-            let loadWork = DispatchWorkItem {
-                guard self.pendingPhotoID == newID else { return }
-                fputs("[QP] STOP → loadDirect \(url.lastPathComponent)\n", stderr)
-                // 멈춤 시 프리뷰 캐시 비우기 (메모리 해방)
-                PreviewImageCache.shared.clearCache()
-                self.viewState.stableImageSize = Self.readImageDimensions(url: url)
-                self.loadImageDirect(for: url, id: newID)
-                if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                    self.hiResWorkItem?.cancel()
-                    let hWork = DispatchWorkItem { self.loadHiResForZoom() }
-                    self.hiResWorkItem = hWork
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: hWork)
-                }
-            }
-            if store.isKeyRepeat {
-                // 빠른 이동 중: 0.4초 debounce
-                preloadWork = loadWork
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: loadWork)
-            } else {
-                // 단일 입력 (키보드 1번, 마우스 클릭): 즉시 동기 실행
-                fputs("[OC] DIRECT \(url.lastPathComponent)\n", stderr)
-                preloadWork = nil
-                viewState.stableImageSize = Self.readImageDimensions(url: url)
-                loadImageDirect(for: url, id: newID)
-                if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
-                    hiResWorkItem?.cancel()
-                    let hWork = DispatchWorkItem { loadHiResForZoom() }
-                    hiResWorkItem = hWork
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: hWork)
-                }
+            preloadWork = nil
+            viewState.stableImageSize = Self.readImageDimensions(url: url)
+            loadImageDirect(for: url, id: newID)
+            if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
+                hiResWorkItem?.cancel()
+                let hWork = DispatchWorkItem { loadHiResForZoom() }
+                hiResWorkItem = hWork
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: hWork)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }

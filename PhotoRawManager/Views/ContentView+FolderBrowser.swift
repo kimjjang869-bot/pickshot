@@ -70,11 +70,26 @@ struct FolderBrowserView: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .onAppear {
             refreshRootItems()
+            // 앱 시작 시 이미 마운트된 메모리카드 체크
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                let fm = FileManager.default
+                if let volumes = try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: nil) {
+                    fputs("[MOUNT] Startup check: \(volumes.map { $0.lastPathComponent })\n", stderr)
+                    for vol in volumes {
+                        MemoryCardBackupService.shared.checkAndPromptIfMemoryCard(vol)
+                    }
+                }
+            }
+
             // Watch for volume mount/unmount
             let ws = NSWorkspace.shared.notificationCenter
             ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { notification in
                 if let volumePath = notification.userInfo?["NSDevicePath"] as? String {
-                    AppLogger.log(.folder, "Volume mounted: \(volumePath)")
+                    fputs("[MOUNT] Volume mounted: \(volumePath)\n", stderr)
+                    let volumeURL = URL(fileURLWithPath: volumePath)
+                    MemoryCardBackupService.shared.checkAndPromptIfMemoryCard(volumeURL)
+                } else {
+                    fputs("[MOUNT] Volume mounted but no path\n", stderr)
                 }
                 refreshRootItems()
             }
@@ -755,8 +770,8 @@ struct FolderBrowserView: View {
                                 store.loadFolder(item.url, restoreRatings: true)
                             }
                             .contextMenu {
-                                Button("이 폴더 열기") {
-                                    openIconFolder(item.url)
+                                Button("폴더 이름 변경") {
+                                    renameFolderWithDialog(url: item.url)
                                 }
                                 Button("즐겨찾기에 추가") {
                                     store.addFavoriteFolder(item.url)
@@ -866,9 +881,32 @@ struct FolderRowView: View {
     @State private var ejectResult: String?
     @State private var imageCount: Int?
     @State private var isDropTarget: Bool = false
+    @State private var isRenaming: Bool = false
+    @State private var renamingText: String = ""
 
     private var isExternalVolume: Bool {
         item.url.path.hasPrefix("/Volumes") && level == 0
+    }
+
+    private func startRenaming() {
+        renamingText = item.url.lastPathComponent
+        isRenaming = true
+    }
+
+    private func commitRename() {
+        isRenaming = false
+        let newName = renamingText.trimmingCharacters(in: .whitespaces)
+        guard !newName.isEmpty, newName != item.url.lastPathComponent else { return }
+        let newURL = item.url.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try FileManager.default.moveItem(at: item.url, to: newURL)
+            store.showToastMessage("'\(newName)'으로 이름 변경 완료")
+            if store.folderURL == item.url {
+                store.loadFolder(newURL, restoreRatings: true)
+            }
+        } catch {
+            store.showToastMessage("이름 변경 실패: \(error.localizedDescription)")
+        }
     }
 
     var body: some View {
@@ -894,10 +932,19 @@ struct FolderRowView: View {
                         .font(.system(size: 15))
                         .foregroundColor(folderColor)
 
-                    Text(item.name)
+                    if isRenaming {
+                        TextField("", text: $renamingText, onCommit: {
+                            commitRename()
+                        })
                         .font(.system(size: 13))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .textFieldStyle(.plain)
+                        .onExitCommand { isRenaming = false }
+                    } else {
+                        Text(item.name)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
 
                     Spacer()
                 }
@@ -941,11 +988,53 @@ struct FolderRowView: View {
                     .help("'\(item.name)' 추출")
                     .alert("디스크 추출", isPresented: $showEjectConfirm) {
                         Button("추출", role: .destructive) {
-                            let success = NSWorkspace.shared.unmountAndEjectDevice(atPath: item.url.path)
-                            if success {
-                                ejectResult = "'\(item.name)' 추출 완료"
-                            } else {
-                                ejectResult = "'\(item.name)' 추출 실패 - 사용 중인 파일이 있을 수 있습니다"
+                            // 추출 전 모든 파일 참조 해제
+                            if store.folderURL?.path.hasPrefix(item.url.path) == true {
+                                store.photos = []
+                                store.selectedPhotoID = nil
+                                store.folderURL = nil
+                            }
+                            PreviewImageCache.shared.clearCache()
+                            ThumbnailCache.shared.removeAll()
+                            // 진단: 어떤 프로세스가 볼륨을 잡고 있는지
+                            let volumePath = item.url.path
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                let proc = Process()
+                                proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+                                proc.arguments = ["+D", volumePath]
+                                let pipe = Pipe()
+                                proc.standardOutput = pipe
+                                proc.standardError = pipe
+                                try? proc.run()
+                                proc.waitUntilExit()
+                                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                                let output = String(data: data, encoding: .utf8) ?? ""
+                                fputs("[EJECT] lsof before eject:\n\(output)\n", stderr)
+
+                                // diskutil eject 사용 (NSWorkspace API보다 안정적)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    let proc = Process()
+                                    proc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+                                    proc.arguments = ["eject", volumePath]
+                                    let pipe = Pipe()
+                                    proc.standardOutput = pipe
+                                    proc.standardError = pipe
+                                    do {
+                                        try proc.run()
+                                        proc.waitUntilExit()
+                                        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                                        let output = String(data: data, encoding: .utf8) ?? ""
+                                        fputs("[EJECT] diskutil result: \(output)\n", stderr)
+                                        if proc.terminationStatus == 0 {
+                                            ejectResult = "'\(item.name)' 추출 완료"
+                                        } else {
+                                            ejectResult = "'\(item.name)' 추출 실패: \(output)"
+                                        }
+                                    } catch {
+                                        fputs("[EJECT] diskutil error: \(error)\n", stderr)
+                                        ejectResult = "'\(item.name)' 추출 실패: \(error.localizedDescription)"
+                                    }
+                                }
                             }
                         }
                         Button("취소", role: .cancel) {}
@@ -977,9 +1066,8 @@ struct FolderRowView: View {
                 Button("즐겨찾기에 추가") { onAddFavorite(item.url) }
                 Button("Finder에서 열기") { NSWorkspace.shared.open(item.url) }
                 Divider()
-                Button("이 폴더 열기") {
-                    store.startupMode = .viewer
-                    store.loadFolder(item.url, restoreRatings: true)
+                Button("폴더 이름 변경") {
+                    startRenaming()
                 }
                 // 하위 폴더가 있는 경우에만 표시
                 if item.hasSubfolders {

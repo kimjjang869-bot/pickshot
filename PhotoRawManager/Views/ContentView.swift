@@ -4,6 +4,7 @@ import Quartz
 struct ContentView: View {
     @EnvironmentObject var store: PhotoStore
     @ObservedObject private var updateService = UpdateService.shared
+    @ObservedObject private var memoryCardService = MemoryCardBackupService.shared
     @State private var folderBrowserExpanded: Bool = false
     @State private var folderBrowserWidth: CGFloat = 250
     @State private var showFullscreen: Bool = false
@@ -303,14 +304,8 @@ struct ContentView: View {
         // AutoCullView 제거 — 기존 전체화면 모드(F키)가 동일 기능 제공
         .sheet(isPresented: $store.showTimeline) { TimelineView() }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
-        .sheet(isPresented: Binding(
-            get: { MemoryCardBackupService.shared.showBackupPrompt },
-            set: { MemoryCardBackupService.shared.showBackupPrompt = $0 }
-        )) { MemoryCardBackupPromptView() }
-        .sheet(isPresented: Binding(
-            get: { MemoryCardBackupService.shared.showBackupResult },
-            set: { MemoryCardBackupService.shared.showBackupResult = $0 }
-        )) { MemoryCardBackupResultView() }
+        .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
+        .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
         } message: {

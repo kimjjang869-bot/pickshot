@@ -53,12 +53,10 @@ class MemoryCardBackupService: ObservableObject {
             let url = URL(fileURLWithPath: path)
             AppLogger.log(.general, "Volume mounted: \(path)")
 
-            // 메모리카드 판별 (DCIM 폴더 존재)
-            if self.isMemoryCard(url) {
-                self.detectedVolumeURL = url
-                self.detectedVolumeName = url.lastPathComponent
-                self.showBackupPrompt = true
-                AppLogger.log(.general, "Memory card detected: \(url.lastPathComponent)")
+            // 메모리카드 판별 — 즉시 + 1초 후 재시도
+            self.checkAndPromptIfMemoryCard(url)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.checkAndPromptIfMemoryCard(url)
             }
         }
     }
@@ -72,6 +70,23 @@ class MemoryCardBackupService: ObservableObject {
     }
 
     // MARK: - Memory Card Detection
+
+    func checkAndPromptIfMemoryCard(_ url: URL) {
+        let hasDCIM = isMemoryCard(url)
+        fputs("[CARD] check \(url.lastPathComponent) DCIM=\(hasDCIM) alreadyPrompt=\(showBackupPrompt)\n", stderr)
+        guard !showBackupPrompt else { return }
+        if hasDCIM {
+            detectedVolumeURL = url
+            detectedVolumeName = url.lastPathComponent
+            fputs("[CARD] ✅ Memory card detected: \(url.lastPathComponent)\n", stderr)
+            DispatchQueue.main.async {
+                self.showBackupPrompt = true
+                self.objectWillChange.send()
+                // PhotoStore에도 알림 (SwiftUI 갱신 보장)
+                NotificationCenter.default.post(name: .init("MemoryCardDetected"), object: url)
+            }
+        }
+    }
 
     private func isMemoryCard(_ volumeURL: URL) -> Bool {
         let dcimPath = volumeURL.appendingPathComponent("DCIM")
