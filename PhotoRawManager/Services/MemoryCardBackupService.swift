@@ -1,36 +1,75 @@
 import Foundation
 import AppKit
 
-/// 메모리카드 자동 백업 서비스
-/// 볼륨 마운트 감지 → DCIM 폴더 탐지 → 안전 복사 (tmp → verify → rename)
+// MARK: - 개별 백업 세션 (카드 1장 = 세션 1개)
+
+class BackupSession: ObservableObject, Identifiable {
+    let id = UUID()
+    let volumeURL: URL
+    let volumeName: String
+    let destinationURL: URL
+
+    @Published var done: Int = 0
+    @Published var total: Int = 0
+    @Published var speed: String = ""
+    @Published var eta: String = ""
+    @Published var isCancelled = false
+    @Published var isComplete = false
+    @Published var result: BackupResult?
+
+    var startTime: CFAbsoluteTime = 0
+    var bytesCopied: Int64 = 0
+
+    var progress: Double {
+        total > 0 ? Double(done) / Double(total) : 0
+    }
+
+    init(volumeURL: URL, destinationURL: URL) {
+        self.volumeURL = volumeURL
+        self.volumeName = volumeURL.lastPathComponent
+        self.destinationURL = destinationURL
+    }
+
+    func cancel() { isCancelled = true }
+
+    func updateSpeedAndETA() {
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        guard elapsed > 0.5, done > 0 else { return }
+        let bytesPerSec = Double(bytesCopied) / elapsed
+        speed = String(format: "%.1f MB/s", bytesPerSec / 1_048_576)
+        let rate = Double(done) / elapsed
+        let remaining = Double(total - done) / rate
+        if remaining < 60 {
+            eta = "\(Int(remaining))초"
+        } else {
+            eta = "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
+        }
+    }
+}
+
+// MARK: - 메모리카드 백업 서비스 (멀티 세션)
+
 class MemoryCardBackupService: ObservableObject {
     static let shared = MemoryCardBackupService()
 
-    // MARK: - State
-
-    @Published var isBackingUp = false
-    @Published var backupDone: Int = 0
-    @Published var backupTotal: Int = 0
-    @Published var backupSpeed: String = ""        // "45.2 MB/s"
-    @Published var backupETA: String = ""           // "2분 30초"
-    @Published var backupCancelled = false
-    @Published var showBackupPrompt = false         // 백업 폴더 선택 다이얼로그
-    @Published var showNextCardPrompt = false       // 다음 메모리카드 다이얼로그
+    @Published var sessions: [BackupSession] = []      // 활성 백업 세션들
+    @Published var showBackupPrompt = false
     @Published var showBackupResult = false
     @Published var backupResult: BackupResult?
     @Published var detectedVolumeName: String = ""
     @Published var waitingForNextCard = false
 
+    // 하위호환 — ContentView에서 참조
+    var isBackingUp: Bool { !sessions.filter { !$0.isComplete }.isEmpty }
+    var backupDone: Int { sessions.last?.done ?? 0 }
+    var backupTotal: Int { sessions.last?.total ?? 0 }
+    var backupSpeed: String { sessions.last?.speed ?? "" }
+    var backupETA: String { sessions.last?.eta ?? "" }
+
     var detectedVolumeURL: URL?
     var destinationURL: URL?
-    var backupStartTime: CFAbsoluteTime = 0
-    var totalBytesCopied: Int64 = 0
 
-    var backupProgress: Double {
-        backupTotal > 0 ? Double(backupDone) / Double(backupTotal) : 0
-    }
-
-    // MARK: - Photo extensions
+    private var volumeObserver: NSObjectProtocol?
 
     private static let photoExtensions: Set<String> = [
         "jpg", "jpeg", "arw", "cr2", "cr3", "nef", "nrw", "raf",
@@ -39,8 +78,6 @@ class MemoryCardBackupService: ObservableObject {
     ]
 
     // MARK: - Volume Monitoring
-
-    private var volumeObserver: NSObjectProtocol?
 
     func startMonitoring() {
         guard volumeObserver == nil else { return }
@@ -51,9 +88,6 @@ class MemoryCardBackupService: ObservableObject {
             guard let self = self else { return }
             guard let path = notification.userInfo?["NSDevicePath"] as? String else { return }
             let url = URL(fileURLWithPath: path)
-            AppLogger.log(.general, "Volume mounted: \(path)")
-
-            // 메모리카드 판별 — 즉시 + 1초 후 재시도
             self.checkAndPromptIfMemoryCard(url)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.checkAndPromptIfMemoryCard(url)
@@ -73,17 +107,24 @@ class MemoryCardBackupService: ObservableObject {
 
     func checkAndPromptIfMemoryCard(_ url: URL) {
         let hasDCIM = isMemoryCard(url)
-        fputs("[CARD] check \(url.lastPathComponent) DCIM=\(hasDCIM) alreadyPrompt=\(showBackupPrompt)\n", stderr)
-        guard !showBackupPrompt else { return }
-        if hasDCIM {
-            detectedVolumeURL = url
-            detectedVolumeName = url.lastPathComponent
-            fputs("[CARD] ✅ Memory card detected: \(url.lastPathComponent)\n", stderr)
-            DispatchQueue.main.async {
+        // 이미 이 볼륨 백업 중이면 스킵
+        let alreadyBacking = sessions.contains { $0.volumeURL == url && !$0.isComplete }
+        fputs("[CARD] check \(url.lastPathComponent) DCIM=\(hasDCIM) waiting=\(waitingForNextCard) already=\(alreadyBacking)\n", stderr)
+        guard hasDCIM, !alreadyBacking else { return }
+
+        detectedVolumeURL = url
+        detectedVolumeName = url.lastPathComponent
+        fputs("[CARD] ✅ Memory card detected: \(url.lastPathComponent)\n", stderr)
+
+        DispatchQueue.main.async {
+            if self.waitingForNextCard, let dest = self.destinationURL {
+                // 다음 카드 자동 복사 시작
+                fputs("[CARD] 자동 복사 시작 → \(dest.lastPathComponent)\n", stderr)
+                self.startBackup(from: url, to: dest)
+            } else if !self.showBackupPrompt {
+                // 첫 카드 → 폴더 선택 팝업
                 self.showBackupPrompt = true
                 self.objectWillChange.send()
-                // PhotoStore에도 알림 (SwiftUI 갱신 보장)
-                NotificationCenter.default.post(name: .init("MemoryCardDetected"), object: url)
             }
         }
     }
@@ -98,185 +139,175 @@ class MemoryCardBackupService: ObservableObject {
     func scanPhotos(from volumeURL: URL) -> [URL] {
         let fm = FileManager.default
         var photos: [URL] = []
-
-        // DCIM 폴더 내 재귀 탐색
         let dcimURL = volumeURL.appendingPathComponent("DCIM")
         guard let enumerator = fm.enumerator(
             at: dcimURL,
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-
         while let fileURL = enumerator.nextObject() as? URL {
             let ext = fileURL.pathExtension.lowercased()
             if Self.photoExtensions.contains(ext) {
                 photos.append(fileURL)
             }
         }
-
         return photos.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    // MARK: - Safe Copy (tmp → verify → rename)
+    // MARK: - Start Backup (멀티 세션)
 
     func startBackup(from sourceVolume: URL, to destination: URL) {
-        guard !isBackingUp else { return }
-
         let photos = scanPhotos(from: sourceVolume)
         guard !photos.isEmpty else {
-            backupResult = BackupResult(total: 0, success: 0, failed: [], volumeName: sourceVolume.lastPathComponent)
+            backupResult = BackupResult(total: 0, success: 0, skipped: 0, failed: [], volumeName: sourceVolume.lastPathComponent, cancelled: false)
             showBackupResult = true
             return
         }
 
-        isBackingUp = true
-        backupCancelled = false
-        backupDone = 0
-        backupTotal = photos.count
-        backupStartTime = CFAbsoluteTimeGetCurrent()
-        totalBytesCopied = 0
         destinationURL = destination
+        let session = BackupSession(volumeURL: sourceVolume, destinationURL: destination)
+        session.total = photos.count
+        session.startTime = CFAbsoluteTimeGetCurrent()
+
+        DispatchQueue.main.async {
+            self.sessions.append(session)
+            self.objectWillChange.send()
+        }
+
+        fputs("[BACKUP] 시작: \(sourceVolume.lastPathComponent) → \(destination.lastPathComponent) (\(photos.count)장)\n", stderr)
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
-
             let fm = FileManager.default
             var failedFiles: [FailedFile] = []
-            let maxRetries = 3
+            var skippedCount = 0
 
             for (index, sourceURL) in photos.enumerated() {
-                if self.backupCancelled { break }
+                if session.isCancelled { break }
 
-                // 상대 경로 유지 (DCIM/100MSDCF/DSC00001.ARW → 100MSDCF/DSC00001.ARW)
                 let dcimPath = sourceVolume.appendingPathComponent("DCIM").path
                 let relativePath = sourceURL.path.replacingOccurrences(of: dcimPath + "/", with: "")
                 let destURL = destination.appendingPathComponent(relativePath)
                 let destDir = destURL.deletingLastPathComponent()
-
-                // 대상 폴더 생성
                 try? fm.createDirectory(at: destDir, withIntermediateDirectories: true)
 
-                // 이미 존재하면 스킵
+                // 이미 존재하면 크기까지 비교 — 일치하면 스킵, 다르면 재복사
                 if fm.fileExists(atPath: destURL.path) {
-                    DispatchQueue.main.async {
-                        self.backupDone = index + 1
-                        self.updateSpeedAndETA()
+                    let srcSize = (try? fm.attributesOfItem(atPath: sourceURL.path)[.size] as? Int64) ?? 0
+                    let dstSize = (try? fm.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
+                    if srcSize > 0 && srcSize == dstSize {
+                        skippedCount += 1
+                        DispatchQueue.main.async {
+                            session.done = index + 1
+                            session.updateSpeedAndETA()
+                            self.objectWillChange.send()
+                        }
+                        continue
                     }
-                    continue
+                    // 크기 다름 → 기존 파일 삭제 후 재복사
+                    try? fm.removeItem(at: destURL)
                 }
 
-                // 안전 복사: tmp 파일로 먼저 쓰기
                 let tmpURL = destURL.appendingPathExtension("tmp_복사중")
                 var success = false
 
-                for retry in 0..<maxRetries {
+                for retry in 0..<3 {
                     do {
-                        // 이전 tmp 파일 제거
                         try? fm.removeItem(at: tmpURL)
-
-                        // 복사
                         try fm.copyItem(at: sourceURL, to: tmpURL)
-
-                        // 검증: 파일 크기 비교
                         let srcSize = (try? fm.attributesOfItem(atPath: sourceURL.path)[.size] as? Int64) ?? 0
                         let dstSize = (try? fm.attributesOfItem(atPath: tmpURL.path)[.size] as? Int64) ?? 0
-
                         if srcSize > 0 && srcSize == dstSize {
-                            // 검증 통과 → 최종 리네임
                             try fm.moveItem(at: tmpURL, to: destURL)
-                            self.totalBytesCopied += srcSize
+                            session.bytesCopied += srcSize
                             success = true
                             break
                         } else {
-                            // 크기 불일치 → 재시도
                             try? fm.removeItem(at: tmpURL)
-                            AppLogger.log(.general, "Backup verify failed (retry \(retry+1)): \(sourceURL.lastPathComponent) src=\(srcSize) dst=\(dstSize)")
                         }
                     } catch {
                         try? fm.removeItem(at: tmpURL)
-                        if retry == maxRetries - 1 {
-                            AppLogger.log(.general, "Backup copy failed: \(sourceURL.lastPathComponent) error=\(error.localizedDescription)")
+                        if retry == 2 {
+                            fputs("[BACKUP] 실패: \(sourceURL.lastPathComponent) - \(error.localizedDescription)\n", stderr)
                         }
                     }
                 }
 
                 if !success {
-                    failedFiles.append(FailedFile(name: sourceURL.lastPathComponent, reason: "복사 실패 (3회 재시도)"))
+                    failedFiles.append(FailedFile(name: sourceURL.lastPathComponent, reason: "복사 실패"))
                 }
 
                 DispatchQueue.main.async {
-                    self.backupDone = index + 1
-                    self.updateSpeedAndETA()
+                    session.done = index + 1
+                    session.updateSpeedAndETA()
+                    self.objectWillChange.send()
                 }
             }
 
-            // 완료
             let result = BackupResult(
                 total: photos.count,
                 success: photos.count - failedFiles.count,
+                skipped: skippedCount,
                 failed: failedFiles,
-                volumeName: sourceVolume.lastPathComponent
+                volumeName: sourceVolume.lastPathComponent,
+                cancelled: session.isCancelled
             )
 
             DispatchQueue.main.async {
-                self.isBackingUp = false
+                session.isComplete = true
+                session.result = result
                 self.backupResult = result
                 self.showBackupResult = true
+                self.objectWillChange.send()
 
-                // 볼륨 자동 해제
-                if !self.backupCancelled {
+                let allSuccess = failedFiles.isEmpty && !session.isCancelled
+                fputs("[BACKUP] 완료: \(result.success)/\(result.total), 실패: \(failedFiles.count)\n", stderr)
+
+                if allSuccess {
                     self.ejectVolume(sourceVolume)
+                    self.waitingForNextCard = true
+                    // 완료된 세션 제거
+                    self.sessions.removeAll { $0.id == session.id }
                 }
-
-                AppLogger.log(.general, "Backup complete: \(result.success)/\(result.total) files, \(failedFiles.count) failed")
             }
         }
     }
 
     func cancelBackup() {
-        backupCancelled = true
+        sessions.forEach { $0.cancel() }
     }
 
-    // MARK: - Speed & ETA
-
-    private func updateSpeedAndETA() {
-        let elapsed = CFAbsoluteTimeGetCurrent() - backupStartTime
-        guard elapsed > 0.5, backupDone > 0 else { return }
-
-        // 속도 (MB/s)
-        let bytesPerSec = Double(totalBytesCopied) / elapsed
-        let mbPerSec = bytesPerSec / 1_048_576
-        backupSpeed = String(format: "%.1f MB/s", mbPerSec)
-
-        // ETA
-        let rate = Double(backupDone) / elapsed
-        let remaining = Double(backupTotal - backupDone) / rate
-        if remaining < 60 {
-            backupETA = "\(Int(remaining))초"
-        } else {
-            backupETA = "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
-        }
+    func cancelSession(_ session: BackupSession) {
+        session.cancel()
     }
 
     // MARK: - Eject Volume
 
     private func ejectVolume(_ url: URL) {
-        let success = NSWorkspace.shared.unmountAndEjectDevice(atPath: url.path)
-        AppLogger.log(.general, "Eject \(url.lastPathComponent): \(success ? "성공" : "실패")")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+            proc.arguments = ["eject", url.path]
+            try? proc.run()
+            proc.waitUntilExit()
+            let success = proc.terminationStatus == 0
+            fputs("[BACKUP] eject \(url.lastPathComponent): \(success ? "성공" : "실패")\n", stderr)
+        }
     }
 
     // MARK: - Next Card
 
     func waitForNextCard() {
         waitingForNextCard = true
-        showNextCardPrompt = false
-        // 볼륨 모니터링은 이미 실행 중 → 다음 마운트 시 showBackupPrompt 트리거
+        // 현재 카드 자동 언마운트
+        if let vol = detectedVolumeURL {
+            ejectVolume(vol)
+        }
     }
 
     func finishBackup() {
         waitingForNextCard = false
-        showNextCardPrompt = false
-        stopMonitoring()
+        sessions.removeAll()
     }
 }
 
@@ -285,8 +316,13 @@ class MemoryCardBackupService: ObservableObject {
 struct BackupResult {
     let total: Int
     let success: Int
+    let skipped: Int       // 이미 존재해서 스킵
     let failed: [FailedFile]
     let volumeName: String
+    let cancelled: Bool
+
+    var copied: Int { success - skipped }
+    var notCopied: Int { total - success }
 }
 
 struct FailedFile: Identifiable {
