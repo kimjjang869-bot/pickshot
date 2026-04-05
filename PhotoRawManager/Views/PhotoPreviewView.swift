@@ -402,6 +402,7 @@ struct PhotoPreviewView: View {
     @State private var aiError: String? = nil
     @State private var hiResWorkItem: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
+    @State private var showCropView = false
 
     private static let imageLoadQueue: OperationQueue = {
         let q = OperationQueue()
@@ -742,6 +743,11 @@ struct PhotoPreviewView: View {
                 isOriginal = false
             }
         }
+        .sheet(isPresented: $showCropView) {
+            CropView(photo: photo) { croppedImage in
+                self.image = croppedImage
+            }
+        }
         .popover(isPresented: $showCorrectionPanel) {
             if store.selectionCount > 1 {
                 BatchCorrectionView(
@@ -1006,6 +1012,19 @@ struct PhotoPreviewView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .help("자동 보정 / AI 보정 선택")
 
+            // Crop button
+            Button(action: { showCropView = true }) {
+                Label("크롭", systemImage: "crop")
+                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .frame(height: AppTheme.buttonHeight)
+            .background(Color.orange.opacity(0.7))
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .help("사진 크롭")
+
             // Original / Corrected toggle
             if correctionResult != nil {
                 Button(action: {
@@ -1079,12 +1098,13 @@ struct PhotoPreviewView: View {
             // Zoom out
             Button(action: { zoomOut() }) {
                 Image(systemName: "minus")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: AppTheme.iconSmall, weight: .bold))
+                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .frame(width: 22, height: 22)
             .background(AppTheme.toolbarButtonBg)
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .help("축소 (Cmd-)")
 
             // Zoom slider
@@ -1114,12 +1134,13 @@ struct PhotoPreviewView: View {
             // Zoom in
             Button(action: { zoomIn() }) {
                 Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: AppTheme.iconSmall, weight: .bold))
+                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .frame(width: 22, height: 22)
             .background(AppTheme.toolbarButtonBg)
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .help("확대 (Cmd+)")
 
             // Fit button
@@ -1184,14 +1205,20 @@ struct PhotoPreviewView: View {
             viewState.customScale = next
             viewState.zoomPreset = ZoomPreset.fromScale(next) ?? .p150
             syncSlider()
-            loadHiResForZoom()
+            // hi-res debounce (연속 +키 입력 시 마지막만 실행)
+            hiResWorkItem?.cancel()
+            let work = DispatchWorkItem { loadHiResForZoom() }
+            hiResWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
     }
 
     func zoomOut() {
         let steps: [CGFloat] = [0.25, 0.50, 0.75, 1.0, 1.5, 2.0, 5.0, 10.0, 20.0]
         let current: CGFloat = isFitMode ? 1.0 : viewState.customScale
+        print("⚡ [ZOOM OUT] current=\(current) isFit=\(isFitMode)")
         if let prev = steps.last(where: { $0 < current - 0.01 }) {
+            print("⚡ [ZOOM OUT] → \(prev)")
             viewState.customScale = prev
             viewState.zoomPreset = ZoomPreset.fromScale(prev) ?? .p75
             viewState.panOffset = .zero
@@ -2294,6 +2321,42 @@ struct CorrectionOptionsView: View {
             .toggleStyle(.checkbox)
             .help("건축 사진 수직선 원근 보정")
 
+            Toggle(isOn: $options.faceBalance) {
+                HStack(spacing: 8) {
+                    Image(systemName: "face.smiling")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.pink)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("얼굴 기준 보정")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("피부톤 기준 화이트밸런스 + 얼굴 밝기 보정")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("얼굴 피부톤 기준 색감/밝기 자동 보정")
+
+            Toggle(isOn: $options.skinSmoothing) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundColor(.mint)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("피부 스무딩")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("피부 질감 부드럽게 (인물 사진)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.checkbox)
+            .help("High Pass 필터로 피부 부드럽게")
+
             Toggle(isOn: $options.autoLevel) {
                 HStack(spacing: 8) {
                     Image(systemName: "sun.max")
@@ -2406,6 +2469,7 @@ struct CorrectionOptionsView: View {
 
     private func applyCorrection() {
         isCorrecting = true
+        options.save()  // 체크박스 상태 저장
         let currentPhoto = photo
         let opts = options
 
@@ -2483,6 +2547,16 @@ struct BatchCorrectionView: View {
                 Label("원근 보정 (Upright)", systemImage: "perspective").font(.system(size: 12))
             }.toggleStyle(.checkbox).disabled(isProcessing)
             .help("건축 사진 수직선 원근 보정")
+
+            Toggle(isOn: $options.faceBalance) {
+                Label("얼굴 기준 보정", systemImage: "face.smiling").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("피부톤 기준 색감/밝기 보정")
+
+            Toggle(isOn: $options.skinSmoothing) {
+                Label("피부 스무딩", systemImage: "sparkles").font(.system(size: 12))
+            }.toggleStyle(.checkbox).disabled(isProcessing)
+            .help("피부 부드럽게")
 
             Toggle(isOn: $options.autoLevel) {
                 Label("자동 노출 보정", systemImage: "sun.max").font(.system(size: 12))

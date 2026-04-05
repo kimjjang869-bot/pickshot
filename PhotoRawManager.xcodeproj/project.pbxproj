@@ -69,6 +69,7 @@
 		73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */; };
 		XMP10001 /* XMPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = XMP10002 /* XMPService.swift */; };
 		FC10001 /* FaceCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10002 /* FaceCompareView.swift */; };
+		CR10001 /* CropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CR10002 /* CropView.swift */; };
 		60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD92142A284546BD2E0466 /* AISimilarityService.swift */; };
 		939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997C658F4814B05A202D514 /* MatchingView.swift */; };
 		80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */; };
@@ -86,6 +87,8 @@
 		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
 		UG10001 /* UprightGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = UG10002 /* UprightGuideView.swift */; };
 		FC10001 /* FaceCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10002 /* FaceCompareView.swift */; };
+		BP10001 /* BatchProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10002 /* BatchProcessService.swift */; };
+		BP10003 /* BatchProcessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10004 /* BatchProcessView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -167,6 +170,9 @@
 		UG10002 /* UprightGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
 		XMP10002 /* XMPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XMPService.swift; sourceTree = "<group>"; };
 		FC10002 /* FaceCompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCompareView.swift; sourceTree = "<group>"; };
+		CR10002 /* CropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropView.swift; sourceTree = "<group>"; };
+		BP10002 /* BatchProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessService.swift; sourceTree = "<group>"; };
+		BP10004 /* BatchProcessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -251,6 +257,8 @@
 				915A24B2FA4BE98570A5A738,
 				FC10002,
 				UG10002,
+				CR10002,
+				BP10004 /* BatchProcessView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -284,6 +292,7 @@
 				1F28915B9DB29857371992AB,
 				XMP10002,
 				KWT10002 /* KeywordTaggingService.swift */,
+				BP10002 /* BatchProcessService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -434,6 +443,9 @@
 				FC10001 /* FaceCompareView.swift in Sources */,
 				UG10001 /* UprightGuideView.swift in Sources */,
 				KWT10001 /* KeywordTaggingService.swift in Sources */,
+				BP10001 /* BatchProcessService.swift in Sources */,
+				BP10003 /* BatchProcessView.swift in Sources */,
+				CR10001 /* CropView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

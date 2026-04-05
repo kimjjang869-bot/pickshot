@@ -95,33 +95,42 @@ struct FileCopyService {
             return result
         }
 
-        let photosWithRAW = photos.filter { $0.hasRAW }
-        let totalOperations = photosWithRAW.count * 2  // RAW + XMP
+        // RAW + JPG 모두 지원 (JPG only도 XMP 생성)
+        let totalOperations = photos.count * 2
         result.totalFiles = totalOperations
         var completed = 0
 
-        for photo in photosWithRAW {
-            guard let rawURL = photo.rawURL else { continue }
-
-            // 1. Copy RAW file
-            let rawDest = destinationURL.appendingPathComponent(rawURL.lastPathComponent)
+        for photo in photos {
+            // 1. 파일 복사 (RAW 우선, 없으면 JPG)
+            let sourceURL = photo.rawURL ?? photo.jpgURL
+            let destFile = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
             do {
-                if fileManager.fileExists(atPath: rawDest.path) {
-                    try fileManager.removeItem(at: rawDest)
+                if fileManager.fileExists(atPath: destFile.path) {
+                    try fileManager.removeItem(at: destFile)
                 }
-                try fileManager.copyItem(at: rawURL, to: rawDest)
-                result.copiedRAW += 1
+                try fileManager.copyItem(at: sourceURL, to: destFile)
+                if photo.hasRAW { result.copiedRAW += 1 } else { result.copiedJPG += 1 }
             } catch {
-                result.failedFiles.append("RAW 복사 실패: \(photo.fileName)")
+                result.failedFiles.append("복사 실패: \(photo.fileName)")
             }
+
+            // JPG도 같이 복사 (RAW+JPG 쌍)
+            if photo.hasRAW {
+                let jpgDest = destinationURL.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                if !fileManager.fileExists(atPath: jpgDest.path) {
+                    try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                    result.copiedJPG += 1
+                }
+            }
+
             completed += 1
             progress(Double(completed) / Double(totalOperations))
 
-            // 2. Create XMP sidecar with rating
-            let xmpFileName = rawURL.deletingPathExtension().lastPathComponent + ".xmp"
+            // 2. XMP sidecar 생성 (RAW 또는 JPG 파일명 기준)
+            let xmpFileName = sourceURL.deletingPathExtension().lastPathComponent + ".xmp"
             let xmpDest = destinationURL.appendingPathComponent(xmpFileName)
             do {
-                let xmpContent = generateXMP(rating: photo.rating, isSpacePicked: photo.isSpacePicked, fileName: rawURL.lastPathComponent)
+                let xmpContent = generateXMP(rating: photo.rating, isSpacePicked: photo.isSpacePicked, fileName: sourceURL.lastPathComponent)
                 try xmpContent.write(to: xmpDest, atomically: true, encoding: .utf8)
                 result.copiedXMP += 1
             } catch {
@@ -156,15 +165,17 @@ struct FileCopyService {
 
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="PickShot v3.1">
+        <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="PickShot v6.0">
           <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
             <rdf:Description rdf:about=""
               xmlns:xmp="http://ns.adobe.com/xap/1.0/"
               xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"
               xmlns:dc="http://purl.org/dc/elements/1.1/"
+              xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
               xmp:Rating="\(ratingValue)"
               xmp:Label="\(label)"
-              xmpMM:OriginalDocumentID="\(fileName)">
+              xmp:CreatorTool="PickShot v6.0"
+              crs:RawFileName="\(fileName)">
             </rdf:Description>
           </rdf:RDF>
         </x:xmpmeta>

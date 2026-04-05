@@ -218,6 +218,7 @@ class PhotoStore: ObservableObject {
     @Published var showStats: Bool = false
     @Published var showAutoCull: Bool = false
     @Published var showTimeline: Bool = false
+    @Published var showBatchProcess: Bool = false
     @Published var showFaceCompare: Bool = false
     @Published var smartSelectResult: SmartSelectService.Result?
     @Published var smartSelectConfig: SmartSelectService.Config = SmartSelectService.Config()
@@ -247,7 +248,8 @@ class PhotoStore: ObservableObject {
     @Published var searchText: String = "" { didSet { _cachedFiltered = nil; _cacheKey = "" } }
 
     // MARK: - Undo Stack
-    private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool])] = []
+    struct FileMove { let sourceURL: URL; let destURL: URL }
+    private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove])] = []
     private let maxUndoSteps = 20
 
     private let defaults = UserDefaults.standard
@@ -267,14 +269,38 @@ class PhotoStore: ObservableObject {
                 oldGSelect[id] = photos[i].isGSelected
             }
         }
-        undoStack.append((action: action, photoIDs: photoIDs, oldRatings: oldRatings, oldSP: oldSP, oldGSelect: oldGSelect))
+        undoStack.append((action: action, photoIDs: photoIDs, oldRatings: oldRatings, oldSP: oldSP, oldGSelect: oldGSelect, fileMoves: []))
         if undoStack.count > maxUndoSteps {
             undoStack.removeFirst(undoStack.count - maxUndoSteps)
         }
     }
 
     func undo() {
-        guard let last = undoStack.popLast() else { return }
+        guard let last = undoStack.popLast() else {
+            showToastMessage("되돌릴 항목이 없습니다")
+            return
+        }
+
+        // 파일 이동 되돌리기
+        if !last.fileMoves.isEmpty {
+            var undone = 0
+            for move in last.fileMoves.reversed() {
+                do {
+                    try FileManager.default.moveItem(at: move.destURL, to: move.sourceURL)
+                    undone += 1
+                } catch {
+                    AppLogger.log(.general, "Undo move failed: \(move.destURL.lastPathComponent) → \(error)")
+                }
+            }
+            // 폴더 다시 로딩
+            if let folderURL = folderURL {
+                loadFolder(folderURL, restoreRatings: true)
+            }
+            showToastMessage("\(undone)장 이동 되돌리기 완료")
+            return
+        }
+
+        // 별점/SP/GSelect 되돌리기
         var copy = photos
         for id in last.photoIDs {
             guard let i = _photoIndex[id], i < copy.count else { continue }
@@ -284,6 +310,7 @@ class PhotoStore: ObservableObject {
         }
         applyPhotosUpdate(copy)
         saveRatings()
+        showToastMessage("\(last.action) 되돌리기 완료")
     }
 
     init() {
@@ -647,6 +674,7 @@ class PhotoStore: ObservableObject {
         var moved = 0
         var failed = 0
         var movedIDs = Set<UUID>()
+        var fileMoveRecords: [FileMove] = []
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -660,6 +688,7 @@ class PhotoStore: ObservableObject {
                         continue
                     }
                     try fm.moveItem(at: srcURL, to: destURL)
+                    fileMoveRecords.append(FileMove(sourceURL: srcURL, destURL: destURL))
                     moved += 1
 
                     // photos 배열에서 해당 파일 찾아서 ID 수집
@@ -685,11 +714,15 @@ class PhotoStore: ObservableObject {
             }
 
             DispatchQueue.main.async {
+                // Undo 기록
+                if !fileMoveRecords.isEmpty {
+                    self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords))
+                }
                 // 이동된 사진 목록에서 제거
                 if !movedIDs.isEmpty {
                     self.removePhotosFromList(ids: movedIDs)
                 }
-                let msg = "\(moved)장 이동 완료" + (failed > 0 ? " (\(failed)장 실패)" : "")
+                let msg = "\(moved)장 이동 완료 (Cmd+Z 되돌리기)" + (failed > 0 ? " (\(failed)장 실패)" : "")
                 self.showToastMessage(msg)
                 AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
             }

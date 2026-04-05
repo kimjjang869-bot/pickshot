@@ -302,6 +302,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showStats) { StatsDashboardView() }
         // AutoCullView 제거 — 기존 전체화면 모드(F키)가 동일 기능 제공
         .sheet(isPresented: $store.showTimeline) { TimelineView() }
+        .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
         .sheet(isPresented: Binding(
             get: { MemoryCardBackupService.shared.showBackupPrompt },
             set: { MemoryCardBackupService.shared.showBackupPrompt = $0 }

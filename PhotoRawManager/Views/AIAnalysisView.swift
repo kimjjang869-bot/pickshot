@@ -257,7 +257,10 @@ struct AIAnalysisView: View {
 
     private func applyAICorrection() {
         // Apply auto correction based on AI suggestion
-        let options = CorrectionOptions(autoLevel: true, autoWhiteBalance: true, autoHorizon: true)
+        var options = CorrectionOptions()
+        options.autoLevel = true
+        options.autoWhiteBalance = true
+        options.autoHorizon = true
         Task {
             let correctionResult = await Task.detached {
                 ImageCorrectionService.autoCorrect(url: photo.jpgURL, options: options)

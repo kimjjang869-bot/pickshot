@@ -125,6 +125,15 @@ extension ContentView {
                     .tint(AppTheme.warning)
                     .help("선택한 사진 내보내기 (Cmd+E)")
 
+                    Button(action: { store.showBatchProcess = true }) {
+                        Label("배치 처리", systemImage: "photo.on.rectangle.angled")
+                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.teal)
+                    .help("리사이즈 + 워터마크 일괄 처리")
+
                     // Analysis stop button (only visible when analyzing)
                     if store.isAnalyzing {
                         Button(action: { store.stopAnalysis() }) {
@@ -228,10 +237,10 @@ extension ContentView {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
-                        TextField("파일명 검색", text: $store.searchText)
+                        TextField("검색", text: $store.searchText)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11))
-                            .frame(width: 120)
+                            .frame(width: 80)
                         if !store.searchText.isEmpty {
                             Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -253,19 +262,10 @@ extension ContentView {
                     .background(AppTheme.toolbarButtonBg)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-                    Spacer(minLength: 0)
-
-                    Divider().frame(height: 16).opacity(0.2)
-
                     // AI 분류 (품질 + 장면 통합)
                     qualityFilterMenu
 
-                    // Face group filter
-                    faceGroupFilterMenu
-
-                    Divider().frame(height: 16).opacity(0.2)
-
-                    Divider().frame(height: 16).opacity(0.2)
+                    Spacer(minLength: 0)
 
                     // Layout mode toggle
                     Button(action: {

@@ -57,7 +57,7 @@ struct XMPService {
             attrs += "\n    xmp:Label=\"\(label)\""
         }
         if spacePicked {
-            attrs += "\n    xmp:Label=\"Select\""
+            attrs += "\n    xmp:Label=\"Red\""
         }
 
         let xml = """

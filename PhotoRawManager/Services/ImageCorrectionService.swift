@@ -4,10 +4,32 @@ import CoreImage
 import Vision
 
 struct CorrectionOptions {
-    var autoLevel: Bool = false         // 노출/톤 보정
-    var autoWhiteBalance: Bool = false  // 화이트밸런스 보정
-    var autoHorizon: Bool = true        // 수평 보정
-    var autoUpright: Bool = false       // 원근 보정 (수직선 보정)
+    var autoLevel: Bool
+    var autoWhiteBalance: Bool
+    var autoHorizon: Bool
+    var autoUpright: Bool
+    var faceBalance: Bool
+    var skinSmoothing: Bool
+
+    init() {
+        let d = UserDefaults.standard
+        autoLevel = d.object(forKey: "corr_autoLevel") as? Bool ?? false
+        autoWhiteBalance = d.object(forKey: "corr_autoWB") as? Bool ?? false
+        autoHorizon = d.object(forKey: "corr_autoHorizon") as? Bool ?? true
+        autoUpright = d.object(forKey: "corr_autoUpright") as? Bool ?? false
+        faceBalance = d.object(forKey: "corr_faceBalance") as? Bool ?? false
+        skinSmoothing = d.object(forKey: "corr_skinSmoothing") as? Bool ?? false
+    }
+
+    func save() {
+        let d = UserDefaults.standard
+        d.set(autoLevel, forKey: "corr_autoLevel")
+        d.set(autoWhiteBalance, forKey: "corr_autoWB")
+        d.set(autoHorizon, forKey: "corr_autoHorizon")
+        d.set(autoUpright, forKey: "corr_autoUpright")
+        d.set(faceBalance, forKey: "corr_faceBalance")
+        d.set(skinSmoothing, forKey: "corr_skinSmoothing")
+    }
 }
 
 struct CorrectionResult {
@@ -30,7 +52,7 @@ struct ImageCorrectionService {
 
         // 수평/원근만 할 때는 CIImage 색공간 변환을 피하기 위해 별도 처리
         let onlyGeometry = options.autoHorizon || options.autoUpright
-        let needsColor = options.autoLevel || options.autoWhiteBalance
+        let needsColor = options.autoLevel || options.autoWhiteBalance || options.faceBalance || options.skinSmoothing
 
         guard let originalImage = CIImage(contentsOf: url) else { return result }
         var image = originalImage
@@ -158,6 +180,62 @@ struct ImageCorrectionService {
                         }
                     }
                 }
+            }
+        }
+
+        // 3. 얼굴 기준 보정 (CIFaceBalance + 얼굴 밝기 보정)
+        if options.faceBalance {
+            // 3a. CIFaceBalance — Apple 내장 얼굴 피부톤 보정
+            let faceOpts: [CIImageAutoAdjustmentOption: Any] = [
+                .redEye: false  // 적목만 스킵
+            ]
+            let faceFilters = image.autoAdjustmentFilters(options: faceOpts)
+            for filter in faceFilters where filter.name == "CIFaceBalance" {
+                filter.setValue(image, forKey: kCIInputImageKey)
+                if let output = filter.outputImage {
+                    image = output
+                    result.applied.append("얼굴 피부톤 보정")
+                }
+            }
+
+            // 3b. 얼굴 영역 밝기 측정 → 어두우면 노출 보정
+            let faceHandler = VNImageRequestHandler(ciImage: image, options: [:])
+            let faceRequest = VNDetectFaceRectanglesRequest()
+            try? faceHandler.perform([faceRequest])
+
+            if let faces = faceRequest.results, !faces.isEmpty {
+                // 가장 큰 얼굴의 밝기 측정
+                let largest = faces.max(by: { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height })!
+                let faceRect = CGRect(
+                    x: largest.boundingBox.origin.x * image.extent.width,
+                    y: largest.boundingBox.origin.y * image.extent.height,
+                    width: largest.boundingBox.width * image.extent.width,
+                    height: largest.boundingBox.height * image.extent.height
+                )
+                let faceCrop = image.cropped(to: faceRect)
+                if let faceCG = context.createCGImage(faceCrop, from: faceCrop.extent) {
+                    let brightness = measureBrightness(cgImage: faceCG)
+                    // 얼굴이 어두우면 (0.35 미만) 밝게 보정
+                    if brightness < 0.35 {
+                        let ev = (0.45 - brightness) * 3.0  // 최대 ~1.0 EV
+                        if let filter = CIFilter(name: "CIExposureAdjust") {
+                            filter.setValue(image, forKey: kCIInputImageKey)
+                            filter.setValue(Float(ev), forKey: "inputEV")
+                            if let output = filter.outputImage {
+                                image = output
+                                result.applied.append("얼굴 밝기 보정 (+\(String(format: "%.1f", ev))EV)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. 피부 스무딩 (High Pass Filter)
+        if options.skinSmoothing {
+            if let smoothed = applySkinSmoothing(image: image) {
+                image = smoothed
+                result.applied.append("피부 스무딩")
             }
         }
 
@@ -514,5 +592,53 @@ struct ImageCorrectionService {
         let tint = (gRatio - 1.0) * 50.0
 
         return WhiteBalanceInfo(temperature: temperature, tint: tint)
+    }
+
+    // MARK: - Face Brightness Measurement
+
+    /// CGImage의 평균 밝기 측정 (0~1)
+    private static func measureBrightness(cgImage: CGImage) -> Double {
+        let w = min(cgImage.width, 100)
+        let h = min(cgImage.height, 100)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0.5 }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return 0.5 }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        var sum: Double = 0
+        let count = w * h
+        for i in 0..<count {
+            let r = Double(pixels[i * 4])
+            let g = Double(pixels[i * 4 + 1])
+            let b = Double(pixels[i * 4 + 2])
+            sum += (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
+        }
+        return sum / Double(count)
+    }
+
+    // MARK: - Skin Smoothing (High Pass Filter)
+
+    /// 피부 스무딩: 가우시안 블러 + 원본 블렌딩 (High Pass 방식)
+    private static func applySkinSmoothing(image: CIImage) -> CIImage? {
+        // 1. 가우시안 블러 (피부 질감 제거)
+        guard let blur = CIFilter(name: "CIGaussianBlur") else { return nil }
+        blur.setValue(image, forKey: kCIInputImageKey)
+        blur.setValue(8.0, forKey: "inputRadius")  // 적당한 블러
+        guard let blurred = blur.outputImage else { return nil }
+
+        // 2. 원본과 블러된 이미지를 80:20 블렌딩 (자연스럽게)
+        guard let blend = CIFilter(name: "CISourceAtopCompositing") else { return nil }
+
+        // opacity 조절용: 블러에 투명도 적용
+        guard let opacity = CIFilter(name: "CIColorMatrix") else { return nil }
+        opacity.setValue(blurred, forKey: kCIInputImageKey)
+        opacity.setValue(CIVector(x: 0, y: 0, z: 0, w: 0.3), forKey: "inputAVector")  // 30% 블러
+        guard let semiBlur = opacity.outputImage else { return nil }
+
+        blend.setValue(semiBlur, forKey: kCIInputImageKey)
+        blend.setValue(image, forKey: kCIInputBackgroundImageKey)
+
+        return blend.outputImage
     }
 }
