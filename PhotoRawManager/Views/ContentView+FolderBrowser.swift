@@ -489,6 +489,13 @@ struct FolderBrowserView: View {
                         store.loadFolder(url)
                     }
                     .contextMenu {
+                        Button {
+                            store.startupMode = .viewer
+                            store.loadPhotosRecursive(from: url)
+                        } label: {
+                            Label("하위 폴더 포함 열기", systemImage: "folder.badge.plus")
+                        }
+                        Divider()
                         Button("즐겨찾기에서 제거") {
                             store.removeFavoriteFolder(url)
                             favorites = store.loadFavoriteFolders()
@@ -973,6 +980,15 @@ struct FolderRowView: View {
                 Button("이 폴더 열기") {
                     store.startupMode = .viewer
                     store.loadFolder(item.url, restoreRatings: true)
+                }
+                // 하위 폴더가 있는 경우에만 표시
+                if item.hasSubfolders {
+                    Button {
+                        store.startupMode = .viewer
+                        store.loadPhotosRecursive(from: item.url)
+                    } label: {
+                        Label("하위 폴더 포함 열기", systemImage: "folder.badge.plus")
+                    }
                 }
                 if isExternalVolume {
                     Divider()

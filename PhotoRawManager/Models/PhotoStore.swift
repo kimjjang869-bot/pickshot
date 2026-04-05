@@ -226,6 +226,8 @@ class PhotoStore: ObservableObject {
     let backupService = MemoryCardBackupService.shared
 
     @Published var showFolderBrowser: Bool = true
+    /// 하위 폴더 포함 모드 활성화 여부
+    @Published var isRecursiveMode: Bool = false
     @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
@@ -935,6 +937,7 @@ class PhotoStore: ObservableObject {
         thumbsTotal = 0
 
         folderURL = url
+        isRecursiveMode = false  // 일반 폴더 열기 시 재귀 모드 해제
 
         // Save folder info in background (non-blocking)
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1012,6 +1015,98 @@ class PhotoStore: ObservableObject {
             let phase2Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
             AppLogger.log(.folder, "Folder ready (no Phase 2): \(items.count) items in \(String(format: "%.1f", phase2Elapsed))ms")
         }
+    }
+
+    /// 하위 폴더 포함 열기 — 모든 하위 디렉토리의 이미지를 재귀적으로 로딩
+    func loadPhotosRecursive(from url: URL) {
+        AppLogger.log(.folder, "loadPhotosRecursive: \(url.lastPathComponent) path=\(url.path)")
+        let loadStart = CFAbsoluteTimeGetCurrent()
+
+        // 이전 썸네일 로딩 취소
+        ThumbnailLoader.shared.cancelAll()
+        thumbsGeneration += 1
+        thumbsLoaded = 0
+        thumbsTotal = 0
+
+        folderURL = url
+        isRecursiveMode = true
+
+        // 폴더 정보 저장 (논블로킹)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.saveLastFolder()
+            self?.addRecentFolder(url)
+        }
+        addToFolderHistory(url)
+
+        // NAS/네트워크 볼륨 최적화
+        ThumbnailLoader.shared.optimizeForPath(url.path)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.isLoading = true
+            self?.loadingStatus = "하위 폴더 스캔 중..."
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // recursive: true 로 모든 하위 폴더 스캔
+            var items = FileMatchingService.scanAndMatch(folderURL: url, recursive: true)
+
+            // 재귀 모드에서는 폴더 아이템 제거 (하위 폴더 내용이 이미 포함됨)
+            items.removeAll { $0.isFolder }
+
+            // 상위 폴더 네비게이션 추가
+            let parent = url.deletingLastPathComponent()
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let desktop = home.appendingPathComponent("Desktop")
+            let isAtTopLevel = url.path == desktop.path || url.path == home.path || url.path == "/" || parent.path == "/"
+            if !isAtTopLevel && parent.path != url.path {
+                var parentItem = PhotoItem(jpgURL: parent)
+                parentItem.isFolder = true
+                parentItem.isParentFolder = true
+                items.insert(parentItem, at: 0)
+            }
+
+            let photoCount = items.filter { !$0.isFolder && !$0.isParentFolder }.count
+            let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            AppLogger.log(.folder, "Recursive scan: \(photoCount) photos from all subfolders in \(String(format: "%.1f", phase1Elapsed))ms")
+
+            // 파일 수정일 기준 정렬 (오래된 순 — 여러 카메라 사진이 시간순으로 섞임)
+            let sorted = items.sorted { a, b in
+                if a.isParentFolder { return true }
+                if b.isParentFolder { return false }
+                return a.fileModDate < b.fileModDate
+            }
+
+            DispatchQueue.main.async {
+                guard self?.folderURL == url else { return }
+                self?.photos = sorted
+                self?.isLoading = false
+                self?.loadingStatus = ""
+                self?.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
+
+                // 첫 번째 사진 선택
+                DispatchQueue.main.async {
+                    guard self?.folderURL == url else { return }
+                    let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
+                        ?? sorted.first
+                    if let fp = firstPhoto {
+                        self?.selectedPhotoID = fp.id
+                        self?.selectedPhotoIDs = [fp.id]
+                        self?.scrollTrigger += 1
+                    }
+                }
+                // 썸네일 프리로드
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self?.preloadAllThumbnails()
+                }
+            }
+        }
+    }
+
+    /// 재귀 모드 해제 — 현재 폴더만 다시 로드
+    func exitRecursiveMode() {
+        guard isRecursiveMode, let url = folderURL else { return }
+        isRecursiveMode = false
+        loadFolder(url, restoreRatings: true)
     }
 
     /// EXIF loading is now handled by ExifInfoView directly (self-contained, no photos array mutation)

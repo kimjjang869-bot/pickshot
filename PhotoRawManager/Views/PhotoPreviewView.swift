@@ -1017,6 +1017,24 @@ struct PhotoPreviewView: View {
                     Label("가이드 보정", systemImage: "perspective")
                 }
                 .disabled(isCorrecting)
+
+                Divider()
+
+                // NPU 고급 보정
+                Button(action: { applyNPUCorrection(mode: .aiEnhance) }) {
+                    Label("AI 보정 (NPU)", systemImage: "brain")
+                }
+                .disabled(isCorrecting)
+
+                Button(action: { applyNPUCorrection(mode: .denoise) }) {
+                    Label("디노이즈", systemImage: "dot.radiowaves.right")
+                }
+                .disabled(isCorrecting)
+
+                Button(action: { applyNPUCorrection(mode: .personAware) }) {
+                    Label("인물 인식 보정", systemImage: "person.crop.rectangle")
+                }
+                .disabled(isCorrecting)
             } label: {
                 Label(isCorrecting ? "보정 중..." : "보정", systemImage: "wand.and.rays")
                     .font(.system(size: AppTheme.fontCaption, weight: .medium))
@@ -1484,6 +1502,52 @@ struct PhotoPreviewView: View {
                     aiResultText = "❌ \(aiError ?? "알 수 없는 오류")\n\nAPI 키와 잔액을 확인하세요."
                     showAIResult = true
                 }
+            }
+        }
+    }
+
+    // MARK: - NPU 보정 모드
+    enum NPUCorrectionMode {
+        case aiEnhance      // AI 톤/색감 자동 보정
+        case denoise        // 디노이즈
+        case personAware    // 인물 인식 보정
+    }
+
+    private func applyNPUCorrection(mode: NPUCorrectionMode) {
+        isCorrecting = true
+        let url = photo.jpgURL
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let ciImage = CIImage(contentsOf: url) else {
+                DispatchQueue.main.async { isCorrecting = false }
+                return
+            }
+
+            let result: CIImage
+            let label: String
+            switch mode {
+            case .aiEnhance:
+                result = AIEnhanceService.enhance(image: ciImage)
+                label = "AI 보정"
+            case .denoise:
+                result = AIEnhanceService.denoise(image: ciImage, strength: 0.5)
+                label = "디노이즈"
+            case .personAware:
+                result = AIEnhanceService.enhanceWithPersonMask(image: ciImage)
+                label = "인물 인식 보정"
+            }
+
+            let ctx = CIContext(options: [.useSoftwareRenderer: false])
+            guard let cgImg = ctx.createCGImage(result, from: result.extent) else {
+                DispatchQueue.main.async { isCorrecting = false }
+                return
+            }
+            let nsImg = NSImage(cgImage: cgImg, size: NSSize(width: cgImg.width, height: cgImg.height))
+
+            DispatchQueue.main.async {
+                image = nsImg
+                isOriginal = false
+                isCorrecting = false
             }
         }
     }
@@ -2387,15 +2451,22 @@ struct CorrectionOptionsView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("자동 보정")
-                .font(.system(size: 14, weight: .bold))
-
-            Text(photo.fileName)
-                .font(.caption)
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // 고정 헤더
+            VStack(alignment: .leading, spacing: 4) {
+                Text("자동 보정")
+                    .font(.system(size: 14, weight: .bold))
+                Text(photo.fileName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 8)
 
             Divider()
+
+            // 스크롤 가능한 옵션 영역
+            ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 12) {
 
             Toggle(isOn: $options.autoHorizon) {
                 HStack(spacing: 8) {
@@ -2639,6 +2710,10 @@ struct CorrectionOptionsView: View {
                 }
             }
 
+            }  // VStack (스크롤 내부)
+            }  // ScrollView
+            .frame(maxHeight: 400)
+
             Divider()
 
             HStack {
@@ -2657,6 +2732,7 @@ struct CorrectionOptionsView: View {
                 .disabled(isCorrecting)
                 .help("선택한 옵션으로 보정 적용")
             }
+            .padding(.top, 8)
         }
         .padding(16)
         .frame(width: 320)

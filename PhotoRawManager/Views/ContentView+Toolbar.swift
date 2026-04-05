@@ -48,6 +48,27 @@ extension ContentView {
                     ProgressView().scaleEffect(0.7)
                 }
 
+                // 하위 폴더 포함 모드 표시 및 해제 버튼
+                if store.isRecursiveMode {
+                    Button {
+                        store.exitRecursiveMode()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.badge.plus")
+                                .font(.system(size: 11))
+                            Text("하위 폴더 포함")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.2))
+                        .foregroundColor(.orange)
+                        .cornerRadius(5)
+                    }
+                    .buttonStyle(.plain)
+                    .help("클릭하면 현재 폴더만 표시합니다")
+                }
+
                 if store.selectionCount > 1 {
                     SelectionInfoBadge(store: store)
                 }
