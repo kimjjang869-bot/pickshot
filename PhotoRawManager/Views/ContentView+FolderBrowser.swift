@@ -93,26 +93,28 @@ struct FolderBrowserView: View {
 
     private func renameFolderWithDialog(url: URL) {
         let alert = NSAlert()
-        alert.messageText = "폴더 이름 변경"
-        alert.informativeText = "새 이름을 입력하세요"
+        alert.messageText = "즐겨찾기 표시 이름 변경"
+        alert.informativeText = "표시할 이름을 입력하세요 (실제 폴더 이름은 변경되지 않습니다)"
         alert.addButton(withTitle: "변경")
         alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: "원래 이름으로")
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        input.stringValue = url.lastPathComponent
+        input.stringValue = store.favoriteNickname(for: url)
+        input.placeholderString = url.lastPathComponent
         alert.accessoryView = input
         alert.window.initialFirstResponder = input
-        if alert.runModal() == .alertFirstButtonReturn {
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
             let newName = input.stringValue.trimmingCharacters(in: .whitespaces)
-            guard !newName.isEmpty, newName != url.lastPathComponent else { return }
-            let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
-            do {
-                try FileManager.default.moveItem(at: url, to: newURL)
-                refreshRootItems()
-                favorites = store.loadFavoriteFolders()
-                store.showToastMessage("'\(newName)'으로 변경 완료")
-            } catch {
-                store.showToastMessage("이름 변경 실패: \(error.localizedDescription)")
-            }
+            guard !newName.isEmpty else { return }
+            store.setFavoriteNickname(url, name: newName)
+            favorites = store.loadFavoriteFolders()  // UI 갱신
+            store.showToastMessage("'\(newName)'으로 표시 이름 변경")
+        } else if response == .alertThirdButtonReturn {
+            store.setFavoriteNickname(url, name: "")
+            favorites = store.loadFavoriteFolders()
+            store.showToastMessage("원래 이름으로 복원")
         }
     }
 
@@ -289,18 +291,14 @@ struct FolderBrowserView: View {
                 }
                 .onChange(of: store.folderURL) { newURL in
                     guard let url = newURL else { return }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo(url.path, anchor: .center)
-                        }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        proxy.scrollTo(url.path, anchor: .center)
                     }
                 }
                 .onAppear {
                     if let url = store.folderURL {
-                        for delay in [1.0, 1.5, 2.0] {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                                proxy.scrollTo(url.path, anchor: .center)
-                            }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            proxy.scrollTo(url.path, anchor: .center)
                         }
                     }
                 }
@@ -404,10 +402,18 @@ struct FolderBrowserView: View {
                             .frame(width: 50, height: 38)
                             .cornerRadius(4)
 
-                        Text(url.lastPathComponent)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(store.favoriteNickname(for: url))
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            if store.favoriteNickname(for: url) != url.lastPathComponent {
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
 
                         Spacer()
 

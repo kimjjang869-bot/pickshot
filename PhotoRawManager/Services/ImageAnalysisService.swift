@@ -27,6 +27,7 @@ struct ImageAnalysisService {
 
         if options.checkClosedEyes {
             detectClosedEyes(url: photo.jpgURL, analysis: &analysis)
+            detectSmile(url: photo.jpgURL, analysis: &analysis)
         }
 
         if options.checkFaceFocus {
@@ -374,6 +375,74 @@ struct ImageAnalysisService {
         let aspectRatio = height / width
         // Typical open eye: 0.25~0.35, squinting: 0.12~0.18, closed: < 0.10
         return aspectRatio < 0.18
+    }
+
+    // MARK: - Smile / Expression Detection
+
+    private static func detectSmile(url: URL, analysis: inout QualityAnalysis) {
+        guard let cgImage = loadCGImage(url: url, maxSize: 1280) else { return }
+
+        let request = VNDetectFaceLandmarksRequest()
+        if #available(macOS 13.0, *) {
+            request.revision = VNDetectFaceLandmarksRequestRevision3
+        }
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+
+        do {
+            try handler.perform([request])
+        } catch {
+            return
+        }
+
+        guard let results = request.results?.filter({ $0.confidence > 0.5 }), !results.isEmpty else { return }
+
+        var totalSmile: Double = 0
+        var faceCount = 0
+
+        for face in results {
+            guard let landmarks = face.landmarks,
+                  let outerLips = landmarks.outerLips else { continue }
+
+            let score = calculateSmileScore(outerLips: outerLips)
+            totalSmile += score
+            faceCount += 1
+        }
+
+        guard faceCount > 0 else { return }
+        let avgSmile = totalSmile / Double(faceCount)
+        analysis.smileScore = avgSmile
+        analysis.faceExpressionGood = avgSmile >= 0.3
+    }
+
+    /// Calculate smile score from outer lip landmarks.
+    /// Measures how much the lip corners are raised relative to the center bottom of the mouth.
+    private static func calculateSmileScore(outerLips: VNFaceLandmarkRegion2D) -> Double {
+        let points = outerLips.normalizedPoints
+        guard points.count >= 6 else { return 0 }
+
+        // Outer lips typically: left corner -> bottom -> right corner -> top (clockwise or counter-clockwise)
+        // Find leftmost, rightmost, and bottom-most points
+        var leftCorner = points[0]
+        var rightCorner = points[0]
+        var bottomCenter = points[0]
+
+        for point in points {
+            if point.x < leftCorner.x { leftCorner = point }
+            if point.x > rightCorner.x { rightCorner = point }
+            if point.y < bottomCenter.y { bottomCenter = point }  // Vision: y=0 is bottom
+        }
+
+        // Smile: corners are higher (larger y) than center bottom
+        let cornerAvgY = (leftCorner.y + rightCorner.y) / 2.0
+        let mouthWidth = rightCorner.x - leftCorner.x
+        guard mouthWidth > 0.01 else { return 0 }
+
+        // Corner uplift relative to bottom center, normalized by mouth width
+        let uplift = (cornerAvgY - bottomCenter.y) / mouthWidth
+
+        // Map uplift to 0~1 score. Typical smile uplift: 0.1~0.4
+        let score = max(0, min(1, uplift / 0.35))
+        return score
     }
 
     private static func loadCGImage(url: URL, maxSize: Int) -> CGImage? {

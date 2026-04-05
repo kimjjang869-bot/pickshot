@@ -120,6 +120,96 @@ struct PerspectiveCorrectionService {
         return weightedSum / totalWeight
     }
 
+    // MARK: - Guided Upright (사용자 가이드 모드)
+
+    /// 가이드 모드: 사용자가 그은 2개의 수직선을 기반으로 원근 보정
+    /// - line1: (top, bottom) points of first vertical line
+    /// - line2: (top, bottom) points of second vertical line
+    /// - Returns: perspective-corrected CIImage
+    static func guidedUpright(
+        image: CIImage,
+        line1: (CGPoint, CGPoint),
+        line2: (CGPoint, CGPoint)
+    ) -> CIImage {
+        let width = image.extent.width
+        let height = image.extent.height
+        guard width > 10, height > 10 else { return image }
+
+        // 1. 두 선의 기울기(각도) 계산
+        let angle1 = atan2(line1.1.x - line1.0.x, line1.1.y - line1.0.y) // top→bottom
+        let angle2 = atan2(line2.1.x - line2.0.x, line2.1.y - line2.0.y)
+
+        // 이미 거의 수직이면 스킵 (둘 다 0.3도 미만)
+        let deg1 = abs(angle1) * 180.0 / .pi
+        let deg2 = abs(angle2) * 180.0 / .pi
+        if deg1 < 0.3 && deg2 < 0.3 { return image }
+
+        // 2. Vanishing point 계산 (두 직선의 교차점)
+        //    line1: p1→p2, line2: p3→p4
+        let p1 = line1.0, p2 = line1.1
+        let p3 = line2.0, p4 = line2.1
+
+        let d1x = p2.x - p1.x, d1y = p2.y - p1.y
+        let d2x = p4.x - p3.x, d2y = p4.y - p3.y
+
+        let cross = d1x * d2y - d1y * d2x
+
+        // 3. Perspective transform 계산
+        //    원본 사각형의 네 꼭짓점을 보정된 위치로 매핑
+        //    각 선의 상단/하단 x오프셋을 이용해 키스톤 보정량 산출
+
+        // 각 선에서 수직과의 편차(상단 x - 하단 x) 비율
+        let topShiftL = (p1.x - p2.x) / height  // 왼쪽 선: 상단이 얼마나 치우쳤나
+        let topShiftR = (p3.x - p4.x) / height  // 오른쪽 선
+
+        // 평균 상단 편차로 키스톤 보정
+        let avgTopShift = (topShiftL + topShiftR) / 2.0
+
+        // 보정 강도: 이미지 상단을 좌우로 이동
+        let shiftAmount = avgTopShift * height * 0.5
+
+        // 좌우 비대칭 보정 (vanishing point가 좌우 어디에 있는지)
+        var asymmetry: CGFloat = 0
+        if abs(cross) > 0.001 {
+            let t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / cross
+            let vpX = p1.x + t * d1x
+            let centerX = width / 2.0
+            asymmetry = (vpX - centerX) / width * 0.1
+        }
+
+        // 4. CIPerspectiveTransform 적용
+        let tl = CGPoint(x: shiftAmount + asymmetry * width, y: height)
+        let tr = CGPoint(x: width - shiftAmount + asymmetry * width, y: height)
+        let bl = CGPoint(x: -asymmetry * width, y: 0)
+        let br = CGPoint(x: width + asymmetry * width, y: 0)
+
+        guard let filter = CIFilter(name: "CIPerspectiveTransform") else { return image }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(CIVector(cgPoint: tl), forKey: "inputTopLeft")
+        filter.setValue(CIVector(cgPoint: tr), forKey: "inputTopRight")
+        filter.setValue(CIVector(cgPoint: bl), forKey: "inputBottomLeft")
+        filter.setValue(CIVector(cgPoint: br), forKey: "inputBottomRight")
+
+        guard let output = filter.outputImage else { return image }
+
+        // 5. 결과를 원본 크기에 맞게 crop
+        let outputExtent = output.extent
+        if outputExtent.isInfinite || outputExtent.isEmpty { return image }
+
+        // 원본 비율 유지하면서 중앙 crop
+        let scaleX = width / outputExtent.width
+        let scaleY = height / outputExtent.height
+        let scale = max(scaleX, scaleY)
+
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let scaledExtent = scaled.extent
+        let cropX = scaledExtent.origin.x + (scaledExtent.width - width) / 2
+        let cropY = scaledExtent.origin.y + (scaledExtent.height - height) / 2
+        let cropRect = CGRect(x: cropX, y: cropY, width: width, height: height)
+
+        return scaled.cropped(to: cropRect)
+    }
+
     // MARK: - Keystone Correction
 
     /// 키스톤 보정 적용 — 수직선을 똑바로 세움

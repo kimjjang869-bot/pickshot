@@ -387,6 +387,7 @@ struct PhotoPreviewView: View {
     @State private var hiResLoadWork: DispatchWorkItem?
     @State private var loadingURL: URL?
     @State private var showCorrectionPanel = false
+    @State private var showUprightGuide = false
     @State private var correctionResult: CorrectionResult?
     @State private var isOriginal = true
     @State private var isCorrecting = false
@@ -734,6 +735,13 @@ struct PhotoPreviewView: View {
             }
             .padding(.horizontal, AppTheme.space8)
         }
+        .sheet(isPresented: $showUprightGuide) {
+            UprightGuideView(photo: photo) { correctedImage in
+                correctionResult = CorrectionResult(correctedImage: correctedImage, applied: ["가이드 원근 보정"])
+                image = correctedImage
+                isOriginal = false
+            }
+        }
         .popover(isPresented: $showCorrectionPanel) {
             if store.selectionCount > 1 {
                 BatchCorrectionView(
@@ -979,6 +987,13 @@ struct PhotoPreviewView: View {
                     Label("AI 보정 (Pro)", systemImage: "sparkles")
                 }
                 .disabled(isCorrecting || !ClaudeVisionService.hasAPIKey)
+
+                Divider()
+
+                Button(action: { showUprightGuide = true }) {
+                    Label("가이드 보정", systemImage: "perspective")
+                }
+                .disabled(isCorrecting)
             } label: {
                 Label(isCorrecting ? "보정 중..." : "보정", systemImage: "wand.and.rays")
                     .font(.system(size: AppTheme.fontCaption, weight: .medium))

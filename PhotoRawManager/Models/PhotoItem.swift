@@ -95,6 +95,8 @@ struct QualityAnalysis {
     var sharpRegionRatio: Double = 0
     var compositionScore: Double = 0
     var nimaScore: Double = 0          // NIMA 미적 품질 점수 (1~10)
+    var smileScore: Double = 0         // 표정 점수 (0=무표정, 1=활짝 웃음)
+    var faceExpressionGood: Bool = false // 좋은 표정 여부
     var detectedIntent: ShootingIntent?
     var isAnalyzed: Bool = false
 
@@ -214,6 +216,7 @@ struct PhotoItem: Identifiable, Hashable {
     var duplicateGroupID: Int? = nil  // Same ID = similar photos
     var isBestInGroup: Bool = false   // Best shot in duplicate group
     var sceneTag: String? = nil       // Vision 장면 분류 태그 (인물, 풍경, 음식, etc.)
+    var keywords: [String] = []       // IPTC 호환 키워드 (장면분류 + 얼굴 + 실내외 등)
     var faceGroupID: Int? = nil       // 얼굴 그룹 ID (같은 ID = 같은 인물)
 
     // Client Comments

@@ -36,6 +36,14 @@ struct ExifInfoView: View {
                         .padding(.vertical, 6)
                 }
 
+                // === Keywords ===
+                if !photo.keywords.isEmpty {
+                    sectionDivider
+                    keywordsSection
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
+
                 // === Client Comments ===
                 if !photo.comments.isEmpty {
                     sectionDivider
@@ -111,6 +119,33 @@ struct ExifInfoView: View {
                 self.jpgSize = jSize
                 self.rawSize = rSize
                 self.colorProfile = cp
+            }
+        }
+    }
+
+    // MARK: - Keywords Section
+
+    private var keywordsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "tag.fill")
+                    .foregroundColor(.teal)
+                    .font(.system(size: 11))
+                Text("키워드")
+                    .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                Spacer()
+                Text("\(photo.keywords.count)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(.teal)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.teal.opacity(0.15))
+                    .cornerRadius(4)
+            }
+
+            // Flow layout using multiple HStacks
+            KeywordFlowLayout(keywords: photo.keywords) { keyword in
+                store.keywordFilter = (store.keywordFilter == keyword) ? nil : keyword
             }
         }
     }
@@ -470,5 +505,73 @@ struct ExifBadge: View {
         }
         .padding(.horizontal, 6).padding(.vertical, 4)
         .background(Color.gray.opacity(0.1)).cornerRadius(4)
+    }
+}
+
+// MARK: - Keyword Flow Layout
+
+struct KeywordFlowLayout: View {
+    let keywords: [String]
+    let onTap: (String) -> Void
+    @EnvironmentObject var store: PhotoStore
+
+    var body: some View {
+        FlowLayout(spacing: 4) {
+            ForEach(keywords, id: \.self) { keyword in
+                let isActive = store.keywordFilter == keyword
+                Text(keyword)
+                    .font(.system(size: 10, weight: isActive ? .bold : .medium))
+                    .foregroundColor(isActive ? .white : .teal)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(isActive ? Color.teal : Color.teal.opacity(0.12))
+                    .cornerRadius(4)
+                    .onTapGesture { onTap(keyword) }
+            }
+        }
+    }
+}
+
+/// Simple flow layout that wraps items to next line when they exceed available width
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (positions: [CGPoint], size: CGSize) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            totalWidth = max(totalWidth, x - spacing)
+        }
+
+        return (positions, CGSize(width: totalWidth, height: y + rowHeight))
     }
 }

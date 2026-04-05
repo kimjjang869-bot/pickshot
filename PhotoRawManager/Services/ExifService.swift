@@ -35,7 +35,14 @@ struct ExifService {
             return nil
         }
 
-        let data = parseProperties(properties)
+        var data = parseProperties(properties)
+
+        // XMP sidecar fallback for rating
+        if data.rating == nil {
+            if let xmpResult = XMPService.readRating(for: url), xmpResult.rating > 0 {
+                data.rating = xmpResult.rating
+            }
+        }
 
         // Store in cache
         cacheLock.lock()

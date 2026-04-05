@@ -311,6 +311,22 @@ extension ContentView {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .help("비교 보기 - 2~4장 선택 후 나란히 비교")
 
+                    // Face Compare button
+                    Button(action: {
+                        if store.selectionCount >= 2 && store.selectionCount <= 6 {
+                            store.showFaceCompare = true
+                        }
+                    }) {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: AppTheme.iconSmall))
+                            .opacity(store.selectionCount >= 2 && store.selectionCount <= 6 ? 1 : 0.4)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                    .background(AppTheme.toolbarButtonBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .help("표정 비교 - 2~6장 선택 후 얼굴 비교")
+
                     // Map button
                     Button(action: { store.showMap = true }) {
                         Image(systemName: "map")

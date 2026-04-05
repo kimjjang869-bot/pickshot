@@ -3,11 +3,27 @@ import Foundation
 /// 스마트 자동 셀렉: 연사/버스트 그룹 감지 → 베스트샷 자동 선택
 struct SmartSelectService {
 
+    enum CullIntensity: String, CaseIterable {
+        case strict = "엄격"
+        case normal = "보통"
+        case lenient = "느슨"
+
+        /// Top percentage to keep within each burst group
+        var keepRatio: Double {
+            switch self {
+            case .strict: return 0.20
+            case .normal: return 0.40
+            case .lenient: return 0.60
+            }
+        }
+    }
+
     struct Config {
         var burstTimeThreshold: TimeInterval = 2.0
         var filenameNumberGap: Int = 1
         var minGroupSize: Int = 2
         var criteria: SelectionCriteria = .sharpness
+        var cullIntensity: CullIntensity = .normal
 
         enum SelectionCriteria: String, CaseIterable {
             case sharpness = "선명도 우선"
@@ -37,9 +53,12 @@ struct SmartSelectService {
         var burstGroups: [BurstGroup] = []
 
         for (groupIdx, indices) in groups.enumerated() {
-            let bestIdx = selectBest(from: indices, photos: photos, criteria: config.criteria)
+            let topIndices = selectTopByIntensity(from: indices, photos: photos, config: config)
+            let bestIdx = topIndices.first ?? indices[0]
             burstGroups.append(BurstGroup(groupIndex: groupIdx, photoIndices: indices, bestIndex: bestIdx))
-            selectedIndices.insert(bestIdx)
+            for idx in topIndices {
+                selectedIndices.insert(idx)
+            }
         }
 
         return Result(
@@ -121,6 +140,38 @@ struct SmartSelectService {
         let prefix = String(chars[0..<startIdx])
         guard let number = Int(String(chars[startIdx...endIdx])) else { return nil }
         return (prefix, number)
+    }
+
+    /// Select top N photos from a burst group based on cull intensity percentage
+    private static func selectTopByIntensity(from indices: [Int], photos: [PhotoItem], config: Config) -> [Int] {
+        guard !indices.isEmpty else { return [] }
+
+        // Calculate how many to keep: at least 1
+        let keepCount = max(1, Int(ceil(Double(indices.count) * config.cullIntensity.keepRatio)))
+
+        // Score and sort all indices
+        let scored = indices.map { idx -> (index: Int, score: Double) in
+            let photo = photos[idx]
+            let score: Double
+            switch config.criteria {
+            case .sharpness:
+                let nima = photo.quality?.nimaScore ?? 0
+                if nima > 0 {
+                    score = nima * 10
+                } else {
+                    score = (photo.quality?.sharpnessScore ?? 0) * 0.7 + Double(photo.quality?.score ?? 50) * 0.3
+                }
+            case .score:
+                score = Double(photo.quality?.score ?? 50)
+            case .noIssues:
+                let bad = photo.quality?.gradingIssues.filter { $0.severity == .bad }.count ?? 0
+                let warn = photo.quality?.gradingIssues.filter { $0.severity == .warning }.count ?? 0
+                score = (photo.quality?.sharpnessScore ?? 0) - Double(bad) * 100 - Double(warn) * 30
+            }
+            return (idx, score)
+        }.sorted { $0.score > $1.score }
+
+        return Array(scored.prefix(keepCount).map { $0.index })
     }
 
     private static func selectBest(from indices: [Int], photos: [PhotoItem], criteria: Config.SelectionCriteria) -> Int {

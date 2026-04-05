@@ -41,36 +41,35 @@ struct AboutView: View {
 
                     Divider()
 
-                    // v5.0 Changelog
-                    changelogSection("v5.0 새로운 기능", items: [
-                        "스마트 셀렉 — 연사 베스트샷 자동 선택 (Cmd+Shift+S)",
+                    // v6.0 Changelog
+                    changelogSection("v6.0 새로운 기능", items: [
+                        "NIMA AI 미적 품질 점수 (CoreML, 1~10점)",
+                        "표정 감지 — 웃는 얼굴 자동 인식 + 점수",
+                        "얼굴 비교 패널 — 연사 표정 나란히 비교",
+                        "컬링 강도 조절 (엄격/보통/느슨)",
+                        "XMP 사이드카 읽기/쓰기 (Lightroom/Bridge 호환)",
+                        "키워드 자동 태깅 (Vision 분류 → IPTC 키워드)",
+                        "Upright 가이드 모드 (수직선 드래그 → 원근 보정)",
+                        "듀얼 스크린 뷰어 (D키, 별도 윈도우)",
+                        "성능 최적화 탭 (벤치마크 + 원클릭 최적화)",
+                        "드래그 앤 드롭 파일 이동 (썸네일 → 폴더 트리)",
+                        "화면 크기 자동 대응 (14인치~32인치)",
+                        "EXIF Rating 자동 적용 (카메라 별점)",
+                    ])
+
+                    changelogSection("v5.0", items: [
                         "전체화면 컬링 모드 (Cmd+F) + 필름스트립",
-                        "타임라인 뷰 — 촬영 시간대별 그룹화",
-                        "셀렉 통계 대시보드",
-                        "Before/After 보정 비교 슬라이더",
                         "메모리카드 자동 백업 (DCIM 감지 → 안전 복사)",
-                        "캐시 관리 설정 (크기 제한/경로 변경/삭제)",
-                        "빠른 탐색 최적화 (onQuickPreview 썸네일 즉시 표시)",
-                        "마지막 폴더 자동 복원 + 폴더 트리 자동 스크롤",
-                        "RAW 프리페치 스킵 (CPU/메모리 최적화)",
+                        "Before/After 보정 비교 슬라이더",
+                        "빠른 탐색 최적화 (썸네일 즉시 표시)",
+                        "마지막 폴더 자동 복원",
                     ])
 
-                    changelogSection("v3.6 주요 개선", items: [
-                        "Apple Vision 프레임워크 (수평보정/장면분류/인물분석)",
-                        "품질 시스템 3단계 (좋음/보통/문제) + 100점 단일 점수",
-                        "AI Pick: 75점 이상 자동 추천",
-                        "RAW → JPG 배치 변환 + 리사이즈",
-                        "내보내기 폴더명 커스텀",
-                    ])
-
-                    changelogSection("v3.0 기반 기능", items: [
-                        "필름스트립 레이아웃 모드",
-                        "Vision 장면 분류 (인물/풍경/음식/건물 등)",
-                        "얼굴 그룹핑 + GPS 지도 뷰",
-                        "히스토그램/메타데이터 오버레이 (H/I키)",
-                        "Google Drive 업로드 + G Select 웹 뷰어",
+                    changelogSection("v3.0 ~ v3.6", items: [
                         "HW JPEG 디코더 + Metal GPU 가속",
-                        "실시간 폴더 감시 + USB 테더링",
+                        "Vision 장면 분류 + 얼굴 그룹핑",
+                        "RAW → JPG 배치 변환",
+                        "Google Drive 업로드 + G Select 웹 뷰어",
                     ])
 
                     Divider()

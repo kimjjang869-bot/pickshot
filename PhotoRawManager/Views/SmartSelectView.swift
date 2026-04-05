@@ -4,6 +4,7 @@ struct SmartSelectView: View {
     @EnvironmentObject var store: PhotoStore
     @Environment(\.dismiss) var dismiss
     @State private var criteria: SmartSelectService.Config.SelectionCriteria = .sharpness
+    @State private var cullIntensity: SmartSelectService.CullIntensity = .normal
     @State private var burstThreshold: Double = 2.0
     @State private var minGroupSize: Int = 2
     @State private var applied = false
@@ -22,6 +23,14 @@ struct SmartSelectView: View {
                     Picker("", selection: $criteria) {
                         ForEach(SmartSelectService.Config.SelectionCriteria.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented).frame(width: 320)
+                }
+                HStack {
+                    Text("컬링 강도").font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Picker("", selection: $cullIntensity) {
+                        ForEach(SmartSelectService.CullIntensity.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).frame(width: 200)
+                    Text(intensityDescription).font(.system(size: 11)).foregroundColor(.secondary).frame(width: 100, alignment: .trailing)
                 }
                 HStack {
                     Text("연사 간격").font(.system(size: 13, weight: .medium))
@@ -56,13 +65,22 @@ struct SmartSelectView: View {
                         .buttonStyle(.borderedProminent).disabled(applied).keyboardShortcut(.return)
                 }
             }
-        }.padding(24).frame(width: 520, height: 520)
+        }.padding(24).frame(width: 520, height: 560)
         .onAppear { updateConfig(); store.previewSmartSelect() }
         .onChange(of: criteria) { _ in updateConfig(); store.previewSmartSelect(); applied = false }
+        .onChange(of: cullIntensity) { _ in updateConfig(); store.previewSmartSelect(); applied = false }
+    }
+
+    private var intensityDescription: String {
+        switch cullIntensity {
+        case .strict: return "상위 20%만"
+        case .normal: return "상위 40%"
+        case .lenient: return "상위 60%"
+        }
     }
 
     private func updateConfig() {
-        store.smartSelectConfig = SmartSelectService.Config(burstTimeThreshold: burstThreshold, filenameNumberGap: 1, minGroupSize: minGroupSize, criteria: criteria)
+        store.smartSelectConfig = SmartSelectService.Config(burstTimeThreshold: burstThreshold, filenameNumberGap: 1, minGroupSize: minGroupSize, criteria: criteria, cullIntensity: cullIntensity)
     }
 
     @ViewBuilder

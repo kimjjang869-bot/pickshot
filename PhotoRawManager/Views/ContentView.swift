@@ -316,6 +316,9 @@ struct ContentView: View {
             Text(importResultMessage)
         }
         .sheet(isPresented: $gSelect.showSetupSheet) { GSelectSetupView() }
+        .sheet(isPresented: $store.showFaceCompare) {
+            FaceCompareSheet(store: store)
+        }
         .sheet(isPresented: $store.showCompare) {
             if store.selectionCount >= 2, store.multiSelectedPhotos.count >= 2 {
                 let selected = Array(store.multiSelectedPhotos.prefix(4))

@@ -125,8 +125,15 @@ class PhotoStore: ObservableObject {
     @Published var analysisOptions = AnalysisOptions()
     private var analysisCancel = false
     @Published var folderURL: URL?
-    @Published var hSplitPosition: CGFloat = 650
-    @Published var vSplitPosition: CGFloat = 1500
+    // 화면 크기에 맞게 자동 조절
+    @Published var hSplitPosition: CGFloat = {
+        let screenW = NSScreen.main?.frame.width ?? 1440
+        return min(screenW * 0.35, 650)  // 화면의 35%, 최대 650
+    }()
+    @Published var vSplitPosition: CGFloat = {
+        let screenH = NSScreen.main?.frame.height ?? 900
+        return screenH * 0.7  // 화면의 70%
+    }()
     @Published var isLoading = false
     @Published var loadingProgress: Double = 0  // 0~1
     @Published var loadingStatus: String = ""
@@ -178,6 +185,7 @@ class PhotoStore: ObservableObject {
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
     @Published var sceneTagFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }
+    @Published var keywordFilter: String? = nil { didSet { _cachedFiltered = nil; _cacheKey = "" } }
     @Published var isClassifyingScenes: Bool = false
     @Published var classifyProgress: Double = 0
     @Published var layoutMode: LayoutMode = .gridPreview
@@ -210,6 +218,7 @@ class PhotoStore: ObservableObject {
     @Published var showStats: Bool = false
     @Published var showAutoCull: Bool = false
     @Published var showTimeline: Bool = false
+    @Published var showFaceCompare: Bool = false
     @Published var smartSelectResult: SmartSelectService.Result?
     @Published var smartSelectConfig: SmartSelectService.Config = SmartSelectService.Config()
     // Memory Card Backup
@@ -225,7 +234,7 @@ class PhotoStore: ObservableObject {
     @Published var folderHistory: [URL] = []
     @Published var folderHistoryIndex: Int = -1
     @Published var photosToRemove: Set<UUID> = []
-    @Published var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? false {
+    @Published var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? true {
         didSet { UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode") }
     }
 
@@ -389,6 +398,15 @@ class PhotoStore: ObservableObject {
             ratings[photo.fileName] = photo.rating
         }
         defaults.set(ratings, forKey: ratingsKey)
+
+        // Write XMP sidecar files in background
+        let snapshot = photos.map { (url: $0.jpgURL, rating: $0.rating, label: $0.colorLabel, spacePicked: $0.isSpacePicked) }
+        DispatchQueue.global(qos: .utility).async {
+            for item in snapshot where item.rating > 0 {
+                let xmpLabel = XMPService.xmpLabel(from: item.label.rawValue)
+                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.spacePicked)
+            }
+        }
     }
 
     private func applySavedRatings() {
@@ -403,12 +421,18 @@ class PhotoStore: ObservableObject {
             }
         }
 
-        // 백그라운드: EXIF Rating 읽기 (저장된 별점 없는 사진만)
+        // 백그라운드: XMP sidecar + EXIF Rating 읽기 (저장된 별점 없는 사진만)
         let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var exifRatings: [UUID: Int] = [:]
             for (id, url, currentRating) in photosSnapshot {
                 guard currentRating == 0 else { continue }
+                // XMP sidecar first
+                if let xmpResult = XMPService.readRating(for: url), xmpResult.rating > 0 {
+                    exifRatings[id] = xmpResult.rating
+                    continue
+                }
+                // EXIF fallback
                 if let exif = ExifService.extractExif(from: url), let r = exif.rating, r > 0 {
                     exifRatings[id] = r
                 }
@@ -422,7 +446,7 @@ class PhotoStore: ObservableObject {
                     }
                 }
                 if !exifRatings.isEmpty {
-                    AppLogger.log(.general, "EXIF Rating 적용: \(exifRatings.count)장")
+                    AppLogger.log(.general, "XMP/EXIF Rating 적용: \(exifRatings.count)장")
                 }
             }
         }
@@ -748,6 +772,7 @@ class PhotoStore: ObservableObject {
         let colorFilter = colorLabelFilter
         let qFilter = qualityFilter
         let sceneTag = sceneTagFilter
+        let kwFilter = keywordFilter
         let fgID = faceGroupFilter
         let aiCat = aiCategoryFilter
         let search = searchText.lowercased()
@@ -805,6 +830,8 @@ class PhotoStore: ObservableObject {
             }
             // Scene tag filter
             if let tag = sceneTag, photo.sceneTag != tag { continue }
+            // Keyword filter
+            if let kw = kwFilter, !photo.keywords.contains(kw) { continue }
             // Face group filter
             if let fg = fgID, photo.faceGroupID != fg { continue }
             // AI category filter
@@ -1242,6 +1269,24 @@ class PhotoStore: ObservableObject {
         return paths.map { URL(fileURLWithPath: $0) }
     }
 
+    // 즐겨찾기 별칭 (실제 폴더 이름 안 바꿈)
+    private let favoriteNicknamesKey = "favoriteNicknames"
+
+    func setFavoriteNickname(_ url: URL, name: String) {
+        var dict = defaults.dictionary(forKey: favoriteNicknamesKey) as? [String: String] ?? [:]
+        if name.isEmpty || name == url.lastPathComponent {
+            dict.removeValue(forKey: url.path)
+        } else {
+            dict[url.path] = name
+        }
+        defaults.set(dict, forKey: favoriteNicknamesKey)
+    }
+
+    func favoriteNickname(for url: URL) -> String {
+        let dict = defaults.dictionary(forKey: favoriteNicknamesKey) as? [String: String] ?? [:]
+        return dict[url.path] ?? url.lastPathComponent
+    }
+
     /// Grid panel width, updated by ThumbnailGridView to calculate columns per row
     @Published var gridWidth: CGFloat = 300
 
@@ -1378,6 +1423,15 @@ class PhotoStore: ObservableObject {
         return tags.sorted()
     }
 
+    /// All unique keywords currently assigned across all photos
+    var availableKeywords: [String] {
+        var kws = Set<String>()
+        for photo in photos {
+            for kw in photo.keywords { kws.insert(kw) }
+        }
+        return kws.sorted()
+    }
+
     /// Vision identifier → Korean tag (exact word boundary matching)
     private static let sceneMapping: [String: String] = [
         // 인물
@@ -1457,10 +1511,16 @@ class PhotoStore: ObservableObject {
         return nil
     }
 
+    /// Scene classification result including tag and keyword generation data
+    struct SceneClassResult {
+        let tag: String
+        let keywords: [String]
+    }
+
     /// Fast local scene classification: runs VNClassifyImageRequest + VNDetectFaceRectanglesRequest
     /// in a single handler.perform() call for maximum ANE throughput.
-    /// Returns a Korean scene tag matching PickShot's tag vocabulary.
-    private static func classifySceneTag(cgImage: CGImage) -> String? {
+    /// Returns a Korean scene tag + IPTC keywords matching PickShot's tag vocabulary.
+    private static func classifySceneTag(cgImage: CGImage) -> SceneClassResult? {
         let sceneReq = VNClassifyImageRequest()
         sceneReq.usesCPUOnly = false  // enable ANE
 
@@ -1491,6 +1551,9 @@ class PhotoStore: ObservableObject {
             }
         }
 
+        // Top identifiers for keyword generation
+        let topIdentifiers = sorted.prefix(5).map { $0.identifier }
+
         // --- Face count (confidence > 0.5 only) ---
         let faceCount = (faceReq.results ?? []).filter { $0.confidence > 0.5 }.count
 
@@ -1502,23 +1565,37 @@ class PhotoStore: ObservableObject {
         let bestTag = tagScores.first?.tag
 
         // Face-based overrides
-        if faceCount >= 5 { return "단체/군중" }
-        if faceCount >= 3 && bestTag != "공연/콘서트" { return "단체/군중" }
-
-        // Large face (>8% of image) + 1-2 faces = portrait
-        if faceCount >= 1 && faceCount <= 2 && maxFaceSize > 0.08 {
+        let finalTag: String?
+        if faceCount >= 5 {
+            finalTag = "단체/군중"
+        } else if faceCount >= 3 && bestTag != "공연/콘서트" {
+            finalTag = "단체/군중"
+        } else if faceCount >= 1 && faceCount <= 2 && maxFaceSize > 0.08 {
             if bestTag == nil || bestTag == "실내" || bestTag == "풍경" ||
                bestTag == "건물/건축" || bestTag == "도시/야경" {
-                return maxFaceSize > 0.15 ? "인물 (클로즈업)" : "인물"
+                finalTag = maxFaceSize > 0.15 ? "인물 (클로즈업)" : "인물"
+            } else {
+                finalTag = bestTag
             }
+        } else if let tag = bestTag {
+            finalTag = tag
+        } else if faceCount >= 1 {
+            finalTag = "인물"
+        } else {
+            finalTag = nil
         }
 
-        // Vision tag available
-        if let tag = bestTag { return tag }
+        guard let tag = finalTag else { return nil }
 
-        // Fallback by face
-        if faceCount >= 1 { return "인물" }
-        return nil
+        // Generate IPTC keywords
+        let keywords = KeywordTaggingService.generateKeywords(
+            sceneTag: tag,
+            topIdentifiers: topIdentifiers,
+            faceCount: faceCount,
+            maxFaceSize: maxFaceSize
+        )
+
+        return SceneClassResult(tag: tag, keywords: keywords)
     }
 
     /// Classify scenes for all photos using local Vision framework (VNClassifyImageRequest).
@@ -1535,7 +1612,7 @@ class PhotoStore: ObservableObject {
         print("🏷 [SCENE] Start: \(total) photos")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var results: [UUID: String] = [:]
+            var results: [UUID: SceneClassResult] = [:]
             let resultsLock = NSLock()
             var completed = 0
 
@@ -1565,10 +1642,10 @@ class PhotoStore: ObservableObject {
                     return
                 }
 
-                // Single-pass scene + face classification
-                if let tag = Self.classifySceneTag(cgImage: cgImage) {
+                // Single-pass scene + face classification + keyword generation
+                if let result = Self.classifySceneTag(cgImage: cgImage) {
                     resultsLock.lock()
-                    results[photo.id] = tag
+                    results[photo.id] = result
                     resultsLock.unlock()
                 }
 
@@ -1599,8 +1676,9 @@ class PhotoStore: ObservableObject {
                     let selectedID = self.selectedPhotoID
                     var updated = self.photos
                     for i in 0..<updated.count {
-                        if let tag = results[updated[i].id] {
-                            updated[i].sceneTag = tag
+                        if let result = results[updated[i].id] {
+                            updated[i].sceneTag = result.tag
+                            updated[i].keywords = result.keywords
                         }
                     }
                     self.photos = updated
