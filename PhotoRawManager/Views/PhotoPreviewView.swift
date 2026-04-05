@@ -796,6 +796,14 @@ struct PhotoPreviewView: View {
             viewState.stableImageSize = Self.readImageDimensions(url: photo.jpgURL)
             loadImageDirect(for: photo.jpgURL, id: photo.id)
             viewState.magnifyBaseScale = viewState.customScale
+
+            // 빠른 탐색 콜백: 썸네일만 즉시 표시 (디스크 I/O 제로)
+            store.onQuickPreview = { [self] url in
+                if let thumb = ThumbnailCache.shared.get(url) {
+                    self.image = thumb
+                }
+            }
+
             // Scroll wheel zoom monitor (only when mouse is over preview)
             if let existing = viewState.scrollMonitor {
                 NSEvent.removeMonitor(existing)
@@ -854,6 +862,7 @@ struct PhotoPreviewView: View {
                 NSEvent.removeMonitor(monitor)
                 viewState.scrollMonitor = nil
             }
+            store.onQuickPreview = nil
         }
         .onChange(of: store.selectedPhotoID) { newID in
             guard let newID = newID else { return }

@@ -100,6 +100,8 @@ class PhotoStore: ObservableObject {
     var scrollAnchor: UnitPoint = .bottom
     /// true when key is held down (OS key repeat), false for actual press
     var isKeyRepeat: Bool = false
+    /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
+    var onQuickPreview: ((URL) -> Void)?
     @Published var minimumRatingFilter: Int = 0 { didSet { _cachedFiltered = nil; _cacheKey = "" } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
@@ -1169,6 +1171,12 @@ class PhotoStore: ObservableObject {
 
         selectedPhotoID = newID
         scrollTrigger &+= 1
+
+        // 빠른 탐색: 썸네일 즉시 표시 (SwiftUI onChange 병합 우회)
+        let photo = list[newIndex]
+        if !photo.isFolder && !photo.isParentFolder {
+            onQuickPreview?(photo.jpgURL)
+        }
 
         // Prefetch nearby
         prefetchNearby(list: list, centerIndex: newIndex, range: 5)
