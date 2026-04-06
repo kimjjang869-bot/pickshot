@@ -164,6 +164,22 @@ extension ContentView {
                     .tint(.pink)
                     .help("클라이언트에게 사진 셀렉 공유")
 
+                    // 셀렉 결과 가져오기 (파일 또는 Drive)
+                    Menu {
+                        Button(action: { store.importPickshotFile() }) {
+                            Label("파일에서 가져오기...", systemImage: "doc.badge.arrow.up")
+                        }
+                        Button(action: { importPickshotFromDrive() }) {
+                            Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
+                        }
+                    } label: {
+                        Label("셀렉 가져오기", systemImage: "square.and.arrow.down")
+                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    }
+                    .menuStyle(.borderedButton)
+                    .controlSize(.small)
+                    .help("클라이언트 셀렉 결과 가져오기 (Cmd+Shift+I)")
+
                     // Analysis stop button (only visible when analyzing)
                     if store.isAnalyzing {
                         Button(action: { store.stopAnalysis() }) {
@@ -842,6 +858,38 @@ extension ContentView {
         .foregroundColor(active ? .white : color)
         .background(active ? color : AppTheme.toolbarButtonBg)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // MARK: - Drive에서 셀렉 가져오기
+
+    func importPickshotFromDrive() {
+        guard let folderId = ClientSelectService.shared.driveFolderID else {
+            store.showToastMessage("활성 클라이언트 셀렉 세션이 없습니다")
+            return
+        }
+        guard let token = GoogleDriveService.savedAccessToken else {
+            store.showToastMessage("Google Drive 로그인이 필요합니다")
+            return
+        }
+        store.showToastMessage("Drive에서 .pickshot 파일 검색 중...")
+        ClientSelectService.shared.checkForPickshotInDrive(folderId: folderId, token: token) { [weak store] tempURL in
+            DispatchQueue.main.async {
+                guard let store = store else { return }
+                guard let url = tempURL else {
+                    store.showToastMessage("Drive에 .pickshot 파일이 없습니다")
+                    return
+                }
+                let result = PickshotFileService.applyPickshotFile(url: url, to: &store.photos, photoIndex: store._photoIndex)
+                if let result = result {
+                    store.photosVersion += 1
+                    store.buildClientComments()
+                    store.lastImportResult = result
+                    store.showPickshotImportSheet = true
+                }
+                // 임시 파일 정리
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     // MARK: - Drag & Drop

@@ -27,6 +27,8 @@ struct PickshotImportResult {
     var unmatched: [String]
     var totalInFile: Int
     var commentsCount: Int    // Total comments imported
+    var commentDetails: [(filename: String, comments: [String])] = []  // 파일별 코멘트 상세
+    var sourceFolderName: String = ""
 }
 
 class PickshotFileService {
@@ -126,6 +128,7 @@ class PickshotFileService {
         var unmatched: [String] = []
 
         var commentsCount = 0
+        var commentDetails: [(filename: String, comments: [String])] = []
         for entry in file.files {
             if let indices = nameToIndices[entry.name] {
                 for idx in indices {
@@ -141,6 +144,10 @@ class PickshotFileService {
                     }
                 }
                 matched.append((name: entry.name, rating: entry.rating, spacePick: entry.spacePick))
+                // 코멘트 상세 수집
+                if let comments = entry.comments, !comments.isEmpty {
+                    commentDetails.append((filename: entry.name, comments: comments))
+                }
             } else {
                 unmatched.append(entry.name)
             }
@@ -152,7 +159,9 @@ class PickshotFileService {
             matched: matched,
             unmatched: unmatched,
             totalInFile: file.files.count,
-            commentsCount: commentsCount
+            commentsCount: commentsCount,
+            commentDetails: commentDetails,
+            sourceFolderName: file.sourceFolderName
         )
     }
 

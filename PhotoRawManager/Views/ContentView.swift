@@ -342,6 +342,9 @@ struct ContentView: View {
         } message: {
             Text(importResultMessage)
         }
+        .sheet(isPresented: $store.showPickshotImportSheet) {
+            PickshotImportResultSheet(store: store)
+        }
         .sheet(isPresented: $store.showAIClassifyResult) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("AI 분류 결과")

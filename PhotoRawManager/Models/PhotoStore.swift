@@ -226,6 +226,8 @@ class PhotoStore: ObservableObject {
     @Published var showBatchRename: Bool = false
     @Published var showImportResult: Bool = false
     var lastImportResult: PickshotImportResult?
+    @Published var showPickshotImportSheet: Bool = false
+    @Published var clientComments: [UUID: String] = [:]  // photoID -> 클라이언트 코멘트 (첫 번째)
     @Published var showMap: Bool = false
     @Published var toastMessage: String = ""
     @Published var showToast: Bool = false
@@ -822,6 +824,30 @@ class PhotoStore: ObservableObject {
 
     var spacePickedCount: Int {
         photos.lazy.filter { $0.isSpacePicked }.count
+    }
+
+    // MARK: - Pickshot 가져오기 결과 적용
+
+    func importPickshotFile() {
+        let result = PickshotFileService.importSelection(to: &photos, photoIndex: _photoIndex)
+        if let result = result {
+            photosVersion += 1
+            // clientComments 딕셔너리 구축 (preview에서 표시용)
+            buildClientComments()
+            lastImportResult = result
+            showPickshotImportSheet = true
+        }
+    }
+
+    /// photos 배열의 comments를 clientComments 딕셔너리로 복사
+    func buildClientComments() {
+        var dict: [UUID: String] = [:]
+        for photo in photos {
+            if !photo.comments.isEmpty {
+                dict[photo.id] = photo.comments.joined(separator: " / ")
+            }
+        }
+        clientComments = dict
     }
 
     func setRatingForSelected(_ rating: Int) {

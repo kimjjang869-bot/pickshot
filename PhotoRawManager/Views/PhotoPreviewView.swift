@@ -642,9 +642,25 @@ struct PhotoPreviewView: View {
                                 }
                             }
                             Spacer()
-                            // Bottom-right: Mini navigator
+                            // Bottom-left: Client comment (클라이언트 코멘트)
                             HStack {
+                                if let comment = store.clientComments[photo.id] {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "bubble.left.fill")
+                                            .font(.system(size: 12))
+                                        Text("클라이언트: \(comment)")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .lineLimit(2)
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.orange.opacity(0.85))
+                                    .cornerRadius(6)
+                                    .padding(8)
+                                }
                                 Spacer()
+                                // Bottom-right: Mini navigator
                                 VStack(alignment: .trailing, spacing: 6) {
                                     if isZoomed && !isFitMode {
                                         MiniNavigator(

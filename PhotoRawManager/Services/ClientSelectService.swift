@@ -195,17 +195,24 @@ class ClientSelectService: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.uploadDone = index + 1
-                // 업로드 속도 계산
+                // 업로드 속도 + 남은 시간 (원본 ZIP 포함)
                 if let start = self.uploadStartTime {
                     let elapsed = Date().timeIntervalSince(start)
-                    if elapsed > 0 {
+                    if elapsed > 1 {
                         let photosPerSec = Double(self.uploadDone) / elapsed
-                        let remaining = Double(self.uploadTotal - self.uploadDone) / max(photosPerSec, 0.01)
+                        // 원본 ZIP 업로드 예상 시간 추가 (사진 10장분 추가)
+                        let zipExtra = self.uploadOriginal ? 10.0 : 0.0
+                        let totalWork = Double(self.uploadTotal) + zipExtra
+                        let doneWork = Double(self.uploadDone)
+                        let remaining = (totalWork - doneWork) / max(photosPerSec, 0.01)
+                        let speed = String(format: "%.1f장/초", photosPerSec)
+                        let eta: String
                         if remaining < 60 {
-                            self.uploadSpeed = String(format: "%.0f초 남음", remaining)
+                            eta = String(format: "%.0f초", remaining)
                         } else {
-                            self.uploadSpeed = String(format: "%.0f분 남음", remaining / 60)
+                            eta = String(format: "%.0f분 %.0f초", remaining / 60, remaining.truncatingRemainder(dividingBy: 60))
                         }
+                        self.uploadSpeed = "\(speed) · 남은 시간: \(eta)"
                     }
                 }
             }
@@ -646,6 +653,62 @@ class ClientSelectService: ObservableObject {
             matchedPhotos: matched,
             unmatchedCount: unmatchedCount
         )
+    }
+
+    // MARK: - Drive에서 .pickshot 파일 검색 + 다운로드
+
+    func checkForPickshotInDrive(folderId: String, token: String, completion: @escaping (URL?) -> Void) {
+        // 폴더 내 .pickshot 파일 검색
+        let query = "'\(folderId)' in parents and name contains '.pickshot' and trashed = false"
+        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let listURL = URL(string: "https://www.googleapis.com/drive/v3/files?q=\(encodedQuery)&fields=files(id,name)") else {
+            completion(nil)
+            return
+        }
+
+        var request = URLRequest(url: listURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let files = json["files"] as? [[String: Any]],
+                  let firstFile = files.first,
+                  let fileId = firstFile["id"] as? String,
+                  let fileName = firstFile["name"] as? String else {
+                fputs("[CLIENT] Drive에서 .pickshot 파일 없음\n", stderr)
+                completion(nil)
+                return
+            }
+
+            fputs("[CLIENT] Drive에서 .pickshot 발견: \(fileName) (\(fileId))\n", stderr)
+
+            // 파일 다운로드
+            guard let downloadURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)?alt=media") else {
+                completion(nil)
+                return
+            }
+            var dlRequest = URLRequest(url: downloadURL)
+            dlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            URLSession.shared.dataTask(with: dlRequest) { data, _, error in
+                guard let data = data else {
+                    fputs("[CLIENT] .pickshot 다운로드 실패: \(error?.localizedDescription ?? "")\n", stderr)
+                    completion(nil)
+                    return
+                }
+                // 임시 파일에 저장
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                do {
+                    try data.write(to: tempURL)
+                    fputs("[CLIENT] .pickshot 다운로드 완료: \(tempURL.path)\n", stderr)
+                    completion(tempURL)
+                } catch {
+                    fputs("[CLIENT] .pickshot 저장 실패: \(error.localizedDescription)\n", stderr)
+                    completion(nil)
+                }
+            }.resume()
+        }.resume()
     }
 
     // MARK: - QR 코드 생성

@@ -271,19 +271,20 @@ struct ClientSelectSetupView: View {
                 }
             }
 
-            Text("업로드 중...")
+            Text(service.uploadSpeed.contains("ZIP") ? "원본 ZIP 처리 중..." : "업로드 중...")
                 .font(.system(size: 14, weight: .medium))
-
-            if !service.uploadSpeed.isEmpty {
-                Text(service.uploadSpeed)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
 
             // 진행 바
             ProgressView(value: uploadProgress)
                 .progressViewStyle(.linear)
                 .frame(width: 300)
+
+            // 속도 + 남은 시간
+            if !service.uploadSpeed.isEmpty {
+                Text(service.uploadSpeed)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.purple)
+            }
 
             Spacer()
         }
@@ -302,18 +303,6 @@ struct ClientSelectSetupView: View {
 
                 Text("\(service.uploadDone)장 업로드 완료")
                     .font(.system(size: 16, weight: .bold))
-
-                // QR 코드
-                if let qrImage = service.qrCodeImage {
-                    Image(nsImage: qrImage)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 180, height: 180)
-                        .background(Color.white)
-                        .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.1), radius: 4)
-                }
 
                 // 뷰어 링크
                 if let link = service.viewerLink {
