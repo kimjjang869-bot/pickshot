@@ -93,7 +93,7 @@ struct ClaudeVisionService {
         default: return "claude-3-5-haiku-20241022"
         }
     }
-    private static let maxImageDimension: CGFloat = 1024
+    private static let maxImageDimension: CGFloat = 768  // 분류용 — 작을수록 빠르고 토큰 절약
 
     static func setAPIKey(_ key: String) {
         _ = KeychainService.save(key: keychainKey, value: key)
@@ -566,24 +566,47 @@ struct ClaudeVisionService {
 
     static func classifyPhoto(url: URL, customPrompt: String? = nil) async throws -> AIPhotoClassification {
         let prompt = customPrompt ?? defaultClassifyPrompt
-        let response = try await analyzeImageWithCurrentEngine(url: url, prompt: prompt)
 
-        let cleaned = response
+        // 최대 2회 시도 (파싱 실패 시 재시도)
+        for attempt in 0..<2 {
+            let response = try await analyzeImageWithCurrentEngine(url: url, prompt: prompt)
+
+            // JSON 추출: 응답에서 { } 블록만 꺼냄
+            let cleaned = extractJSON(from: response)
+
+            guard let data = cleaned.data(using: .utf8) else {
+                if attempt == 0 { continue }
+                fputs("[API] parse fail (no data): \(response.prefix(100))\n", stderr)
+                throw ClaudeVisionError.invalidResponse
+            }
+            do {
+                let classification = try JSONDecoder().decode(AIPhotoClassification.self, from: data)
+                return classification
+            } catch {
+                if attempt == 0 {
+                    fputs("[API] parse retry: \(error)\n", stderr)
+                    continue  // 재시도
+                }
+                fputs("[API] parse fail: \(error) — \(cleaned.prefix(150))\n", stderr)
+                throw ClaudeVisionError.invalidResponse
+            }
+        }
+        throw ClaudeVisionError.invalidResponse
+    }
+
+    /// 응답 텍스트에서 JSON 블록만 추출
+    private static func extractJSON(from text: String) -> String {
+        var s = text
             .replacingOccurrences(of: "```json", with: "")
             .replacingOccurrences(of: "```", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let data = cleaned.data(using: .utf8) else {
-            print("AI classification parse failed: \(cleaned.prefix(200))")
-            throw ClaudeVisionError.invalidResponse
+        // { } 블록 추출 (앞뒤 텍스트 제거)
+        if let startIdx = s.firstIndex(of: "{"),
+           let endIdx = s.lastIndex(of: "}") {
+            s = String(s[startIdx...endIdx])
         }
-        do {
-            let classification = try JSONDecoder().decode(AIPhotoClassification.self, from: data)
-            return classification
-        } catch {
-            print("AI classification parse failed: \(error) — \(cleaned.prefix(200))")
-            throw ClaudeVisionError.invalidResponse
-        }
+        return s
     }
 
     /// Batch classify multiple photos with progress
@@ -601,10 +624,10 @@ struct ClaudeVisionService {
         let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
         let batchSize: Int = {
             switch engine {
-            case "claudeHaiku": return 5      // 50 RPM, 빠름
+            case "claudeHaiku": return 5      // 50 RPM
             case "claudeSonnet": return 3     // 50 RPM, 느림
-            case "geminiFlash": return 3      // 10 RPM(무료), 1000 RPM(유료)
-            case "geminiPro": return 1        // 2 RPM(무료)
+            case "geminiFlash": return 10     // 1000 RPM(유료), 빠름
+            case "geminiPro": return 3        // 360 RPM(유료)
             default: return 3
             }
         }()
@@ -712,35 +735,23 @@ struct ClaudeVisionService {
 
     static func loadAndEncodeImage(from url: URL) throws -> Data {
         let jpeg: Data? = try autoreleasepool {
-            guard let image = NSImage(contentsOf: url) else {
+            // 빠른 경로: CGImageSource로 임베디드 썸네일 추출 (RAW 전체 디코딩 회피)
+            let targetPx = maxImageDimension
+            let opts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: targetPx,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailWithTransform: true
+            ]
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else {
                 throw ClaudeVisionError.imageLoadFailed
             }
 
-            guard let tiffData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData) else {
+            let bmp = NSBitmapImageRep(cgImage: cgImage)
+            // 분류용: 압축률 높여서 파일 크기 줄임 (전송 속도 향상)
+            guard let jpegData = bmp.representation(using: .jpeg, properties: [.compressionFactor: 0.6]) else {
                 throw ClaudeVisionError.encodingFailed
             }
-
-            let w = CGFloat(bitmap.pixelsWide)
-            let h = CGFloat(bitmap.pixelsHigh)
-            let scale = min(maxImageDimension / max(w, h), 1.0)
-            let newW = Int(w * scale)
-            let newH = Int(h * scale)
-
-            let resized = NSImage(size: NSSize(width: newW, height: newH))
-            resized.lockFocus()
-            NSGraphicsContext.current?.imageInterpolation = .high
-            image.draw(in: NSRect(x: 0, y: 0, width: newW, height: newH),
-                       from: NSRect(x: 0, y: 0, width: image.size.width, height: image.size.height),
-                       operation: .copy, fraction: 1.0)
-            resized.unlockFocus()
-
-            guard let data = resized.tiffRepresentation,
-                  let bmp = NSBitmapImageRep(data: data),
-                  let jpegData = bmp.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
-                throw ClaudeVisionError.encodingFailed
-            }
-
             return jpegData
         }
 
@@ -758,9 +769,9 @@ struct GeminiService {
     static var model: String {
         let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "geminiFlash"
         switch engine {
-        case "geminiPro": return "gemini-2.5-pro-preview-06-05"
-        case "geminiFlash": return "gemini-2.5-flash-preview-05-20"
-        default: return "gemini-2.5-flash-preview-05-20"
+        case "geminiPro": return "gemini-2.5-pro"
+        case "geminiFlash": return "gemini-2.5-flash"
+        default: return "gemini-2.5-flash"
         }
     }
 
@@ -817,6 +828,9 @@ struct GeminiService {
         }
 
         // Gemini 요청 바디: inline_data 형식
+        // 프롬프트에 JSON 출력 강제 지시 추가
+        let enforceJSON = prompt + "\n\n중요: 반드시 순수 JSON만 출력하세요. 설명, 마크다운, 코드블록 없이 { }만 출력하세요."
+
         let requestBody: [String: Any] = [
             "contents": [[
                 "parts": [
@@ -827,13 +841,14 @@ struct GeminiService {
                         ]
                     ],
                     [
-                        "text": prompt
+                        "text": enforceJSON
                     ]
                 ]
             ]],
             "generationConfig": [
-                "maxOutputTokens": 1500,
-                "temperature": 0.2
+                "maxOutputTokens": 2048,
+                "temperature": 0.1,
+                "responseMimeType": "application/json"  // JSON 출력 강제
             ]
         ]
 

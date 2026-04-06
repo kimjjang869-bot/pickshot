@@ -1127,12 +1127,8 @@ class PhotoStore: ObservableObject {
             let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
             AppLogger.log(.folder, "Recursive scan: \(photoCount) photos from all subfolders in \(String(format: "%.1f", phase1Elapsed))ms")
 
-            // 파일 수정일 기준 정렬 (오래된 순 — 여러 카메라 사진이 시간순으로 섞임)
-            let sorted = items.sorted { a, b in
-                if a.isParentFolder { return true }
-                if b.isParentFolder { return false }
-                return a.fileModDate < b.fileModDate
-            }
+            // 정렬은 filteredPhotos에서 sortMode에 따라 자동 적용
+            let sorted = items
 
             DispatchQueue.main.async {
                 guard self?.folderURL == url else { return }
@@ -2093,35 +2089,66 @@ class PhotoStore: ObservableObject {
                 self.photos = updated
                 self.selectedPhotoID = selectedID
 
-                // 완료 → 폴더 리로딩
-                let movedCount = results.count
-                if movedCount > 0, let base = baseURL {
-                    self.showToastMessage("📂 \(movedCount)장 분류 완료 → 폴더 정리됨")
+                // 완료 → 결과 생성 + 폴더 리로딩
+                let successCount = results.count
+                let errorCount = self.aiClassifyErrors.count
+                let totalCount = unclassified.count
+
+                // 카테고리별 통계
+                var categoryStats: [String: Int] = [:]
+                for (_, c) in results {
+                    categoryStats[c.category, default: 0] += 1
+                }
+                let sortedCats = categoryStats.sorted { $0.value > $1.value }
+
+                // 결과 메시지 생성
+                let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+                let cost = APIUsageTracker.shared.estimatedCostUSD
+                var msg = "━━━━ AI 분류 완료 ━━━━\n\n"
+                msg += "📊 전체: \(totalCount)장\n"
+                msg += "✅ 성공: \(successCount)장\n"
+                if errorCount > 0 {
+                    msg += "❌ 실패: \(errorCount)장\n"
+                }
+                msg += "🤖 엔진: \(engine)\n"
+                msg += "💰 비용: $\(String(format: "%.4f", cost))\n\n"
+
+                if !sortedCats.isEmpty {
+                    msg += "━━━━ 카테고리별 ━━━━\n"
+                    for (cat, count) in sortedCats {
+                        let pct = Int(Double(count) / Double(max(successCount, 1)) * 100)
+                        msg += "📁 \(cat): \(count)장 (\(pct)%)\n"
+                    }
+                }
+
+                if errorCount > 0 {
+                    msg += "\n━━━━ 실패 항목 ━━━━\n"
+                    for (filename, errMsg) in self.aiClassifyErrors.suffix(5) {
+                        msg += "⚠️ \(filename): \(errMsg)\n"
+                    }
+                    if errorCount > 5 {
+                        msg += "... 외 \(errorCount - 5)건\n"
+                    }
+                }
+
+                self.aiClassifyResultMessage = msg
+                self.showAIClassifyResult = true
+
+                if successCount > 0, let base = baseURL {
                     NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
                     self.loadFolder(base, restoreRatings: true)
                 }
             } catch {
-                print("AI Classification failed: \(error)")
-                self.aiClassifyErrorMessage = "AI 분류 실패: \(error.localizedDescription)"
-                self.showAIClassifyError = true
-            }
-            // 개별 사진 에러가 있으면 요약 표시
-            let errorCount = self.aiClassifyErrors.count
-            if errorCount > 0 {
-                let totalCount = unclassified.count
-                let successCount = totalCount - errorCount
-                var msg = "\(totalCount)장 중 \(successCount)장 성공, \(errorCount)장 실패"
-                // 마지막 에러 3개 표시
-                let recentErrors = self.aiClassifyErrors.suffix(3)
-                for (filename, errMsg) in recentErrors {
-                    msg += "\n- \(filename): \(errMsg)"
-                }
-                self.aiClassifyErrorMessage = msg
-                self.showAIClassifyError = true
+                self.aiClassifyResultMessage = "❌ AI 분류 실패\n\n\(error.localizedDescription)"
+                self.showAIClassifyResult = true
             }
             self.isAIClassifying = false
         }
     }
+
+    /// 분류 완료 결과 표시
+    @Published var showAIClassifyResult = false
+    @Published var aiClassifyResultMessage = ""
 
     /// 분류 후 폴더 정리 팝업
     @Published var showOrganizePrompt = false

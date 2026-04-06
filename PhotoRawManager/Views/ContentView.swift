@@ -336,10 +336,34 @@ struct ContentView: View {
         } message: {
             Text(importResultMessage)
         }
-        .alert("AI 분류 오류", isPresented: $store.showAIClassifyError) {
-            Button("확인") {}
-        } message: {
-            Text(store.aiClassifyErrorMessage)
+        .sheet(isPresented: $store.showAIClassifyResult) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("AI 분류 결과")
+                    .font(.headline)
+
+                ScrollView {
+                    Text(store.aiClassifyResultMessage)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 350)
+
+                HStack {
+                    Button("닫기") { store.showAIClassifyResult = false }
+                    Spacer()
+                    if store.aiClassifyErrors.count > 0 {
+                        Button("실패 항목 재시도") {
+                            store.showAIClassifyResult = false
+                            // 실패한 사진만 다시 분류 (aiCategory 없는 것)
+                            store.runAIClassification()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            .padding(20)
+            .frame(width: 450, height: 450)
         }
         .alert("AI 분류 완료", isPresented: $store.showOrganizePrompt) {
             Button("폴더 정리") { store.organizeByAICategory() }

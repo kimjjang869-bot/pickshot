@@ -792,11 +792,12 @@ struct PhotoPreviewView: View {
 
             // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
             store.onQuickPreview = { [self] url in
-                let isRapid = self.store.isKeyRepeat  // 투어박스/키 꾹 = true
+                // 빠른 탐색 중 썸네일 프리로딩 양보
+                ThumbnailLoader.shared.throttle()
                 // 캐시 히트 → 즉시 표시
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
-                } else if isRapid {
+                } else {
                     // 빠른 이동 중 캐시 미스 → 300px 초소형 썸네일 (메인 스레드 OK — 1~2ms)
                     let opts: [NSString: Any] = [
                         kCGImageSourceThumbnailMaxPixelSize: 300,
@@ -919,6 +920,8 @@ struct PhotoPreviewView: View {
             preloadWork = nil
             viewState.stableImageSize = Self.readImageDimensions(url: url)
             loadImageDirect(for: url, id: newID)
+            // 이동 완료 → 썸네일 프리로딩 복구
+            ThumbnailLoader.shared.unthrottle()
             if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
                 hiResWorkItem?.cancel()
                 let hWork = DispatchWorkItem { loadHiResForZoom() }

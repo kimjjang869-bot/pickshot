@@ -267,7 +267,16 @@ struct LazyThumbnailWrapper: View {
                 MultiFileDragView(photo: photo, store: store)
             )
             .onTapGesture { onTap() }
-            .contextMenu { PhotoContextMenu(photo: photo, store: store) }
+            .contextMenu {
+                if photo.isFolder || photo.isParentFolder {
+                    // 폴더 전용 간단 메뉴
+                    Button("Finder에서 열기") {
+                        NSWorkspace.shared.open(photo.jpgURL)
+                    }
+                } else {
+                    PhotoContextMenu(photo: photo, store: store)
+                }
+            }
         }
     }
 
@@ -317,7 +326,15 @@ struct LazyListRowWrapper: View {
                 return provider
             }
             .onTapGesture { onTap() }
-            .contextMenu { PhotoContextMenu(photo: photo, store: store) }
+            .contextMenu {
+                if photo.isFolder || photo.isParentFolder {
+                    Button("Finder에서 열기") {
+                        NSWorkspace.shared.open(photo.jpgURL)
+                    }
+                } else {
+                    PhotoContextMenu(photo: photo, store: store)
+                }
+            }
     }
 }
 
@@ -338,9 +355,9 @@ struct PhotoContextMenu: View {
     private static let recentFoldersKey = "recentCopyFolders"
 
     private var recentCopyFolders: [URL] {
+        // fileExists 체크 제거 — 메인 스레드 디스크 I/O 방지
         (UserDefaults.standard.stringArray(forKey: Self.recentFoldersKey) ?? [])
             .compactMap { URL(fileURLWithPath: $0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     private func addRecentFolder(_ url: URL) {
@@ -549,12 +566,6 @@ struct PhotoContextMenu: View {
             Label("새 폴더 만들기", systemImage: "folder.badge.plus")
         }
 
-        // 새 폴더 만들어 선택된 사진 이동
-        Button(action: {
-            createNewFolderAndMovePhotos()
-        }) {
-            Label("새 폴더 만들어 이동 (\(targetCount)장)", systemImage: "folder.badge.plus")
-        }
     }
 
     /// 현재 열려 있는 폴더 안에 새 폴더 생성
@@ -993,11 +1004,21 @@ class ThumbnailLoader {
     let queue = OperationQueue()
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
     private let lock = NSLock()
+    private var normalConcurrency: Int = 4
 
     init() {
-        // Default for local SSD
-        queue.maxConcurrentOperationCount = 4  // Low — prevent CPU/memory spike
+        queue.maxConcurrentOperationCount = 4
         queue.qualityOfService = .utility
+    }
+
+    /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮춤)
+    func throttle() {
+        queue.maxConcurrentOperationCount = 1
+    }
+
+    /// 탐색 멈추면 프리로딩 복구
+    func unthrottle() {
+        queue.maxConcurrentOperationCount = normalConcurrency
     }
 
     /// Auto-detect NAS/network volume and increase concurrency
@@ -1009,8 +1030,10 @@ class ThumbnailLoader {
         case .localSSD:
             isNetworkMode = false
             // RAW decode is CPU-heavy; too many concurrent = resource contention
-            queue.maxConcurrentOperationCount = min(ProcessInfo.processInfo.activeProcessorCount, 6)
-            AppLogger.log(.performance, "Local SSD: concurrency=\(queue.maxConcurrentOperationCount)")
+            let c = min(ProcessInfo.processInfo.activeProcessorCount, 12)
+            queue.maxConcurrentOperationCount = c
+            normalConcurrency = c
+            AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
         case .externalHDD:
             // HDD: seek time is bottleneck, moderate concurrency helps
             // Too many concurrent = HDD head thrashing, too few = slow
