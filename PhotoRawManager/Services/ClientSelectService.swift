@@ -20,6 +20,16 @@ class ClientSelectService: ObservableObject {
     @Published var clientEmail = ""
     @Published var shareLink: String?
     @Published var viewerLink: String?
+    // 원본 업로드 옵션
+    var uploadOriginal = false
+    var originalResolution = 2000
+    var filePrefix = ""
+    @Published var originalZipFileId: String?
+
+    var viewerBaseURL: String {
+        UserDefaults.standard.string(forKey: "clientSelectViewerURL")
+            ?? "https://kimjjang869-bot.github.io/pickshot-viewer"
+    }
     @Published var qrCodeImage: NSImage?
     @Published var driveFolderID: String?
     @Published var accessMode: AccessMode = .publicLink
@@ -50,10 +60,33 @@ class ClientSelectService: ObservableObject {
 
     func startSession(name: String, client: String, email: String,
                       photos: [PhotoItem], accessMode: AccessMode) {
-        guard let token = GoogleDriveService.savedAccessToken else {
+        fputs("[CLIENT] startSession: name=\(name), photos=\(photos.count)\n", stderr)
+
+        // 토큰 갱신 시도 후 시작
+        let sem = DispatchSemaphore(value: 0)
+        var finalToken: String?
+
+        if let token = GoogleDriveService.savedAccessToken {
+            finalToken = token
+            // 먼저 토큰 갱신 시도 (만료 대비)
+            GoogleDriveService.refreshAccessToken { newToken, error in
+                if let newToken = newToken {
+                    fputs("[CLIENT] 토큰 갱신 성공\n", stderr)
+                    finalToken = newToken
+                } else {
+                    fputs("[CLIENT] 토큰 갱신 실패 (기존 토큰 사용): \(error?.localizedDescription ?? "")\n", stderr)
+                }
+                sem.signal()
+            }
+            sem.wait()
+        }
+
+        guard let token = finalToken ?? GoogleDriveService.savedAccessToken else {
+            fputs("[CLIENT] ❌ Google Drive 토큰 없음\n", stderr)
             errorMessage = "Google Drive 로그인이 필요합니다"
             return
         }
+        fputs("[CLIENT] 토큰 준비: \(token.prefix(10))...\n", stderr)
 
         // 상태 초기화
         sessionName = name
@@ -96,19 +129,26 @@ class ClientSelectService: ObservableObject {
         let folderSemaphore = DispatchSemaphore(value: 0)
         var folderId: String?
 
+        fputs("[CLIENT] 폴더 생성 시도: \(sessionName)\n", stderr)
         GoogleDriveService.createFolder(name: sessionName, accessToken: token) { id, error in
             folderId = id
             if let error = error {
+                fputs("[CLIENT] ❌ 폴더 생성 실패: \(error.localizedDescription)\n", stderr)
                 DispatchQueue.main.async { [weak self] in
                     self?.errorMessage = "폴더 생성 실패: \(error.localizedDescription)"
                     self?.isUploading = false
                 }
+            } else {
+                fputs("[CLIENT] ✅ 폴더 생성: \(id ?? "nil")\n", stderr)
             }
             folderSemaphore.signal()
         }
         folderSemaphore.wait()
 
-        guard let folderID = folderId, !cancelled else { return }
+        guard let folderID = folderId, !cancelled else {
+            fputs("[CLIENT] ❌ 폴더 ID 없음 또는 취소됨\n", stderr)
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.driveFolderID = folderID
@@ -176,8 +216,21 @@ class ClientSelectService: ObservableObject {
 
         guard !cancelled else { return }
 
+        // 3.5. 원본 파일 ZIP 업로드 (옵션)
+        if uploadOriginal && !cancelled {
+            fputs("[CLIENT] 원본 ZIP 생성 중 (\(originalResolution)px)...\n", stderr)
+            DispatchQueue.main.async { [weak self] in
+                self?.uploadSpeed = "원본 ZIP 생성 중..."
+            }
+            if let zipId = createAndUploadOriginalZip(photos: photos, folderId: folderID, token: token, tempDir: tempDir) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.originalZipFileId = zipId
+                }
+            }
+        }
+
         // 4. manifest.json 생성 + 업로드
-        uploadManifest(photos: uploadedFiles, folderId: folderID, token: token)
+        let manifestId = uploadManifest(photos: uploadedFiles, folderId: folderID, token: token)
 
         // 5. 링크 생성
         let linkSemaphore = DispatchSemaphore(value: 0)
@@ -188,7 +241,34 @@ class ClientSelectService: ObservableObject {
                 // 웹 뷰어 링크 생성
                 let encodedName = self?.sessionName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                 let encodedClient = self?.clientName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                self?.viewerLink = "https://kimjjang869-bot.github.io/pickshot-viewer/?session=\(folderID)&name=\(encodedName)&client=\(encodedClient)"
+                // manifest를 Base64로 인코딩해서 URL 해시에 포함 (CORS 문제 완전 회피)
+                var viewerURL = "\(self?.viewerBaseURL ?? "https://kimjjang869-bot.github.io/pickshot-viewer")/?session=\(folderID)&name=\(encodedName)&client=\(encodedClient)"
+                if let mid = manifestId {
+                    viewerURL += "&manifest=\(mid)"
+                }
+                // 사진 수가 적으면 (100장 이하) Base64 data도 추가 (CORS 우회)
+                if uploadedFiles.count <= 100 {
+                    let miniManifest: [String: Any] = [
+                        "sessionName": self?.sessionName ?? "",
+                        "clientName": self?.clientName ?? "",
+                        "totalPhotos": uploadedFiles.count,
+                        "photos": uploadedFiles.map { info -> [String: Any] in
+                            let fid = info["driveFileId"] as? String ?? ""
+                            return [
+                                "filename": info["filename"] ?? "",
+                                "originalFilename": info["originalFilename"] ?? "",
+                                "driveFileId": fid,
+                                "thumbUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w300",
+                                "fullUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w1200"
+                            ]
+                        }
+                    ]
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: miniManifest),
+                       let b64 = jsonData.base64EncodedString().addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                        viewerURL += "#data=\(b64)"
+                    }
+                }
+                self?.viewerLink = viewerURL
 
                 // QR 코드 생성
                 if let viewerLink = self?.viewerLink {
@@ -199,10 +279,12 @@ class ClientSelectService: ObservableObject {
         }
         linkSemaphore.wait()
 
-        // 완료
+        // 완료 → 결과 창 자동 열기
         DispatchQueue.main.async { [weak self] in
             self?.isUploading = false
             self?.uploadSpeed = "완료"
+            self?.showSetup = true  // 완료 창 자동 표시
+            fputs("[CLIENT] ✅ 업로드 완료: \(self?.uploadDone ?? 0)장, 링크: \(self?.viewerLink ?? "없음")\n", stderr)
         }
     }
 
@@ -222,8 +304,13 @@ class ClientSelectService: ObservableObject {
 
         guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else { return nil }
 
-        // JPEG 0.8 품질로 저장
-        let fileName = String(format: "%04d_%@.jpg", index + 1, sourceURL.deletingPathExtension().lastPathComponent)
+        // 파일명: 접두어 있으면 "접두어_0001.jpg", 없으면 "0001_원본이름.jpg"
+        let fileName: String
+        if !filePrefix.isEmpty {
+            fileName = String(format: "%@_%04d.jpg", filePrefix, index + 1)
+        } else {
+            fileName = String(format: "%04d_%@.jpg", index + 1, sourceURL.deletingPathExtension().lastPathComponent)
+        }
         let destURL = tempDir.appendingPathComponent(fileName)
 
         guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, "public.jpeg" as CFString, 1, nil) else { return nil }
@@ -243,8 +330,22 @@ class ClientSelectService: ObservableObject {
     private func setFolderPermissions(folderId: String, token: String) {
         switch accessMode {
         case .publicLink:
-            // 누구나 접근 가능 (GoogleDriveService.createShareLink에서 처리)
-            break
+            // 누구나 접근 가능 — 폴더에 공개 읽기 권한 설정
+            guard let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(folderId)/permissions") else { return }
+            var pubReq = URLRequest(url: permURL)
+            pubReq.httpMethod = "POST"
+            pubReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            pubReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let pubBody: [String: Any] = ["role": "reader", "type": "anyone"]
+            pubReq.httpBody = try? JSONSerialization.data(withJSONObject: pubBody)
+            let pubSem = DispatchSemaphore(value: 0)
+            URLSession.shared.dataTask(with: pubReq) { data, response, _ in
+                if let http = response as? HTTPURLResponse {
+                    fputs("[CLIENT] 공개 권한 설정: HTTP \(http.statusCode)\n", stderr)
+                }
+                pubSem.signal()
+            }.resume()
+            pubSem.wait()
         case .emailRestricted:
             guard !clientEmail.isEmpty else { return }
             // 특정 이메일만 접근 가능
@@ -271,20 +372,27 @@ class ClientSelectService: ObservableObject {
 
     // MARK: - Manifest 업로드
 
-    private func uploadManifest(photos: [[String: Any]], folderId: String, token: String) {
+    @discardableResult
+    private func uploadManifest(photos: [[String: Any]], folderId: String, token: String) -> String? {
+        var manifestFileId: String?
         let manifest: [String: Any] = [
             "version": "1.0",
             "sessionName": sessionName,
             "clientName": clientName,
             "clientEmail": clientEmail,
+            "originalZipFileId": originalZipFileId ?? "",
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "totalPhotos": uploadTotal,
             "driveFolder": folderId,
             "photos": photos.map { info -> [String: Any] in
-                [
+                let fileId = info["driveFileId"] as? String ?? ""
+                return [
                     "index": info["index"] ?? 0,
                     "filename": info["filename"] ?? "",
                     "originalFilename": info["originalFilename"] ?? "",
+                    "driveFileId": fileId,
+                    "thumbUrl": "https://drive.google.com/thumbnail?id=\(fileId)&sz=w300",
+                    "fullUrl": "https://drive.google.com/thumbnail?id=\(fileId)&sz=w1200",
                     "selected": false,
                     "comments": [] as [Any],
                     "annotations": [] as [Any]
@@ -292,19 +400,96 @@ class ClientSelectService: ObservableObject {
             }
         ]
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) else { return }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) else { return nil }
 
         // 임시 파일로 저장 후 업로드
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("manifest.json")
         try? jsonData.write(to: tempURL)
 
         let sem = DispatchSemaphore(value: 0)
-        GoogleDriveService.uploadFile(fileURL: tempURL, folderId: folderId, accessToken: token) { _, _ in
+        GoogleDriveService.uploadFile(fileURL: tempURL, folderId: folderId, accessToken: token) { result, _ in
+            manifestFileId = result?.fileId
             sem.signal()
         }
         sem.wait()
 
         try? FileManager.default.removeItem(at: tempURL)
+        fputs("[CLIENT] manifest 업로드: \(manifestFileId ?? "실패")\n", stderr)
+        return manifestFileId
+    }
+
+    // MARK: - 원본 ZIP 생성 + 업로드
+
+    private func createAndUploadOriginalZip(photos: [PhotoItem], folderId: String, token: String, tempDir: URL) -> String? {
+        let zipDir = tempDir.appendingPathComponent("originals")
+        try? FileManager.default.createDirectory(at: zipDir, withIntermediateDirectories: true)
+
+        // 사진 리사이즈 (원본 해상도)
+        for (index, photo) in photos.enumerated() {
+            guard !cancelled else { break }
+            autoreleasepool {
+                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil) else { return }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: originalResolution,
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return }
+
+                let name: String
+                if !filePrefix.isEmpty {
+                    name = String(format: "%@_%04d.jpg", filePrefix, index + 1)
+                } else {
+                    name = String(format: "%04d_%@.jpg", index + 1, photo.jpgURL.deletingPathExtension().lastPathComponent)
+                }
+                let destURL = zipDir.appendingPathComponent(name)
+                guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+                CGImageDestinationAddImage(dest, thumb, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+                CGImageDestinationFinalize(dest)
+            }
+        }
+
+        // ZIP 압축
+        let zipName = "\(sessionName)_원본.zip"
+        let zipURL = tempDir.appendingPathComponent(zipName)
+        let coordinator = NSFileCoordinator()
+        var zipError: NSError?
+
+        coordinator.coordinate(readingItemAt: zipDir, options: .forUploading, error: &zipError) { zipTempURL in
+            try? FileManager.default.moveItem(at: zipTempURL, to: zipURL)
+        }
+
+        guard FileManager.default.fileExists(atPath: zipURL.path) else {
+            fputs("[CLIENT] ❌ ZIP 생성 실패\n", stderr)
+            return nil
+        }
+
+        let zipSize = (try? FileManager.default.attributesOfItem(atPath: zipURL.path)[.size] as? Int64) ?? 0
+        fputs("[CLIENT] ZIP 생성: \(zipName) (\(zipSize / 1024 / 1024)MB)\n", stderr)
+
+        // 업로드
+        DispatchQueue.main.async { [weak self] in
+            self?.uploadSpeed = "원본 ZIP 업로드 중..."
+        }
+
+        var fileId: String?
+        let sem = DispatchSemaphore(value: 0)
+        GoogleDriveService.uploadFile(fileURL: zipURL, folderId: folderId, accessToken: token) { result, error in
+            fileId = result?.fileId
+            if let error = error {
+                fputs("[CLIENT] ❌ ZIP 업로드 실패: \(error.localizedDescription)\n", stderr)
+            } else {
+                fputs("[CLIENT] ✅ ZIP 업로드: \(fileId ?? "")\n", stderr)
+            }
+            sem.signal()
+        }
+        sem.wait()
+
+        // 정리
+        try? FileManager.default.removeItem(at: zipDir)
+        try? FileManager.default.removeItem(at: zipURL)
+
+        return fileId
     }
 
     // MARK: - .pickshot 파일 가져오기

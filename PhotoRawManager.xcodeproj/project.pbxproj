@@ -472,6 +472,8 @@
 				AE10001 /* AIEnhanceService.swift in Sources */,
 				PS10001 /* PictureStyleService.swift in Sources */,
 				PS10003 /* PictureStylePreviewView.swift in Sources */,
+				CS10001 /* ClientSelectService.swift in Sources */,
+				CS10002 /* ClientSelectSetupView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

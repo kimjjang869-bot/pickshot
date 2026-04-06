@@ -206,6 +206,7 @@ class GoogleDriveService {
         if let folderId = folderId, !folderId.isEmpty {
             metadata["parents"] = [folderId]
         }
+        fputs("[GDRIVE] upload \(fileName) → folder=\(folderId ?? "ROOT")\n", stderr)
 
         guard let metadataJSON = try? JSONSerialization.data(withJSONObject: metadata) else {
             completion(nil, APIError(message: "메타데이터 생성 실패"))
@@ -369,10 +370,18 @@ class GoogleDriveService {
                 return
             }
 
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            if let httpResponse = response as? HTTPURLResponse {
+                fputs("[GDRIVE] createFolder HTTP \(httpResponse.statusCode)\n", stderr)
+            }
+            guard let data = data else {
+                completion(nil, APIError(message: "응답 데이터 없음"))
+                return
+            }
+            let responseStr = String(data: data, encoding: .utf8) ?? ""
+            fputs("[GDRIVE] createFolder response: \(responseStr)\n", stderr)
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let folderId = json["id"] as? String else {
-                completion(nil, APIError(message: "폴더 생성 실패"))
+                completion(nil, APIError(message: "폴더 생성 실패: \(responseStr.prefix(200))"))
                 return
             }
 

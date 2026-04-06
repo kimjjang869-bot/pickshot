@@ -14,6 +14,9 @@ struct ClientSelectSetupView: View {
     @State private var clientEmail = ""
     @State private var accessMode: ClientSelectService.AccessMode = .publicLink
     @State private var linkCopied = false
+    @State private var uploadOriginal = false
+    @State private var originalResolution = 2000
+    @State private var filePrefix = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -155,13 +158,68 @@ struct ClientSelectSetupView: View {
                     }
                 }
 
+                // 파일명 변경
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("파일 이름 (선택)")
+                        .font(.system(size: 12, weight: .medium))
+                    HStack {
+                        TextField("예: 뜜_나나_루카루카", text: $filePrefix)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 13))
+                        Text("_0001.jpg")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    if !filePrefix.isEmpty {
+                        Text("미리보기: \(filePrefix)_0001.jpg")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.purple)
+                    }
+                }
+
+                Divider()
+
+                // 원본 파일 업로드 옵션
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $uploadOriginal) {
+                        HStack {
+                            Image(systemName: "arrow.down.doc.fill")
+                                .foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("원본 파일 업로드 (다운로드용)")
+                                    .font(.system(size: 12, weight: .medium))
+                                Text("리사이즈 + ZIP 압축 → 클라이언트가 다운로드 가능")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+
+                    if uploadOriginal {
+                        HStack {
+                            Text("원본 해상도")
+                                .font(.system(size: 11))
+                            Picker("", selection: $originalResolution) {
+                                Text("1200px").tag(1200)
+                                Text("2000px").tag(2000)
+                                Text("2500px").tag(2500)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 220)
+                        }
+                    }
+                }
+
+                Divider()
+
                 // 사진 수
                 HStack {
                     Image(systemName: "photo.on.rectangle.angled")
                         .foregroundColor(.purple)
                     Text("\(photoCount)장 업로드 예정")
                         .font(.system(size: 13, weight: .medium))
-                    Text("(1200px 리사이즈)")
+                    Text("(셀렉용 1200px\(uploadOriginal ? " + 원본 \(originalResolution)px ZIP" : ""))")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -338,6 +396,9 @@ struct ClientSelectSetupView: View {
     private func startUpload() {
         let name = sessionName.isEmpty ? defaultSessionName : sessionName
         let photos = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        service.filePrefix = filePrefix
+        service.uploadOriginal = uploadOriginal
+        service.originalResolution = originalResolution
         service.startSession(
             name: name,
             client: clientName,

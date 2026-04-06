@@ -155,6 +155,15 @@ extension ContentView {
                     .tint(.teal)
                     .help("리사이즈 + 워터마크 일괄 처리")
 
+                    Button(action: { ClientSelectService.shared.showSetup = true }) {
+                        Label("클라이언트 셀렉", systemImage: "person.crop.rectangle")
+                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.pink)
+                    .help("클라이언트에게 사진 셀렉 공유")
+
                     // Analysis stop button (only visible when analyzing)
                     if store.isAnalyzing {
                         Button(action: { store.stopAnalysis() }) {

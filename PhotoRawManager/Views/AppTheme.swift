@@ -67,13 +67,11 @@ enum AppTheme {
     static let toolbarButtonBg = Color.gray.opacity(0.08)
     static let toolbarButtonActiveBg = accent
 
-    // MARK: - 해상도 기반 스케일 팩터
-    // 기준: 현재 화면의 논리 해상도 기반 (3200px = 1.0x)
-    // 1440 = 0.8x, 1920 = 0.85x, 2560 = 0.9x, 3200 = 1.0x, 3840 = 1.1x
-    static var displayScale: CGFloat {
+    // MARK: - 해상도 기반 스케일 팩터 (앱 시작 시 1회 계산 — 포커스 변경 시 안 바뀜)
+    static let displayScale: CGFloat = {
         let screenW = NSScreen.main?.frame.width ?? 3200
         return max(0.8, min(1.2, screenW / 3200.0))
-    }
+    }()
 
     /// 해상도별 자동 조정값
     static func scaled(_ base: CGFloat) -> CGFloat {
