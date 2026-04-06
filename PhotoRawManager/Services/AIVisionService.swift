@@ -482,38 +482,68 @@ struct ClaudeVisionService {
     }
 
     /// AI 기반 스마트 분류 - 행사/이벤트/상업 사진에 최적화
-    static func classifyPhoto(url: URL) async throws -> AIPhotoClassification {
-        let response = try await analyzeImage(url: url, prompt: """
-        당신은 행사/이벤트/상업 사진 전문 에디터입니다. 이 사진을 분류해주세요.
+    /// 기본 프롬프트 (행사/이벤트)
+    static let defaultClassifyPrompt = """
+    당신은 행사/이벤트/상업 사진 전문 에디터입니다. 이 사진을 분류해주세요.
 
-        분류 기준:
-        [category] 대분류 - 반드시 아래 중 하나:
-        - 클린샷: 사람 없이 공간/제품/세트만 보이는 깨끗한 구도
-        - 인물: 특정 인물이 주 피사체 (1~3명)
-        - 그룹: 소규모 그룹 포즈 (4~10명)
-        - 군중: 많은 사람, 관객석, 대규모 모임
-        - 무대: 공연/발표/MC/무대 위 장면
-        - 분위기: 공간 전체 분위기, 조명, 장식 등
-        - 디테일: 음식, 소품, 간판, 클로즈업
-        - 비하인드: 준비 과정, 리허설, 백스테이지
-        - 기념: 포토월, 시상, 기념촬영, 공식 행사
+    분류 기준:
+    [category] 대분류 - 반드시 아래 중 하나:
+    - 클린샷: 사람 없이 공간/제품/세트만 보이는 깨끗한 구도
+    - 인물: 특정 인물이 주 피사체 (1~3명)
+    - 그룹: 소규모 그룹 포즈 (4~10명)
+    - 군중: 많은 사람, 관객석, 대규모 모임
+    - 무대: 공연/발표/MC/무대 위 장면
+    - 분위기: 공간 전체 분위기, 조명, 장식 등
+    - 디테일: 음식, 소품, 간판, 클로즈업
+    - 비하인드: 준비 과정, 리허설, 백스테이지
+    - 기념: 포토월, 시상, 기념촬영, 공식 행사
 
-        [subcategory] 세부 분류 (예: "MC토크", "단체기념", "포토월", "무대공연", "관객반응", "음식클로즈업")
-        [mood] 분위기 (예: "역동적", "차분한", "화려한", "감성적", "긴장감", "축제")
-        [peopleCount] "없음"/"1명"/"2-3명"/"4-10명"/"다수"
-        [cameraAwareness] "정면응시"/"자연스러운"/"무의식"/"뒷모습"
-        [usability] "즉시사용"/"편집후사용"/"참고용"/"삭제후보"
-          - 즉시사용: 초점 맞고, 구도 좋고, 표정 자연스러운
-          - 편집후사용: 약간의 보정 필요하지만 좋은 컷
-          - 참고용: 기록 목적, 특별히 좋진 않지만 보관
-          - 삭제후보: 흔들림, 초점 나감, 중복, 눈 감음
-        [bestFor] 용도 (예: "SNS게시", "보도자료", "포트폴리오", "클라이언트납품", "내부기록")
-        [score] 0~100 활용도 점수 (구도+초점+표정+조명+활용성 종합)
-        [description] 사진 한 줄 설명
+    [subcategory] 세부 분류 (예: "MC토크", "단체기념", "포토월", "무대공연", "관객반응", "음식클로즈업")
+    [mood] 분위기 (예: "역동적", "차분한", "화려한", "감성적", "긴장감", "축제")
+    [peopleCount] "없음"/"1명"/"2-3명"/"4-10명"/"다수"
+    [cameraAwareness] "정면응시"/"자연스러운"/"무의식"/"뒷모습"
+    [usability] "즉시사용"/"편집후사용"/"참고용"/"삭제후보"
+    [bestFor] 용도 (예: "SNS게시", "보도자료", "포트폴리오", "클라이언트납품", "내부기록")
+    [score] 0~100 활용도 점수 (구도+초점+표정+조명+활용성 종합)
+    [description] 사진 한 줄 설명
 
-        순수 JSON만 출력:
-        {"category":"","subcategory":"","mood":"","peopleCount":"","cameraAwareness":"","usability":"","bestFor":"","description":"","score":0}
-        """)
+    순수 JSON만 출력:
+    {"category":"","subcategory":"","mood":"","peopleCount":"","cameraAwareness":"","usability":"","bestFor":"","description":"","score":0}
+    """
+
+    /// 프리셋 프롬프트 목록
+    static let classifyPresets: [(name: String, prompt: String)] = [
+        ("행사/이벤트", defaultClassifyPrompt),
+        ("웨딩", """
+        웨딩 사진 전문가로서 이 사진을 분류해주세요.
+        [category] 대분류: 본식/피로연/스냅/준비/야외/스튜디오/단체/디테일
+        [subcategory] 세부 (예: "신랑신부입장", "부케토스", "케이크커팅", "축가")
+        [mood] 분위기, [usability] 즉시사용/편집후사용/참고용/삭제후보
+        [bestFor] 용도, [score] 0~100, [description] 한 줄 설명
+        순수 JSON만: {"category":"","subcategory":"","mood":"","usability":"","bestFor":"","description":"","score":0}
+        """),
+        ("여행", """
+        여행 사진 에디터로서 이 사진을 분류해주세요.
+        [category] 대분류: 풍경/건축/음식/거리/인물/야경/해변/산/문화재/교통
+        [subcategory] 세부 설명, [mood] 분위기
+        [usability] 즉시사용/편집후사용/참고용/삭제후보
+        [bestFor] 용도, [score] 0~100, [description] 한 줄 설명
+        순수 JSON만: {"category":"","subcategory":"","mood":"","usability":"","bestFor":"","description":"","score":0}
+        """),
+        ("제품/상품", """
+        상업 제품 사진 전문가로서 이 사진을 분류해주세요.
+        [category] 대분류: 제품단독/라이프스타일/디테일/패키지/모델착용/배경/비교
+        [subcategory] 세부, [mood] 분위기
+        [usability] 즉시사용/편집후사용/참고용/삭제후보
+        [bestFor] 용도 (쇼핑몰/SNS/카탈로그/상세페이지)
+        [score] 0~100, [description] 한 줄 설명
+        순수 JSON만: {"category":"","subcategory":"","mood":"","usability":"","bestFor":"","description":"","score":0}
+        """),
+    ]
+
+    static func classifyPhoto(url: URL, customPrompt: String? = nil) async throws -> AIPhotoClassification {
+        let prompt = customPrompt ?? defaultClassifyPrompt
+        let response = try await analyzeImage(url: url, prompt: prompt)
 
         let cleaned = response
             .replacingOccurrences(of: "```json", with: "")
@@ -536,6 +566,7 @@ struct ClaudeVisionService {
     /// Batch classify multiple photos with progress
     static func batchClassify(
         photos: [PhotoItem],
+        customPrompt: String? = nil,
         progress: @escaping (Int, Int) -> Void
     ) async throws -> [UUID: AIPhotoClassification] {
         var results: [UUID: AIPhotoClassification] = [:]
@@ -551,7 +582,7 @@ struct ClaudeVisionService {
                 for photo in batch {
                     group.addTask {
                         do {
-                            let classification = try await classifyPhoto(url: photo.jpgURL)
+                            let classification = try await classifyPhoto(url: photo.jpgURL, customPrompt: customPrompt)
                             return (photo.id, classification)
                         } catch {
                             return (photo.id, nil)

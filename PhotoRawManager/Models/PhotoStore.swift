@@ -221,6 +221,7 @@ class PhotoStore: ObservableObject {
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
     @Published var showSmartSelect: Bool = false
+    @Published var showCustomPrompt: Bool = false
     @Published var showStats: Bool = false
     @Published var showAutoCull: Bool = false
     @Published var showTimeline: Bool = false
@@ -1945,17 +1946,22 @@ class PhotoStore: ObservableObject {
 
     // MARK: - AI Smart Classification
 
-    func runAIClassification() {
+    /// 커스텀 프롬프트 저장 (UI에서 설정)
+    @Published var aiClassifyCustomPrompt: String = ""
+
+    func runAIClassification(customPrompt: String? = nil) {
         guard !photos.isEmpty, !isAIClassifying, ClaudeVisionService.hasAPIKey else { return }
         isAIClassifying = true
         aiClassifyProgress = (0, photos.count)
 
         let photoSnapshots = filteredPhotos
+        let prompt = customPrompt?.isEmpty == false ? customPrompt : nil
 
         Task { @MainActor in
             do {
                 let results = try await ClaudeVisionService.batchClassify(
                     photos: photoSnapshots,
+                    customPrompt: prompt,
                     progress: { [weak self] done, total in
                         self?.aiClassifyProgress = (done, total)
                     }

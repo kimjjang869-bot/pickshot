@@ -696,18 +696,36 @@ extension ContentView {
 
                 Divider()
 
-                // Run AI classification
-                Button(action: {
-                    if store.isAIClassifying {
-                        DisabledGuide.showAnalysisInProgress()
-                    } else if !ClaudeVisionService.hasAPIKey {
-                        DisabledGuide.showAIDisabled()
-                    } else {
-                        store.runAIClassification()
+                // 프리셋 프롬프트로 분류 실행
+                Section("🤖 AI 분류 실행") {
+                    ForEach(ClaudeVisionService.classifyPresets, id: \.name) { preset in
+                        Button(action: {
+                            if store.isAIClassifying {
+                                DisabledGuide.showAnalysisInProgress()
+                            } else if !ClaudeVisionService.hasAPIKey {
+                                DisabledGuide.showAIDisabled()
+                            } else {
+                                store.runAIClassification(customPrompt: preset.prompt)
+                            }
+                        }) {
+                            Label(preset.name, systemImage: "sparkles")
+                        }
+                        .disabled(store.isAIClassifying)
                     }
-                }) {
-                    Label(store.isAIClassifying ? "분류 중..." : "🤖 AI 스마트 분류 실행",
-                          systemImage: "sparkles")
+
+                    // 커스텀 프롬프트 실행
+                    Button(action: {
+                        if store.isAIClassifying {
+                            DisabledGuide.showAnalysisInProgress()
+                        } else if !ClaudeVisionService.hasAPIKey {
+                            DisabledGuide.showAIDisabled()
+                        } else {
+                            store.showCustomPrompt = true
+                        }
+                    }) {
+                        Label("커스텀 프롬프트...", systemImage: "text.cursor")
+                    }
+                    .disabled(store.isAIClassifying)
                 }
             } label: {
                 toolbarButton(

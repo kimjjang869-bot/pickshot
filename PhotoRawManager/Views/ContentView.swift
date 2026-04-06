@@ -306,6 +306,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
+        .sheet(isPresented: $store.showCustomPrompt) { CustomPromptView(store: store) }
         .overlay(alignment: .bottom) {
             VStack(spacing: 8) {
                 ForEach(memoryCardService.sessions.filter { !$0.isComplete }) { session in
@@ -528,6 +529,73 @@ struct BackupProgressBar: View {
                 }
         )
         .offset(x: position.x, y: position.y)
+    }
+}
+
+// MARK: - 커스텀 프롬프트 입력
+
+struct CustomPromptView: View {
+    @ObservedObject var store: PhotoStore
+    @State private var promptText: String = ""
+    @State private var selectedPreset: Int = -1
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("AI 분류 커스텀 프롬프트")
+                .font(.headline)
+
+            Text("사진을 어떻게 분류할지 자유롭게 작성하세요")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // 프리셋 버튼
+            HStack(spacing: 6) {
+                Text("프리셋:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                ForEach(Array(ClaudeVisionService.classifyPresets.enumerated()), id: \.offset) { idx, preset in
+                    Button(preset.name) {
+                        promptText = preset.prompt
+                        selectedPreset = idx
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(selectedPreset == idx ? .accentColor : .secondary)
+                }
+            }
+
+            // 프롬프트 입력
+            TextEditor(text: $promptText)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(minHeight: 200)
+                .border(Color.gray.opacity(0.3))
+                .onChange(of: promptText) { _ in selectedPreset = -1 }
+
+            Text("⚠️ JSON 출력 형식을 포함해야 결과가 정상적으로 파싱됩니다")
+                .font(.system(size: 10))
+                .foregroundColor(.orange)
+
+            HStack {
+                Button("취소") { dismiss() }
+                Spacer()
+                Text("\(store.filteredPhotos.count)장 분류")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Button("분류 실행") {
+                    store.runAIClassification(customPrompt: promptText)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 600, height: 450)
+        .onAppear {
+            promptText = ClaudeVisionService.defaultClassifyPrompt
+            selectedPreset = 0
+        }
     }
 }
 
