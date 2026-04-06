@@ -92,6 +92,8 @@
 		BP10003 /* BatchProcessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10004 /* BatchProcessView.swift */; };
 		SC10001 /* SmartCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SC10002 /* SmartCropService.swift */; };
 			AE10001 /* AIEnhanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE10002 /* AIEnhanceService.swift */; };
+		PS10001 /* PictureStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10002 /* PictureStyleService.swift */; };
+		PS10003 /* PictureStylePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10004 /* PictureStylePreviewView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -179,6 +181,8 @@
 		BP10004 /* BatchProcessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessView.swift; sourceTree = "<group>"; };
 		SC10002 /* SmartCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCropService.swift; sourceTree = "<group>"; };
 			AE10002 /* AIEnhanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEnhanceService.swift; sourceTree = "<group>"; };
+		PS10002 /* PictureStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStyleService.swift; sourceTree = "<group>"; };
+		PS10004 /* PictureStylePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStylePreviewView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -265,6 +269,7 @@
 				UG10002,
 				CR10002,
 				BP10004 /* BatchProcessView.swift */,
+				PS10004 /* PictureStylePreviewView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -302,6 +307,7 @@
 				SR10002 /* SuperResolutionService.swift */,
 				SC10002 /* SmartCropService.swift */,
 				AE10002 /* AIEnhanceService.swift */,
+				PS10002 /* PictureStyleService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -458,6 +464,8 @@
 				CR10001 /* CropView.swift in Sources */,
 				SC10001 /* SmartCropService.swift in Sources */,
 				AE10001 /* AIEnhanceService.swift in Sources */,
+				PS10001 /* PictureStyleService.swift in Sources */,
+				PS10003 /* PictureStylePreviewView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -591,7 +599,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -619,7 +627,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

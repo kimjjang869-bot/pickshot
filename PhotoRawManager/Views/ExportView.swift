@@ -12,6 +12,13 @@ struct ExportView: View {
     @State private var jpgFolderName: String = "JPG"
     @State private var rawFolderName: String = "RAW"
 
+    // 중복 처리 상태
+    @State private var showDuplicateAlert = false
+    @State private var duplicateFiles: [String] = []
+    @State private var pendingExportDestination: URL?
+    @State private var pendingExportTarget: ExportTarget?
+    @State private var pendingPhotos: [PhotoItem] = []
+
     enum ExportMode: String, CaseIterable {
         case selected = "선택된 사진"
         case rated = "별점 있는 사진만"
@@ -114,7 +121,7 @@ struct ExportView: View {
                         Spacer()
                     }
 
-                    // Progress
+                    // Progress (변환 진행은 시트 내에서도 표시)
                     if store.isConverting {
                         VStack(spacing: 4) {
                             HStack(spacing: 8) {
@@ -124,7 +131,7 @@ struct ExportView: View {
                                 Text("\(store.conversionDone)/\(store.conversionTotal)")
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                     .foregroundColor(.orange)
-                                    .frame(width: 70)
+                                    .frame(minWidth: 80, alignment: .trailing)
                                 Button(action: { store.conversionCancelled = true }) {
                                     Image(systemName: "stop.fill")
                                         .font(.system(size: 10))
@@ -253,10 +260,23 @@ struct ExportView: View {
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
 
-            if store.isExporting {
-                ProgressView(value: store.exportProgress) {
-                    Text("복사 중... \(Int(store.exportProgress * 100))%")
+            // 백그라운드 내보내기 진행 중 표시
+            if store.bgExportActive {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                    Text("백그라운드에서 내보내기 진행 중...")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                    Text("\(store.bgExportDone)/\(store.bgExportTotal)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blue)
+                        .frame(minWidth: 80, alignment: .trailing)
                 }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(Color.blue.opacity(0.08))
+                .cornerRadius(6)
             }
 
             if let result = copyResult, isComplete {
@@ -274,6 +294,12 @@ struct ExportView: View {
                     } else {
                         Text("JPG \(result.copiedJPG)장, RAW \(result.copiedRAW)장 복사됨")
                             .font(.caption)
+                    }
+
+                    if result.skipped > 0 {
+                        Text("건너뛴 파일: \(result.skipped)개")
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
 
                     if !result.failedFiles.isEmpty {
@@ -326,12 +352,12 @@ struct ExportView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(photos.isEmpty || store.isExporting || store.isConverting)
+                    .disabled(photos.isEmpty || store.isExporting || store.isConverting || store.bgExportActive)
                 }
             }
         }
         .padding(28)
-        .frame(width: 580)
+        .frame(width: 650)
         .onAppear {
             if !didApplyInitialTarget && store.exportOpenAsRawConvert {
                 exportTarget = .rawToJpg
@@ -339,7 +365,38 @@ struct ExportView: View {
                 didApplyInitialTarget = true
             }
         }
+        // 중복 파일 경고 시트
+        .sheet(isPresented: $showDuplicateAlert) {
+            DuplicateAlertView(
+                duplicateFiles: duplicateFiles,
+                onOverwrite: { handleDuplicateChoice(.overwrite) },
+                onRename: { handleDuplicateChoice(.rename) },
+                onSkip: { handleDuplicateChoice(.skip) },
+                onCancel: {
+                    showDuplicateAlert = false
+                    pendingExportDestination = nil
+                    pendingExportTarget = nil
+                    pendingPhotos = []
+                }
+            )
+        }
     }
+
+    // MARK: - 중복 처리 선택 후 실행
+
+    private func handleDuplicateChoice(_ handling: DuplicateHandling) {
+        showDuplicateAlert = false
+        guard let destURL = pendingExportDestination,
+              let target = pendingExportTarget else { return }
+        let photos = pendingPhotos
+        pendingExportDestination = nil
+        pendingExportTarget = nil
+        pendingPhotos = []
+
+        executeBackgroundExport(photos: photos, target: target, destURL: destURL, duplicateHandling: handling)
+    }
+
+    // MARK: - RAW → JPG 변환
 
     private func startConversion() {
         guard !store.isConverting else { return }
@@ -354,7 +411,7 @@ struct ExportView: View {
         let photos = photosToExport.filter { !$0.isFolder && !$0.isParentFolder }
         guard !photos.isEmpty else { return }
 
-        // Check for existing files
+        // 중복 검사
         let fm = FileManager.default
         let existingFiles = photos.compactMap { photo -> String? in
             let url = photo.rawURL ?? photo.jpgURL
@@ -364,6 +421,7 @@ struct ExportView: View {
         }
 
         if !existingFiles.isEmpty {
+            // 중복 다이얼로그 표시 → 변환은 기존 방식 유지 (덮어쓰기/건너뛰기만)
             let alert = NSAlert()
             alert.messageText = "이미 존재하는 파일 \(existingFiles.count)개"
             alert.informativeText = existingFiles.prefix(5).joined(separator: "\n") +
@@ -372,13 +430,10 @@ struct ExportView: View {
             alert.addButton(withTitle: "건너뛰기")
             alert.addButton(withTitle: "취소")
             let response = alert.runModal()
-            if response == .alertThirdButtonReturn { return }  // 취소
+            if response == .alertThirdButtonReturn { return }
             if response == .alertSecondButtonReturn {
-                // 건너뛰기: 이미 있는 파일 제외
-                // (RAWConversionService가 알아서 덮어쓰기하므로 여기서는 진행)
-                // TODO: 건너뛰기 로직 추가 가능
+                // TODO: 건너뛰기 로직 (RAWConversionService 내부)
             }
-            // 덮어쓰기: 그냥 진행
         }
 
         store.conversionTotal = photos.count
@@ -387,6 +442,9 @@ struct ExportView: View {
         store.conversionCancelled = false
         store.conversionResult = nil
         store.conversionStartTime = CFAbsoluteTimeGetCurrent()
+
+        // 시트 닫고 백그라운드에서 계속 실행
+        dismiss()
 
         DispatchQueue.global(qos: .userInitiated).async {
             var cancelFlag = false
@@ -400,7 +458,6 @@ struct ExportView: View {
                 DispatchQueue.main.async {
                     store.conversionDone = done
                     store.conversionProgress = Double(done) / Double(total)
-                    // Propagate cancel from UI
                     if store.conversionCancelled { cancelFlag = true }
                 }
             }
@@ -410,17 +467,14 @@ struct ExportView: View {
                 store.conversionTotal = 0
                 store.conversionDone = 0
                 if !store.conversionCancelled {
-                    // Show converted files in Finder (single window, files selected)
-                    let jpgFiles = (try? FileManager.default.contentsOfDirectory(at: outputFolder, includingPropertiesForKeys: nil))?.filter { $0.pathExtension.lowercased() == "jpg" } ?? []
-                    if !jpgFiles.isEmpty {
-                        NSWorkspace.shared.activateFileViewerSelecting(jpgFiles)
-                    } else {
-                        NSWorkspace.shared.open(outputFolder)
-                    }
+                    // 완료 시 Finder에서 폴더 열기
+                    NSWorkspace.shared.open(outputFolder)
                 }
             }
         }
     }
+
+    // MARK: - 폴더/Lightroom 내보내기
 
     private func startExport() {
         let panel = NSOpenPanel()
@@ -435,34 +489,196 @@ struct ExportView: View {
 
         let photos = photosToExport
         let target = exportTarget
-        store.isExporting = true
-        isComplete = false
+
+        // 중복 검사
+        let duplicates: [String]
+        if target == .lightroom {
+            duplicates = FileCopyService.findDuplicatesForLightroom(photos: photos, destinationURL: destURL)
+        } else {
+            duplicates = FileCopyService.findDuplicates(photos: photos, destinationURL: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName)
+        }
+
+        if !duplicates.isEmpty {
+            // 중복 발견 → 다이얼로그 표시
+            duplicateFiles = duplicates
+            pendingExportDestination = destURL
+            pendingExportTarget = target
+            pendingPhotos = photos
+            showDuplicateAlert = true
+        } else {
+            // 중복 없음 → 바로 백그라운드 실행
+            executeBackgroundExport(photos: photos, target: target, destURL: destURL, duplicateHandling: .overwrite)
+        }
+    }
+
+    // MARK: - 백그라운드 내보내기 실행
+
+    private func executeBackgroundExport(photos: [PhotoItem], target: ExportTarget, destURL: URL, duplicateHandling: DuplicateHandling) {
+        let totalOps: Int
+        if target == .lightroom {
+            totalOps = photos.count * 2
+        } else {
+            let rawCount = photos.filter { $0.hasRAW }.count
+            totalOps = photos.count + rawCount
+        }
+
+        // 백그라운드 내보내기 상태 설정
+        store.bgExportActive = true
+        store.bgExportProgress = 0
+        store.bgExportDone = 0
+        store.bgExportTotal = totalOps
+        store.bgExportCancelled = false
+        store.bgExportLabel = target == .lightroom ? "Lightroom 내보내기" : "폴더 내보내기"
+        store.bgExportDestination = destURL
+
+        // 시트 닫기 — 사용자는 계속 작업 가능
+        dismiss()
+
+        let jpgName = jpgFolderName
+        let rawName = rawFolderName
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result: CopyResult
 
             if target == .lightroom {
-                result = FileCopyService.exportForLightroom(photos: photos, to: destURL) { progress in
-                    DispatchQueue.main.async { store.exportProgress = progress }
+                result = FileCopyService.exportForLightroom(
+                    photos: photos,
+                    to: destURL,
+                    duplicateHandling: duplicateHandling
+                ) { done, total in
+                    DispatchQueue.main.async {
+                        guard !store.bgExportCancelled else { return }
+                        store.bgExportDone = done
+                        store.bgExportProgress = Double(done) / Double(total)
+                    }
                 }
             } else {
-                result = FileCopyService.copyPhotos(photos: photos, to: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName) { progress in
-                    DispatchQueue.main.async { store.exportProgress = progress }
+                result = FileCopyService.copyPhotos(
+                    photos: photos,
+                    to: destURL,
+                    jpgFolderName: jpgName,
+                    rawFolderName: rawName,
+                    duplicateHandling: duplicateHandling
+                ) { done, total in
+                    DispatchQueue.main.async {
+                        guard !store.bgExportCancelled else { return }
+                        store.bgExportDone = done
+                        store.bgExportProgress = Double(done) / Double(total)
+                    }
                 }
             }
 
             DispatchQueue.main.async {
-                store.isExporting = false
-                copyResult = result
-                isComplete = true
+                store.bgExportActive = false
 
-                if target == .lightroom {
-                    // Open Lightroom with the folder
-                    FileCopyService.openLightroom(folderURL: destURL)
-                } else {
-                    NSWorkspace.shared.open(destURL)
+                if !store.bgExportCancelled {
+                    // 완료 시 Finder에서 폴더 열기
+                    if target == .lightroom {
+                        FileCopyService.openLightroom(folderURL: destURL)
+                    } else {
+                        NSWorkspace.shared.open(destURL)
+                    }
+
+                    // 토스트 알림
+                    let msg: String
+                    if target == .lightroom {
+                        msg = "내보내기 완료 — RAW \(result.copiedRAW)장, XMP \(result.copiedXMP)장"
+                    } else {
+                        msg = "내보내기 완료 — JPG \(result.copiedJPG)장, RAW \(result.copiedRAW)장"
+                    }
+                    store.toastMessage = msg
+                    store.showToast = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        store.showToast = false
+                    }
                 }
+
+                store.bgExportCancelled = false
             }
         }
+    }
+}
+
+// MARK: - 중복 파일 경고 뷰
+
+struct DuplicateAlertView: View {
+    let duplicateFiles: [String]
+    let onOverwrite: () -> Void
+    let onRename: () -> Void
+    let onSkip: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.orange)
+                Text("중복 파일 발견")
+                    .font(.system(size: 16, weight: .bold))
+            }
+
+            Text("대상 폴더에 이미 존재하는 파일 \(duplicateFiles.count)개:")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+
+            // 중복 파일 목록 (최대 5개)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(duplicateFiles.prefix(5), id: \.self) { name in
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text(name)
+                            .font(.system(size: 11, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                if duplicateFiles.count > 5 {
+                    Text("... 외 \(duplicateFiles.count - 5)개")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 16)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .cornerRadius(6)
+
+            // 버튼들
+            HStack(spacing: 10) {
+                Button(action: onCancel) {
+                    Text("닫기")
+                        .frame(width: 80, height: 30)
+                }
+                .buttonStyle(.bordered)
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(action: onSkip) {
+                    Text("건너뛰기")
+                        .frame(width: 80, height: 30)
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: onRename) {
+                    Text("이름 변경하여 내보내기")
+                        .frame(height: 30)
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: onOverwrite) {
+                    Text("덮어쓰기")
+                        .frame(width: 80, height: 30)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
     }
 }

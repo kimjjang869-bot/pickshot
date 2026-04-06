@@ -436,9 +436,37 @@ extension ContentView {
                 Divider()
             }
             Button(action: { store.classifyScenes() }) {
-                Label(store.isClassifyingScenes ? "분류 중..." : "API AI 분류 실행", systemImage: "eye.fill")
+                Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
             }
             .disabled(store.isClassifyingScenes)
+
+            Divider()
+
+            // AI 프리셋 프롬프트 분류
+            Section("🤖 AI 프롬프트 분류") {
+                ForEach(ClaudeVisionService.classifyPresets, id: \.name) { preset in
+                    Button(action: {
+                        if !ClaudeVisionService.hasAPIKey {
+                            DisabledGuide.showAIDisabled()
+                        } else {
+                            store.runAIClassification(customPrompt: preset.prompt)
+                        }
+                    }) {
+                        Label(preset.name, systemImage: "sparkles")
+                    }
+                    .disabled(store.isAIClassifying)
+                }
+                Button(action: {
+                    if !ClaudeVisionService.hasAPIKey {
+                        DisabledGuide.showAIDisabled()
+                    } else {
+                        store.showCustomPrompt = true
+                    }
+                }) {
+                    Label("커스텀 프롬프트...", systemImage: "text.cursor")
+                }
+                .disabled(store.isAIClassifying)
+            }
         } label: {
             toolbarButton(
                 icon: store.qualityFilter == .aiPick ? "sparkles" : "wand.and.stars",

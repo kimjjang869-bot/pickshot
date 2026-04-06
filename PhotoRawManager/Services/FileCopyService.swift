@@ -8,9 +8,81 @@ struct CopyResult {
     var copiedXMP: Int = 0
     var failedFiles: [String] = []
     var verified: Bool = false
+    var skipped: Int = 0
+}
+
+/// 중복 파일 처리 모드
+enum DuplicateHandling {
+    case overwrite   // 덮어쓰기
+    case rename      // 이름 변경 (_1, _2...)
+    case skip        // 건너뛰기
 }
 
 struct FileCopyService {
+
+    // MARK: - 중복 검사 (폴더 내보내기용)
+
+    static func findDuplicates(
+        photos: [PhotoItem],
+        destinationURL: URL,
+        jpgFolderName: String = "JPG",
+        rawFolderName: String = "RAW"
+    ) -> [String] {
+        let fm = FileManager.default
+        let jpgName = jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "JPG" : jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawName = rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "RAW" : rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jpgFolder = destinationURL.appendingPathComponent(jpgName)
+        let rawFolder = destinationURL.appendingPathComponent(rawName)
+
+        var duplicates: [String] = []
+        for photo in photos {
+            let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+            if fm.fileExists(atPath: jpgDest.path) {
+                duplicates.append(jpgName + "/" + photo.jpgURL.lastPathComponent)
+            }
+            if let rawURL = photo.rawURL {
+                let rawDest = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
+                if fm.fileExists(atPath: rawDest.path) {
+                    duplicates.append(rawName + "/" + rawURL.lastPathComponent)
+                }
+            }
+        }
+        return duplicates
+    }
+
+    // MARK: - 중복 검사 (Lightroom용)
+
+    static func findDuplicatesForLightroom(
+        photos: [PhotoItem],
+        destinationURL: URL
+    ) -> [String] {
+        let fm = FileManager.default
+        var duplicates: [String] = []
+        for photo in photos {
+            let sourceURL = photo.rawURL ?? photo.jpgURL
+            let destFile = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
+            if fm.fileExists(atPath: destFile.path) {
+                duplicates.append(sourceURL.lastPathComponent)
+            }
+        }
+        return duplicates
+    }
+
+    /// 중복 파일 이름에 접미사 추가 (_1, _2, ...)
+    private static func uniqueURL(for url: URL) -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return url }
+        let dir = url.deletingLastPathComponent()
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        var counter = 1
+        while true {
+            let newName = "\(baseName)_\(counter).\(ext)"
+            let newURL = dir.appendingPathComponent(newName)
+            if !fm.fileExists(atPath: newURL.path) { return newURL }
+            counter += 1
+        }
+    }
 
     // MARK: - Standard Export (JPG + RAW folders)
 
@@ -19,7 +91,8 @@ struct FileCopyService {
         to destinationURL: URL,
         jpgFolderName: String = "JPG",
         rawFolderName: String = "RAW",
-        progress: @escaping (Double) -> Void
+        duplicateHandling: DuplicateHandling = .overwrite,
+        progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
         let fileManager = FileManager.default
         var result = CopyResult()
@@ -43,34 +116,54 @@ struct FileCopyService {
         var completed = 0
 
         for photo in photos {
-            let destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
-            do {
-                if fileManager.fileExists(atPath: destURL.path) {
-                    try fileManager.removeItem(at: destURL)
+            var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+            if fileManager.fileExists(atPath: destURL.path) {
+                switch duplicateHandling {
+                case .skip:
+                    result.skipped += 1
+                    completed += 1
+                    progress(completed, totalOperations)
+                    continue
+                case .rename:
+                    destURL = uniqueURL(for: destURL)
+                case .overwrite:
+                    try? fileManager.removeItem(at: destURL)
                 }
+            }
+            do {
                 try fileManager.copyItem(at: photo.jpgURL, to: destURL)
                 result.copiedJPG += 1
             } catch {
                 result.failedFiles.append("JPG 복사 실패: \(photo.fileName)")
             }
             completed += 1
-            progress(Double(completed) / Double(totalOperations))
+            progress(completed, totalOperations)
         }
 
         for photo in photosWithRAW {
             guard let rawURL = photo.rawURL else { continue }
-            let destURL = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
-            do {
-                if fileManager.fileExists(atPath: destURL.path) {
-                    try fileManager.removeItem(at: destURL)
+            var destURL = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
+            if fileManager.fileExists(atPath: destURL.path) {
+                switch duplicateHandling {
+                case .skip:
+                    result.skipped += 1
+                    completed += 1
+                    progress(completed, totalOperations)
+                    continue
+                case .rename:
+                    destURL = uniqueURL(for: destURL)
+                case .overwrite:
+                    try? fileManager.removeItem(at: destURL)
                 }
+            }
+            do {
                 try fileManager.copyItem(at: rawURL, to: destURL)
                 result.copiedRAW += 1
             } catch {
                 result.failedFiles.append("RAW 복사 실패: \(photo.fileName)")
             }
             completed += 1
-            progress(Double(completed) / Double(totalOperations))
+            progress(completed, totalOperations)
         }
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)
@@ -82,7 +175,8 @@ struct FileCopyService {
     static func exportForLightroom(
         photos: [PhotoItem],
         to destinationURL: URL,
-        progress: @escaping (Double) -> Void
+        duplicateHandling: DuplicateHandling = .overwrite,
+        progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
         let fileManager = FileManager.default
         var result = CopyResult()
@@ -103,11 +197,23 @@ struct FileCopyService {
         for photo in photos {
             // 1. 파일 복사 (RAW 우선, 없으면 JPG)
             let sourceURL = photo.rawURL ?? photo.jpgURL
-            let destFile = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
-            do {
-                if fileManager.fileExists(atPath: destFile.path) {
-                    try fileManager.removeItem(at: destFile)
+            var destFile = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
+
+            if fileManager.fileExists(atPath: destFile.path) {
+                switch duplicateHandling {
+                case .skip:
+                    result.skipped += 1
+                    completed += 2  // 파일 + XMP 건너뛰기
+                    progress(completed, totalOperations)
+                    continue
+                case .rename:
+                    destFile = uniqueURL(for: destFile)
+                case .overwrite:
+                    try? fileManager.removeItem(at: destFile)
                 }
+            }
+
+            do {
                 try fileManager.copyItem(at: sourceURL, to: destFile)
                 if photo.hasRAW { result.copiedRAW += 1 } else { result.copiedJPG += 1 }
             } catch {
@@ -116,15 +222,27 @@ struct FileCopyService {
 
             // JPG도 같이 복사 (RAW+JPG 쌍)
             if photo.hasRAW {
-                let jpgDest = destinationURL.appendingPathComponent(photo.jpgURL.lastPathComponent)
-                if !fileManager.fileExists(atPath: jpgDest.path) {
+                var jpgDest = destinationURL.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                if fileManager.fileExists(atPath: jpgDest.path) {
+                    switch duplicateHandling {
+                    case .skip: break  // 건너뛰기
+                    case .rename:
+                        jpgDest = uniqueURL(for: jpgDest)
+                        try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                        result.copiedJPG += 1
+                    case .overwrite:
+                        try? fileManager.removeItem(at: jpgDest)
+                        try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                        result.copiedJPG += 1
+                    }
+                } else {
                     try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
                     result.copiedJPG += 1
                 }
             }
 
             completed += 1
-            progress(Double(completed) / Double(totalOperations))
+            progress(completed, totalOperations)
 
             // 2. XMP sidecar 생성 (RAW 또는 JPG 파일명 기준)
             let xmpFileName = sourceURL.deletingPathExtension().lastPathComponent + ".xmp"
@@ -137,7 +255,7 @@ struct FileCopyService {
                 result.failedFiles.append("XMP 생성 실패: \(photo.fileName)")
             }
             completed += 1
-            progress(Double(completed) / Double(totalOperations))
+            progress(completed, totalOperations)
         }
 
         result.verified = result.failedFiles.isEmpty

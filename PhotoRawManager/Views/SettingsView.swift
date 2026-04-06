@@ -14,6 +14,8 @@ struct SettingsView: View {
                     .tabItem { Label("캐시", systemImage: "internaldrive") }
                 PerformanceOptimizeTab()
                     .tabItem { Label("성능 최적화", systemImage: "bolt.circle") }
+                AIEngineSettingsTab()
+                    .tabItem { Label("AI 엔진", systemImage: "brain") }
                 ShortcutsSettingsTab()
                     .tabItem { Label("단축키", systemImage: "keyboard") }
             }

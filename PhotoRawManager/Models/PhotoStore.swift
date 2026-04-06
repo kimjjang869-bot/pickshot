@@ -159,6 +159,14 @@ class PhotoStore: ObservableObject {
     }
     @Published var exportProgress: Double = 0
     @Published var isExporting = false
+    // 백그라운드 내보내기 상태
+    @Published var bgExportActive = false
+    @Published var bgExportProgress: Double = 0
+    @Published var bgExportDone: Int = 0
+    @Published var bgExportTotal: Int = 0
+    @Published var bgExportCancelled = false
+    @Published var bgExportLabel: String = ""  // "폴더 내보내기" / "Lightroom 내보내기" / "RAW → JPG 변환"
+    var bgExportDestination: URL?
     @Published var conversionProgress: Double = 0
     @Published var conversionTotal: Int = 0
     @Published var conversionDone: Int = 0
@@ -524,8 +532,11 @@ class PhotoStore: ObservableObject {
     private var shiftClickAnchorIndex: Int?
 
     func selectPhoto(_ id: UUID, cmdKey: Bool, shiftKey: Bool = false) {
+        // 폴더/상위폴더는 선택 불가
         if let idx = _photoIndex[id], idx < photos.count {
-            AppLogger.log(.selection, "selectPhoto: \(photos[idx].fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
+            let photo = photos[idx]
+            if photo.isFolder || photo.isParentFolder { return }
+            AppLogger.log(.selection, "selectPhoto: \(photo.fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
         }
         if shiftKey {
             // Shift+Click: range selection from anchor
@@ -555,7 +566,10 @@ class PhotoStore: ObservableObject {
             guard safeEnd >= rangeStart else { return }
             var newSelection = Set<UUID>()
             for i in rangeStart...safeEnd {
-                newSelection.insert(list[i].id)
+                let item = list[i]
+                if !item.isFolder && !item.isParentFolder {
+                    newSelection.insert(item.id)
+                }
             }
             selectedPhotoIDs = newSelection
             selectedPhotoID = id
@@ -580,7 +594,8 @@ class PhotoStore: ObservableObject {
     }
 
     func selectAll() {
-        let ids = Set(filteredPhotos.map { $0.id })
+        // 폴더/상위폴더 제외 — 사진만 선택
+        let ids = Set(filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
         selectedPhotoIDs = ids
     }
 

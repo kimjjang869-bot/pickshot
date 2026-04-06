@@ -822,8 +822,20 @@ struct DisabledGuide {
         alert.addButton(withTitle: "닫기")
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
-            // Open settings
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            // macOS 14+: showSettingsWindow, macOS 13: showPreferencesWindow
+            if #available(macOS 14, *) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } else if #available(macOS 13, *) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } else {
+                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+            }
+            // Cmd+, 단축키로 직접 열기 (폴백)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if NSApp.windows.first(where: { $0.title.contains("설정") || $0.title.contains("Settings") }) == nil {
+                    NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+                }
+            }
         }
     }
 

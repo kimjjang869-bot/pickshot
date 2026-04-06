@@ -309,12 +309,18 @@ struct ContentView: View {
         .sheet(isPresented: $store.showCustomPrompt) { CustomPromptView(store: store) }
         .overlay(alignment: .bottom) {
             VStack(spacing: 8) {
+                // 메모리카드 백업 진행률
                 ForEach(memoryCardService.sessions.filter { !$0.isComplete }) { session in
                     BackupProgressBar(session: session, service: memoryCardService)
+                }
+                // 백그라운드 내보내기 진행률
+                if store.bgExportActive {
+                    ExportProgressBar(store: store)
                 }
             }
             .padding(.bottom, 40)
             .animation(.easeInOut, value: memoryCardService.sessions.count)
+            .animation(.easeInOut, value: store.bgExportActive)
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
@@ -512,6 +518,62 @@ struct BackupProgressBar: View {
             }
             .buttonStyle(.plain)
             .help("백업 취소")
+        }
+        .padding(12)
+        .frame(width: 400)
+        .background(.ultraThinMaterial)
+        .cornerRadius(10)
+        .shadow(radius: 5)
+        .offset(dragOffset)
+        .gesture(
+            DragGesture()
+                .onChanged { value in dragOffset = value.translation }
+                .onEnded { value in
+                    position.x += value.translation.width
+                    position.y += value.translation.height
+                    dragOffset = .zero
+                }
+        )
+        .offset(x: position.x, y: position.y)
+    }
+}
+
+// MARK: - 내보내기 진행률 바
+
+struct ExportProgressBar: View {
+    @ObservedObject var store: PhotoStore
+    @State private var dragOffset: CGSize = .zero
+    @State private var position: CGPoint = .zero
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "square.and.arrow.up.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.blue)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(store.bgExportLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(store.bgExportDone)/\(store.bgExportTotal)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 80, alignment: .trailing)
+                }
+
+                ProgressView(value: store.bgExportProgress)
+                    .progressViewStyle(.linear)
+                    .tint(.blue)
+            }
+
+            Button(action: { store.bgExportCancelled = true }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("내보내기 취소")
         }
         .padding(12)
         .frame(width: 400)
