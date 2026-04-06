@@ -78,19 +78,17 @@ enum AppTheme {
         return round(base * displayScale)
     }
 
-    // MARK: - Standard Button Height
-    static var buttonHeight: CGFloat { scaled(34) }
-    static var pillSize: CGFloat { scaled(30) }
+    // MARK: - 모든 값 앱 시작 시 1회 계산 (모니터 변경/포커스 변경 시 안 바뀜)
+    static let buttonHeight: CGFloat = scaled(34)
+    static let pillSize: CGFloat = scaled(30)
 
-    // MARK: - Icon Sizes
-    static var iconSmall: CGFloat { scaled(13) }
-    static var iconMedium: CGFloat { scaled(15) }
-    static var iconLarge: CGFloat { scaled(18) }
+    static let iconSmall: CGFloat = scaled(13)
+    static let iconMedium: CGFloat = scaled(15)
+    static let iconLarge: CGFloat = scaled(18)
 
-    // MARK: - Font Sizes
-    static var fontMicro: CGFloat { scaled(11) }
-    static var fontCaption: CGFloat { scaled(12) }
-    static var fontBody: CGFloat { scaled(13) }
-    static var fontSubhead: CGFloat { scaled(14) }
-    static var fontHeading: CGFloat { scaled(15) }
+    static let fontMicro: CGFloat = scaled(11)
+    static let fontCaption: CGFloat = scaled(12)
+    static let fontBody: CGFloat = scaled(13)
+    static let fontSubhead: CGFloat = scaled(14)
+    static let fontHeading: CGFloat = scaled(15)
 }

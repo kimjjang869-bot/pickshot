@@ -9,6 +9,7 @@ struct PhotoRawManagerApp: App {
         WindowGroup("PickShot v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.6")") {
             ContentView()
                 .environmentObject(store)
+                .frame(minWidth: 900, minHeight: 600)
                 .task {
                     updateService.checkForUpdate(userInitiated: false)
                     PerformanceMonitor.shared.start()

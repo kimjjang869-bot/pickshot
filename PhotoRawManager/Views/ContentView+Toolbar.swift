@@ -124,8 +124,29 @@ extension ContentView {
                 }
 
                 if !store.photos.isEmpty {
-                    // G Select button (먼저)
-                    gSelectButton
+                    // 클라이언트 셀렉 (업로드 + 가져오기 통합 메뉴) — 제일 앞
+                    Menu {
+                        Section("📤 클라이언트에게 보내기") {
+                            Button(action: { ClientSelectService.shared.showSetup = true }) {
+                                Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                            }
+                        }
+                        Divider()
+                        Section("📥 셀렉 결과 가져오기") {
+                            Button(action: { store.importPickshotFile() }) {
+                                Label("파일에서 가져오기...", systemImage: "doc.badge.arrow.up")
+                            }
+                            Button(action: { importPickshotFromDrive() }) {
+                                Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
+                            }
+                        }
+                    } label: {
+                        Label("클라이언트 셀렉", systemImage: "person.crop.rectangle")
+                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    }
+                    .menuStyle(.borderedButton)
+                    .controlSize(.small)
+                    .help("클라이언트 셀렉 보내기/가져오기")
 
                     // Matching button
                     Button(action: { store.showMatchingSheet = true }) {
@@ -155,30 +176,8 @@ extension ContentView {
                     .tint(.teal)
                     .help("리사이즈 + 워터마크 일괄 처리")
 
-                    Button(action: { ClientSelectService.shared.showSetup = true }) {
-                        Label("클라이언트 셀렉", systemImage: "person.crop.rectangle")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.pink)
-                    .help("클라이언트에게 사진 셀렉 공유")
-
-                    // 셀렉 결과 가져오기 (파일 또는 Drive)
-                    Menu {
-                        Button(action: { store.importPickshotFile() }) {
-                            Label("파일에서 가져오기...", systemImage: "doc.badge.arrow.up")
-                        }
-                        Button(action: { importPickshotFromDrive() }) {
-                            Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
-                        }
-                    } label: {
-                        Label("셀렉 가져오기", systemImage: "square.and.arrow.down")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .menuStyle(.borderedButton)
-                    .controlSize(.small)
-                    .help("클라이언트 셀렉 결과 가져오기 (Cmd+Shift+I)")
+                    // G Select — 제일 뒤
+                    gSelectButton
 
                     // Analysis stop button (only visible when analyzing)
                     if store.isAnalyzing {
@@ -863,16 +862,82 @@ extension ContentView {
     // MARK: - Drive에서 셀렉 가져오기
 
     func importPickshotFromDrive() {
-        guard let folderId = ClientSelectService.shared.driveFolderID else {
-            store.showToastMessage("활성 클라이언트 셀렉 세션이 없습니다")
-            return
+        // 토큰 갱신
+        GoogleDriveService.refreshAccessToken { _, _ in }
+
+        // 세션 복원 시도
+        if ClientSelectService.shared.driveFolderID == nil {
+            _ = ClientSelectService.shared.restoreLastSession()
         }
-        guard let token = GoogleDriveService.savedAccessToken else {
+
+        guard var token = GoogleDriveService.savedAccessToken else {
             store.showToastMessage("Google Drive 로그인이 필요합니다")
             return
         }
+
+        // 토큰 갱신
+        let sem = DispatchSemaphore(value: 0)
+        GoogleDriveService.refreshAccessToken { newToken, _ in
+            if let t = newToken { token = t }
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 5)
+
+        var folderId = ClientSelectService.shared.driveFolderID
+
+        // 폴더 ID 없으면 — Google Drive에서 PickShot 폴더 목록 검색
+        if folderId == nil {
+            store.showToastMessage("Drive에서 클라이언트 셀렉 폴더 검색 중...")
+            // Google Drive에서 최근 폴더 목록 가져오기
+            let listSem = DispatchSemaphore(value: 0)
+            let query = "mimeType='application/vnd.google-apps.folder' and trashed=false"
+            let urlStr = "https://www.googleapis.com/drive/v3/files?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&fields=files(id,name,createdTime)&orderBy=createdTime desc&pageSize=20"
+            guard let apiURL = URL(string: urlStr) else { return }
+            var request = URLRequest(url: apiURL)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            var folders: [(id: String, name: String)] = []
+            URLSession.shared.dataTask(with: request) { data, _, _ in
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let files = json["files"] as? [[String: Any]] {
+                    folders = files.compactMap { f in
+                        guard let id = f["id"] as? String, let name = f["name"] as? String else { return nil }
+                        return (id: id, name: name)
+                    }
+                }
+                listSem.signal()
+            }.resume()
+            listSem.wait()
+
+            guard !folders.isEmpty else {
+                store.showToastMessage("Drive에 폴더가 없습니다")
+                return
+            }
+
+            // 폴더 선택 팝업
+            let alert = NSAlert()
+            alert.messageText = "셀렉 결과를 가져올 폴더 선택"
+            alert.informativeText = "Google Drive에서 클라이언트 셀렉 폴더를 선택하세요"
+            alert.addButton(withTitle: "가져오기")
+            alert.addButton(withTitle: "취소")
+
+            let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 350, height: 28))
+            for f in folders {
+                popup.addItem(withTitle: f.name)
+            }
+            alert.accessoryView = popup
+
+            let response = alert.runModal()
+            guard response == .alertFirstButtonReturn else { return }
+            let selectedIdx = popup.indexOfSelectedItem
+            guard selectedIdx >= 0 && selectedIdx < folders.count else { return }
+            folderId = folders[selectedIdx].id
+        }
+
+        guard let finalFolderId = folderId else { return }
+
         store.showToastMessage("Drive에서 .pickshot 파일 검색 중...")
-        ClientSelectService.shared.checkForPickshotInDrive(folderId: folderId, token: token) { [weak store] tempURL in
+        ClientSelectService.shared.checkForPickshotInDrive(folderId: finalFolderId, token: token) { [weak store] tempURL in
             DispatchQueue.main.async {
                 guard let store = store else { return }
                 guard let url = tempURL else {

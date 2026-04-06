@@ -111,10 +111,69 @@ class PickshotFileService {
             return nil
         }
 
-        guard let file = try? JSONDecoder().decode(PickshotFile.self, from: data) else {
-            AppLogger.log(.error, "Failed to decode pickshot file")
-            return nil
+        // 기존 앱 형식 시도
+        if let file = try? JSONDecoder().decode(PickshotFile.self, from: data) {
+            return applyNativePickshot(file: file, to: &photos, photoIndex: photoIndex)
         }
+
+        // 웹 뷰어 형식 시도 (version: String, photos 배열 포함)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let photosArray = json["photos"] as? [[String: Any]] {
+            fputs("[PICKSHOT] 웹 뷰어 형식 감지\n", stderr)
+            return applyWebViewerPickshot(json: json, photosArray: photosArray, to: &photos, photoIndex: photoIndex)
+        }
+
+        AppLogger.log(.error, "Failed to decode pickshot file")
+        return nil
+    }
+
+    // 웹 뷰어에서 생성된 .pickshot 파일 처리
+    private static func applyWebViewerPickshot(json: [String: Any], photosArray: [[String: Any]], to photos: inout [PhotoItem], photoIndex: [UUID: Int]) -> PickshotImportResult? {
+        let sessionName = (json["session"] as? [String: Any])?["name"] as? String ?? json["sessionName"] as? String ?? ""
+        var matched: [(name: String, rating: Int, spacePick: Bool)] = []
+        var unmatched: [String] = []
+        var commentsCount = 0
+        var commentDetails: [(String, [String])] = []
+
+        for photoInfo in photosArray {
+            let filename = photoInfo["filename"] as? String ?? ""
+            let originalFilename = photoInfo["originalFilename"] as? String ?? filename
+            let selected = photoInfo["selected"] as? Bool ?? false
+            let comment = photoInfo["comment"] as? String ?? ""
+
+            // 원본 파일명으로 매칭 (확장자 무시)
+            let baseName = (originalFilename as NSString).deletingPathExtension.lowercased()
+            var didMatch = false
+
+            for i in 0..<photos.count {
+                let photoBase = (photos[i].jpgURL.lastPathComponent as NSString).deletingPathExtension.lowercased()
+                if photoBase == baseName {
+                    if selected { photos[i].isSpacePicked = true }
+                    if !comment.isEmpty {
+                        photos[i].comments.append(comment)
+                        commentsCount += 1
+                        commentDetails.append((originalFilename, [comment]))
+                    }
+                    matched.append((name: originalFilename, rating: 0, spacePick: selected))
+                    didMatch = true
+                    break
+                }
+            }
+            if !didMatch { unmatched.append(originalFilename) }
+        }
+
+        return PickshotImportResult(
+            matched: matched,
+            unmatched: unmatched,
+            totalInFile: photosArray.count,
+            commentsCount: commentsCount,
+            commentDetails: commentDetails,
+            sourceFolderName: sessionName
+        )
+    }
+
+    // 기존 네이티브 .pickshot 파일 처리
+    private static func applyNativePickshot(file: PickshotFile, to photos: inout [PhotoItem], photoIndex: [UUID: Int]) -> PickshotImportResult {
 
         // Build name → index mapping for current photos
         var nameToIndices: [String: [Int]] = [:]
@@ -153,7 +212,7 @@ class PickshotFileService {
             }
         }
 
-        AppLogger.log(.export, "Imported pickshot: \(matched.count) matched, \(unmatched.count) unmatched, \(commentsCount) comments from \(url.lastPathComponent)")
+        AppLogger.log(.export, "Imported pickshot: \(matched.count) matched, \(unmatched.count) unmatched, \(commentsCount) comments from \(file.sourceFolderName)")
 
         return PickshotImportResult(
             matched: matched,

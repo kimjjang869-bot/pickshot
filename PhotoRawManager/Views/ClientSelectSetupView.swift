@@ -84,7 +84,7 @@ struct ClientSelectSetupView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 16)
         }
-        .frame(width: 460, height: service.viewerLink != nil ? 580 : 540)
+        .frame(width: 520, height: service.viewerLink != nil ? 620 : 600)
         .onAppear {
             sessionName = defaultSessionName
             gSelect.isLoggedIn = GoogleDriveService.isLoggedIn
@@ -95,8 +95,8 @@ struct ClientSelectSetupView: View {
 
     private var setupFormView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Google 연결 상태
+            VStack(spacing: 16) {
+                // Google 연결
                 HStack {
                     Image(systemName: gSelect.isLoggedIn ? "checkmark.circle.fill" : "xmark.circle")
                         .foregroundColor(gSelect.isLoggedIn ? .green : .red)
@@ -105,137 +105,127 @@ struct ClientSelectSetupView: View {
                     Spacer()
                     if !gSelect.isLoggedIn {
                         Button("Google 로그인") { gSelect.loginToGoogle() }
-                            .font(.system(size: 11))
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                     }
                 }
-                .padding(10)
-                .background(Color.gray.opacity(0.08))
+                .padding(12)
+                .background(gSelect.isLoggedIn ? Color.green.opacity(0.06) : Color.red.opacity(0.06))
                 .cornerRadius(8)
 
-                // 세션 이름
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("세션 이름")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("예: 김철수-이영희 웨딩", text: $sessionName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13))
-                }
-
-                // 클라이언트 이름
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("클라이언트 이름")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("예: 김철수, 이영희", text: $clientName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13))
-                }
-
-                // 접근 모드
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("접근 권한")
-                        .font(.system(size: 12, weight: .medium))
-                    Picker("", selection: $accessMode) {
-                        ForEach(ClientSelectService.AccessMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
+                // 세션 정보
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 12) {
+                            Text("세션 이름")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("예: 김철수-이영희 웨딩", text: $sessionName)
+                                .textFieldStyle(.roundedBorder)
                         }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-
-                // 이메일 (이메일 제한 모드일 때만)
-                if accessMode == .emailRestricted {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("클라이언트 Gmail")
-                            .font(.system(size: 12, weight: .medium))
-                        TextField("client@gmail.com", text: $clientEmail)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13))
-                        Text("이 이메일만 사진을 볼 수 있습니다")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                // 파일명 변경
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("파일 이름 (선택)")
-                        .font(.system(size: 12, weight: .medium))
-                    HStack {
-                        TextField("예: 뜜_나나_루카루카", text: $filePrefix)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13))
-                        Text("_0001.jpg")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                    if !filePrefix.isEmpty {
-                        Text("미리보기: \(filePrefix)_0001.jpg")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.purple)
-                    }
-                }
-
-                Divider()
-
-                // 원본 파일 업로드 옵션
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(isOn: $uploadOriginal) {
-                        HStack {
-                            Image(systemName: "arrow.down.doc.fill")
-                                .foregroundColor(.blue)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("원본 파일 업로드 (다운로드용)")
-                                    .font(.system(size: 12, weight: .medium))
-                                Text("리사이즈 + ZIP 압축 → 클라이언트가 다운로드 가능")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Text("클라이언트")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("예: 김철수, 이영희", text: $clientName)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        HStack(spacing: 12) {
+                            Text("파일 이름")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("예: 뜜_나나_루카루카", text: $filePrefix)
+                                .textFieldStyle(.roundedBorder)
+                            Text("_0001.jpg")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(width: 65)
+                        }
+                        if !filePrefix.isEmpty {
+                            HStack {
+                                Spacer().frame(width: 92)
+                                Text("미리보기: \(filePrefix)_0001.jpg")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.purple)
+                                Spacer()
                             }
                         }
                     }
-                    .toggleStyle(.checkbox)
+                    .padding(4)
+                }
 
-                    if uploadOriginal {
-                        HStack {
-                            Text("원본 해상도")
-                                .font(.system(size: 11))
-                            Picker("", selection: $originalResolution) {
-                                Text("1200px").tag(1200)
-                                Text("2000px").tag(2000)
-                                Text("2500px").tag(2500)
+                // 접근 권한
+                GroupBox {
+                    VStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            Text("접근 권한")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 80, alignment: .trailing)
+                            Picker("", selection: $accessMode) {
+                                ForEach(ClientSelectService.AccessMode.allCases, id: \.self) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
                             }
+                            .labelsHidden()
                             .pickerStyle(.segmented)
-                            .frame(width: 220)
+                        }
+                        if accessMode == .emailRestricted {
+                            HStack(spacing: 12) {
+                                Text("Gmail")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .frame(width: 80, alignment: .trailing)
+                                TextField("client@gmail.com", text: $clientEmail)
+                                    .textFieldStyle(.roundedBorder)
+                            }
                         }
                     }
+                    .padding(4)
                 }
 
-                Divider()
+                // 원본 업로드
+                GroupBox {
+                    VStack(spacing: 8) {
+                        Toggle(isOn: $uploadOriginal) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.down.doc.fill")
+                                    .foregroundColor(.blue)
+                                Text("원본 파일 업로드 (클라이언트 다운로드용)")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .toggleStyle(.checkbox)
 
-                // 사진 수
-                HStack {
+                        if uploadOriginal {
+                            HStack(spacing: 12) {
+                                Text("해상도")
+                                    .font(.system(size: 11))
+                                    .frame(width: 80, alignment: .trailing)
+                                Picker("", selection: $originalResolution) {
+                                    Text("1200px").tag(1200)
+                                    Text("2000px").tag(2000)
+                                    Text("2500px").tag(2500)
+                                }
+                                .pickerStyle(.segmented)
+                            }
+                        }
+                    }
+                    .padding(4)
+                }
+
+                // 요약
+                HStack(spacing: 8) {
                     Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 14))
                         .foregroundColor(.purple)
-                    Text("\(photoCount)장 업로드 예정")
-                        .font(.system(size: 13, weight: .medium))
-                    Text("(셀렉용 1200px\(uploadOriginal ? " + 원본 \(originalResolution)px ZIP" : ""))")
+                    Text("\(photoCount)장")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("셀렉용 1200px\(uploadOriginal ? " + 원본 \(originalResolution)px ZIP" : "")")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                    Spacer()
                 }
-                .padding(10)
+                .padding(12)
                 .background(Color.purple.opacity(0.06))
-                .cornerRadius(8)
-
-                // 안내
-                VStack(spacing: 4) {
-                    infoRow(icon: "arrow.up.doc.fill", color: .blue, text: "사진을 1200px JPEG으로 리사이즈 후 업로드")
-                    infoRow(icon: "link", color: .green, text: "QR코드 + 링크 생성 (카톡으로 전달)")
-                    infoRow(icon: "hand.tap.fill", color: .orange, text: "클라이언트가 웹에서 셀렉 + 코멘트")
-                    infoRow(icon: "arrow.down.doc.fill", color: .purple, text: ".pickshot 파일로 셀렉 결과 자동 연동")
-                }
-                .padding(8)
-                .background(Color.blue.opacity(0.04))
                 .cornerRadius(8)
             }
             .padding(.horizontal, 28)

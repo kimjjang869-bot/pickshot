@@ -272,9 +272,41 @@ class ClientSelectService: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.isUploading = false
             self?.uploadSpeed = "완료"
-            self?.showSetup = true  // 완료 창 자동 표시
+            self?.showSetup = true
+            // 세션 정보 저장 (재시작해도 Drive에서 가져오기 가능)
+            self?.saveLastSession()
             fputs("[CLIENT] ✅ 업로드 완료: \(self?.uploadDone ?? 0)장, 링크: \(self?.viewerLink ?? "없음")\n", stderr)
         }
+    }
+
+    // MARK: - 세션 저장/복원 (앱 재시작해도 Drive 가져오기 가능)
+
+    private func saveLastSession() {
+        let d = UserDefaults.standard
+        d.set(driveFolderID, forKey: "cs_lastFolderID")
+        d.set(sessionName, forKey: "cs_lastSessionName")
+        d.set(clientName, forKey: "cs_lastClientName")
+        d.set(viewerLink, forKey: "cs_lastViewerLink")
+    }
+
+    func restoreLastSession() -> Bool {
+        let d = UserDefaults.standard
+        guard let fid = d.string(forKey: "cs_lastFolderID"), !fid.isEmpty else { return false }
+        driveFolderID = fid
+        sessionName = d.string(forKey: "cs_lastSessionName") ?? ""
+        clientName = d.string(forKey: "cs_lastClientName") ?? ""
+        viewerLink = d.string(forKey: "cs_lastViewerLink")
+        isActive = true
+        fputs("[CLIENT] 세션 복원: \(sessionName) folder=\(fid)\n", stderr)
+        return true
+    }
+
+    var hasLastSession: Bool {
+        UserDefaults.standard.string(forKey: "cs_lastFolderID")?.isEmpty == false
+    }
+
+    var lastSessionName: String {
+        UserDefaults.standard.string(forKey: "cs_lastSessionName") ?? ""
     }
 
     // MARK: - 사진 리사이즈

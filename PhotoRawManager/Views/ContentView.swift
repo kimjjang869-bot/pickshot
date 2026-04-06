@@ -227,16 +227,16 @@ struct ContentView: View {
                                     .padding(.vertical, 6)
                                     .background(Color(nsColor: .windowBackgroundColor))
                                 }
-                                .frame(width: store.hSplitPosition)
+                                .frame(width: min(store.hSplitPosition, geo.size.width * 0.6))
 
                                 // Horizontal divider handle
                                 DragHandle(axis: .horizontal)
                                     .gesture(
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
-                                                // Throttle: only update every 4px to reduce LazyVGrid relayout
                                                 let newW = store.hSplitPosition + value.translation.width
-                                                let clamped = max(200, min(newW, geo.size.width - 300))
+                                                let maxW = geo.size.width * 0.7  // 최대 70%
+                                                let clamped = max(200, min(newW, maxW))
                                                 if abs(clamped - store.hSplitPosition) >= 4 {
                                                     store.hSplitPosition = clamped
                                                 }
@@ -255,7 +255,7 @@ struct ContentView: View {
                                                     .allowsHitTesting(false)
                                                 : nil
                                             )
-                                            .frame(height: store.vSplitPosition)
+                                            .frame(height: min(store.vSplitPosition, geo.size.height * 0.85))
 
                                         // Vertical divider handle
                                         DragHandle(axis: .vertical)
