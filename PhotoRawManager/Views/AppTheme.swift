@@ -79,18 +79,18 @@ enum AppTheme {
     }
 
     // MARK: - Standard Button Height
-    static var buttonHeight: CGFloat { scaled(32) }
-    static var pillSize: CGFloat { scaled(28) }
+    static var buttonHeight: CGFloat { scaled(34) }
+    static var pillSize: CGFloat { scaled(30) }
 
     // MARK: - Icon Sizes
-    static var iconSmall: CGFloat { scaled(12) }
-    static var iconMedium: CGFloat { scaled(14) }
-    static var iconLarge: CGFloat { scaled(16) }
+    static var iconSmall: CGFloat { scaled(13) }
+    static var iconMedium: CGFloat { scaled(15) }
+    static var iconLarge: CGFloat { scaled(18) }
 
     // MARK: - Font Sizes
-    static var fontMicro: CGFloat { scaled(10) }
-    static var fontCaption: CGFloat { scaled(11) }
-    static var fontBody: CGFloat { scaled(12) }
-    static var fontSubhead: CGFloat { scaled(13) }
-    static var fontHeading: CGFloat { scaled(14) }
+    static var fontMicro: CGFloat { scaled(11) }
+    static var fontCaption: CGFloat { scaled(12) }
+    static var fontBody: CGFloat { scaled(13) }
+    static var fontSubhead: CGFloat { scaled(14) }
+    static var fontHeading: CGFloat { scaled(15) }
 }

@@ -246,34 +246,16 @@ class ClientSelectService: ObservableObject {
                 if let mid = manifestId {
                     viewerURL += "&manifest=\(mid)"
                 }
-                // 사진 수가 적으면 (100장 이하) Base64 data도 추가 (CORS 우회)
-                if uploadedFiles.count <= 100 {
-                    let miniManifest: [String: Any] = [
-                        "sessionName": self?.sessionName ?? "",
-                        "clientName": self?.clientName ?? "",
-                        "totalPhotos": uploadedFiles.count,
-                        "photos": uploadedFiles.map { info -> [String: Any] in
-                            let fid = info["driveFileId"] as? String ?? ""
-                            return [
-                                "filename": info["filename"] ?? "",
-                                "originalFilename": info["originalFilename"] ?? "",
-                                "driveFileId": fid,
-                                "thumbUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w300",
-                                "fullUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w1200"
-                            ]
-                        }
-                    ]
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: miniManifest),
-                       let b64 = jsonData.base64EncodedString().addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-                        viewerURL += "#data=\(b64)"
-                    }
+                // manifest를 GitHub Pages에 업로드 (CORS 없음 + 짧은 URL)
+                let sid = String(folderID.prefix(12))
+                if let manifestData = self?.getManifestJSON(photos: uploadedFiles) {
+                    self?.uploadManifestToGitHub(sessionId: sid, data: manifestData)
                 }
+                viewerURL += "&mid=\(sid)"
                 self?.viewerLink = viewerURL
 
                 // QR 코드 생성
-                if let viewerLink = self?.viewerLink {
-                    self?.qrCodeImage = self?.generateQRCode(from: viewerLink)
-                }
+                self?.qrCodeImage = self?.generateQRCode(from: viewerURL)
             }
             linkSemaphore.signal()
         }
@@ -370,6 +352,95 @@ class ClientSelectService: ObservableObject {
         }
     }
 
+    private func getManifestJSON(photos: [[String: Any]]) -> Data? {
+        let manifest: [String: Any] = [
+            "sessionName": sessionName,
+            "clientName": clientName,
+            "totalPhotos": photos.count,
+            "originalZipFileId": originalZipFileId ?? "",
+            "photos": photos.map { info -> [String: Any] in
+                let fid = info["driveFileId"] as? String ?? ""
+                return [
+                    "filename": info["filename"] ?? "",
+                    "originalFilename": info["originalFilename"] ?? "",
+                    "driveFileId": fid,
+                    "thumbUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w200",
+                    "fullUrl": "https://drive.google.com/thumbnail?id=\(fid)&sz=w1200"
+                ]
+            }
+        ]
+        return try? JSONSerialization.data(withJSONObject: manifest)
+    }
+
+    // MARK: - GitHub Pages에 manifest 업로드
+
+    private func uploadManifestToGitHub(sessionId: String, data: Data) {
+        // macOS Keychain에서 GitHub 토큰
+        let ghToken: String? = {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+            proc.arguments = ["find-internet-password", "-s", "github.com", "-w"]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
+            try? proc.run()
+            proc.waitUntilExit()
+            let out = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: out, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+
+        guard let ghToken = ghToken, !ghToken.isEmpty else {
+            fputs("[CLIENT] GitHub 토큰 없음 — manifest GitHub 업로드 스킵\n", stderr)
+            return
+        }
+
+        let b64Content = data.base64EncodedString()
+        let apiURL = URL(string: "https://api.github.com/repos/kimjjang869-bot/pickshot-viewer/contents/data/\(sessionId).json")!
+
+        var request = URLRequest(url: apiURL)
+        request.httpMethod = "PUT"
+        request.setValue("token \(ghToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "message": "Add manifest \(sessionId)",
+            "content": b64Content
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let sem = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let http = response as? HTTPURLResponse {
+                fputs("[CLIENT] GitHub manifest 업로드: HTTP \(http.statusCode)\n", stderr)
+            }
+            sem.signal()
+        }.resume()
+        sem.wait()
+    }
+
+    // MARK: - URL 단축 (is.gd)
+
+    private func shortenURL(_ longURL: String) -> String {
+        guard let encoded = longURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let apiURL = URL(string: "https://is.gd/create.php?format=simple&url=\(encoded)") else {
+            return longURL
+        }
+        let sem = DispatchSemaphore(value: 0)
+        var shortURL = longURL
+        URLSession.shared.dataTask(with: apiURL) { data, _, _ in
+            if let data = data, let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               result.hasPrefix("https://") {
+                shortURL = result
+                fputs("[CLIENT] URL 단축: \(result)\n", stderr)
+            } else {
+                fputs("[CLIENT] URL 단축 실패, 원본 사용\n", stderr)
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 5)
+        return shortURL
+    }
+
     // MARK: - Manifest 업로드
 
     @discardableResult
@@ -414,6 +485,25 @@ class ClientSelectService: ObservableObject {
         sem.wait()
 
         try? FileManager.default.removeItem(at: tempURL)
+
+        // manifest 파일도 공개 권한 설정 (웹 뷰어에서 CORS 없이 접근 가능)
+        if let fileId = manifestFileId {
+            let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)/permissions")!
+            var permReq = URLRequest(url: permURL)
+            permReq.httpMethod = "POST"
+            permReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            permReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            permReq.httpBody = try? JSONSerialization.data(withJSONObject: ["role": "reader", "type": "anyone"])
+            let permSem = DispatchSemaphore(value: 0)
+            URLSession.shared.dataTask(with: permReq) { _, resp, _ in
+                if let http = resp as? HTTPURLResponse {
+                    fputs("[CLIENT] manifest 공개 권한: HTTP \(http.statusCode)\n", stderr)
+                }
+                permSem.signal()
+            }.resume()
+            permSem.wait()
+        }
+
         fputs("[CLIENT] manifest 업로드: \(manifestFileId ?? "실패")\n", stderr)
         return manifestFileId
     }
