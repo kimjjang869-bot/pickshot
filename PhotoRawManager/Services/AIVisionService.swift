@@ -23,11 +23,23 @@ class APIUsageTracker: ObservableObject {
         if budgetUSD == 0 { budgetUSD = 5.0 }
     }
 
-    // 모델별 가격
+    // 모델별 가격 (엔진에 따라 다름)
     var estimatedCostUSD: Double {
-        let isHaiku = ClaudeVisionService.model.contains("haiku")
-        let inputPrice = isHaiku ? 0.25 : 3.0    // $/M tokens
-        let outputPrice = isHaiku ? 1.25 : 15.0
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+        let inputPrice: Double
+        let outputPrice: Double
+        switch engine {
+        case "claudeHaiku":
+            inputPrice = 0.25; outputPrice = 1.25      // $/M tokens
+        case "claudeSonnet":
+            inputPrice = 3.0; outputPrice = 15.0
+        case "geminiFlash":
+            inputPrice = 0.15; outputPrice = 0.60       // Gemini 2.5 Flash
+        case "geminiPro":
+            inputPrice = 1.25; outputPrice = 10.0       // Gemini 2.5 Pro
+        default:
+            inputPrice = 0.25; outputPrice = 1.25
+        }
         let inputCost = Double(totalInputTokens) / 1_000_000.0 * inputPrice
         let outputCost = Double(totalOutputTokens) / 1_000_000.0 * outputPrice
         return inputCost + outputCost
@@ -72,13 +84,13 @@ struct ClaudeVisionService {
     private static let keychainKey = "claude_api_key"
     private static let legacyDefaultsKey = "ClaudeVisionAPIKey"
     private static let apiEndpoint = "https://api.anthropic.com/v1/messages"
-    // 모델 선택: 설정에서 변경 가능 (haiku=저렴+빠름, sonnet=정확)
+    // 설정의 aiClassifyEngine으로 모델 결정
     static var model: String {
-        let engine = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
         switch engine {
-        case "sonnet": return "claude-sonnet-4-20250514"
-        case "haiku": return "claude-haiku-3-5-20241022"
-        default: return "claude-haiku-3-5-20241022"
+        case "claudeSonnet": return "claude-sonnet-4-20250514"
+        case "claudeHaiku": return "claude-3-5-haiku-20241022"
+        default: return "claude-3-5-haiku-20241022"
         }
     }
     private static let maxImageDimension: CGFloat = 1024
@@ -554,7 +566,7 @@ struct ClaudeVisionService {
 
     static func classifyPhoto(url: URL, customPrompt: String? = nil) async throws -> AIPhotoClassification {
         let prompt = customPrompt ?? defaultClassifyPrompt
-        let response = try await analyzeImage(url: url, prompt: prompt)
+        let response = try await analyzeImageWithCurrentEngine(url: url, prompt: prompt)
 
         let cleaned = response
             .replacingOccurrences(of: "```json", with: "")
@@ -578,37 +590,60 @@ struct ClaudeVisionService {
     static func batchClassify(
         photos: [PhotoItem],
         customPrompt: String? = nil,
-        progress: @escaping (Int, Int) -> Void
+        progress: @escaping (Int, Int) -> Void,
+        onClassified: ((PhotoItem, AIPhotoClassification) -> Void)? = nil,
+        onError: ((PhotoItem, String) -> Void)? = nil
     ) async throws -> [UUID: AIPhotoClassification] {
         var results: [UUID: AIPhotoClassification] = [:]
         let total = photos.count
 
-        // Process 3 at a time to balance speed vs API rate limits
-        let batchSize = 3
+        // 엔진별 최적 동시 처리 수 (Tier 1 기준 안전값)
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+        let batchSize: Int = {
+            switch engine {
+            case "claudeHaiku": return 5      // 50 RPM, 빠름
+            case "claudeSonnet": return 3     // 50 RPM, 느림
+            case "geminiFlash": return 3      // 10 RPM(무료), 1000 RPM(유료)
+            case "geminiPro": return 1        // 2 RPM(무료)
+            default: return 3
+            }
+        }()
         for batchStart in stride(from: 0, to: total, by: batchSize) {
             let batchEnd = min(batchStart + batchSize, total)
             let batch = Array(photos[batchStart..<batchEnd])
 
-            await withTaskGroup(of: (UUID, AIPhotoClassification?).self) { group in
+            await withTaskGroup(of: (UUID, AIPhotoClassification?, String?).self) { group in
                 for photo in batch {
                     group.addTask {
                         do {
                             let classification = try await classifyPhoto(url: photo.jpgURL, customPrompt: customPrompt)
-                            return (photo.id, classification)
+                            return (photo.id, classification, nil)
                         } catch {
-                            return (photo.id, nil)
+                            fputs("[API] ERROR \(photo.jpgURL.lastPathComponent): \(error.localizedDescription)\n", stderr)
+                            return (photo.id, nil, error.localizedDescription)
                         }
                     }
                 }
-                for await (id, classification) in group {
+                for await (id, classification, errorMsg) in group {
                     if let c = classification {
                         results[id] = c
+                        fputs("[API] classified \(id.uuidString.prefix(6)) cat=\(c.category)\n", stderr)
+                        // 분류 즉시 콜백 (폴더 이동 등)
+                        if let photo = batch.first(where: { $0.id == id }) {
+                            onClassified?(photo, c)
+                        }
+                    } else {
+                        fputs("[API] FAILED \(id.uuidString.prefix(6))\n", stderr)
+                        // 에러 콜백 호출
+                        if let photo = batch.first(where: { $0.id == id }) {
+                            onError?(photo, errorMsg ?? "알 수 없는 오류")
+                        }
                     }
                 }
             }
 
             await MainActor.run {
-                progress(batchEnd, total)
+                progress(results.count, total)  // 성공한 것만 카운트
             }
         }
 
@@ -661,9 +696,21 @@ struct ClaudeVisionService {
         }.map { $0.id }
     }
 
+    // MARK: - 엔진 라우팅 (Claude / Gemini)
+
+    /// 현재 설정된 엔진에 따라 적절한 API로 이미지 분석
+    static func analyzeImageWithCurrentEngine(url: URL, prompt: String) async throws -> String {
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+        if engine.hasPrefix("gemini") {
+            return try await GeminiService.analyzeImage(url: url, prompt: prompt)
+        } else {
+            return try await analyzeImage(url: url, prompt: prompt)
+        }
+    }
+
     // MARK: - Image Encoding
 
-    private static func loadAndEncodeImage(from url: URL) throws -> Data {
+    static func loadAndEncodeImage(from url: URL) throws -> Data {
         let jpeg: Data? = try autoreleasepool {
             guard let image = NSImage(contentsOf: url) else {
                 throw ClaudeVisionError.imageLoadFailed
@@ -701,5 +748,139 @@ struct ClaudeVisionService {
             throw ClaudeVisionError.encodingFailed
         }
         return result
+    }
+}
+
+// MARK: - GeminiService
+
+struct GeminiService {
+    // Gemini 모델 매핑
+    static var model: String {
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "geminiFlash"
+        switch engine {
+        case "geminiPro": return "gemini-2.5-pro-preview-06-05"
+        case "geminiFlash": return "gemini-2.5-flash-preview-05-20"
+        default: return "gemini-2.5-flash-preview-05-20"
+        }
+    }
+
+    enum GeminiError: LocalizedError {
+        case noAPIKey
+        case imageLoadFailed
+        case encodingFailed
+        case requestFailed(String)
+        case invalidResponse
+        case apiError(String)
+        case rateLimited(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .noAPIKey: return "Gemini API 키가 설정되지 않았습니다. (설정 → AI 분류)"
+            case .imageLoadFailed: return "이미지를 불러올 수 없습니다."
+            case .encodingFailed: return "이미지 인코딩 실패."
+            case .requestFailed(let m): return "요청 실패: \(m)"
+            case .invalidResponse: return "잘못된 Gemini 응답."
+            case .apiError(let m): return "Gemini API 오류: \(m)"
+            case .rateLimited(let m): return "Gemini 속도 제한: \(m)"
+            }
+        }
+    }
+
+    /// UserDefaults에서 Gemini API 키 읽기
+    static func getAPIKey() -> String? {
+        let key = UserDefaults.standard.string(forKey: "GeminiAPIKey")
+        return (key?.isEmpty == false) ? key : nil
+    }
+
+    /// API 키 존재 여부
+    static var hasAPIKey: Bool {
+        return getAPIKey() != nil
+    }
+
+    /// Gemini API로 이미지 분석
+    static func analyzeImage(url: URL, prompt: String) async throws -> String {
+        guard let apiKey = getAPIKey() else {
+            throw GeminiError.noAPIKey
+        }
+
+        // 이미지 로드 + 리사이즈 (Claude와 동일한 방식)
+        guard let imageData = try? ClaudeVisionService.loadAndEncodeImage(from: url) else {
+            throw GeminiError.imageLoadFailed
+        }
+
+        let base64String = imageData.base64EncodedString()
+
+        // Gemini API 요청 구성
+        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)"
+        guard let apiURL = URL(string: endpoint) else {
+            throw GeminiError.encodingFailed
+        }
+
+        // Gemini 요청 바디: inline_data 형식
+        let requestBody: [String: Any] = [
+            "contents": [[
+                "parts": [
+                    [
+                        "inline_data": [
+                            "mime_type": "image/jpeg",
+                            "data": base64String
+                        ]
+                    ],
+                    [
+                        "text": prompt
+                    ]
+                ]
+            ]],
+            "generationConfig": [
+                "maxOutputTokens": 1500,
+                "temperature": 0.2
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            throw GeminiError.encodingFailed
+        }
+
+        var request = URLRequest(url: apiURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        // HTTP 에러 처리
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            if let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = body["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                // 429 = 속도 제한
+                if http.statusCode == 429 {
+                    throw GeminiError.rateLimited(message)
+                }
+                throw GeminiError.apiError(message)
+            }
+            throw GeminiError.requestFailed("HTTP \(http.statusCode)")
+        }
+
+        // 응답 파싱: candidates[0].content.parts[0].text
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let firstCandidate = candidates.first,
+              let content = firstCandidate["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let text = parts.first?["text"] as? String else {
+            throw GeminiError.invalidResponse
+        }
+
+        // 토큰 사용량 추적
+        if let usageMetadata = json["usageMetadata"] as? [String: Any] {
+            let promptTokens = usageMetadata["promptTokenCount"] as? Int ?? 0
+            let candidatesTokens = usageMetadata["candidatesTokenCount"] as? Int ?? 0
+            await MainActor.run {
+                APIUsageTracker.shared.addUsage(inputTokens: promptTokens, outputTokens: candidatesTokens)
+            }
+        }
+
+        return text
     }
 }

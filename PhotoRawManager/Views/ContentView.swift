@@ -332,6 +332,11 @@ struct ContentView: View {
         } message: {
             Text(importResultMessage)
         }
+        .alert("AI 분류 오류", isPresented: $store.showAIClassifyError) {
+            Button("확인") {}
+        } message: {
+            Text(store.aiClassifyErrorMessage)
+        }
         .alert("AI 분류 완료", isPresented: $store.showOrganizePrompt) {
             Button("폴더 정리") { store.organizeByAICategory() }
             Button("나중에", role: .cancel) {}
@@ -637,6 +642,18 @@ struct AIClassifyProgressBar: View {
                     Text("AI 분류 중...")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
+                    // 에러 카운트 표시
+                    if !store.aiClassifyErrors.isEmpty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.red)
+                            Text("\(store.aiClassifyErrors.count) 실패")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.red)
+                        }
+                        .help(store.aiClassifyErrors.last.map { "\($0.0): \($0.1)" } ?? "")
+                    }
                     Text("\(done)/\(total)")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundColor(.secondary)
@@ -737,16 +754,40 @@ struct CustomPromptView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     let count = store.filteredPhotos.count
-                    let isHaiku = ClaudeVisionService.model.contains("haiku")
-                    let modelName = isHaiku ? "Haiku" : "Sonnet"
+                    let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+                    let modelName: String = {
+                        switch engine {
+                        case "claudeHaiku": return "Haiku"
+                        case "claudeSonnet": return "Sonnet"
+                        case "geminiFlash": return "Gemini Flash"
+                        case "geminiPro": return "Gemini Pro"
+                        default: return engine
+                        }
+                    }()
                     Text("\(count)장 · \(modelName)")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    // Haiku: ~$0.00025/장, Sonnet: ~$0.003/장
-                    let costPerPhoto = isHaiku ? 0.00025 : 0.003
+                    let costPerPhoto: Double = {
+                        switch engine {
+                        case "claudeHaiku": return 0.00025
+                        case "claudeSonnet": return 0.003
+                        case "geminiFlash": return 0.00008
+                        case "geminiPro": return 0.00125
+                        default: return 0.00025
+                        }
+                    }()
                     let cost = Double(count) * costPerPhoto
-                    let secPerPhoto = isHaiku ? 1.0 : 2.0
-                    let seconds = Double(count) / 3.0 * secPerPhoto
+                    let batchSize: Double = {
+                        switch engine {
+                        case "claudeHaiku": return 5
+                        case "claudeSonnet": return 3
+                        case "geminiFlash": return 3
+                        case "geminiPro": return 1
+                        default: return 3
+                        }
+                    }()
+                    let secPerPhoto: Double = engine.contains("Flash") || engine.contains("Haiku") ? 1.0 : 2.0
+                    let seconds = Double(count) / batchSize * secPerPhoto
                     let minutes = Int(seconds / 60)
                     let secs = Int(seconds) % 60
                     Text("예상: $\(String(format: "%.2f", cost)) · \(minutes > 0 ? "\(minutes)분 " : "")\(secs)초")

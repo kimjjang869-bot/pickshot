@@ -513,6 +513,43 @@ struct PhotoContextMenu: View {
                 Label("원본 삭제 (휴지통)", systemImage: "trash")
             }
         }
+
+        Divider()
+
+        // 새 폴더 만들기 (현재 폴더 안에)
+        Button(action: {
+            createNewFolderInCurrentFolder()
+        }) {
+            Label("새 폴더 만들기", systemImage: "folder.badge.plus")
+        }
+    }
+
+    /// 현재 열려 있는 폴더 안에 새 폴더 생성
+    private func createNewFolderInCurrentFolder() {
+        guard let parentURL = store.folderURL else { return }
+        let alert = NSAlert()
+        alert.messageText = "새 폴더 만들기"
+        alert.informativeText = "폴더 이름을 입력하세요"
+        alert.addButton(withTitle: "만들기")
+        alert.addButton(withTitle: "취소")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "새 폴더"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            let newFolder = parentURL.appendingPathComponent(name)
+            do {
+                try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+                store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
+                // 현재 폴더 새로고침
+                store.loadFolder(parentURL, restoreRatings: true)
+            } catch {
+                store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
+            }
+        }
     }
 }
 

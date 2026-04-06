@@ -133,6 +133,33 @@ struct FolderBrowserView: View {
         }
     }
 
+    /// 지정된 폴더 안에 새 하위 폴더 생성
+    private func createNewSubfolder(in parentURL: URL) {
+        let alert = NSAlert()
+        alert.messageText = "새 폴더 만들기"
+        alert.informativeText = "폴더 이름을 입력하세요"
+        alert.addButton(withTitle: "만들기")
+        alert.addButton(withTitle: "취소")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "새 폴더"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            let newFolder = parentURL.appendingPathComponent(name)
+            do {
+                try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+                store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
+                // 트리 새로고침
+                refreshRootItems()
+            } catch {
+                store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func refreshRootItems() {
         DispatchQueue.global(qos: .userInitiated).async {
             let items = buildRootItems()
@@ -451,6 +478,8 @@ struct FolderBrowserView: View {
                             favorites = store.loadFavoriteFolders()
                         }
                         Button("Finder에서 열기") { NSWorkspace.shared.open(url) }
+                        Divider()
+                        Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
                 }
@@ -518,6 +547,8 @@ struct FolderBrowserView: View {
                         Button("Finder에서 열기") {
                             NSWorkspace.shared.open(url)
                         }
+                        Divider()
+                        Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
                 }
@@ -580,6 +611,8 @@ struct FolderBrowserView: View {
                         Button("Finder에서 열기") {
                             NSWorkspace.shared.open(url)
                         }
+                        Divider()
+                        Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
                 }
@@ -635,6 +668,8 @@ struct FolderBrowserView: View {
                         Button("Finder에서 열기") {
                             NSWorkspace.shared.open(url)
                         }
+                        Divider()
+                        Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
                 }
@@ -780,6 +815,8 @@ struct FolderBrowserView: View {
                                 Button("Finder에서 열기") {
                                     NSWorkspace.shared.open(item.url)
                                 }
+                                Divider()
+                                Button("새 폴더 만들기") { createNewSubfolder(in: item.url) }
                             }
                         }
                     }
@@ -886,6 +923,34 @@ struct FolderRowView: View {
 
     private var isExternalVolume: Bool {
         item.url.path.hasPrefix("/Volumes") && level == 0
+    }
+
+    /// 지정된 폴더 안에 새 하위 폴더 생성
+    private func createNewSubfolder(in parentURL: URL) {
+        let alert = NSAlert()
+        alert.messageText = "새 폴더 만들기"
+        alert.informativeText = "폴더 이름을 입력하세요"
+        alert.addButton(withTitle: "만들기")
+        alert.addButton(withTitle: "취소")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "새 폴더"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            let newFolder = parentURL.appendingPathComponent(name)
+            do {
+                try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+                store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
+                // 트리 아이템 자식 새로고침
+                item.children = FolderItem.loadChildren(of: item.url)
+                if !item.isExpanded { item.isExpanded = true }
+            } catch {
+                store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func startRenaming() {
@@ -1078,6 +1143,8 @@ struct FolderRowView: View {
                         Label("하위 폴더 포함 열기", systemImage: "folder.badge.plus")
                     }
                 }
+                Divider()
+                Button("새 폴더 만들기") { createNewSubfolder(in: item.url) }
                 if isExternalVolume {
                     Divider()
                     Button("디스크 추출") { showEjectConfirm = true }

@@ -259,6 +259,9 @@ class PhotoStore: ObservableObject {
     // AI Smart Classification
     @Published var isAIClassifying: Bool = false
     @Published var aiClassifyProgress: (Int, Int) = (0, 0)
+    @Published var aiClassifyErrors: [(String, String)] = []  // (파일명, 에러 메시지)
+    @Published var showAIClassifyError = false
+    @Published var aiClassifyErrorMessage = ""
     @Published var aiCategoryFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }   // 카테고리별 필터
 
     // Search
@@ -1965,23 +1968,87 @@ class PhotoStore: ObservableObject {
     @Published var aiClassifyCustomPrompt: String = ""
 
     func runAIClassification(customPrompt: String? = nil) {
-        guard !photos.isEmpty, !isAIClassifying, ClaudeVisionService.hasAPIKey else { return }
+        // 엔진에 따라 적절한 API 키 확인
+        let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
+        let hasKey = engine.hasPrefix("gemini") ? GeminiService.hasAPIKey : ClaudeVisionService.hasAPIKey
+        guard !photos.isEmpty, !isAIClassifying, hasKey else { return }
         isAIClassifying = true
         aiClassifyProgress = (0, photos.count)
+        aiClassifyErrors = []  // 에러 목록 초기화
 
         let photoSnapshots = filteredPhotos
         let prompt = customPrompt?.isEmpty == false ? customPrompt : nil
 
+        let baseURL = folderURL
+
+        // 폴더 제외 + 이미 분류된 사진 스킵
+        let unclassified = photoSnapshots.filter { !$0.isFolder && !$0.isParentFolder && $0.aiCategory == nil }
+        let skippedCount = photoSnapshots.count - unclassified.count
+        if skippedCount > 0 {
+            fputs("[CLASSIFY] \(skippedCount)장 이미 분류됨 → 스킵, \(unclassified.count)장 처리\n", stderr)
+        }
+        guard !unclassified.isEmpty else {
+            showToastMessage("모든 사진이 이미 분류되어 있습니다")
+            isAIClassifying = false
+            return
+        }
+        aiClassifyProgress = (skippedCount, photoSnapshots.count)
+
         Task { @MainActor in
             do {
                 let results = try await ClaudeVisionService.batchClassify(
-                    photos: photoSnapshots,
+                    photos: unclassified,
                     customPrompt: prompt,
                     progress: { [weak self] done, total in
-                        self?.aiClassifyProgress = (done, total)
+                        self?.aiClassifyProgress = (skippedCount + done, photoSnapshots.count)
+                    },
+                    onClassified: { photo, classification in
+                        // 분류 즉시 폴더 이동 (중간에 멈춰도 처리됨)
+                        let category = classification.category
+                        fputs("[CLASSIFY] base=\(baseURL?.path ?? "nil") cat='\(category)' file=\(photo.jpgURL.lastPathComponent)\n", stderr)
+                        guard let base = baseURL else {
+                            fputs("[CLASSIFY] ❌ baseURL nil\n", stderr)
+                            return
+                        }
+                        guard !category.isEmpty else {
+                            fputs("[CLASSIFY] ❌ category empty\n", stderr)
+                            return
+                        }
+                        let fm = FileManager.default
+                        let categoryFolder = base.appendingPathComponent(category)
+                        do {
+                            try fm.createDirectory(at: categoryFolder, withIntermediateDirectories: true)
+                        } catch {
+                            fputs("[CLASSIFY] ❌ mkdir failed: \(error)\n", stderr)
+                        }
+
+                        // JPG 이동
+                        let jpgDest = categoryFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                        if !fm.fileExists(atPath: jpgDest.path) {
+                            do {
+                                try fm.moveItem(at: photo.jpgURL, to: jpgDest)
+                                fputs("[CLASSIFY] ✅ \(photo.jpgURL.lastPathComponent) → \(category)/\n", stderr)
+                            } catch {
+                                fputs("[CLASSIFY] ❌ move failed: \(error)\n", stderr)
+                            }
+                        }
+                        // RAW 매칭 파일도 이동
+                        if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                            let rawDest = categoryFolder.appendingPathComponent(rawURL.lastPathComponent)
+                            if !fm.fileExists(atPath: rawDest.path) {
+                                try? fm.moveItem(at: rawURL, to: rawDest)
+                            }
+                        }
+                    },
+                    onError: { [weak self] photo, errorMsg in
+                        // 에러 수집 (메인 스레드에서 실행)
+                        DispatchQueue.main.async {
+                            self?.aiClassifyErrors.append((photo.jpgURL.lastPathComponent, errorMsg))
+                        }
                     }
                 )
 
+                // 분류 결과를 photos 배열에도 반영
                 let selectedID = self.selectedPhotoID
                 var updated = self.photos
                 for i in 0..<updated.count {
@@ -1998,13 +2065,30 @@ class PhotoStore: ObservableObject {
                 self.photos = updated
                 self.selectedPhotoID = selectedID
 
-                // 분류 완료 → 폴더 정리 제안
-                let categorizedCount = results.count
-                if categorizedCount > 0 {
-                    self.showOrganizePrompt = true
+                // 완료 → 폴더 리로딩
+                let movedCount = results.count
+                if movedCount > 0, let base = baseURL {
+                    self.showToastMessage("📂 \(movedCount)장 분류 완료 → 폴더 정리됨")
+                    self.loadFolder(base, restoreRatings: true)
                 }
             } catch {
                 print("AI Classification failed: \(error)")
+                self.aiClassifyErrorMessage = "AI 분류 실패: \(error.localizedDescription)"
+                self.showAIClassifyError = true
+            }
+            // 개별 사진 에러가 있으면 요약 표시
+            let errorCount = self.aiClassifyErrors.count
+            if errorCount > 0 {
+                let totalCount = unclassified.count
+                let successCount = totalCount - errorCount
+                var msg = "\(totalCount)장 중 \(successCount)장 성공, \(errorCount)장 실패"
+                // 마지막 에러 3개 표시
+                let recentErrors = self.aiClassifyErrors.suffix(3)
+                for (filename, errMsg) in recentErrors {
+                    msg += "\n- \(filename): \(errMsg)"
+                }
+                self.aiClassifyErrorMessage = msg
+                self.showAIClassifyError = true
             }
             self.isAIClassifying = false
         }
