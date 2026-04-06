@@ -53,6 +53,8 @@
 		'B20038' = {isa = PBXBuildFile; fileRef = A20038; };
 		'B20035' = {isa = PBXBuildFile; fileRef = A20035; };
 		'B20036' = {isa = PBXBuildFile; fileRef = A20036; };
+		CS10001 /* ClientSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS10003 /* ClientSelectService.swift */; };
+		CS10002 /* ClientSelectSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS10004 /* ClientSelectSetupView.swift */; };
 		BTV00100 /* TetherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ATV00100 /* TetherView.swift */; };
 		BTS00100 /* TetherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ATS00100 /* TetherService.swift */; };
 		'K30012' = {isa = PBXBuildFile; fileRef = 'K30011'; };
@@ -105,6 +107,8 @@
         K30001 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		'A20035' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectSetupView.swift; sourceTree = "<group>"; };
 		'A20036' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectQRView.swift; sourceTree = "<group>"; };
+		CS10003 /* ClientSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectService.swift; sourceTree = "<group>"; };
+		CS10004 /* ClientSelectSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectSetupView.swift; sourceTree = "<group>"; };
 		'B10000' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		'B10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRawManagerApp.swift; sourceTree = "<group>"; };
 		'B10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -256,6 +260,7 @@
 				B10033,
 				A20035,
 				A20036,
+				CS10004 /* ClientSelectSetupView.swift */,
 				'B10055',
 				B10034,
 				5997C658F4814B05A202D514,
@@ -288,6 +293,7 @@
 				B10030,
 				B10031,
 				A20034,
+				CS10003 /* ClientSelectService.swift */,
 				A20037,
 				A20038,
 				A20039,

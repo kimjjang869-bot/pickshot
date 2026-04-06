@@ -6,9 +6,13 @@ import AppKit
 struct FileMatchingService {
     static let jpgExtensions: Set<String> = ["jpg", "jpeg"]
     static let imageExtensions: Set<String> = [
+        "png",                      // PNG
         "heic", "heif",             // Apple HEIC/HEIF
         "psd",                      // Adobe Photoshop
         "tif", "tiff",              // TIFF
+        "bmp",                      // BMP
+        "gif",                      // GIF
+        "webp",                     // WebP
     ]
     static let videoExtensions: Set<String> = [
         "mov", "mp4", "avi", "m4v"  // Video files

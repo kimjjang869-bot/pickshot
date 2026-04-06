@@ -1766,6 +1766,13 @@ struct PhotoPreviewView: View {
                 let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 if let hi = hiRes {
                     fputs("[HIRES] loaded \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms\n", stderr)
+                    // hi-res가 현재 이미지보다 작으면 덮어쓰지 않음 (DNG 임베디드가 320px인 경우)
+                    let currentSize = max(self.image?.size.width ?? 0, self.image?.size.height ?? 0)
+                    let hiResSize = max(hi.size.width, hi.size.height)
+                    guard hiResSize > currentSize else {
+                        fputs("[HIRES] ⚠️ skip — hi-res \(Int(hiResSize))px < current \(Int(currentSize))px\n", stderr)
+                        return
+                    }
                     Self.hiResCache.setObject(hi, forKey: url as NSURL)
                     self.hiResImage = hi
                     self.image = hi
