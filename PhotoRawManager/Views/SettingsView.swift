@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @State private var hasChanges = true  // 처음엔 활성 (초기 저장용)
+    @State private var isSaved = false
+
     var body: some View {
         VStack(spacing: 0) {
             TabView {
@@ -25,21 +28,28 @@ struct SettingsView: View {
             HStack {
                 Button("되돌리기") {
                     NotificationCenter.default.post(name: .init("SettingsResetTab"), object: nil)
+                    isSaved = false
                 }
                 .help("현재 탭 설정을 기본값으로 초기화")
 
                 Spacer()
 
-                Button("확인") {
+                Button(isSaved ? "저장됨" : "확인") {
                     NotificationCenter.default.post(name: .init("SettingsChanged"), object: nil)
+                    isSaved = true
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
+                .disabled(isSaved)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
         }
         .frame(width: 550, height: 520)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            // 설정값 변경 감지 → 확인 버튼 활성화
+            if isSaved { isSaved = false }
+        }
     }
 }
 
@@ -347,6 +357,8 @@ struct AIEngineSettingsTab: View {
     @AppStorage("OpenAIAPIKey") private var openAIAPIKey = ""
     @AppStorage("aiBudgetUSD") private var aiBudgetUSD = "5.0"
     @AppStorage("aiConcurrency") private var aiConcurrency = 3
+    @AppStorage("claudeModel") private var claudeModel = "haiku"
+    @AppStorage("geminiModel") private var geminiModel = "flash"
 
     @State private var claudeAPIKey: String = ""
     @State private var testingEngine: String?
@@ -361,91 +373,91 @@ struct AIEngineSettingsTab: View {
                     .font(.callout)
                     .foregroundColor(.secondary)
 
-                GroupBox("엔진 선택") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Picker("AI 분류 엔진", selection: $aiClassifyEngine) {
-                            Text("Gemini Flash").tag("geminiFlash")
-                            Text("GPT-4o Mini").tag("gpt4oMini")
-                            Text("Claude Haiku").tag("claudeHaiku")
-                            Text("Claude Sonnet").tag("claudeSonnet")
-                        }
-
-                        Divider()
-
-                        Picker("AI 보정 엔진", selection: $aiCorrectionEngine) {
-                            Text("Claude Sonnet").tag("claudeSonnet")
-                            Text("Claude Haiku").tag("claudeHaiku")
-                            Text("GPT-4o").tag("gpt4o")
-                        }
-                    }
-                    .padding(4)
-                }
-
-                GroupBox("API 키") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Gemini API 키")
-                                .frame(width: 120, alignment: .leading)
-                            SecureField("API 키 입력", text: $geminiAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                            apiTestButton(engine: "gemini")
-                        }
-
-                        Divider()
-
-                        HStack {
-                            Text("OpenAI API 키")
-                                .frame(width: 120, alignment: .leading)
-                            SecureField("API 키 입력", text: $openAIAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                            apiTestButton(engine: "openai")
-                        }
-
-                        Divider()
-
-                        HStack {
-                            Text("Claude API 키")
-                                .frame(width: 120, alignment: .leading)
-                            SecureField("API 키 입력", text: $claudeAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                                .onAppear {
-                                    claudeAPIKey = ClaudeVisionService.getAPIKey() ?? ""
-                                }
-                                .onChange(of: claudeAPIKey) { newValue in
-                                    ClaudeVisionService.setAPIKey(newValue)
-                                }
-                            apiTestButton(engine: "claude")
-                        }
-
-                        if let result = testResult {
-                            HStack {
-                                Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(result.success ? .green : .red)
-                                Text(result.message)
-                                    .font(.callout)
-                                    .foregroundColor(result.success ? .green : .red)
+                GroupBox {
+                    VStack(spacing: 16) {
+                        // 엔진 선택 — 가운데 정렬
+                        VStack(spacing: 6) {
+                            Text("AI 분류 엔진")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $aiClassifyEngine) {
+                                Text("Claude Haiku — 저렴·빠름 ($0.25/M)").tag("claudeHaiku")
+                                Text("Claude Sonnet — 정확 ($3/M)").tag("claudeSonnet")
+                                Text("Gemini Flash — 최저가 ($0.075/M)").tag("geminiFlash")
+                                Text("Gemini Pro — 고성능 ($1.25/M)").tag("geminiPro")
                             }
-                            .padding(.top, 4)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity)
                         }
-                    }
-                    .padding(4)
-                }
+                        .frame(maxWidth: .infinity)
 
-                GroupBox("사용량 관리") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("월 예산 설정 ($)")
-                                .frame(width: 120, alignment: .leading)
-                            TextField("예산 (USD)", text: $aiBudgetUSD)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 100)
+                        Divider()
+
+                        // API 키
+                        VStack(spacing: 6) {
+                            Text("API 키")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+
+                            Grid(alignment: .leading, verticalSpacing: 8) {
+                                GridRow {
+                                    Text("Claude")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 55, alignment: .trailing)
+                                    SecureField("sk-ant-...", text: $claudeAPIKey)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onAppear { claudeAPIKey = ClaudeVisionService.getAPIKey() ?? "" }
+                                        .onChange(of: claudeAPIKey) { v in
+                                            ClaudeVisionService.setAPIKey(v)
+                                            ClaudeVisionService.invalidateAPIKeyCache()
+                                        }
+                                    apiTestButton(engine: "claude")
+                                }
+                                GridRow {
+                                    Text("Gemini")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 55, alignment: .trailing)
+                                    SecureField("AIza...", text: $geminiAPIKey)
+                                        .textFieldStyle(.roundedBorder)
+                                    apiTestButton(engine: "gemini")
+                                }
+                            }
+
+                            if let result = testResult {
+                                HStack(spacing: 4) {
+                                    Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(result.success ? .green : .red)
+                                    Text(result.message)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(result.success ? .green : .red)
+                                }
+                            }
                         }
 
                         Divider()
 
-                        Stepper("동시 처리 수: \(aiConcurrency)", value: $aiConcurrency, in: 1...6)
+                        // 사용량 — 한 줄로
+                        HStack(spacing: 20) {
+                            HStack(spacing: 4) {
+                                Text("월 예산")
+                                    .font(.system(size: 12, weight: .medium))
+                                Text("$")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                TextField("", text: $aiBudgetUSD)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 50)
+                            }
+                            HStack(spacing: 4) {
+                                Text("동시 처리")
+                                    .font(.system(size: 12, weight: .medium))
+                                Stepper("\(aiConcurrency)장", value: $aiConcurrency, in: 1...6)
+                                    .frame(width: 90)
+                            }
+                        }
                     }
-                    .padding(4)
+                    .padding(12)
                 }
             }
             .padding(20)

@@ -1997,11 +1997,66 @@ class PhotoStore: ObservableObject {
                 }
                 self.photos = updated
                 self.selectedPhotoID = selectedID
+
+                // 분류 완료 → 폴더 정리 제안
+                let categorizedCount = results.count
+                if categorizedCount > 0 {
+                    self.showOrganizePrompt = true
+                }
             } catch {
                 print("AI Classification failed: \(error)")
             }
             self.isAIClassifying = false
         }
+    }
+
+    /// 분류 후 폴더 정리 팝업
+    @Published var showOrganizePrompt = false
+
+    /// AI 분류 결과로 폴더 정리 — 카테고리별 하위 폴더 생성 + 파일 이동
+    func organizeByAICategory() {
+        guard let baseURL = folderURL else { return }
+        let fm = FileManager.default
+        var movedCount = 0
+        var failedCount = 0
+
+        // 분류된 사진만 대상
+        let categorized = photos.filter { $0.aiCategory != nil && !$0.isFolder && !$0.isParentFolder }
+        guard !categorized.isEmpty else { return }
+
+        for photo in categorized {
+            guard let category = photo.aiCategory else { continue }
+
+            // 카테고리 폴더 생성
+            let categoryFolder = baseURL.appendingPathComponent(category)
+            try? fm.createDirectory(at: categoryFolder, withIntermediateDirectories: true)
+
+            // JPG 이동
+            let jpgDest = categoryFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+            if !fm.fileExists(atPath: jpgDest.path) {
+                do {
+                    try fm.moveItem(at: photo.jpgURL, to: jpgDest)
+                    movedCount += 1
+                } catch {
+                    failedCount += 1
+                    fputs("[ORGANIZE] 이동 실패: \(photo.jpgURL.lastPathComponent) → \(error.localizedDescription)\n", stderr)
+                }
+            }
+
+            // RAW 매칭 파일도 이동
+            if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                let rawDest = categoryFolder.appendingPathComponent(rawURL.lastPathComponent)
+                if !fm.fileExists(atPath: rawDest.path) {
+                    try? fm.moveItem(at: rawURL, to: rawDest)
+                }
+            }
+        }
+
+        fputs("[ORGANIZE] 완료: \(movedCount)장 이동, \(failedCount)장 실패\n", stderr)
+        showToastMessage("📂 \(movedCount)장을 \(Set(categorized.compactMap { $0.aiCategory }).count)개 폴더로 정리 완료")
+
+        // 폴더 다시 로딩
+        loadFolder(baseURL, restoreRatings: true)
     }
 
     /// Available AI categories

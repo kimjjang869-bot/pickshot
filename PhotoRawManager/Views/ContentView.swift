@@ -317,15 +317,27 @@ struct ContentView: View {
                 if store.bgExportActive {
                     ExportProgressBar(store: store)
                 }
+                // AI 분류 진행률
+                if store.isAIClassifying {
+                    AIClassifyProgressBar(store: store)
+                }
             }
             .padding(.bottom, 40)
             .animation(.easeInOut, value: memoryCardService.sessions.count)
             .animation(.easeInOut, value: store.bgExportActive)
+            .animation(.easeInOut, value: store.isAIClassifying)
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
         } message: {
             Text(importResultMessage)
+        }
+        .alert("AI 분류 완료", isPresented: $store.showOrganizePrompt) {
+            Button("폴더 정리") { store.organizeByAICategory() }
+            Button("나중에", role: .cancel) {}
+        } message: {
+            let cats = store.availableAICategories
+            Text("분류 결과를 기반으로 \(cats.count)개 카테고리 폴더를 만들고 파일을 이동하시겠습니까?\n\n카테고리: \(cats.prefix(5).joined(separator: ", "))\(cats.count > 5 ? " 외 \(cats.count - 5)개" : "")")
         }
         .sheet(isPresented: $gSelect.showSetupSheet) { GSelectSetupView() }
         .sheet(isPresented: $store.showFaceCompare) {
@@ -594,6 +606,88 @@ struct ExportProgressBar: View {
     }
 }
 
+// MARK: - AI 분류 진행률 바
+
+struct AIClassifyProgressBar: View {
+    @ObservedObject var store: PhotoStore
+    @State private var dragOffset: CGSize = .zero
+    @State private var position: CGPoint = .zero
+    @State private var startTime = CFAbsoluteTimeGetCurrent()
+
+    var body: some View {
+        let (done, total) = store.aiClassifyProgress
+        let progress = total > 0 ? Double(done) / Double(total) : 0
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let eta: String = {
+            guard done > 0, elapsed > 1 else { return "계산 중..." }
+            let rate = Double(done) / elapsed
+            let remaining = Double(total - done) / rate
+            if remaining < 60 { return "\(Int(remaining))초 남음" }
+            return "\(Int(remaining / 60))분 \(Int(remaining) % 60)초 남음"
+        }()
+        let cost = Double(done) * (ClaudeVisionService.model.contains("haiku") ? 0.00025 : 0.003)
+
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16))
+                .foregroundColor(.purple)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("AI 분류 중...")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(done)/\(total)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 80, alignment: .trailing)
+                }
+
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.purple)
+
+                HStack {
+                    Text("$\(String(format: "%.3f", cost))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.orange)
+                    Spacer()
+                    Text(eta)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Button(action: {
+                store.isAIClassifying = false
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("분류 취소")
+        }
+        .padding(12)
+        .frame(width: 400)
+        .background(.ultraThinMaterial)
+        .cornerRadius(10)
+        .shadow(radius: 5)
+        .offset(dragOffset)
+        .gesture(
+            DragGesture()
+                .onChanged { value in dragOffset = value.translation }
+                .onEnded { value in
+                    position.x += value.translation.width
+                    position.y += value.translation.height
+                    dragOffset = .zero
+                }
+        )
+        .offset(x: position.x, y: position.y)
+        .onAppear { startTime = CFAbsoluteTimeGetCurrent() }
+    }
+}
+
 // MARK: - 커스텀 프롬프트 입력
 
 struct CustomPromptView: View {
@@ -641,9 +735,24 @@ struct CustomPromptView: View {
             HStack {
                 Button("취소") { dismiss() }
                 Spacer()
-                Text("\(store.filteredPhotos.count)장 분류")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                VStack(alignment: .trailing, spacing: 2) {
+                    let count = store.filteredPhotos.count
+                    let isHaiku = ClaudeVisionService.model.contains("haiku")
+                    let modelName = isHaiku ? "Haiku" : "Sonnet"
+                    Text("\(count)장 · \(modelName)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    // Haiku: ~$0.00025/장, Sonnet: ~$0.003/장
+                    let costPerPhoto = isHaiku ? 0.00025 : 0.003
+                    let cost = Double(count) * costPerPhoto
+                    let secPerPhoto = isHaiku ? 1.0 : 2.0
+                    let seconds = Double(count) / 3.0 * secPerPhoto
+                    let minutes = Int(seconds / 60)
+                    let secs = Int(seconds) % 60
+                    Text("예상: $\(String(format: "%.2f", cost)) · \(minutes > 0 ? "\(minutes)분 " : "")\(secs)초")
+                        .font(.system(size: 9))
+                        .foregroundColor(.orange)
+                }
                 Button("분류 실행") {
                     store.runAIClassification(customPrompt: promptText)
                     dismiss()

@@ -23,10 +23,13 @@ class APIUsageTracker: ObservableObject {
         if budgetUSD == 0 { budgetUSD = 5.0 }
     }
 
-    // Sonnet pricing: $3/M input, $15/M output
+    // 모델별 가격
     var estimatedCostUSD: Double {
-        let inputCost = Double(totalInputTokens) / 1_000_000.0 * 3.0
-        let outputCost = Double(totalOutputTokens) / 1_000_000.0 * 15.0
+        let isHaiku = ClaudeVisionService.model.contains("haiku")
+        let inputPrice = isHaiku ? 0.25 : 3.0    // $/M tokens
+        let outputPrice = isHaiku ? 1.25 : 15.0
+        let inputCost = Double(totalInputTokens) / 1_000_000.0 * inputPrice
+        let outputCost = Double(totalOutputTokens) / 1_000_000.0 * outputPrice
         return inputCost + outputCost
     }
 
@@ -69,7 +72,15 @@ struct ClaudeVisionService {
     private static let keychainKey = "claude_api_key"
     private static let legacyDefaultsKey = "ClaudeVisionAPIKey"
     private static let apiEndpoint = "https://api.anthropic.com/v1/messages"
-    private static let model = "claude-sonnet-4-20250514"
+    // 모델 선택: 설정에서 변경 가능 (haiku=저렴+빠름, sonnet=정확)
+    static var model: String {
+        let engine = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
+        switch engine {
+        case "sonnet": return "claude-sonnet-4-20250514"
+        case "haiku": return "claude-haiku-3-5-20241022"
+        default: return "claude-haiku-3-5-20241022"
+        }
+    }
     private static let maxImageDimension: CGFloat = 1024
 
     static func setAPIKey(_ key: String) {
