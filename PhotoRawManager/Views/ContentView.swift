@@ -87,7 +87,7 @@ struct ContentView: View {
                     // Folder Browser Sidebar (only when photos loaded)
                     if store.showFolderBrowser {
                         FolderBrowserView(isExpanded: $folderBrowserExpanded)
-                            .frame(width: folderBrowserExpanded ? folderBrowserWidth : 36)
+                            .frame(width: folderBrowserExpanded ? min(folderBrowserWidth, 280) : 36)
                             .animation(.easeInOut(duration: 0.2), value: folderBrowserExpanded)
 
                         // Drag handle for resizing
@@ -100,7 +100,7 @@ struct ContentView: View {
                                     DragGesture()
                                         .onChanged { value in
                                             let newWidth = folderBrowserWidth + value.translation.width
-                                            folderBrowserWidth = max(180, min(500, newWidth))
+                                            folderBrowserWidth = max(120, min(400, newWidth))
                                         }
                                 )
                                 .onHover { inside in
@@ -163,6 +163,9 @@ struct ContentView: View {
                     } else {
                         // Grid+Preview mode (default)
                         GeometryReader { geo in
+                            let leftW = max(150, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
+                            let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
+
                             HStack(spacing: 0) {
                                 // Left panel
                                 VStack(spacing: 0) {
@@ -227,18 +230,19 @@ struct ContentView: View {
                                     .padding(.vertical, 6)
                                     .background(Color(nsColor: .windowBackgroundColor))
                                 }
-                                .frame(width: min(store.hSplitPosition, geo.size.width * 0.6))
+                                .frame(width: leftW)
 
                                 // Horizontal divider handle
                                 DragHandle(axis: .horizontal)
                                     .gesture(
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
-                                                let newW = store.hSplitPosition + value.translation.width
-                                                let maxW = geo.size.width * 0.7  // 최대 70%
-                                                let clamped = max(200, min(newW, maxW))
-                                                if abs(clamped - store.hSplitPosition) >= 4 {
-                                                    store.hSplitPosition = clamped
+                                                let currentW = geo.size.width * store.hSplitRatio
+                                                let newW = currentW + value.translation.width
+                                                let newRatio = newW / geo.size.width
+                                                let clamped = max(0.10, min(newRatio, 0.55))
+                                                if abs(clamped - store.hSplitRatio) >= 0.003 {
+                                                    store.hSplitRatio = clamped
                                                 }
                                             }
                                     )
@@ -255,16 +259,17 @@ struct ContentView: View {
                                                     .allowsHitTesting(false)
                                                 : nil
                                             )
-                                            .frame(height: min(store.vSplitPosition, geo.size.height * 0.85))
+                                            .frame(height: previewH)
 
                                         // Vertical divider handle
                                         DragHandle(axis: .vertical)
                                             .gesture(
                                                 DragGesture()
                                                     .onChanged { value in
-                                                        let maxH = geo.size.height - 120
-                                                        let newH = store.vSplitPosition + value.translation.height
-                                                        store.vSplitPosition = max(150, min(newH, maxH))
+                                                        let currentH = geo.size.height * store.vSplitRatio
+                                                        let newH = currentH + value.translation.height
+                                                        let newRatio = newH / geo.size.height
+                                                        store.vSplitRatio = max(0.20, min(newRatio, 0.90))
                                                     }
                                             )
 

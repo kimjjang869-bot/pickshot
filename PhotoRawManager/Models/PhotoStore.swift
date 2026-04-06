@@ -136,22 +136,55 @@ class PhotoStore: ObservableObject {
         set { analysisCancelLock.lock(); _analysisCancel = newValue; analysisCancelLock.unlock() }
     }
     @Published var folderURL: URL?
-    // 화면 크기에 맞게 자동 조절
-    @Published var hSplitPosition: CGFloat = {
-        let saved = UserDefaults.standard.double(forKey: "savedHSplitPosition")
-        if saved > 0 { return CGFloat(saved) }
-        let screenW = NSScreen.main?.frame.width ?? 1440
-        return min(screenW * 0.35, 650)
+    // 비율 기반 분할 (0.0~1.0) — 창 크기 변해도 비율 유지
+    @Published var hSplitRatio: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "savedHSplitRatio")
+        if saved > 0.05 && saved < 0.95 { return CGFloat(saved) }
+        // 기존 절대값 마이그레이션
+        let oldPx = UserDefaults.standard.double(forKey: "savedHSplitPosition")
+        if oldPx > 0 {
+            let screenW = NSScreen.main?.frame.width ?? 1440
+            let ratio = oldPx / (screenW * 0.95)   // 윈도우는 화면의 95%
+            return max(0.15, min(0.50, ratio))
+        }
+        return 0.35
     }() {
-        didSet { UserDefaults.standard.set(Double(hSplitPosition), forKey: "savedHSplitPosition") }
+        didSet { UserDefaults.standard.set(Double(hSplitRatio), forKey: "savedHSplitRatio") }
     }
-    @Published var vSplitPosition: CGFloat = {
-        let saved = UserDefaults.standard.double(forKey: "savedVSplitPosition")
-        if saved > 0 { return CGFloat(saved) }
-        let screenH = NSScreen.main?.frame.height ?? 900
-        return screenH * 0.7
+    @Published var vSplitRatio: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "savedVSplitRatio")
+        if saved > 0.05 && saved < 0.95 { return CGFloat(saved) }
+        // 기존 절대값 마이그레이션
+        let oldPx = UserDefaults.standard.double(forKey: "savedVSplitPosition")
+        if oldPx > 0 {
+            let screenH = NSScreen.main?.frame.height ?? 900
+            let ratio = oldPx / (screenH * 0.95)
+            return max(0.20, min(0.90, ratio))
+        }
+        return 0.70
     }() {
-        didSet { UserDefaults.standard.set(Double(vSplitPosition), forKey: "savedVSplitPosition") }
+        didSet { UserDefaults.standard.set(Double(vSplitRatio), forKey: "savedVSplitRatio") }
+    }
+    // 하위 호환용 computed property (기존 코드에서 쓰는 곳 대비)
+    var hSplitPosition: CGFloat {
+        get {
+            let screenW = NSScreen.main?.frame.width ?? 1440
+            return hSplitRatio * (screenW * 0.95)
+        }
+        set {
+            let screenW = NSScreen.main?.frame.width ?? 1440
+            hSplitRatio = max(0.10, min(0.55, newValue / (screenW * 0.95)))
+        }
+    }
+    var vSplitPosition: CGFloat {
+        get {
+            let screenH = NSScreen.main?.frame.height ?? 900
+            return vSplitRatio * (screenH * 0.95)
+        }
+        set {
+            let screenH = NSScreen.main?.frame.height ?? 900
+            vSplitRatio = max(0.20, min(0.90, newValue / (screenH * 0.95)))
+        }
     }
     @Published var isLoading = false
     @Published var loadingProgress: Double = 0  // 0~1

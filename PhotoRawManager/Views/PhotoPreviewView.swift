@@ -709,7 +709,7 @@ struct PhotoPreviewView: View {
             Divider()
 
             // Toolbar: Correction | Stars + SP | Zoom
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 correctionBar
 
                 Divider().frame(height: 20).opacity(0.2)
@@ -730,7 +730,6 @@ struct PhotoPreviewView: View {
                 .clipShape(Capsule())
                 .help("스페이스 셀렉 토글 (Space)")
 
-                // Focus Map toggle
                 Divider().frame(height: 20).opacity(0.2)
 
                 // Rotation buttons
@@ -1131,9 +1130,8 @@ struct PhotoPreviewView: View {
     }
 
     private var zoomBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Spacer()
-
             // Current zoom percentage
             Text(currentZoomText)
                 .font(.system(size: AppTheme.fontBody, weight: .semibold, design: .monospaced))
@@ -1154,7 +1152,7 @@ struct PhotoPreviewView: View {
 
             // Zoom slider
             Slider(value: $sliderValue, in: 0...1)
-                .frame(width: 120)
+                .frame(minWidth: 60, maxWidth: 120)
                 .controlSize(.small)
                 .help("확대/축소 (더블클릭: 화면 맞춤)")
                 .onChange(of: sliderValue) { newVal in
