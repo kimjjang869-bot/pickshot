@@ -128,11 +128,13 @@ struct FolderBrowserView: View {
             let newName = input.stringValue.trimmingCharacters(in: .whitespaces)
             guard !newName.isEmpty else { return }
             store.setFavoriteNickname(url, name: newName)
-            favorites = store.loadFavoriteFolders()  // UI 갱신
+            favorites = []  // 강제 리렌더링
+            DispatchQueue.main.async { favorites = store.loadFavoriteFolders() }
             store.showToastMessage("'\(newName)'으로 표시 이름 변경")
         } else if response == .alertThirdButtonReturn {
             store.setFavoriteNickname(url, name: "")
-            favorites = store.loadFavoriteFolders()
+            favorites = []
+            DispatchQueue.main.async { favorites = store.loadFavoriteFolders() }
             store.showToastMessage("원래 이름으로 복원")
         }
     }
@@ -379,20 +381,37 @@ struct FolderBrowserView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(favorites, id: \.path) { url in
-                                HStack(spacing: 10) {
+                                HStack(spacing: 6) {
                                     AsyncFolderThumbnail(url: url)
-                                        .frame(width: 45, height: 34)
-                                        .cornerRadius(4)
+                                        .frame(width: 40, height: 30)
+                                        .cornerRadius(3)
 
-                                    Text(url.lastPathComponent)
+                                    Text(store.favoriteNickname(for: url))
                                         .font(.system(size: 12, weight: .medium))
                                         .lineLimit(1)
                                         .truncationMode(.tail)
 
-                                    Spacer()
+                                    Spacer(minLength: 4)
+
+                                    // ⋯ 메뉴 버튼
+                                    Menu {
+                                        Button("이름 변경") { renameFolderWithDialog(url: url) }
+                                        Button("즐겨찾기에서 제거") {
+                                            store.removeFavoriteFolder(url)
+                                            favorites = []
+                                            DispatchQueue.main.async { favorites = store.loadFavoriteFolders() }
+                                        }
+                                        Button("Finder에서 열기") { NSWorkspace.shared.open(url) }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .menuStyle(.borderlessButton)
+                                    .fixedSize()
                                 }
                                 .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
+                                .padding(.vertical, 5)
                                 .background(store.folderURL?.path == url.path ? Color.accentColor.opacity(0.15) : Color.clear)
                                 .cornerRadius(4)
                                 .contentShape(Rectangle())
@@ -443,47 +462,45 @@ struct FolderBrowserView: View {
                     .padding(.vertical, 4)
             } else {
                 ForEach(favorites, id: \.path) { url in
-                    HStack(spacing: 10) {
-                        AsyncFolderThumbnail(url: url)
-                            .frame(width: 50, height: 38)
-                            .cornerRadius(4)
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(.accentColor)
 
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(store.favoriteNickname(for: url))
-                                .font(.system(size: 13, weight: .medium))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            if store.favoriteNickname(for: url) != url.lastPathComponent {
-                                Text(url.lastPathComponent)
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
+                        Text(store.favoriteNickname(for: url))
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 4)
+
+                        // ⋯ 메뉴 버튼
+                        Menu {
+                            Button("이름 변경") { renameFolderWithDialog(url: url) }
+                            Button("즐겨찾기에서 제거") {
+                                store.removeFavoriteFolder(url)
+                                favorites = []
+                                DispatchQueue.main.async { favorites = store.loadFavoriteFolders() }
                             }
+                            Button("Finder에서 열기") { NSWorkspace.shared.open(url) }
+                            Divider()
+                            Button("새 폴더 만들기") { createNewSubfolder(in: url) }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                         }
-
-                        Spacer()
-
-                        ProjectFolderCount(url: url)
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .background(store.folderURL?.path == url.path ? Color.accentColor.opacity(0.15) : Color.clear)
                     .cornerRadius(4)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         store.startupMode = .viewer
                         store.loadFolder(url, restoreRatings: true)
-                    }
-                    .contextMenu {
-                        Button("이름 변경") { renameFolderWithDialog(url: url) }
-                        Divider()
-                        Button("즐겨찾기에서 제거") {
-                            store.removeFavoriteFolder(url)
-                            favorites = store.loadFavoriteFolders()
-                        }
-                        Button("Finder에서 열기") { NSWorkspace.shared.open(url) }
-                        Divider()
-                        Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
                 }
@@ -1260,6 +1277,81 @@ enum FolderBrowserHelpers {
             return String(format: "%.2f/%.2f TB", usedGB / 1000, totalGB / 1000)
         }
         return String(format: "%.1f/%.1f GB", usedGB, totalGB)
+    }
+}
+
+// MARK: - 즐겨찾기 우클릭 메뉴 (NSMenu 기반 — SwiftUI contextMenu 버그 회피)
+
+struct FavoriteContextMenuHelper: NSViewRepresentable {
+    let url: URL
+    let store: PhotoStore
+    @Binding var favorites: [URL]
+    let renameFn: (URL) -> Void
+    let createFn: (URL) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = RightClickView()
+        view.menuProvider = { [url, store] in
+            let menu = NSMenu()
+            let openItem = NSMenuItem(title: "폴더 열기", action: #selector(RightClickView.menuAction(_:)), keyEquivalent: "")
+            openItem.tag = 1
+            menu.addItem(openItem)
+            menu.addItem(NSMenuItem.separator())
+            let renameItem = NSMenuItem(title: "이름 변경", action: #selector(RightClickView.menuAction(_:)), keyEquivalent: "")
+            renameItem.tag = 2
+            menu.addItem(renameItem)
+            let removeItem = NSMenuItem(title: "즐겨찾기에서 제거", action: #selector(RightClickView.menuAction(_:)), keyEquivalent: "")
+            removeItem.tag = 3
+            menu.addItem(removeItem)
+            let finderItem = NSMenuItem(title: "Finder에서 열기", action: #selector(RightClickView.menuAction(_:)), keyEquivalent: "")
+            finderItem.tag = 4
+            menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let newFolderItem = NSMenuItem(title: "새 폴더 만들기", action: #selector(RightClickView.menuAction(_:)), keyEquivalent: "")
+            newFolderItem.tag = 5
+            menu.addItem(newFolderItem)
+            return menu
+        }
+        view.actionHandler = { [url, store] tag in
+            DispatchQueue.main.async {
+                switch tag {
+                case 1:
+                    store.startupMode = .viewer
+                    store.loadFolder(url, restoreRatings: true)
+                case 2:
+                    self.renameFn(url)
+                case 3:
+                    store.removeFavoriteFolder(url)
+                    self.favorites = []
+                    DispatchQueue.main.async { self.favorites = store.loadFavoriteFolders() }
+                case 4:
+                    NSWorkspace.shared.open(url)
+                case 5:
+                    self.createFn(url)
+                default: break
+                }
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+class RightClickView: NSView {
+    var menuProvider: (() -> NSMenu)?
+    var actionHandler: ((Int) -> Void)?
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = menuProvider?() else { return }
+        for item in menu.items where item.action != nil {
+            item.target = self
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc func menuAction(_ sender: NSMenuItem) {
+        actionHandler?(sender.tag)
     }
 }
 

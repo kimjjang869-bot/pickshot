@@ -24,6 +24,29 @@ struct ThumbnailGridView: View {
                         }
                     }
                     .scrollIndicators(.visible)
+                    .contextMenu {
+                        Button("새 폴더 만들기") {
+                            guard let baseURL = store.folderURL else { return }
+                            let alert = NSAlert()
+                            alert.messageText = "새 폴더 만들기"
+                            alert.informativeText = "폴더 이름을 입력하세요"
+                            alert.addButton(withTitle: "만들기")
+                            alert.addButton(withTitle: "취소")
+                            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+                            input.placeholderString = "새 폴더"
+                            alert.accessoryView = input
+                            alert.window.initialFirstResponder = input
+                            if alert.runModal() == .alertFirstButtonReturn {
+                                let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+                                guard !name.isEmpty else { return }
+                                let newFolder = baseURL.appendingPathComponent(name)
+                                try? FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+                                store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
+                                store.loadFolder(baseURL, restoreRatings: true)
+                                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
+                            }
+                        }
+                    }
                     .onChange(of: store.scrollTrigger) { _ in
                         guard let id = store.selectedPhotoID else { return }
                         proxy.scrollTo(id, anchor: nil)

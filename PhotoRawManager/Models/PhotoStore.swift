@@ -116,7 +116,12 @@ class PhotoStore: ObservableObject {
     @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? false {
         didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
     }
-    @Published var thumbnailSize: CGFloat = 100
+    @Published var thumbnailSize: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "savedThumbnailSize")
+        return saved > 0 ? CGFloat(saved) : 100
+    }() {
+        didSet { UserDefaults.standard.set(Double(thumbnailSize), forKey: "savedThumbnailSize") }
+    }
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
     @Published var qualityFilter: QualityFilter = .all { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var isAnalyzing = false
@@ -133,13 +138,21 @@ class PhotoStore: ObservableObject {
     @Published var folderURL: URL?
     // 화면 크기에 맞게 자동 조절
     @Published var hSplitPosition: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "savedHSplitPosition")
+        if saved > 0 { return CGFloat(saved) }
         let screenW = NSScreen.main?.frame.width ?? 1440
-        return min(screenW * 0.35, 650)  // 화면의 35%, 최대 650
-    }()
+        return min(screenW * 0.35, 650)
+    }() {
+        didSet { UserDefaults.standard.set(Double(hSplitPosition), forKey: "savedHSplitPosition") }
+    }
     @Published var vSplitPosition: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "savedVSplitPosition")
+        if saved > 0 { return CGFloat(saved) }
         let screenH = NSScreen.main?.frame.height ?? 900
-        return screenH * 0.7  // 화면의 70%
-    }()
+        return screenH * 0.7
+    }() {
+        didSet { UserDefaults.standard.set(Double(vSplitPosition), forKey: "savedVSplitPosition") }
+    }
     @Published var isLoading = false
     @Published var loadingProgress: Double = 0  // 0~1
     @Published var loadingStatus: String = ""
