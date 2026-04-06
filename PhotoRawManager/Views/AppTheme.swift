@@ -67,19 +67,32 @@ enum AppTheme {
     static let toolbarButtonBg = Color.gray.opacity(0.08)
     static let toolbarButtonActiveBg = accent
 
+    // MARK: - 해상도 기반 스케일 팩터
+    // 기준: 현재 화면의 논리 해상도 기반 (3200px = 1.0x)
+    // 1440 = 0.8x, 1920 = 0.85x, 2560 = 0.9x, 3200 = 1.0x, 3840 = 1.1x
+    static var displayScale: CGFloat {
+        let screenW = NSScreen.main?.frame.width ?? 3200
+        return max(0.8, min(1.2, screenW / 3200.0))
+    }
+
+    /// 해상도별 자동 조정값
+    static func scaled(_ base: CGFloat) -> CGFloat {
+        return round(base * displayScale)
+    }
+
     // MARK: - Standard Button Height
-    static let buttonHeight: CGFloat = 32
-    static let pillSize: CGFloat = 28
+    static var buttonHeight: CGFloat { scaled(32) }
+    static var pillSize: CGFloat { scaled(28) }
 
     // MARK: - Icon Sizes
-    static let iconSmall: CGFloat = 12
-    static let iconMedium: CGFloat = 14
-    static let iconLarge: CGFloat = 16
+    static var iconSmall: CGFloat { scaled(12) }
+    static var iconMedium: CGFloat { scaled(14) }
+    static var iconLarge: CGFloat { scaled(16) }
 
     // MARK: - Font Sizes
-    static let fontMicro: CGFloat = 10
-    static let fontCaption: CGFloat = 11
-    static let fontBody: CGFloat = 12
-    static let fontSubhead: CGFloat = 13
-    static let fontHeading: CGFloat = 14
+    static var fontMicro: CGFloat { scaled(10) }
+    static var fontCaption: CGFloat { scaled(11) }
+    static var fontBody: CGFloat { scaled(12) }
+    static var fontSubhead: CGFloat { scaled(13) }
+    static var fontHeading: CGFloat { scaled(14) }
 }

@@ -523,11 +523,51 @@ struct PhotoContextMenu: View {
             Label("Finder에서 보기", systemImage: "folder")
         }
 
-        // Quick Look
-        Button(action: {
-            NSWorkspace.shared.open(photo.jpgURL)
-        }) {
-            Label("Quick Look", systemImage: "eye")
+        // 연결 프로그램으로 열기
+        Menu {
+            // 기본 앱으로 열기
+            Button(action: {
+                NSWorkspace.shared.open(photo.jpgURL)
+            }) {
+                Label("기본 앱으로 열기", systemImage: "app")
+            }
+
+            Divider()
+
+            // 주요 사진 앱 목록
+            let photoApps: [(String, String, String)] = [
+                ("Adobe Photoshop", "PaintbrushStroke", "com.adobe.Photoshop"),
+                ("Adobe Lightroom", "camera.filters", "com.adobe.LightroomClassicCC7"),
+                ("Adobe Bridge", "rectangle.stack", "com.adobe.bridge14"),
+                ("Capture One", "camera.aperture", "com.phaseone.captureone"),
+                ("미리보기", "eye", "com.apple.Preview"),
+            ]
+            ForEach(photoApps, id: \.0) { (name, icon, bundleId) in
+                if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+                    Button(action: {
+                        NSWorkspace.shared.open([photo.jpgURL], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+                    }) {
+                        Label(name, systemImage: icon)
+                    }
+                }
+            }
+
+            Divider()
+
+            // 기타 앱 선택
+            Button(action: {
+                let panel = NSOpenPanel()
+                panel.title = "프로그램 선택"
+                panel.allowedContentTypes = [.application]
+                panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                if panel.runModal() == .OK, let appURL = panel.url {
+                    NSWorkspace.shared.open([photo.jpgURL], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+                }
+            }) {
+                Label("기타 프로그램 선택...", systemImage: "ellipsis.circle")
+            }
+        } label: {
+            Label("연결 프로그램으로 열기", systemImage: "arrow.up.forward.app")
         }
 
         Divider()
