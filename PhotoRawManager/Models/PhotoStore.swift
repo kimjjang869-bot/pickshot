@@ -170,6 +170,12 @@ class PhotoStore: ObservableObject {
     @Published var conversionProgress: Double = 0
     @Published var conversionTotal: Int = 0
     @Published var conversionDone: Int = 0
+
+    // 파일 이동/복사 진행률
+    @Published var fileMoveActive = false
+    @Published var fileMoveDone: Int = 0
+    @Published var fileMoveTotal: Int = 0
+    @Published var fileMoveLabel: String = ""  // "파일 이동" / "파일 복사"
     @Published var conversionCancelled: Bool = false
     @Published var conversionResult: RAWConversionService.ConversionResult?
     var conversionStartTime: CFAbsoluteTime = 0
@@ -316,6 +322,7 @@ class PhotoStore: ObservableObject {
             if let folderURL = folderURL {
                 loadFolder(folderURL, restoreRatings: true)
             }
+            NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
             showToastMessage("\(undone)장 이동 되돌리기 완료")
             return
         }
@@ -702,11 +709,19 @@ class PhotoStore: ObservableObject {
         var failed = 0
         var movedIDs = Set<UUID>()
         var fileMoveRecords: [FileMove] = []
+        let total = fileURLs.count
+
+        DispatchQueue.main.async {
+            self.fileMoveActive = true
+            self.fileMoveDone = 0
+            self.fileMoveTotal = total
+            self.fileMoveLabel = "파일 이동"
+        }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            for srcURL in fileURLs {
+            for (index, srcURL) in fileURLs.enumerated() {
                 let destURL = destination.appendingPathComponent(srcURL.lastPathComponent)
                 do {
                     if fm.fileExists(atPath: destURL.path) {
@@ -738,9 +753,14 @@ class PhotoStore: ObservableObject {
                     failed += 1
                     AppLogger.log(.general, "File move failed: \(srcURL.lastPathComponent) → \(error.localizedDescription)")
                 }
+                // 진행률 업데이트
+                DispatchQueue.main.async {
+                    self.fileMoveDone = index + 1
+                }
             }
 
             DispatchQueue.main.async {
+                self.fileMoveActive = false
                 // Undo 기록
                 if !fileMoveRecords.isEmpty {
                     self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords))
@@ -752,6 +772,8 @@ class PhotoStore: ObservableObject {
                 let msg = "\(moved)장 이동 완료 (Cmd+Z 되돌리기)" + (failed > 0 ? " (\(failed)장 실패)" : "")
                 self.showToastMessage(msg)
                 AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
+                // 폴더 트리 새로고침 알림
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
             }
         }
     }
@@ -1967,16 +1989,22 @@ class PhotoStore: ObservableObject {
     /// 커스텀 프롬프트 저장 (UI에서 설정)
     @Published var aiClassifyCustomPrompt: String = ""
 
-    func runAIClassification(customPrompt: String? = nil) {
+    func runAIClassification(customPrompt: String? = nil, selectedOnly: Bool = false) {
         // 엔진에 따라 적절한 API 키 확인
         let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
         let hasKey = engine.hasPrefix("gemini") ? GeminiService.hasAPIKey : ClaudeVisionService.hasAPIKey
         guard !photos.isEmpty, !isAIClassifying, hasKey else { return }
         isAIClassifying = true
-        aiClassifyProgress = (0, photos.count)
-        aiClassifyErrors = []  // 에러 목록 초기화
+        aiClassifyErrors = []
 
-        let photoSnapshots = filteredPhotos
+        // 선택된 사진만 or 전체
+        let photoSnapshots: [PhotoItem]
+        if selectedOnly {
+            photoSnapshots = multiSelectedPhotos.isEmpty ? (selectedPhoto.map { [$0] } ?? []) : multiSelectedPhotos
+        } else {
+            photoSnapshots = filteredPhotos
+        }
+        aiClassifyProgress = (0, photoSnapshots.count)
         let prompt = customPrompt?.isEmpty == false ? customPrompt : nil
 
         let baseURL = folderURL
@@ -2069,6 +2097,7 @@ class PhotoStore: ObservableObject {
                 let movedCount = results.count
                 if movedCount > 0, let base = baseURL {
                     self.showToastMessage("📂 \(movedCount)장 분류 완료 → 폴더 정리됨")
+                    NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
                     self.loadFolder(base, restoreRatings: true)
                 }
             } catch {
@@ -2138,6 +2167,9 @@ class PhotoStore: ObservableObject {
 
         fputs("[ORGANIZE] 완료: \(movedCount)장 이동, \(failedCount)장 실패\n", stderr)
         showToastMessage("📂 \(movedCount)장을 \(Set(categorized.compactMap { $0.aiCategory }).count)개 폴더로 정리 완료")
+
+        // 폴더 트리 새로고침 알림
+        NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
 
         // 폴더 다시 로딩
         loadFolder(baseURL, restoreRatings: true)

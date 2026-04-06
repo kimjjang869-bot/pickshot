@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 
 struct ThumbnailGridView: View {
@@ -208,6 +209,11 @@ struct LazyThumbnailWrapper: View {
                 }
             }
             .help("클릭: 선택 / 더블클릭: 이동 / Enter: 이동")
+            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                // 상위 폴더로 드래그 이동
+                handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
+                return true
+            }
         } else if photo.isFolder {
             // Subfolder item
             VStack(spacing: 4) {
@@ -244,6 +250,11 @@ struct LazyThumbnailWrapper: View {
                     store.selectedPhotoIDs = [photo.id]
                 }
             }
+            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                // 하위 폴더로 드래그 이동
+                handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
+                return true
+            }
         } else {
             ThumbnailCell(
                 photo: photo,
@@ -258,6 +269,21 @@ struct LazyThumbnailWrapper: View {
             .onTapGesture { onTap() }
             .contextMenu { PhotoContextMenu(photo: photo, store: store) }
         }
+    }
+
+    /// 폴더 썸네일에 드래그 드롭 시 선택된 사진을 해당 폴더로 이동
+    private func handleDropOnFolder(providers: [NSItemProvider], folderURL: URL) {
+        // 선택된 사진의 파일 URL 수집
+        var fileURLs: [URL] = []
+        for id in store.selectedPhotoIDs {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            guard !p.isFolder && !p.isParentFolder else { continue }
+            fileURLs.append(p.jpgURL)
+            if let rawURL = p.rawURL, rawURL != p.jpgURL { fileURLs.append(rawURL) }
+        }
+        guard !fileURLs.isEmpty else { return }
+        store.movePhotosToFolder(fileURLs: fileURLs, destination: folderURL)
     }
 }
 
@@ -522,6 +548,13 @@ struct PhotoContextMenu: View {
         }) {
             Label("새 폴더 만들기", systemImage: "folder.badge.plus")
         }
+
+        // 새 폴더 만들어 선택된 사진 이동
+        Button(action: {
+            createNewFolderAndMovePhotos()
+        }) {
+            Label("새 폴더 만들어 이동 (\(targetCount)장)", systemImage: "folder.badge.plus")
+        }
     }
 
     /// 현재 열려 있는 폴더 안에 새 폴더 생성
@@ -544,11 +577,43 @@ struct PhotoContextMenu: View {
             do {
                 try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
                 store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
                 // 현재 폴더 새로고침
                 store.loadFolder(parentURL, restoreRatings: true)
             } catch {
                 store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// 새 폴더를 만들고 선택된 사진을 이동
+    private func createNewFolderAndMovePhotos() {
+        guard let parentURL = store.folderURL else { return }
+        let alert = NSAlert()
+        alert.messageText = "새 폴더 만들어 이동"
+        alert.informativeText = "\(targetCount)장의 사진을 새 폴더로 이동합니다.\n폴더 이름을 입력하세요."
+        alert.addButton(withTitle: "만들기 및 이동")
+        alert.addButton(withTitle: "취소")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "새 폴더"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            let newFolder = parentURL.appendingPathComponent(name)
+            do {
+                try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+            } catch {
+                store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
+                return
+            }
+            // 선택된 사진 파일 URL 수집
+            let fileURLs = collectFileURLs()
+            guard !fileURLs.isEmpty else { return }
+            store.movePhotosToFolder(fileURLs: fileURLs, destination: newFolder)
+            NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
         }
     }
 }

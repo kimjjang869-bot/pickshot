@@ -466,6 +466,21 @@ extension ContentView {
                     Label("커스텀 프롬프트...", systemImage: "text.cursor")
                 }
                 .disabled(store.isAIClassifying)
+
+                Divider()
+
+                // 선택된 사진만 분류
+                let selectedCount = store.selectionCount
+                Button(action: {
+                    if !ClaudeVisionService.hasAPIKey && !GeminiService.hasAPIKey {
+                        DisabledGuide.showAIDisabled()
+                    } else {
+                        store.runAIClassification(selectedOnly: true)
+                    }
+                }) {
+                    Label("선택된 사진만 분류 (\(selectedCount)장)", systemImage: "checkmark.circle")
+                }
+                .disabled(store.isAIClassifying || selectedCount == 0)
             }
         } label: {
             toolbarButton(

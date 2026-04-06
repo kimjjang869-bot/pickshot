@@ -104,6 +104,10 @@ struct FolderBrowserView: View {
             guard let url = newURL else { return }
             expandTreeToPath(url)
         }
+        // 폴더 생성/삭제/이동 시 트리 자동 새로고침
+        .onReceive(NotificationCenter.default.publisher(for: .init("FolderTreeNeedsRefresh"))) { _ in
+            refreshRootItems()
+        }
     }
 
     private func renameFolderWithDialog(url: URL) {
