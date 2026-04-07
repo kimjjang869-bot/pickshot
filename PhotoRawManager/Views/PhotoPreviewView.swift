@@ -855,11 +855,19 @@ struct PhotoPreviewView: View {
                 image = thumb
             }
 
-            // 항상 즉시 고화질 로딩 (투어박스/키보드/마우스 동일)
+            // 즉시 미리보기 로딩 (Stage1 + Stage2)
             preloadWork?.cancel()
             preloadWork = nil
             viewState.stableImageSize = Self.readImageDimensions(url: url)
             loadImageDirect(for: url, id: newID)
+            // 0.15초 머물면 hi-res 로딩 (빠르게 넘길 때는 스킵)
+            hiResWorkItem?.cancel()
+            let work = DispatchWorkItem {
+                guard self.pendingPhotoID == newID else { return }
+                self.loadHiResForZoom()
+            }
+            hiResWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
             // 이동 완료 → 썸네일 프리로딩 복구
             ThumbnailLoader.shared.unthrottle()
         }
@@ -1640,8 +1648,6 @@ struct PhotoPreviewView: View {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
         guard !isHiResLoaded else { return }
-        // fit 모드에서는 hi-res 불필요 (Stage 2 2400px이면 충분)
-        if isFitMode { return }
         // 보정 적용된 이미지를 원본으로 덮어쓰지 않음
         if !isOriginal { return }
 
