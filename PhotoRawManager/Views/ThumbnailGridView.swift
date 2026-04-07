@@ -1,12 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct GridWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
 
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
 
     var body: some View {
         GeometryReader { geo in
+            Group {
             if store.filteredPhotos.isEmpty {
                 emptyStateView
             } else if store.viewMode == .grid && store.useAppKitGrid {
@@ -53,8 +58,8 @@ struct ThumbnailGridView: View {
                     }
                 }
             }
+            } // Group
         }
-        .onAppear { updateActualColumns(width: nil) }
     }
 
     private var emptyStateView: some View {
@@ -73,12 +78,11 @@ struct ThumbnailGridView: View {
     }
 
     private func updateActualColumns(width: CGFloat?) {
-        let w = width ?? store.hSplitPosition
+        guard let w = width, w > 0 else { return }
         let size = store.thumbnailSize
         let spacing: CGFloat = 12
-        // Match GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)
         let cellWidth = size + spacing
-        let cols = max(1, Int(w / cellWidth))
+        let cols = max(1, Int((w + spacing) / cellWidth))
         if store.actualColumnsPerRow != cols {
             store.actualColumnsPerRow = cols
         }
@@ -660,36 +664,6 @@ struct PhotoContextMenu: View {
         }
     }
 
-    /// 새 폴더를 만들고 선택된 사진을 이동
-    private func createNewFolderAndMovePhotos() {
-        guard let parentURL = store.folderURL else { return }
-        let alert = NSAlert()
-        alert.messageText = "새 폴더 만들어 이동"
-        alert.informativeText = "\(targetCount)장의 사진을 새 폴더로 이동합니다.\n폴더 이름을 입력하세요."
-        alert.addButton(withTitle: "만들기 및 이동")
-        alert.addButton(withTitle: "취소")
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        input.placeholderString = "새 폴더"
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty else { return }
-            let newFolder = parentURL.appendingPathComponent(name)
-            do {
-                try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
-            } catch {
-                store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
-                return
-            }
-            // 선택된 사진 파일 URL 수집
-            let fileURLs = collectFileURLs()
-            guard !fileURLs.isEmpty else { return }
-            store.movePhotosToFolder(fileURLs: fileURLs, destination: newFolder)
-            NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
-        }
-    }
 }
 
 // MARK: - Thumbnail Cell (Grid)
@@ -1051,7 +1025,9 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        let cost = max(1, Int(image.size.width * image.size.height) / 256)  // Approximate KB
+        let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
+        let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
+        let cost = max(1, (pixelW * pixelH * 4) / 1024)  // Approximate KB (4 bytes/pixel for RGBA)
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
@@ -1293,47 +1269,6 @@ class ThumbnailLoader {
             .union(FileMatchingService.videoExtensions)
     }()
 
-    /// Read EXIF orientation from image file (1-8)
-    private static func readOrientation(url: URL) -> Int {
-        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
-        return props[kCGImagePropertyOrientation as String] as? Int ?? 1
-    }
-
-    /// Rotate NSImage based on EXIF orientation
-    private static func rotateImage(_ image: NSImage, orientation: Int) -> NSImage {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else { return image }
-
-        let w = cgImage.width, h = cgImage.height
-        let swap = orientation >= 5 && orientation <= 8
-        let outW = swap ? h : w
-        let outH = swap ? w : h
-
-        let transform: CGAffineTransform
-        switch orientation {
-        case 2: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-w), y: 0)
-        case 3: transform = CGAffineTransform(translationX: CGFloat(w), y: CGFloat(h)).rotated(by: .pi)
-        case 4: transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: CGFloat(-h))
-        case 5: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
-        case 6: transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
-        case 7: transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
-        case 8: transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
-        default: return image
-        }
-
-        guard let ctx = CGContext(data: nil, width: outW, height: outH,
-                                   bitsPerComponent: cgImage.bitsPerComponent, bytesPerRow: 0,
-                                   space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-                                   bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
-        ctx.concatenate(transform)
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let rotated = ctx.makeImage() else { return image }
-        return NSImage(cgImage: rotated, size: NSSize(width: outW, height: outH))
-    }
-
     private static func extractThumbnail(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
 
@@ -1544,14 +1479,15 @@ struct AsyncThumbnailView: View {
         ThumbnailLoader.shared.load(url: currentURL) { img in
             if self.loadedURL == currentURL && img.size.width > 2 {
                 self.image = img
-            }
-        }
-        // Retry after 1s if still no image (handles race conditions)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if self.image == nil && self.loadedURL == currentURL {
-                ThumbnailLoader.shared.load(url: currentURL) { img in
-                    if self.loadedURL == currentURL {
-                        self.image = img
+            } else if self.image == nil && self.loadedURL == currentURL {
+                // Retry once after 1s only when initial load failed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if self.image == nil && self.loadedURL == currentURL {
+                        ThumbnailLoader.shared.load(url: currentURL) { retryImg in
+                            if self.loadedURL == currentURL {
+                                self.image = retryImg
+                            }
+                        }
                     }
                 }
             }

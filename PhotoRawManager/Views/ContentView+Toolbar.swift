@@ -9,195 +9,126 @@ extension ContentView {
 
     var toolbar: some View {
         VStack(spacing: 0) {
-            // === Row 1: Main actions ===
-            HStack(spacing: 8) {
-                // Home button - back to startup screen
-                Button(action: {
-                    store.startupMode = nil
-                    store.photos = []
-                    store.selectedPhotoID = nil
-                    store.selectedPhotoIDs = []
-                    store.folderURL = nil
-                }) {
-                    Image(systemName: "house.fill")
-                        .font(.system(size: AppTheme.iconMedium))
+            // === Row 1: 네비게이션 + 액션 ===
+            HStack(spacing: 6) {
+                // 네비게이션 그룹
+                iconButton("house.fill", active: false) {
+                    store.startupMode = nil; store.photos = []; store.selectedPhotoID = nil
+                    store.selectedPhotoIDs = []; store.folderURL = nil
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .background(AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help("시작 화면으로 돌아가기")
 
-                // Folder browser toggle
-                Button(action: { store.showFolderBrowser.toggle() }) {
-                    Image(systemName: "sidebar.leading")
-                        .font(.system(size: AppTheme.iconMedium))
+                iconButton("sidebar.leading", active: store.showFolderBrowser) {
+                    store.showFolderBrowser.toggle()
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .background(store.showFolderBrowser ? Color.accentColor.opacity(0.15) : AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("폴더 브라우저 열기/닫기")
+                .help("폴더 브라우저")
 
-                // Folder path (bold, prominent)
                 if let url = store.folderURL {
                     BreadcrumbPathView(url: url, store: store)
                 }
 
                 if store.isLoading {
-                    ProgressView().scaleEffect(0.7)
+                    ProgressView().scaleEffect(0.6)
                 }
 
-                // 하위 폴더 포함 모드 표시 및 해제 버튼
                 if store.isRecursiveMode {
-                    Button {
-                        store.exitRecursiveMode()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "folder.badge.plus")
-                                .font(.system(size: 11))
-                            Text("하위 폴더 포함")
-                                .font(.system(size: 11, weight: .medium))
+                    Button { store.exitRecursiveMode() } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "folder.badge.plus").font(.system(size: 10))
+                            Text("하위 포함").font(.system(size: AppTheme.fontMicro, weight: .medium))
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.orange.opacity(0.2))
-                        .foregroundColor(.orange)
-                        .cornerRadius(5)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.15)).foregroundColor(.orange)
+                        .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .help("클릭하면 현재 폴더만 표시합니다")
                 }
 
                 if store.selectionCount > 1 {
                     SelectionInfoBadge(store: store)
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
-                // Thumbnail progress — wider bar + ETA
+                // 진행률 (썸네일 / 변환)
                 if store.isPreloadingThumbs {
-                    HStack(spacing: 6) {
-                        ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
-                        let progress = store.thumbsTotal > 0 ? CGFloat(store.thumbsLoaded) / CGFloat(store.thumbsTotal) : 0
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 120, height: 6)
-                            RoundedRectangle(cornerRadius: 3).fill(Color.green).frame(width: 120 * progress, height: 6)
-                        }
-                        Text(String(format: "%03d/%03d", store.thumbsLoaded, store.thumbsTotal))
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.green)
-                        if !store.thumbsETA.isEmpty {
-                            Text(store.thumbsETA)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                        }
-                    }
+                    compactProgress(
+                        done: store.thumbsLoaded, total: store.thumbsTotal,
+                        color: .green, eta: store.thumbsETA
+                    )
+                }
+                if store.isConverting {
+                    compactProgress(
+                        done: store.conversionDone, total: store.conversionTotal,
+                        color: .orange, eta: store.conversionETA,
+                        onStop: { store.conversionCancelled = true }
+                    )
                 }
 
-                // RAW→JPG conversion progress
-                if store.isConverting {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 9))
-                            .foregroundColor(.orange)
-                        let progress = store.conversionTotal > 0 ? CGFloat(store.conversionDone) / CGFloat(store.conversionTotal) : 0
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 5)
-                            RoundedRectangle(cornerRadius: 3).fill(Color.orange).frame(width: 60 * progress, height: 5)
+                // 분석 중지
+                if store.isAnalyzing {
+                    Button(action: { store.stopAnalysis() }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "stop.fill").font(.system(size: 9))
+                            Text("분석 중지").font(.system(size: AppTheme.fontMicro, weight: .medium))
                         }
-                        Text("\(store.conversionDone)/\(store.conversionTotal)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.orange)
-                        if !store.conversionETA.isEmpty {
-                            Text(store.conversionETA)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                        }
-                        Button(action: { store.conversionCancelled = true }) {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 8))
-                                .foregroundColor(.red)
-                        }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(AppTheme.error).foregroundColor(.white)
+                        .clipShape(Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
 
                 if !store.photos.isEmpty {
-                    // 클라이언트 셀렉 (업로드 + 가져오기 통합 메뉴) — 제일 앞
+                    Divider().frame(height: 18).opacity(0.3)
+
+                    // 클라이언트 셀렉
                     Menu {
-                        Section("📤 클라이언트에게 보내기") {
-                            Button(action: { ClientSelectService.shared.showSetup = true }) {
-                                Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
-                            }
+                        Button(action: { ClientSelectService.shared.showSetup = true }) {
+                            Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
                         }
                         Divider()
-                        Section("📥 셀렉 결과 가져오기") {
-                            Button(action: { store.importPickshotFile() }) {
-                                Label("파일에서 가져오기...", systemImage: "doc.badge.arrow.up")
-                            }
-                            Button(action: { importPickshotFromDrive() }) {
-                                Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
-                            }
+                        Button(action: { store.importPickshotFile() }) {
+                            Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                        }
+                        Button(action: { importPickshotFromDrive() }) {
+                            Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
                         }
                     } label: {
-                        Label("클라이언트 셀렉", systemImage: "person.crop.rectangle")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                        actionLabel("person.crop.rectangle", "클라이언트", .cyan)
                     }
-                    .menuStyle(.borderedButton)
-                    .controlSize(.small)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                     .help("클라이언트 셀렉 보내기/가져오기")
 
-                    // Matching button
-                    Button(action: { store.showMatchingSheet = true }) {
-                        Label("매칭", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
+                    // 내보내기
+                    Menu {
+                        Button(action: { store.showExportSheet = true }) {
+                            Label("내보내기 (Cmd+E)", systemImage: "square.and.arrow.up")
+                        }
+                        Button(action: { store.showBatchProcess = true }) {
+                            Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
+                        }
+                    } label: {
+                        actionLabel("square.and.arrow.up", "내보내기", .orange)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.purple)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("내보내기 / 배치 처리")
+
+                    // 매칭
+                    Button(action: { store.showMatchingSheet = true }) {
+                        actionLabel("arrow.triangle.2.circlepath", "매칭", .purple)
+                    }
+                    .buttonStyle(.plain)
                     .help("파일명/JPG/AI 매칭 셀렉")
 
-                    Button(action: { store.showExportSheet = true }) {
-                        Label("내보내기", systemImage: "square.and.arrow.up")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(AppTheme.warning)
-                    .help("선택한 사진 내보내기 (Cmd+E)")
-
-                    Button(action: { store.showBatchProcess = true }) {
-                        Label("배치 처리", systemImage: "photo.on.rectangle.angled")
-                            .font(.system(size: AppTheme.fontBody, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.teal)
-                    .help("리사이즈 + 워터마크 일괄 처리")
-
-                    // G Select — 제일 뒤
+                    // G Select
                     gSelectButton
-
-                    // Analysis stop button (only visible when analyzing)
-                    if store.isAnalyzing {
-                        Button(action: { store.stopAnalysis() }) {
-                            Label("분석 중지", systemImage: "stop.fill")
-                                .font(.system(size: AppTheme.fontBody, weight: .medium))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(AppTheme.error)
-                        .help("품질 분석 중지")
-                    }
                 }
-
-                // SubscriptionBadge / APIUsageGauge 숨김
             }
-            .fixedSize(horizontal: false, vertical: true)
-            // end Row 1
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
 
             // === Row 2: Filters ===
             if !store.photos.isEmpty {
@@ -312,109 +243,60 @@ extension ContentView {
 
                     Spacer(minLength: 0)
 
-                    // Layout mode toggle
-                    Button(action: {
+                    // 뷰 전환 그룹
+                    iconButton(store.layoutMode.icon, active: store.layoutMode == .filmstrip) {
                         let newMode: LayoutMode = store.layoutMode == .gridPreview ? .filmstrip : .gridPreview
                         store.setLayoutMode(newMode)
-                    }) {
-                        toolbarButton(
-                            icon: store.layoutMode.icon,
-                            text: store.layoutMode == .filmstrip ? "필름스트립" : "그리드",
-                            color: .indigo,
-                            active: store.layoutMode == .filmstrip
-                        )
                     }
-                    .buttonStyle(.plain)
-                    .help("레이아웃 모드 전환 (그리드+미리보기 / 필름스트립)")
+                    .help("레이아웃 전환")
 
-                    // Dual Viewer
-                    Button(action: { store.showDualViewer.toggle() }) {
-                        Image(systemName: "display.2").font(.system(size: AppTheme.iconSmall))
+                    iconButton("display.2", active: store.showDualViewer) {
+                        store.showDualViewer.toggle()
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .foregroundColor(store.showDualViewer ? .accentColor : .secondary)
-                    .background(store.showDualViewer ? AppTheme.accent.opacity(0.15) : AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("듀얼 스크린 뷰어 (D)")
+                    .help("듀얼 뷰어 (D)")
 
-                    // Compare button
-                    Button(action: {
+                    iconButton("square.split.2x1", active: false) {
                         if store.selectionCount >= 2 && store.selectionCount <= 4 {
                             store.showCompare = true
                         } else {
                             DisabledGuide.showCompareDisabled(currentCount: store.selectionCount)
                         }
-                    }) {
-                        Image(systemName: "square.split.2x1")
-                            .font(.system(size: AppTheme.iconSmall))
-                            .opacity(store.selectionCount >= 2 && store.selectionCount <= 4 ? 1 : 0.4)
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("비교 보기 - 2~4장 선택 후 나란히 비교")
+                    .opacity(store.selectionCount >= 2 ? 1 : 0.4)
+                    .help("비교 보기 (2~4장)")
 
-                    // Face Compare button
-                    Button(action: {
+                    iconButton("face.smiling", active: false) {
                         if store.selectionCount >= 2 && store.selectionCount <= 6 {
                             store.showFaceCompare = true
                         }
-                    }) {
-                        Image(systemName: "face.smiling")
-                            .font(.system(size: AppTheme.iconSmall))
-                            .opacity(store.selectionCount >= 2 && store.selectionCount <= 6 ? 1 : 0.4)
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("표정 비교 - 2~6장 선택 후 얼굴 비교")
+                    .opacity(store.selectionCount >= 2 ? 1 : 0.4)
+                    .help("표정 비교 (2~6장)")
 
-                    // Map button
-                    Button(action: { store.showMap = true }) {
-                        Image(systemName: "map")
+                    // 더보기 메뉴 (사용빈도 낮은 기능)
+                    Menu {
+                        Button(action: { store.showMap = true }) {
+                            Label("GPS 지도", systemImage: "map")
+                        }
+                        Button(action: { store.showSlideshow = true }) {
+                            Label("슬라이드쇼", systemImage: "play.rectangle")
+                        }
+                        Divider()
+                        Button(action: { store.isDarkMode.toggle() }) {
+                            Label(store.isDarkMode ? "라이트 모드" : "다크 모드", systemImage: store.isDarkMode ? "sun.max" : "moon")
+                        }
+                        Button(action: { store.showShortcutHelp = true }) {
+                            Label("단축키 안내", systemImage: "questionmark.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                             .font(.system(size: AppTheme.iconSmall))
                     }
-                    .buttonStyle(.plain)
+                    .menuStyle(.borderlessButton)
                     .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
                     .background(AppTheme.toolbarButtonBg)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("GPS 지도 보기")
-
-                    // Slideshow button
-                    Button(action: { store.showSlideshow = true }) {
-                        Image(systemName: "play.rectangle")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("슬라이드쇼 자동 재생 시작")
-
-                    // Theme toggle button
-                    Button(action: { store.isDarkMode.toggle() }) {
-                        Image(systemName: store.isDarkMode ? "sun.max" : "moon")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help(store.isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환")
-
-                    // Help button
-                    Button(action: { store.showShortcutHelp = true }) {
-                        Image(systemName: "questionmark.circle")
-                            .font(.system(size: AppTheme.iconSmall))
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help("단축키 안내 보기 (Cmd+?)")
+                    .help("더보기")
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // end Row 2
@@ -974,6 +856,57 @@ extension ContentView {
     }
 
     // MARK: - Empty State
+
+    // MARK: - 공통 UI 헬퍼
+
+    /// 통일된 아이콘 버튼 (툴바용)
+    func iconButton(_ icon: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: AppTheme.iconSmall))
+        }
+        .buttonStyle(.plain)
+        .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+        .foregroundColor(active ? .accentColor : .secondary)
+        .background(active ? AppTheme.accent.opacity(0.15) : AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    /// 컴팩트 진행률 바
+    func compactProgress(done: Int, total: Int, color: Color, eta: String, onStop: (() -> Void)? = nil) -> some View {
+        let progress = total > 0 ? CGFloat(done) / CGFloat(total) : 0
+        return HStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2).fill(Color.gray.opacity(0.25)).frame(width: 80, height: 4)
+                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 80 * progress, height: 4)
+            }
+            Text("\(done)/\(total)")
+                .font(.system(size: AppTheme.fontMicro, weight: .medium, design: .monospaced))
+                .foregroundColor(color)
+            if !eta.isEmpty {
+                Text(eta)
+                    .font(.system(size: AppTheme.fontMicro, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            if let stop = onStop {
+                Button(action: stop) {
+                    Image(systemName: "stop.fill").font(.system(size: 7)).foregroundColor(.red)
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// 액션 버튼 라벨 (통일된 스타일)
+    func actionLabel(_ icon: String, _ text: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: AppTheme.iconSmall))
+            Text(text).font(.system(size: AppTheme.fontCaption, weight: .semibold))
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(color.opacity(0.12))
+        .foregroundColor(color)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
 
     var emptyState: some View {
         VStack(spacing: 16) {

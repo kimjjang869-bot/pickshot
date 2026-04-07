@@ -395,25 +395,19 @@ struct PhotoPreviewView: View {
     @State private var hiResImage: NSImage?      // Full resolution — loaded on zoom in
     @State private var isHiResLoaded = false      // Whether hi-res is currently active
     @State private var hiResLoadWork: DispatchWorkItem?
-    @State private var loadingURL: URL?
     @State private var showCorrectionPanel = false
     @State private var showUprightGuide = false
     @State private var correctionResult: CorrectionResult?
     @State private var isOriginal = true
     @State private var isCorrecting = false
-    @State private var showFocusMap = false
-    @State private var focusMapImage: NSImage?
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var rotatedImage: NSImage?  // Actual rotated pixel data
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
-    @State private var aiError: String? = nil
     @State private var hiResWorkItem: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
-    @State private var quickThumbWork: DispatchWorkItem? = nil
-    @State private var lastQuickPreviewTime: CFAbsoluteTime = 0
     @State private var showCropView = false
 
     private static let imageLoadQueue: OperationQueue = {
@@ -452,18 +446,6 @@ struct PhotoPreviewView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
-                            .overlay(
-                                Group {
-                                    if showFocusMap, let focusImg = focusMapImage {
-                                        Image(nsImage: focusImg)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fit)
-                                            .frame(width: isFitMode ? vSize.width : scaledW,
-                                                   height: isFitMode ? vSize.height : scaledH)
-                                            .allowsHitTesting(false)
-                                    }
-                                }
-                            )
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0
@@ -524,23 +506,6 @@ struct PhotoPreviewView: View {
                                     viewState.magnifyBaseScale = 1.0
                                     syncSlider()
                                     switchToLowRes()  // Restore fast preview
-                                }
-                            }
-                            .onTapGesture { location in
-                                // Loupe disabled - feature removed for stability
-                                if false {
-                                    viewState.loupeActive = true
-                                    // Calculate normalized position (0~1) independent of image.size
-                                    let displayScale = fitScale * activeScale
-                                    let displayW = imgW * displayScale
-                                    let displayH = imgH * displayScale
-                                    let imgCenterX = vSize.width / 2 + (isZoomed ? clampedOffset.x : 0)
-                                    let imgCenterY = vSize.height / 2 + (isZoomed ? clampedOffset.y : 0)
-                                    let normalX = (location.x - (imgCenterX - displayW / 2)) / displayW
-                                    let normalY = (location.y - (imgCenterY - displayH / 2)) / displayH
-                                    guard normalX >= 0 && normalX <= 1 && normalY >= 0 && normalY <= 1 else { return }
-                                    viewState.loupePosition = location
-                                    generateLoupeNormalized(normalX: normalX, normalY: normalY)
                                 }
                             }
                             .onContinuousHover { phase in
@@ -868,7 +833,6 @@ struct PhotoPreviewView: View {
             viewState.loupeImage = nil
             viewState.loupeCachedImage = nil
             viewState.loupeCachedURL = nil
-            focusMapImage = nil
 
             guard let selected = store.selectedPhoto else { return }
             guard !selected.isFolder && !selected.isParentFolder else {
@@ -876,7 +840,6 @@ struct PhotoPreviewView: View {
                 return
             }
             let url = selected.jpgURL
-            loadingURL = url
 
             // Fast path: cache hit → show immediately
             let res = store.previewResolution
@@ -899,12 +862,6 @@ struct PhotoPreviewView: View {
             loadImageDirect(for: url, id: newID)
             // 이동 완료 → 썸네일 프리로딩 복구
             ThumbnailLoader.shared.unthrottle()
-            if viewState.zoomPreset != .fit || viewState.customScale > 1.0 {
-                hiResWorkItem?.cancel()
-                let hWork = DispatchWorkItem { loadHiResForZoom() }
-                hiResWorkItem = hWork
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: hWork)
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1241,7 +1198,6 @@ struct PhotoPreviewView: View {
 
     /// Load image at configured resolution
     private func loadImageDirect(for url: URL, id: UUID) {
-        loadingURL = url
         let resolution = store.previewResolution
         let fileName = url.lastPathComponent
 
@@ -1321,13 +1277,8 @@ struct PhotoPreviewView: View {
                         if self.pendingPhotoID == id {
                             self.image = finalHR
                             self.lowResImage = finalHR
-                            // If zoomed in, load full resolution for sharp viewing
-                            if self.viewState.zoomPreset != .fit || self.viewState.customScale > 1.0 {
-                                self.loadHiResForZoom()
-                            }
                         }
                     }
-                } else if false {
                 } else {
                     PreviewImageCache.shared.set(cacheKey, image: fast)
                 }
@@ -1429,7 +1380,6 @@ struct PhotoPreviewView: View {
 
     private func applyAICorrection() {
         isCorrecting = true
-        aiError = nil
         let currentPhoto = photo
         let url = currentPhoto.jpgURL
 
@@ -1471,8 +1421,7 @@ struct PhotoPreviewView: View {
             } catch {
                 await MainActor.run {
                     isCorrecting = false
-                    aiError = "AI 보정 실패: \(error.localizedDescription)"
-                    aiResultText = "❌ \(aiError ?? "알 수 없는 오류")\n\nAPI 키와 잔액을 확인하세요."
+                    aiResultText = "❌ AI 보정 실패: \(error.localizedDescription)\n\nAPI 키와 잔액을 확인하세요."
                     showAIResult = true
                 }
             }
@@ -1658,16 +1607,6 @@ struct PhotoPreviewView: View {
 
     // MARK: - Zoom-aware Resolution Switching
 
-    private func handleZoomChange(isFit: Bool) {
-        if isFit {
-            print("🔍 [ZOOM] → fit: switching to low-res")
-            switchToLowRes()
-        } else if !isHiResLoaded {
-            print("🔍 [ZOOM] → zoomed: loading hi-res")
-            loadHiResForZoom()
-        }
-    }
-
     private func switchToLowRes() {
         hiResLoadWork?.cancel()
         if let low = lowResImage {
@@ -1701,6 +1640,8 @@ struct PhotoPreviewView: View {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
         guard !isHiResLoaded else { return }
+        // fit 모드에서는 hi-res 불필요 (Stage 2 2400px이면 충분)
+        if isFitMode { return }
         // 보정 적용된 이미지를 원본으로 덮어쓰지 않음
         if !isOriginal { return }
 
@@ -1758,7 +1699,8 @@ struct PhotoPreviewView: View {
                         fputs("[HIRES] ⚠️ skip — hi-res \(Int(hiResSize))px < current \(Int(currentSize))px\n", stderr)
                         return
                     }
-                    Self.hiResCache.setObject(hi, forKey: url as NSURL)
+                    let cost = hi.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                    Self.hiResCache.setObject(hi, forKey: url as NSURL, cost: cost)
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
@@ -1797,7 +1739,8 @@ struct PhotoPreviewView: View {
                 // Load hi-res
                 let img = Self.loadHiResImage(url: url)
                 if let img = img {
-                    Self.hiResCache.setObject(img, forKey: url as NSURL)
+                    let cost = img.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                    Self.hiResCache.setObject(img, forKey: url as NSURL, cost: cost)
                 }
             }
         }
@@ -1867,7 +1810,6 @@ struct PhotoPreviewView: View {
 
     private func reloadCurrentImage() {
         guard let selected = store.selectedPhoto else { return }
-        loadingURL = nil  // Force reload
         loadImageDirect(for: selected.jpgURL, id: pendingPhotoID ?? UUID())
     }
 
@@ -1907,14 +1849,6 @@ struct PhotoPreviewView: View {
         _dimensionCache[url] = size
         _dimensionCacheLock.unlock()
         return size
-    }
-
-    /// Read EXIF orientation from a RAW file (1-8, default 1)
-    private static func readRawOrientation(url: URL) -> Int {
-        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false, kCGImageSourceShouldCacheImmediately: true]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return 1 }
-        return props[kCGImagePropertyOrientation as String] as? Int ?? 1
     }
 
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
@@ -1960,82 +1894,6 @@ struct PhotoPreviewView: View {
 
         guard let rotated = context.makeImage() else { return image }
         return NSImage(cgImage: rotated, size: outputSize)
-    }
-
-    private static let rawExts: Set<String> = ["cr2", "cr3", "arw", "nef", "raf", "dng", "orf", "rw2", "pef", "srw"]
-    private static let ciContext = CIContext(options: [
-        .useSoftwareRenderer: false,  // Force GPU
-        .cacheIntermediates: false     // Don't cache intermediate results
-    ])
-
-    private static func loadAtSize(url: URL, maxPixel: CGFloat) -> NSImage? {
-        let isRAW = rawExts.contains(url.pathExtension.lowercased())
-
-        if isRAW {
-            return loadRAWFast(url: url, maxPixel: maxPixel)
-        }
-
-        // JPG/PNG: optimized CGImageSource
-        return PreviewImageCache.loadOptimized(url: url, maxPixel: maxPixel)
-    }
-
-    /// Ultra-fast RAW loading: embedded preview → CIRAWFilter draft → CGImageSource fallback
-    private static func loadRAWFast(url: URL, maxPixel: CGFloat) -> NSImage? {
-        // Strategy 1: CIRAWFilter.previewImage (fastest, GPU-accelerated)
-        if #available(macOS 12.0, *) {
-            if let rawFilter = CIRAWFilter(imageURL: url) {
-                // Try embedded preview first (instant, camera-generated JPEG)
-                if let preview = rawFilter.previewImage {
-                    if let cgImage = ciContext.createCGImage(preview, from: preview.extent) {
-                        let w = cgImage.width, h = cgImage.height
-                        if CGFloat(max(w, h)) >= maxPixel * 0.3 {
-                            return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
-                        }
-                    }
-                }
-
-                // Draft mode: fast low-quality rendering (still GPU-accelerated)
-                let scale = maxPixel / max(rawFilter.outputImage?.extent.width ?? 6000, 1)
-                rawFilter.scaleFactor = Float(min(scale, 1.0))
-                rawFilter.isDraftModeEnabled = true
-
-                if let output = rawFilter.outputImage,
-                   let cgImage = ciContext.createCGImage(output, from: output.extent) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                }
-            }
-        }
-
-        // Strategy 2: CGImageSource embedded JPEG (for older macOS or unsupported RAW)
-        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false, kCGImageSourceShouldCacheImmediately: true]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
-        let imageCount = CGImageSourceGetCount(source)
-
-        let options: [NSString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceShouldCache: false
-        ]
-
-        // Try embedded preview indices first (faster than index 0 RAW decode)
-        if imageCount > 1 {
-            for idx in (1..<imageCount).reversed() {
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, options as CFDictionary) {
-                    if CGFloat(max(cgImage.width, cgImage.height)) >= maxPixel * 0.3 {
-                        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    }
-                }
-            }
-        }
-
-        // Last resort: full RAW decode
-        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        }
-
-        return nil
     }
 
     // MARK: - Loupe (magnifying bubble at click point)
@@ -2097,132 +1955,6 @@ struct PhotoPreviewView: View {
         }
     }
 
-    // MARK: - Focus Map (sharp region detection)
-
-    private func generateFocusMap() {
-        let url = photo.jpgURL
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let result = Self.createFocusMap(url: url) else { return }
-            DispatchQueue.main.async {
-                if self.photo.jpgURL == url && self.showFocusMap {
-                    self.focusMapImage = result
-                }
-            }
-        }
-    }
-
-    /// Analyzes image sharpness in blocks and creates a colored overlay
-    /// Red = sharp (in focus), transparent = soft (out of focus)
-    private static func createFocusMap(url: URL) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let opts: [NSString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: 1200,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return nil }
-
-        let width = cgImage.width
-        let height = cgImage.height
-
-        // Convert to grayscale
-        let graySpace = CGColorSpaceCreateDeviceGray()
-        guard let grayCtx = CGContext(data: nil, width: width, height: height,
-                                       bitsPerComponent: 8, bytesPerRow: width,
-                                       space: graySpace, bitmapInfo: 0) else { return nil }
-        grayCtx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let grayData = grayCtx.data else { return nil }
-        let gray = grayData.bindMemory(to: UInt8.self, capacity: width * height)
-
-        // Calculate sharpness per block
-        let blockSize = 32
-        let blocksX = width / blockSize
-        let blocksY = height / blockSize
-        guard blocksX > 0 && blocksY > 0 else { return nil }
-
-        var sharpnessMap = [[Double]](repeating: [Double](repeating: 0, count: blocksX), count: blocksY)
-        var maxSharpness: Double = 0
-
-        for by in 0..<blocksY {
-            for bx in 0..<blocksX {
-                var sumSq: Int64 = 0
-                var count = 0
-                let startY = by * blockSize + 1
-                let startX = bx * blockSize + 1
-                let endY = min(startY + blockSize - 2, height - 1)
-                let endX = min(startX + blockSize - 2, width - 1)
-
-                for y in stride(from: startY, to: endY, by: 2) {
-                    for x in stride(from: startX, to: endX, by: 2) {
-                        let idx = y * width + x
-                        let lap = -4 * Int(gray[idx])
-                            + Int(gray[idx - 1]) + Int(gray[idx + 1])
-                            + Int(gray[idx - width]) + Int(gray[idx + width])
-                        sumSq += Int64(lap * lap)
-                        count += 1
-                    }
-                }
-
-                let variance = count > 0 ? Double(sumSq) / Double(count) : 0
-                sharpnessMap[by][bx] = variance
-                maxSharpness = max(maxSharpness, variance)
-            }
-        }
-
-        guard maxSharpness > 0 else { return nil }
-
-        // Create RGBA overlay
-        let rgbaSpace = CGColorSpaceCreateDeviceRGB()
-        guard let outCtx = CGContext(data: nil, width: width, height: height,
-                                      bitsPerComponent: 8, bytesPerRow: width * 4,
-                                      space: rgbaSpace,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        guard let outData = outCtx.data else { return nil }
-        let rgba = outData.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        memset(rgba, 0, width * height * 4)
-
-        // Only highlight sharp areas (top 30% sharpness)
-        let threshold = maxSharpness * 0.3
-
-        for by in 0..<blocksY {
-            for bx in 0..<blocksX {
-                let sharpness = sharpnessMap[by][bx]
-                guard sharpness > threshold else { continue }
-
-                // Normalize: 0 = threshold, 1 = max sharpness
-                let normalized = (sharpness - threshold) / (maxSharpness - threshold)
-                let alpha = UInt8(min(255, Int(normalized * 180)))
-
-                let startY = by * blockSize
-                let startX = bx * blockSize
-
-                // Draw block border (outline style, not filled)
-                for y in startY..<min(startY + blockSize, height) {
-                    for x in startX..<min(startX + blockSize, width) {
-                        let isEdge = y == startY || y == min(startY + blockSize - 1, height - 1) ||
-                                     x == startX || x == min(startX + blockSize - 1, width - 1)
-                        let oi = (y * width + x) * 4
-                        if isEdge {
-                            rgba[oi + 0] = 255  // R
-                            rgba[oi + 1] = 50   // G
-                            rgba[oi + 2] = 50   // B
-                            rgba[oi + 3] = alpha
-                        } else {
-                            // Light fill
-                            rgba[oi + 0] = 255
-                            rgba[oi + 1] = 0
-                            rgba[oi + 2] = 0
-                            rgba[oi + 3] = UInt8(min(60, Int(normalized * 60)))
-                        }
-                    }
-                }
-            }
-        }
-
-        guard let outImage = outCtx.makeImage() else { return nil }
-        return NSImage(cgImage: outImage, size: NSSize(width: width, height: height))
-    }
 }
 
 // MARK: - Metadata Overlay (nomacs-style)

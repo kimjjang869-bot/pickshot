@@ -1117,8 +1117,6 @@ class PhotoStore: ObservableObject {
                 if restoreRatings { self?.applySavedRatings() }
 
                 // Select first non-folder photo on NEXT run loop
-                // This ensures SwiftUI has processed the photos array update
-                // before ExifInfoView tries to load metadata for the selected photo
                 DispatchQueue.main.async {
                     guard self?.folderURL == url else { return }
                     let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
@@ -1128,6 +1126,8 @@ class PhotoStore: ObservableObject {
                         self?.selectedPhotoIDs = [fp.id]
                         self?.scrollTrigger += 1
                     }
+                    // 그리드 열 수 재계산 (SwiftUI 레이아웃 완료 후)
+                    self?.recalcColumnsFromRatio()
                 }
                 // Preload thumbnails with slight delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1546,6 +1546,19 @@ class PhotoStore: ObservableObject {
         if viewMode == .list { return 1 }
         if layoutMode == .filmstrip { return 1 }
         return max(1, actualColumnsPerRow)
+    }
+
+    /// hSplitRatio 기반으로 그리드 열 수 재계산
+    func recalcColumnsFromRatio() {
+        let screenW = NSScreen.main?.frame.width ?? 1440
+        let leftW = screenW * hSplitRatio
+        let size = thumbnailSize
+        let spacing: CGFloat = 12
+        let cellWidth = size + spacing
+        let cols = max(1, Int((leftW + spacing) / cellWidth))
+        if actualColumnsPerRow != cols {
+            actualColumnsPerRow = cols
+        }
     }
 
     // Cached filtered index for fast lookup

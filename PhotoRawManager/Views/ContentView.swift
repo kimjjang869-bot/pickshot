@@ -165,6 +165,7 @@ struct ContentView: View {
                         GeometryReader { geo in
                             let leftW = max(150, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
+                            let _ = updateGridColumns(width: leftW)
 
                             HStack(spacing: 0) {
                                 // Left panel
@@ -458,6 +459,17 @@ struct ContentView: View {
                 dualWindow?.close()
                 dualWindow = nil
             }
+        }
+    }
+
+    /// 왼쪽 패널 폭에서 그리드 열 수 계산 (방향키 행 이동용)
+    private func updateGridColumns(width: CGFloat) {
+        let size = store.thumbnailSize
+        let spacing: CGFloat = 12
+        let cellWidth = size + spacing
+        let cols = max(1, Int((width + spacing) / cellWidth))
+        if store.actualColumnsPerRow != cols {
+            store.actualColumnsPerRow = cols
         }
     }
 

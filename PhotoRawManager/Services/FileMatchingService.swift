@@ -103,40 +103,45 @@ struct FileMatchingService {
         if !recursive {
             enumOptions.insert(.skipsSubdirectoryDescendants)
         }
+        // 파일 크기/날짜를 enumerator에서 한번에 가져와 stat() 중복 제거
+        let prefetchKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
         guard let enumerator = fileManager.enumerator(
             at: folderURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentTypeKey],
+            includingPropertiesForKeys: Array(prefetchKeys),
             options: enumOptions
         ) else {
             return []
         }
 
-        var jpgFiles: [String: URL] = [:]
-        var rawFiles: [String: URL] = [:]
-        var imageFiles: [String: URL] = [:]  // HEIC, PSD, TIFF
-        var videoFiles: [String: URL] = [:]  // MOV, MP4, etc.
-        var otherFiles: [String: URL] = [:]  // Non-image files
+        struct FileInfo {
+            let url: URL
+            let size: Int64
+            let modDate: Date
+        }
+
+        var jpgFiles: [String: FileInfo] = [:]
+        var rawFiles: [String: FileInfo] = [:]
+        var imageFiles: [String: FileInfo] = [:]
+        var videoFiles: [String: FileInfo] = [:]
+        var otherFiles: [String: URL] = [:]
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
-                  resourceValues.isRegularFile == true else {
-                continue
-            }
+            guard let rv = try? fileURL.resourceValues(forKeys: prefetchKeys),
+                  rv.isRegularFile == true else { continue }
 
             let baseName = fileURL.deletingPathExtension().lastPathComponent.lowercased()
+            let info = FileInfo(
+                url: fileURL,
+                size: Int64(rv.fileSize ?? 0),
+                modDate: rv.contentModificationDate ?? .distantPast
+            )
 
             switch classifyFile(fileURL) {
-            case .jpg:
-                jpgFiles[baseName] = fileURL
-            case .raw:
-                rawFiles[baseName] = fileURL
-            case .image:
-                imageFiles[baseName] = fileURL
-            case .video:
-                videoFiles[baseName] = fileURL
-            case .other:
-                // Track other files in case folder has no images
-                otherFiles[baseName] = fileURL
+            case .jpg:   jpgFiles[baseName] = info
+            case .raw:   rawFiles[baseName] = info
+            case .image: imageFiles[baseName] = info
+            case .video: videoFiles[baseName] = info
+            case .other: otherFiles[baseName] = fileURL
             }
         }
 
@@ -145,63 +150,62 @@ struct FileMatchingService {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         } ?? []
 
-        // JPG가 있는 파일: JPG를 미리보기로, RAW를 매칭
+        // JPG가 있는 파일: JPG를 미리보기로, RAW를 매칭 (stat() 불필요 — enumerator에서 이미 로드)
         var result: [PhotoItem] = jpgFiles
             .sorted { $0.key < $1.key }
-            .map { baseName, jpgURL in
+            .map { baseName, jpgInfo in
                 var item = PhotoItem(
-                    jpgURL: jpgURL,
-                    rawURL: rawFiles[baseName]
+                    jpgURL: jpgInfo.url,
+                    rawURL: rawFiles[baseName]?.url
                 )
-                let jpgAttrs = try? fileManager.attributesOfItem(atPath: jpgURL.path)
-                item.fileModDate = (jpgAttrs?[.modificationDate] as? Date) ?? .distantPast
-                item.jpgFileSize = (jpgAttrs?[.size] as? Int64) ?? 0
-                if let rawURL = rawFiles[baseName] {
-                    item.rawFileSize = (try? fileManager.attributesOfItem(atPath: rawURL.path)[.size] as? Int64) ?? 0
+                item.fileModDate = jpgInfo.modDate
+                item.jpgFileSize = jpgInfo.size
+                if let rawInfo = rawFiles[baseName] {
+                    item.rawFileSize = rawInfo.size
                 }
                 return item
             }
 
-        // RAW만 있는 파일 (매칭되는 JPG가 없는 경우): RAW를 미리보기로도 사용
+        // RAW만 있는 파일
         let rawOnly = rawFiles.filter { jpgFiles[$0.key] == nil }
         let rawOnlyItems = rawOnly
             .sorted { $0.key < $1.key }
-            .map { baseName, rawURL in
+            .map { baseName, rawInfo in
                 var item = PhotoItem(
-                    jpgURL: rawURL,
-                    rawURL: rawURL
+                    jpgURL: rawInfo.url,
+                    rawURL: rawInfo.url
                 )
-                let rawAttrs = try? fileManager.attributesOfItem(atPath: rawURL.path)
-                item.fileModDate = (rawAttrs?[.modificationDate] as? Date) ?? .distantPast
-                item.rawFileSize = (rawAttrs?[.size] as? Int64) ?? 0
+                item.fileModDate = rawInfo.modDate
+                item.rawFileSize = rawInfo.size
                 return item
             }
         result.append(contentsOf: rawOnlyItems)
 
-        // HEIC/PSD/TIFF: standalone image files (not matched to JPG/RAW)
+        // HEIC/PSD/TIFF
         let imageOnly = imageFiles.filter { jpgFiles[$0.key] == nil && rawFiles[$0.key] == nil }
         let imageOnlyItems = imageOnly
             .sorted { $0.key < $1.key }
-            .map { baseName, imageURL in
+            .map { baseName, imgInfo in
                 var item = PhotoItem(
-                    jpgURL: imageURL,
+                    jpgURL: imgInfo.url,
                     rawURL: nil
                 )
-                let imgAttrs = try? fileManager.attributesOfItem(atPath: imageURL.path)
-                item.fileModDate = (imgAttrs?[.modificationDate] as? Date) ?? .distantPast
-                item.jpgFileSize = (imgAttrs?[.size] as? Int64) ?? 0
+                item.fileModDate = imgInfo.modDate
+                item.jpgFileSize = imgInfo.size
                 return item
             }
         result.append(contentsOf: imageOnlyItems)
 
-        // Video files: standalone (thumbnail generated on demand)
+        // Video files
         let videoItems = videoFiles
             .sorted { $0.key < $1.key }
-            .map { baseName, videoURL in
-                PhotoItem(
-                    jpgURL: videoURL,   // Video URL used for thumbnail generation
+            .map { baseName, vidInfo in
+                var item = PhotoItem(
+                    jpgURL: vidInfo.url,
                     rawURL: nil
                 )
+                item.fileModDate = vidInfo.modDate
+                return item
             }
         result.append(contentsOf: videoItems)
 
