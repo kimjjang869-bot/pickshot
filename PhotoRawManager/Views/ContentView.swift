@@ -16,24 +16,7 @@ struct ContentView: View {
     @State var linkCopied = false
     @State var showGSelectQR = false
 
-    private var folderSizeText: String {
-        guard !store.photos.isEmpty else { return "" }
-        let totalBytes = store.photos.reduce(Int64(0)) { sum, photo in
-            guard !photo.isFolder && !photo.isParentFolder else { return sum }
-            return sum + photo.jpgFileSize + photo.rawFileSize
-        }
-        if totalBytes <= 0 {
-            // Estimate from photo count
-            return "\(store.photos.filter { !$0.isFolder }.count)장"
-        }
-        if totalBytes > 1_073_741_824 {
-            return String(format: "%.1f GB", Double(totalBytes) / 1_073_741_824)
-        } else if totalBytes > 1_048_576 {
-            return String(format: "%.0f MB", Double(totalBytes) / 1_048_576)
-        } else {
-            return String(format: "%.0f KB", Double(totalBytes) / 1024)
-        }
-    }
+    private var folderSizeText: String { store.cachedFolderSizeText }
 
     private var importResultMessage: String {
         guard let r = store.lastImportResult else { return "가져오기 실패" }
@@ -478,7 +461,7 @@ struct ContentView: View {
         let dualView = DualViewerContent()
             .environmentObject(store)
         let hostingController = NSHostingController(rootView: dualView)
-        let screen = NSScreen.screens.count > 1 ? NSScreen.screens[1] : NSScreen.main!
+        guard let screen = NSScreen.screens.count > 1 ? NSScreen.screens[1] : NSScreen.main else { return }
         let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true

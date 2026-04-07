@@ -92,6 +92,26 @@ class PhotoStore: ObservableObject {
         didSet {
             guard !_suppressDidSet else { return }
             photosVersion += 1; filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock(); rebuildIndex()
+            updateFolderSizeCache()
+        }
+    }
+
+    /// 폴더 사이즈 캐시 (photos 변경 시 1회만 계산)
+    @Published private(set) var cachedFolderSizeText: String = ""
+    private func updateFolderSizeCache() {
+        guard !photos.isEmpty else { cachedFolderSizeText = ""; return }
+        let totalBytes = photos.reduce(Int64(0)) { sum, photo in
+            guard !photo.isFolder && !photo.isParentFolder else { return sum }
+            return sum + photo.jpgFileSize + photo.rawFileSize
+        }
+        if totalBytes <= 0 {
+            cachedFolderSizeText = "\(photos.filter { !$0.isFolder }.count)장"
+        } else if totalBytes > 1_073_741_824 {
+            cachedFolderSizeText = String(format: "%.1f GB", Double(totalBytes) / 1_073_741_824)
+        } else if totalBytes > 1_048_576 {
+            cachedFolderSizeText = String(format: "%.0f MB", Double(totalBytes) / 1_048_576)
+        } else {
+            cachedFolderSizeText = String(format: "%.0f KB", Double(totalBytes) / 1024)
         }
     }
     @Published var selectedPhotoID: UUID?

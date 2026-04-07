@@ -114,7 +114,9 @@ struct TimelineBuilder {
                 cur = [dated[i].photo]; start = dated[i].date
             } else { cur.append(dated[i].photo) }
         }
-        groups.append(makeGroup(photos: cur, start: start, end: dated.last!.date, fmt: fmt))
+        if let lastDate = dated.last?.date {
+            groups.append(makeGroup(photos: cur, start: start, end: lastDate, fmt: fmt))
+        }
         return groups
     }
     private static func makeGroup(photos: [PhotoItem], start: Date, end: Date, fmt: DateFormatter) -> TimeGroup {

@@ -434,7 +434,9 @@ class ClientSelectService: ObservableObject {
         }
 
         let b64Content = data.base64EncodedString()
-        let apiURL = URL(string: "https://api.github.com/repos/kimjjang869-bot/pickshot-viewer/contents/data/\(sessionId).json")!
+        guard let apiURL = URL(string: "https://api.github.com/repos/kimjjang869-bot/pickshot-viewer/contents/data/\(sessionId).json") else {
+            fputs("[CLIENT] Invalid GitHub API URL\n", stderr); return
+        }
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = "PUT"
@@ -527,7 +529,7 @@ class ClientSelectService: ObservableObject {
 
         // manifest 파일도 공개 권한 설정 (웹 뷰어에서 CORS 없이 접근 가능)
         if let fileId = manifestFileId {
-            let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)/permissions")!
+            guard let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)/permissions") else { return nil }
             var permReq = URLRequest(url: permURL)
             permReq.httpMethod = "POST"
             permReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

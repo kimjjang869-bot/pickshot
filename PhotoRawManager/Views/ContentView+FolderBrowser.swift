@@ -70,26 +70,27 @@ struct FolderBrowserView: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .onAppear {
             refreshRootItems()
-            // 앱 시작 시 이미 마운트된 메모리카드 체크
+            // 앱 시작 시 이미 마운트된 메모리카드 체크 (자동 백업 설정 시만)
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                guard UserDefaults.standard.bool(forKey: "autoBackupEnabled") else { return }
                 let fm = FileManager.default
                 if let volumes = try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: nil) {
-                    fputs("[MOUNT] Startup check: \(volumes.map { $0.lastPathComponent })\n", stderr)
                     for vol in volumes {
                         MemoryCardBackupService.shared.checkAndPromptIfMemoryCard(vol)
                     }
                 }
             }
 
-            // Watch for volume mount/unmount
+            // Watch for volume mount/unmount (자동 백업 설정 시만)
             let ws = NSWorkspace.shared.notificationCenter
             ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { notification in
+                guard UserDefaults.standard.bool(forKey: "autoBackupEnabled") else {
+                    refreshRootItems()
+                    return
+                }
                 if let volumePath = notification.userInfo?["NSDevicePath"] as? String {
-                    fputs("[MOUNT] Volume mounted: \(volumePath)\n", stderr)
                     let volumeURL = URL(fileURLWithPath: volumePath)
                     MemoryCardBackupService.shared.checkAndPromptIfMemoryCard(volumeURL)
-                } else {
-                    fputs("[MOUNT] Volume mounted but no path\n", stderr)
                 }
                 refreshRootItems()
             }
