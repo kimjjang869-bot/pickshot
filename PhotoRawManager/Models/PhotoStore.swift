@@ -2025,13 +2025,13 @@ class PhotoStore: ObservableObject {
                 guard let self = self else { return }
                 if !results.assignments.isEmpty {
                     let selectedID = self.selectedPhotoID
-                    var updated = self.photos
-                    for i in 0..<updated.count {
-                        if let groupID = results.assignments[updated[i].id] {
-                            updated[i].faceGroupID = groupID
+                    self.objectWillChange.send()
+                    for (photoID, groupID) in results.assignments {
+                        if let idx = self._photoIndex[photoID], idx < self.photos.count {
+                            self.photos[idx].faceGroupID = groupID
                         }
                     }
-                    self.photos = updated
+                    self._cachedFiltered = nil
                     self.selectedPhotoID = selectedID
                     self.faceGroups = results.groups
                     self.faceThumbnails = results.faceThumbnails

@@ -259,8 +259,14 @@ struct ImageAnalysisService {
             }
         }
 
-        // --- Low contrast --- (disabled: contrastScore is still computed above for reference, but no issues are generated)
-        // guard opts.checkContrast else { return }
+        // --- Low contrast ---
+        let contrast = analysis.contrastScore
+        if contrast < 0.06 {
+            analysis.issues.append(QualityIssue(
+                type: .lowContrast, severity: .warning,
+                message: "콘트라스트 부족 - 대비 \(Int(contrast * 1000))/1000"
+            ))
+        }
 
     }
 

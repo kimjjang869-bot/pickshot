@@ -1198,6 +1198,8 @@ class ThumbnailLoader {
         }
 
         // 3. Need to extract from file — queue it
+        // Hold lock until operation is added to queue to prevent race condition
+        // where two threads both see pendingCallbacks[url] == nil
         lock.lock()
         if pendingCallbacks[url] != nil {
             pendingCallbacks[url]?.append(completion)
@@ -1205,9 +1207,6 @@ class ThumbnailLoader {
             return
         }
         pendingCallbacks[url] = [completion]
-        lock.unlock()
-
-        // No queue limiting — let NSCache handle memory
 
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
@@ -1279,6 +1278,7 @@ class ThumbnailLoader {
             }
         }
         queue.addOperation(op)
+        lock.unlock()
     }
 
     private static var thumbSize: Int {

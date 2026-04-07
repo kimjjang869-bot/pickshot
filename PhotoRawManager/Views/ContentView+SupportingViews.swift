@@ -964,17 +964,13 @@ struct StartupView: View {
                 HStack(spacing: 16) {
                     // Viewer
                     Button(action: {
-                        print("🟢 [DEBUG] Viewer button tapped")
                         store.startupMode = .viewer
                         store.shouldOpenFolderBrowser = true
                         let lastPath = UserDefaults.standard.string(forKey: "lastFolderPath") ?? ""
                         let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
-                        print("🟢 [DEBUG] lastPath=\(lastPath), exists=\(FileManager.default.fileExists(atPath: lastPath))")
                         if !lastPath.isEmpty && FileManager.default.fileExists(atPath: lastPath) {
-                            print("🟢 [DEBUG] Loading last folder: \(lastPath)")
                             store.loadFolder(URL(fileURLWithPath: lastPath), restoreRatings: true)
                         } else {
-                            print("🟢 [DEBUG] Loading desktop: \(desktop.path)")
                             store.loadFolder(desktop, restoreRatings: true)
                         }
                     }) {

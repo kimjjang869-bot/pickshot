@@ -593,44 +593,6 @@ struct PhotoPreviewView: View {
                                     }
                             )
 
-                        // Loupe disabled for stability
-                        if false, let pos = viewState.loupePosition, let loupeImg = viewState.loupeImage {
-                            let loupeSize: CGFloat = 200
-                            // Position loupe above and slightly right of cursor; clamp to viewport
-                            let loupeX = min(max(loupeSize / 2 + 8, pos.x + 20), vSize.width - loupeSize / 2 - 8)
-                            let aboveY = pos.y - loupeSize / 2 - 30
-                            let loupeY = aboveY > loupeSize / 2 + 8
-                                ? aboveY
-                                : min(pos.y + loupeSize / 2 + 30, vSize.height - loupeSize / 2 - 8)
-
-                            ZStack {
-                                Image(nsImage: loupeImg)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .frame(width: loupeSize, height: loupeSize)
-                                    .clipShape(Circle())
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.white, lineWidth: 2.5)
-                                    )
-                                    .shadow(color: .black.opacity(0.5), radius: 6)
-
-                                // Crosshair in center
-                                Path { path in
-                                    let center = loupeSize / 2
-                                    let armLen: CGFloat = 10
-                                    path.move(to: CGPoint(x: center - armLen, y: center))
-                                    path.addLine(to: CGPoint(x: center + armLen, y: center))
-                                    path.move(to: CGPoint(x: center, y: center - armLen))
-                                    path.addLine(to: CGPoint(x: center, y: center + armLen))
-                                }
-                                .stroke(Color.white.opacity(0.7), lineWidth: 1)
-                                .frame(width: loupeSize, height: loupeSize)
-                            }
-                            .position(x: loupeX, y: loupeY)
-                            .allowsHitTesting(false)
-                        }
-
                         // Overlays (fixed to view size, not image size)
                         VStack {
                             // Top-right: Histogram (toggleable)
@@ -1718,12 +1680,21 @@ struct PhotoPreviewView: View {
     // MARK: - Hi-Res Cache (for zoom)
     private static var hiResCache = NSCache<NSURL, NSImage>()
     private static var hiResCacheInitialized = false
+    private static var hiResMemorySource: DispatchSourceMemoryPressure?
 
     private static func initHiResCache() {
         guard !hiResCacheInitialized else { return }
-        hiResCache.countLimit = 5  // Small cache (hi-res images are large)
-        hiResCache.totalCostLimit = 500 * 1024 * 1024  // 500MB max
+        hiResCache.countLimit = 3  // Reduce from 5 to 3
+        hiResCache.totalCostLimit = 300 * 1024 * 1024  // 300MB max
         hiResCacheInitialized = true
+
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler {
+            hiResCache.removeAllObjects()
+            AppLogger.log(.general, "⚠️ hiResCache cleared due to memory pressure")
+        }
+        source.resume()
+        hiResMemorySource = source
     }
 
     private func loadHiResForZoom() {
@@ -1858,6 +1829,9 @@ struct PhotoPreviewView: View {
         var bestImage: NSImage? = nil
         var bestPixels = 0
 
+        // Cache screen resolution before loop to avoid repeated NSScreen.main access
+        let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
+
         for i in 0..<(scanLimit - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
             let end = min(i + 10_000_000, data.count)
@@ -1875,7 +1849,6 @@ struct PhotoPreviewView: View {
             guard pixels > bestPixels else { continue }
 
             // Limit to screen resolution to save memory (50MP = 200MB, 3600px = 50MB)
-            let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
             let opts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -1900,15 +1873,21 @@ struct PhotoPreviewView: View {
 
     /// Read image pixel dimensions from file header only (no decode, very fast)
     private static var _dimensionCache: [URL: CGSize] = [:]
+    private static let _dimensionCacheLock = NSLock()
     private static let maxDimensionCacheSize = 2000
     private static func readImageDimensions(url: URL) -> CGSize? {
-        if let cached = _dimensionCache[url] { return cached }
+        _dimensionCacheLock.lock()
+        if let cached = _dimensionCache[url] {
+            _dimensionCacheLock.unlock()
+            return cached
+        }
         // Evict oldest entries when cache grows too large
         if _dimensionCache.count > maxDimensionCacheSize {
             let removeCount = maxDimensionCacheSize / 4
             let keys = Array(_dimensionCache.keys.prefix(removeCount))
             for key in keys { _dimensionCache.removeValue(forKey: key) }
         }
+        _dimensionCacheLock.unlock()
         // 헤더만 읽기 — ShouldCacheImmediately로 I/O 파이프라인 최적화
         let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: true]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, dimOpts as CFDictionary),
@@ -1924,7 +1903,9 @@ struct PhotoPreviewView: View {
         } else {
             size = CGSize(width: w, height: h)
         }
+        _dimensionCacheLock.lock()
         _dimensionCache[url] = size
+        _dimensionCacheLock.unlock()
         return size
     }
 
