@@ -217,6 +217,12 @@ extension ContentView {
                             .textFieldStyle(.plain)
                             .font(.system(size: 11))
                             .frame(width: 80)
+                            .onSubmit {
+                                // Enter 키로 검색 확정 → 포커스 해제
+                                DispatchQueue.main.async {
+                                    NSApp.keyWindow?.makeFirstResponder(nil)
+                                }
+                            }
                         if !store.searchText.isEmpty {
                             Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
