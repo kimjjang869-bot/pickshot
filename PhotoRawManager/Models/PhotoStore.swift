@@ -279,14 +279,10 @@ class PhotoStore: ObservableObject {
     @Published var faceGroupFilter: Int? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
-    @Published var showGoogleDrive: Bool = false
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
     @Published var showSmartSelect: Bool = false
     @Published var showCustomPrompt: Bool = false
-    @Published var showStats: Bool = false
-    @Published var showAutoCull: Bool = false
-    @Published var showTimeline: Bool = false
     @Published var showBatchProcess: Bool = false
     @Published var showFaceCompare: Bool = false
     @Published var smartSelectResult: SmartSelectService.Result?
@@ -1540,9 +1536,6 @@ class PhotoStore: ObservableObject {
         let dict = defaults.dictionary(forKey: favoriteNicknamesKey) as? [String: String] ?? [:]
         return dict[url.path] ?? url.lastPathComponent
     }
-
-    /// Grid panel width, updated by ThumbnailGridView to calculate columns per row
-    @Published var gridWidth: CGFloat = 300
 
     /// Number of columns in the current grid layout
     /// Matches LazyVGrid(.adaptive(minimum: size, maximum: size + 40), spacing: 8)

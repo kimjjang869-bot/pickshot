@@ -220,3 +220,23 @@ struct FileMatchingService {
         return result
     }
 }
+
+// MARK: - 문자열 거리 계산 (매칭 서비스 공통)
+enum StringDistance {
+    static func levenshtein(_ s1: String, _ s2: String) -> Int {
+        let a = Array(s1), b = Array(s2)
+        let m = a.count, n = b.count
+        if m == 0 { return n }
+        if n == 0 { return m }
+        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
+        for i in 0...m { dp[i][0] = i }
+        for j in 0...n { dp[0][j] = j }
+        for i in 1...m {
+            for j in 1...n {
+                let cost = a[i-1] == b[j-1] ? 0 : 1
+                dp[i][j] = min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost)
+            }
+        }
+        return dp[m][n]
+    }
+}

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		380455486888778309501142 /* StringDistance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427320353463566941753404 /* StringDistance.swift */; };
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
 		61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E4A569DDF734271ED6268 /* UpdateService.swift */; };
 		'A10056' = {isa = PBXBuildFile; fileRef = 'B10056'; };
@@ -78,7 +79,6 @@
 		F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */; };
 		KWT10001 /* KeywordTaggingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KWT10002 /* KeywordTaggingService.swift */; };
 		DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */; };
-		407359AEFF87A32478B0C70D /* BeforeAfterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F49681BEC836F7F64D3D25 /* BeforeAfterView.swift */; };
 		2AFCCDB6F3124685F4658A9E /* StatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */; };
 		F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C8DC3227F94E990E2676A /* AutoCullView.swift */; };
 		3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B8111B82E42D81DC67D2E /* TimelineView.swift */; };
@@ -99,6 +99,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		427320353463566941753404 /* StringDistance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringDistance.swift; sourceTree = "<group>"; };
 		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
 		94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateView.swift; path = PhotoRawManager/Views/UpdateView.swift; sourceTree = SOURCE_ROOT; };
 		'A20034' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectService.swift; sourceTree = "<group>"; };
@@ -167,7 +168,6 @@
 		DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectService.swift; sourceTree = "<group>"; };
 		KWT10002 /* KeywordTaggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeywordTaggingService.swift; sourceTree = "<group>"; };
 		52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectView.swift; sourceTree = "<group>"; };
-		24F49681BEC836F7F64D3D25 /* BeforeAfterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeforeAfterView.swift; sourceTree = "<group>"; };
 		A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsDashboardView.swift; sourceTree = "<group>"; };
 		4E8C8DC3227F94E990E2676A /* AutoCullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoCullView.swift; sourceTree = "<group>"; };
 		FE4B8111B82E42D81DC67D2E /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
@@ -458,7 +458,6 @@
 				'A10056',
 				F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */,
 				DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */,
-				407359AEFF87A32478B0C70D /* BeforeAfterView.swift in Sources */,
 				2AFCCDB6F3124685F4658A9E /* StatsDashboardView.swift in Sources */,
 				F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */,
 				3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */,

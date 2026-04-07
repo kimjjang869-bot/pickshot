@@ -302,13 +302,9 @@ struct ContentView: View {
         .sheet(isPresented: $store.showBatchRename) { BatchRenameView() }
         .sheet(isPresented: $store.showExportSheet) { ExportView() }
         .sheet(isPresented: $store.showMatchingSheet) { MatchingView(isPresented: $store.showMatchingSheet) }
-        .sheet(isPresented: $store.showGoogleDrive) { GoogleDriveUploadView() }
         .sheet(isPresented: $store.showShortcutHelp) { ShortcutHelpView() }
         .sheet(isPresented: $store.showAbout) { AboutView() }
         .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
-        .sheet(isPresented: $store.showStats) { StatsDashboardView() }
-        // AutoCullView 제거 — 기존 전체화면 모드(F키)가 동일 기능 제공
-        .sheet(isPresented: $store.showTimeline) { TimelineView() }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
