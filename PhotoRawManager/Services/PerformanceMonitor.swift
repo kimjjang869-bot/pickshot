@@ -71,8 +71,9 @@ class PerformanceMonitor {
         let filename = "pickshot_perf_\(dateFormatter.string(from: Date())).log"
         logFileURL = logsDir.appendingPathComponent(filename)
 
-        fm.createFile(atPath: logFileURL!.path, contents: nil)
-        logHandle = FileHandle(forWritingAtPath: logFileURL!.path)
+        guard let logURL = logFileURL else { return }
+        fm.createFile(atPath: logURL.path, contents: nil)
+        logHandle = FileHandle(forWritingAtPath: logURL.path)
     }
 
     var logFilePath: String {

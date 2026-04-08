@@ -285,6 +285,7 @@ struct MatchingView: View {
 
         // Apply selections
         for (_, idx) in result.matched {
+            guard idx < store.photos.count else { continue }
             store.photos[idx].rating = max(store.photos[idx].rating, 1)
         }
 
@@ -312,6 +313,7 @@ struct MatchingView: View {
 
             DispatchQueue.main.async {
                 for (_, idx, _) in result.matched {
+                    guard idx < store.photos.count else { continue }
                     store.photos[idx].rating = max(store.photos[idx].rating, 1)
                 }
 
@@ -349,6 +351,7 @@ struct MatchingView: View {
 
             DispatchQueue.main.async {
                 for match in result.matched {
+                    guard match.matchedPhotoIndex < store.photos.count else { continue }
                     store.photos[match.matchedPhotoIndex].rating = max(store.photos[match.matchedPhotoIndex].rating, 1)
                 }
 
