@@ -165,6 +165,7 @@ class ClientSelectService: ObservableObject {
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         var uploadedFiles: [[String: Any]] = []
+        var uploadedBytes: Int64 = 0
         let uploadLock = NSLock()
         let concurrency = 4  // 4장 동시 업로드
         let uploadQueue = DispatchQueue(label: "com.pickshot.upload", attributes: .concurrent)
@@ -191,6 +192,7 @@ class ClientSelectService: ObservableObject {
                 let fileSem = DispatchSemaphore(value: 0)
                 GoogleDriveService.uploadFile(fileURL: resizedURL, folderId: folderID, accessToken: token) { result, error in
                     if let result = result {
+                        let fileSize = (try? FileManager.default.attributesOfItem(atPath: resizedURL.path)[.size] as? Int64) ?? 0
                         let info: [String: Any] = [
                             "index": index + 1,
                             "filename": resizedURL.lastPathComponent,
@@ -199,6 +201,7 @@ class ClientSelectService: ObservableObject {
                         ]
                         uploadLock.lock()
                         uploadedFiles.append(info)
+                        uploadedBytes += fileSize
                         uploadLock.unlock()
                     }
                     fileSem.signal()
@@ -212,12 +215,13 @@ class ClientSelectService: ObservableObject {
                     if let start = self.uploadStartTime {
                         let elapsed = Date().timeIntervalSince(start)
                         if elapsed > 1 {
+                            uploadLock.lock()
+                            let bytes = uploadedBytes
+                            uploadLock.unlock()
+                            let mbps = Double(bytes) / elapsed / 1_048_576
                             let photosPerSec = Double(self.uploadDone) / elapsed
-                            let zipExtra = self.uploadOriginal ? 10.0 : 0.0
-                            let totalWork = Double(self.uploadTotal) + zipExtra
-                            let doneWork = Double(self.uploadDone)
-                            let remaining = (totalWork - doneWork) / max(photosPerSec, 0.01)
-                            let speed = String(format: "%.1f장/초", photosPerSec)
+                            let remaining = Double(self.uploadTotal - self.uploadDone) / max(photosPerSec, 0.01)
+                            let speed = String(format: "%.1f MB/s", mbps)
                             let eta: String
                             if remaining < 60 {
                                 eta = String(format: "%.0f초", remaining)
