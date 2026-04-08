@@ -1713,6 +1713,7 @@ struct PhotoPreviewView: View {
                     // No prefetch — saves memory (each hi-res is ~50MB)
                 } else {
                     fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
+                    self.isHiResLoaded = true  // 실패해도 재시도 방지
                 }
             }
         }

@@ -607,16 +607,18 @@ class PhotoStore: ObservableObject {
 
     /// 검색창 등 TextField 포커스를 KeyCaptureView로 복원 (방향키 동작 보장)
     func restoreKeyFocus() {
-        guard let window = NSApp.keyWindow else { return }
+        guard let window = NSApp.keyWindow,
+              let contentView = window.contentView else { return }
         // KeyCaptureView를 찾아서 first responder로
-        func findKeyCaptureView(_ view: NSView) -> NSView? {
-            if type(of: view).description().contains("KeyCaptureView") { return view }
+        func find(_ view: NSView) -> NSView? {
+            let name = String(describing: type(of: view))
+            if name == "KeyCaptureView" { return view }
             for sub in view.subviews {
-                if let found = findKeyCaptureView(sub) { return found }
+                if let found = find(sub) { return found }
             }
             return nil
         }
-        if let keyView = findKeyCaptureView(window.contentView ?? NSView()) {
+        if let keyView = find(contentView) {
             window.makeFirstResponder(keyView)
         }
     }
