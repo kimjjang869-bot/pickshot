@@ -1069,7 +1069,7 @@ struct StartupView: View {
 
         // Step 4: Match and copy
         let fm = FileManager.default
-        let rawExts: Set<String> = ["arw","cr2","cr3","nef","nrw","raf","dng","orf","rw2","pef","srw","3fr","nefx"]
+        let rawExts = FileMatchingService.rawExtensions
 
         // Get JPG file names
         let jpgFiles = (try? fm.contentsOfDirectory(at: jpgFolder, includingPropertiesForKeys: nil)) ?? []
@@ -1286,7 +1286,7 @@ struct FileSyncPopupView: View {
 
         // Match and copy (reuse StartupView logic)
         let fm = FileManager.default
-        let rawExts: Set<String> = ["arw","cr2","cr3","nef","nrw","raf","dng","orf","rw2","pef","srw","3fr","nefx"]
+        let rawExts = FileMatchingService.rawExtensions
 
         let jpgFiles = (try? fm.contentsOfDirectory(at: jpgFolder, includingPropertiesForKeys: nil)) ?? []
         let jpgItems = jpgFiles.filter { ["jpg","jpeg"].contains($0.pathExtension.lowercased()) }

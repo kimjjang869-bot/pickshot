@@ -70,7 +70,7 @@ struct ExifInfoView: View {
         let jpgURL = photo.jpgURL
         let rawURL = photo.rawURL
         let photoID = photo.id
-        let rawExts: Set<String> = ["arw","cr2","cr3","nef","nrw","raf","dng","orf","rw2","pef","srw","3fr","nefx"]
+        let rawExts = FileMatchingService.rawExtensions
         let isRaw = rawExts.contains(jpgURL.pathExtension.lowercased())
 
         // Cancel previous EXIF loads — only latest photo matters

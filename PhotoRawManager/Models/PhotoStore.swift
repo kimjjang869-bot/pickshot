@@ -91,7 +91,7 @@ class PhotoStore: ObservableObject {
     @Published var photos: [PhotoItem] = [] {
         didSet {
             guard !_suppressDidSet else { return }
-            photosVersion += 1; filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock(); rebuildIndex()
+            photosVersion += 1; invalidateFilterCache(); rebuildIndex()
             updateFolderSizeCache()
         }
     }
@@ -123,7 +123,7 @@ class PhotoStore: ObservableObject {
     var isKeyRepeat: Bool = false
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
-    @Published var minimumRatingFilter: Int = 0 { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
             filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""
@@ -143,7 +143,7 @@ class PhotoStore: ObservableObject {
         didSet { UserDefaults.standard.set(Double(thumbnailSize), forKey: "savedThumbnailSize") }
     }
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
-    @Published var qualityFilter: QualityFilter = .all { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var qualityFilter: QualityFilter = .all { didSet { invalidateFilterCache() } }
     @Published var isAnalyzing = false
     @Published var analyzeProgress: Double = 0
     @Published var showAnalysisOptions = false
@@ -268,12 +268,12 @@ class PhotoStore: ObservableObject {
     @Published var showCompare = false
     @Published var showDualViewer = false
     @Published var showSlideshow = false
-    @Published var colorLabelFilter: ColorLabel = .none { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var colorLabelFilter: ColorLabel = .none { didSet { invalidateFilterCache() } }
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
-    @Published var sceneTagFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
-    @Published var keywordFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var sceneTagFilter: String? = nil { didSet { invalidateFilterCache() } }
+    @Published var keywordFilter: String? = nil { didSet { invalidateFilterCache() } }
     @Published var isClassifyingScenes: Bool = false
     @Published var classifyProgress: Double = 0
     @Published var layoutMode: LayoutMode = .gridPreview
@@ -298,7 +298,7 @@ class PhotoStore: ObservableObject {
     var pendingDeleteIDs: Set<UUID> = []
     @Published var faceGroups: [Int: [UUID]] = [:]
     @Published var faceThumbnails: [Int: NSImage] = [:]
-    @Published var faceGroupFilter: Int? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var faceGroupFilter: Int? = nil { didSet { invalidateFilterCache() } }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
     @Published var showAbout: Bool = false
@@ -334,10 +334,10 @@ class PhotoStore: ObservableObject {
     @Published var aiClassifyErrors: [(String, String)] = []  // (파일명, 에러 메시지)
     @Published var showAIClassifyError = false
     @Published var aiClassifyErrorMessage = ""
-    @Published var aiCategoryFilter: String? = nil { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }   // 카테고리별 필터
+    @Published var aiCategoryFilter: String? = nil { didSet { invalidateFilterCache() } }   // 카테고리별 필터
 
     // Search
-    @Published var searchText: String = "" { didSet { filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""; filterLock.unlock() } }
+    @Published var searchText: String = "" { didSet { invalidateFilterCache() } }
 
     // MARK: - Undo Stack
     struct FileMove { let sourceURL: URL; let destURL: URL }
