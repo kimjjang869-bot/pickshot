@@ -14,12 +14,8 @@ struct ThumbnailGridView: View {
             Group {
             if store.filteredPhotos.isEmpty {
                 emptyStateView
-            } else if store.viewMode == .grid {
-                let _ = fputs("[ENGINE] TileGridView active\n", stderr)
-                TileGridView()
-                    .environmentObject(store)
-            } else if store.viewMode == .list {
-                // Fallback: SwiftUI LazyVGrid / List
+            } else {
+                // SwiftUI LazyVGrid / List (안정적 + 메모리 캐시 8GB)
                 ScrollViewReader { proxy in
                     ScrollView {
                         if store.viewMode == .grid {
@@ -29,29 +25,6 @@ struct ThumbnailGridView: View {
                         }
                     }
                     .scrollIndicators(.visible)
-                    .contextMenu {
-                        Button("새 폴더 만들기") {
-                            guard let baseURL = store.folderURL else { return }
-                            let alert = NSAlert()
-                            alert.messageText = "새 폴더 만들기"
-                            alert.informativeText = "폴더 이름을 입력하세요"
-                            alert.addButton(withTitle: "만들기")
-                            alert.addButton(withTitle: "취소")
-                            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-                            input.placeholderString = "새 폴더"
-                            alert.accessoryView = input
-                            alert.window.initialFirstResponder = input
-                            if alert.runModal() == .alertFirstButtonReturn {
-                                let name = input.stringValue.trimmingCharacters(in: .whitespaces)
-                                guard !name.isEmpty else { return }
-                                let newFolder = baseURL.appendingPathComponent(name)
-                                try? FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
-                                store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
-                                store.loadFolder(baseURL, restoreRatings: true)
-                                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
-                            }
-                        }
-                    }
                     .onChange(of: store.scrollTrigger) { _ in
                         guard let id = store.selectedPhotoID else { return }
                         proxy.scrollTo(id, anchor: nil)
@@ -1006,17 +979,20 @@ class ThumbnailCache {
     private let cache = NSCache<NSURL, NSImage>()
 
     init() {
-        // RAM에 맞게 캐시 크기 설정 (2000장 이상 빠른 탐색 지원)
+        // 대용량 폴더 지원: 최대 8GB 썸네일 캐시
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
-            cache.countLimit = 5000
-            cache.totalCostLimit = 1200 * 1024 * 1024  // 1.2GB
+            cache.countLimit = 50000
+            cache.totalCostLimit = 8 * 1024 * 1024 * 1024  // 8GB
         } else if ramGB >= 32 {
-            cache.countLimit = 3000
-            cache.totalCostLimit = 800 * 1024 * 1024   // 800MB
+            cache.countLimit = 30000
+            cache.totalCostLimit = 4 * 1024 * 1024 * 1024  // 4GB
+        } else if ramGB >= 16 {
+            cache.countLimit = 15000
+            cache.totalCostLimit = 2 * 1024 * 1024 * 1024  // 2GB
         } else {
-            cache.countLimit = 1500
-            cache.totalCostLimit = 400 * 1024 * 1024   // 400MB
+            cache.countLimit = 5000
+            cache.totalCostLimit = 1024 * 1024 * 1024      // 1GB
         }
     }
 
@@ -1486,18 +1462,51 @@ struct AsyncThumbnailView: View {
     private func loadThumbnail() {
         loadedURL = url
         let currentURL = url
-        ThumbnailLoader.shared.load(url: currentURL) { img in
-            if self.loadedURL == currentURL && img.size.width > 2 {
-                self.image = img
-            } else if self.image == nil && self.loadedURL == currentURL {
-                // Retry once after 1s only when initial load failed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    if self.image == nil && self.loadedURL == currentURL {
-                        ThumbnailLoader.shared.load(url: currentURL) { retryImg in
-                            if self.loadedURL == currentURL {
-                                self.image = retryImg
-                            }
+
+        // 1. 메모리 캐시 히트 → 즉시
+        if let cached = ThumbnailCache.shared.get(currentURL) {
+            self.image = cached
+            return
+        }
+
+        // 2. 디스크 캐시 히트 → 즉시
+        if let disk = DiskThumbnailCache.shared.getByPath(url: currentURL) {
+            ThumbnailCache.shared.set(currentURL, image: disk)
+            self.image = disk
+            return
+        }
+
+        // 3. 임베디드 추출 + 생성 — 백그라운드 (메인스레드 안 막음)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+            if let source = CGImageSourceCreateWithURL(currentURL as CFURL, srcOpts as CFDictionary),
+               let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceThumbnailMaxPixelSize: 160,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                kCGImageSourceCreateThumbnailWithTransform: true
+               ] as CFDictionary),
+               cgThumb.width >= 30 {
+                let ns = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                ThumbnailCache.shared.set(currentURL, image: ns)
+                RunLoop.main.perform(inModes: [.common]) {
+                    guard self.loadedURL == currentURL else { return }
+                    self.image = ns
+                }
+                // 백그라운드에서 고화질로 교체
+                ThumbnailLoader.shared.load(url: currentURL) { img in
+                    RunLoop.main.perform(inModes: [.common]) {
+                        if self.loadedURL == currentURL && img.size.width > 2 {
+                            self.image = img
                         }
+                    }
+                }
+                return
+            }
+            // 임베디드 없음 → 생성
+            ThumbnailLoader.shared.load(url: currentURL) { img in
+                RunLoop.main.perform(inModes: [.common]) {
+                    if self.loadedURL == currentURL && img.size.width > 2 {
+                        self.image = img
                     }
                 }
             }

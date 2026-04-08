@@ -866,16 +866,12 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            // 미리보기: 0.05초 디바운스 (방향키 꾹 누를 때 매번 로딩 방지)
+            // 즉시 미리보기 로딩 (캐시 히트는 즉시, 미스는 백그라운드)
             preloadWork?.cancel()
             preloadWork = nil
             imageLoadWork?.cancel()
-            let loadWork = DispatchWorkItem {
-                self.viewState.stableImageSize = Self.readImageDimensions(url: url)
-                self.loadImageDirect(for: url, id: newID)
-            }
-            imageLoadWork = loadWork
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: loadWork)
+            viewState.stableImageSize = Self.readImageDimensions(url: url)
+            loadImageDirect(for: url, id: newID)
             // 1초 머물면 hi-res 로딩 (빠른 탐색 중 360ms 블로킹 방지)
             hiResWorkItem?.cancel()
             let work = DispatchWorkItem {
@@ -1253,6 +1249,8 @@ struct PhotoPreviewView: View {
                 let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 fputs("[LD] JPG \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(ms)ms\n", stderr)
                 PreviewImageCache.shared.set(cacheKey, image: loaded)
+                // 미리보기 이미지로 썸네일 캐시도 채우기 (디스크 I/O 없이 즉시)
+                ThumbnailCache.shared.set(url, image: loaded)
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id else { return }
                     self.image = loaded
@@ -1277,6 +1275,9 @@ struct PhotoPreviewView: View {
                 guard let fast = fastImage, self.pendingPhotoID == id else { return }
                 let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 fputs("[LD] RAW-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms\n", stderr)
+
+                // 미리보기 이미지로 썸네일 캐시 채우기
+                ThumbnailCache.shared.set(url, image: fast)
 
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id else { return }
