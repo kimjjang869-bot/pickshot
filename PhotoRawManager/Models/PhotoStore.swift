@@ -133,7 +133,7 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var viewMode: ViewMode = .grid
-    @Published var useAppKitGrid: Bool = true {
+    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? false {
         didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
     }
     @Published var thumbnailSize: CGFloat = {
