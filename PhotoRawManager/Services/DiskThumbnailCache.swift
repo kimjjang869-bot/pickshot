@@ -65,6 +65,9 @@ class DiskThumbnailCache {
 
         lock.lock()
         try? jpegData.write(to: filePath, options: .atomic)
+        // 인덱스 업데이트
+        let pathHash = pathOnlyKey(url: url)
+        fileIndex[pathHash] = filePath
         lock.unlock()
 
         // Evict if over size limit (async to not block caller)
@@ -83,23 +86,47 @@ class DiskThumbnailCache {
 
     /// Fast NAS lookup: find any cached thumbnail for this file path (ignores modDate).
     /// Returns the most recent cache entry matching the path prefix.
-    func getByPath(url: URL) -> NSImage? {
-        let pathHash = pathOnlyKey(url: url)
+    /// 캐시 파일명 인덱스 — contentsOfDirectory 1번만 호출
+    private var fileIndex: [String: URL] = [:]  // pathHash prefix → full URL
+    private var fileIndexBuilt = false
+
+    private func buildFileIndex() {
+        guard !fileIndexBuilt else { return }
         let fm = FileManager.default
-
-        lock.lock()
         let files = (try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
-        lock.unlock()
-
-        // Find any cache file matching the path-only hash prefix
         for file in files {
-            if file.lastPathComponent.hasPrefix(pathHash) {
-                if let image = NSImage(contentsOf: file) {
-                    return image
-                }
+            let name = file.lastPathComponent
+            // pathHash는 파일명의 첫 부분 (underscore 전)
+            if let underscoreIdx = name.firstIndex(of: "_") {
+                let prefix = String(name[name.startIndex..<underscoreIdx])
+                fileIndex[prefix] = file
+            } else {
+                // underscore 없으면 전체 이름을 키로
+                let noExt = (name as NSString).deletingPathExtension
+                fileIndex[noExt] = file
             }
         }
-        return nil
+        fileIndexBuilt = true
+    }
+
+    /// 캐시 파일 추가 시 인덱스도 업데이트
+    func invalidateFileIndex() {
+        lock.lock()
+        fileIndexBuilt = false
+        fileIndex.removeAll()
+        lock.unlock()
+    }
+
+    func getByPath(url: URL) -> NSImage? {
+        let pathHash = pathOnlyKey(url: url)
+
+        lock.lock()
+        buildFileIndex()
+        let cachedURL = fileIndex[pathHash]
+        lock.unlock()
+
+        guard let fileURL = cachedURL else { return nil }
+        return NSImage(contentsOf: fileURL)
     }
 
     // MARK: - Private

@@ -1434,6 +1434,8 @@ struct AsyncThumbnailView: View {
     let url: URL
     @State private var image: NSImage?
     @State private var loadedURL: URL?
+    /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
+    static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
 
     var body: some View {
         Group {
@@ -1469,15 +1471,17 @@ struct AsyncThumbnailView: View {
             return
         }
 
-        // 2. 디스크 캐시 히트 → 즉시
+        // 2. 디스크 캐시 히트 → 동기 (O(1) Dictionary 룩업, < 0.01ms)
         if let disk = DiskThumbnailCache.shared.getByPath(url: currentURL) {
             ThumbnailCache.shared.set(currentURL, image: disk)
             self.image = disk
             return
         }
 
-        // 3. 임베디드 추출 + 생성 — 백그라운드 (메인스레드 안 막음)
-        DispatchQueue.global(qos: .userInitiated).async {
+        // 3~4. 임베디드 + 생성 — 백그라운드
+        Self.thumbConcurrentQueue.async {
+
+            // 3. 임베디드 썸네일 (파일 헤더, < 1ms)
             let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
             if let source = CGImageSourceCreateWithURL(currentURL as CFURL, srcOpts as CFDictionary),
                let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -1492,7 +1496,7 @@ struct AsyncThumbnailView: View {
                     guard self.loadedURL == currentURL else { return }
                     self.image = ns
                 }
-                // 백그라운드에서 고화질로 교체
+                // 고화질 교체
                 ThumbnailLoader.shared.load(url: currentURL) { img in
                     RunLoop.main.perform(inModes: [.common]) {
                         if self.loadedURL == currentURL && img.size.width > 2 {

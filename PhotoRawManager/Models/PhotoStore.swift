@@ -1167,10 +1167,7 @@ class PhotoStore: ObservableObject {
                         self?.selectedPhotoIDs = [fp.id]
                         self?.scrollTrigger += 1
                     }
-                    // 그리드 열 수 재계산 (레이아웃 렌더링 완료 대기)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        self?.recalcColumnsFromRatio()
-                    }
+                    // 열 수는 ContentView.updateGridColumns(leftW)에서 계산
                 }
                 // Preload thumbnails with slight delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1583,20 +1580,12 @@ class PhotoStore: ObservableObject {
 
     /// 그리드 열 수 재계산 — 윈도우 실제 폭 기반
     func recalcColumnsFromRatio() {
-        // 윈도우 실제 폭 사용 (화면 폭이 아닌)
         let windowW = NSApp.keyWindow?.frame.width ?? (NSScreen.main?.frame.width ?? 1440)
         let leftW = windowW * hSplitRatio
         let size = thumbnailSize
-        let cols: Int
-        if useAppKitGrid {
-            // NSCollectionView: itemWidth = size+10, spacing = 12, sectionInset = 16
-            let cellWidth = size + 10 + 12
-            cols = max(1, Int((leftW - 16) / cellWidth))
-        } else {
-            // SwiftUI LazyVGrid: cellWidth = size + 12
-            let cellWidth = size + 12
-            cols = max(1, Int((leftW + 12) / cellWidth))
-        }
+        let spacing: CGFloat = 12
+        let cellWidth = size + spacing
+        let cols = max(1, Int((leftW + spacing) / cellWidth))
         if actualColumnsPerRow != cols {
             actualColumnsPerRow = cols
         }
@@ -1629,14 +1618,11 @@ class PhotoStore: ObservableObject {
     private var lastMoveTime: CFAbsoluteTime = 0
 
     private func moveSelection(by offset: Int, shiftKey: Bool = false, cmdKey: Bool = false) {
-        let list = filteredPhotos
-        guard !list.isEmpty else { return }
-
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
     }
 
     private func executeMoveSelection(by offset: Int, shiftKey: Bool, cmdKey: Bool) {
-        let list = filteredPhotos
+        let list = filteredPhotos  // 1번만 호출
         guard !list.isEmpty else { return }
 
         ensureFilteredIndex()
@@ -1751,8 +1737,14 @@ class PhotoStore: ObservableObject {
 
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }
     func selectLeft(shift: Bool = false, cmd: Bool = false) { moveSelection(by: -1, shiftKey: shift, cmdKey: cmd) }
-    func selectDown(shift: Bool = false, cmd: Bool = false) { moveSelection(by: columnsPerRow, shiftKey: shift, cmdKey: cmd) }
-    func selectUp(shift: Bool = false, cmd: Bool = false) { moveSelection(by: -columnsPerRow, shiftKey: shift, cmdKey: cmd) }
+    func selectDown(shift: Bool = false, cmd: Bool = false) {
+        fputs("[NAV] down cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
+        moveSelection(by: columnsPerRow, shiftKey: shift, cmdKey: cmd)
+    }
+    func selectUp(shift: Bool = false, cmd: Bool = false) {
+        fputs("[NAV] up cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
+        moveSelection(by: -columnsPerRow, shiftKey: shift, cmdKey: cmd)
+    }
 
     // MARK: - Scene Classification (Vision)
 

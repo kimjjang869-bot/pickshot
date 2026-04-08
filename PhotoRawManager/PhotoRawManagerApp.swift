@@ -5,6 +5,12 @@ struct PhotoRawManagerApp: App {
     @StateObject private var store = PhotoStore()
     @ObservedObject private var updateService = UpdateService.shared
 
+    init() {
+        // 스크롤바 항상 표시 (시스템 설정 오버라이드)
+        UserDefaults.standard.set(false, forKey: "AppleShowScrollBars")
+        UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
+    }
+
     var body: some Scene {
         WindowGroup("PickShot v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.6")") {
             ContentView()
