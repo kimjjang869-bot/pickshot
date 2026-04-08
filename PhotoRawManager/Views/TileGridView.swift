@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-// MARK: - CALayer 기반 타일 그리드 엔진
-// NSCollectionView 대신 직접 렌더링 — 14000장도 60fps 스크롤
+// MARK: - CALayer 타일 그리드 엔진 v2
+// 14000장 60fps 목표 — NSCollectionView 완전 대체
 
 struct TileGridView: NSViewRepresentable {
     @EnvironmentObject var store: PhotoStore
@@ -11,6 +11,8 @@ struct TileGridView: NSViewRepresentable {
         let scrollView = NSScrollView()
         let tileView = TileDocumentView()
         tileView.store = store
+        tileView.photos = store.filteredPhotos
+        tileView.photosVersion = store.photosVersion
 
         scrollView.documentView = tileView
         scrollView.hasVerticalScroller = true
@@ -19,7 +21,6 @@ struct TileGridView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.backgroundColor = .clear
 
-        // 스크롤 감지
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             tileView, selector: #selector(TileDocumentView.scrollChanged),
@@ -28,29 +29,51 @@ struct TileGridView: NSViewRepresentable {
 
         context.coordinator.tileView = tileView
         context.coordinator.scrollView = scrollView
+
+        // 초기 레이아웃
+        DispatchQueue.main.async {
+            tileView.viewWidth = scrollView.frame.width
+            tileView.recalcLayout()
+            tileView.updateVisibleTiles()
+        }
+
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let tileView = context.coordinator.tileView else { return }
-        let photos = store.filteredPhotos
-        let size = store.thumbnailSize
+        let viewWidth = scrollView.frame.width
 
-        // 데이터 변경 시만 업데이트
-        if tileView.photosVersion != store.photosVersion || tileView.thumbSize != size {
-            tileView.store = store
-            tileView.photos = photos
+        // 데이터 변경 — photosVersion으로만 판단 (filteredPhotos 중복 호출 방지)
+        let dataChanged = tileView.photosVersion != store.photosVersion
+        let sizeChanged = tileView.thumbSize != store.thumbnailSize
+        let widthChanged = abs(tileView.viewWidth - viewWidth) > 1
+
+        if dataChanged {
+            tileView.photos = store.filteredPhotos
             tileView.photosVersion = store.photosVersion
-            tileView.thumbSize = size
-            tileView.recalcLayout()
-            tileView.updateVisibleTiles()
         }
 
-        // 선택 변경
-        if tileView.selectedID != store.selectedPhotoID {
+        if dataChanged || sizeChanged || widthChanged {
+            tileView.store = store
+            tileView.thumbSize = store.thumbnailSize
+            tileView.viewWidth = viewWidth
+            tileView.recalcLayout()
+            tileView.updateVisibleTiles()
+
+            // 열 수 업데이트
+            if store.actualColumnsPerRow != tileView.cols {
+                store.actualColumnsPerRow = tileView.cols
+            }
+        }
+
+        // 선택 변경 — 가벼운 업데이트만
+        let selChanged = tileView.selectedID != store.selectedPhotoID ||
+                         tileView.selectedIDs != store.selectedPhotoIDs
+        if selChanged {
             tileView.selectedID = store.selectedPhotoID
             tileView.selectedIDs = store.selectedPhotoIDs
-            tileView.updateVisibleTiles()
+            tileView.updateSelectionOnly()
         }
 
         // 스크롤 트리거
@@ -58,27 +81,16 @@ struct TileGridView: NSViewRepresentable {
             tileView.lastScrollTrigger = store.scrollTrigger
             tileView.scrollToSelected()
         }
-
-        // 열 수 업데이트
-        let gridW = scrollView.frame.width
-        if gridW > 0 {
-            let cellW = size + 10 + 12
-            let cols = max(1, Int(gridW / cellW))
-            if store.actualColumnsPerRow != cols {
-                store.actualColumnsPerRow = cols
-            }
-        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-
     class Coordinator {
         var tileView: TileDocumentView?
         var scrollView: NSScrollView?
     }
 }
 
-// MARK: - 타일 문서 뷰 (직접 CALayer 렌더링)
+// MARK: - 타일 문서 뷰
 
 class TileDocumentView: NSView {
     var store: PhotoStore?
@@ -88,9 +100,10 @@ class TileDocumentView: NSView {
     var selectedID: UUID?
     var selectedIDs: Set<UUID> = []
     var lastScrollTrigger: Int = 0
+    var viewWidth: CGFloat = 800
 
-    // 레이아웃 계산값
-    private var cols: Int = 4
+    // 레이아웃
+    var cols: Int = 4
     private var cellW: CGFloat = 112
     private var cellH: CGFloat = 130
     private var totalHeight: CGFloat = 0
@@ -98,22 +111,24 @@ class TileDocumentView: NSView {
     private let lineSpacing: CGFloat = 10
     private let inset: CGFloat = 8
 
-    // 타일 캐시 — 재사용
-    private var visibleTiles: [Int: TileLayer] = [:]  // index → layer
+    // 타일 관리
+    private var visibleTiles: [Int: TileLayer] = [:]
     private var recyclePool: [TileLayer] = []
 
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
 
-    // MARK: - 레이아웃 계산
+    // MARK: - 레이아웃
 
     func recalcLayout() {
-        let viewW = enclosingScrollView?.frame.width ?? 800
+        let w = viewWidth > 100 ? viewWidth : 800
         cellW = thumbSize + 10
         cellH = thumbSize * 0.75 + 50
-        cols = max(1, Int((viewW - inset * 2 + spacing) / (cellW + spacing)))
+        cols = max(1, Int((w - inset * 2 + spacing) / (cellW + spacing)))
         let rows = (photos.count + cols - 1) / cols
-        totalHeight = inset + CGFloat(rows) * (cellH + lineSpacing)
-        frame = NSRect(x: 0, y: 0, width: viewW, height: max(totalHeight, enclosingScrollView?.frame.height ?? 600))
+        totalHeight = inset + CGFloat(rows) * (cellH + lineSpacing) + 50
+        let scrollH = enclosingScrollView?.frame.height ?? 600
+        frame = NSRect(x: 0, y: 0, width: w, height: max(totalHeight, scrollH))
     }
 
     // MARK: - 보이는 타일만 렌더링
@@ -121,45 +136,51 @@ class TileDocumentView: NSView {
     func updateVisibleTiles() {
         guard let scrollView = enclosingScrollView else { return }
         let visibleRect = scrollView.documentVisibleRect
-        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)))
-        let endRow = min((photos.count + cols - 1) / cols, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + 1)
+
+        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - 1)
+        let endRow = min((photos.count + cols - 1) / cols, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + 2)
 
         var neededIndices = Set<Int>()
         for row in startRow..<endRow {
             for col in 0..<cols {
                 let idx = row * cols + col
-                if idx < photos.count { neededIndices.insert(idx) }
+                if idx >= 0 && idx < photos.count { neededIndices.insert(idx) }
             }
         }
 
         // 화면 밖 타일 회수
-        for (idx, tile) in visibleTiles {
-            if !neededIndices.contains(idx) {
-                tile.removeFromSuperlayer()
-                tile.reset()
-                recyclePool.append(tile)
-                visibleTiles.removeValue(forKey: idx)
-            }
+        for (idx, tile) in visibleTiles where !neededIndices.contains(idx) {
+            tile.removeFromSuperlayer()
+            tile.reset()
+            recyclePool.append(tile)
+            visibleTiles.removeValue(forKey: idx)
         }
 
-        // 필요한 타일 생성/업데이트
+        // 타일 생성/업데이트
         for idx in neededIndices {
+            let photo = photos[idx]
+            let row = idx / cols
+            let col = idx % cols
+            let x = inset + CGFloat(col) * (cellW + spacing)
+            let y = inset + CGFloat(row) * (cellH + lineSpacing)
+            let tileFrame = CGRect(x: x, y: y, width: cellW, height: cellH)
+
             if let tile = visibleTiles[idx] {
-                // 선택 상태만 업데이트
+                // 위치만 업데이트
+                if tile.frame != tileFrame {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    tile.frame = tileFrame
+                    CATransaction.commit()
+                }
                 tile.updateSelection(
-                    isSelected: selectedIDs.contains(photos[idx].id),
-                    isFocused: selectedID == photos[idx].id
+                    isSelected: selectedIDs.contains(photo.id),
+                    isFocused: selectedID == photo.id
                 )
             } else {
-                // 새 타일 — 재사용 or 생성
+                // 새 타일
                 let tile = recyclePool.popLast() ?? TileLayer()
-                let photo = photos[idx]
-                let row = idx / cols
-                let col = idx % cols
-                let x = inset + CGFloat(col) * (cellW + spacing)
-                let y = inset + CGFloat(row) * (cellH + lineSpacing)
-
-                tile.frame = CGRect(x: x, y: y, width: cellW, height: cellH)
+                tile.frame = tileFrame
                 tile.configure(
                     photo: photo,
                     size: thumbSize,
@@ -172,93 +193,183 @@ class TileDocumentView: NSView {
         }
     }
 
-    // MARK: - 스크롤 이벤트
+    /// 선택만 업데이트 (타일 재생성 없음)
+    func updateSelectionOnly() {
+        for (idx, tile) in visibleTiles {
+            guard idx < photos.count else { continue }
+            let photo = photos[idx]
+            tile.updateSelection(
+                isSelected: selectedIDs.contains(photo.id),
+                isFocused: selectedID == photo.id
+            )
+        }
+    }
+
+    // MARK: - 스크롤
 
     @objc func scrollChanged() {
         updateVisibleTiles()
     }
 
-    // MARK: - 선택된 사진으로 스크롤
-
     func scrollToSelected() {
         guard let selID = selectedID,
-              let idx = photos.firstIndex(where: { $0.id == selID }) else { return }
+              let idx = photos.firstIndex(where: { $0.id == selID }),
+              let scrollView = enclosingScrollView else { return }
+
         let row = idx / cols
         let y = inset + CGFloat(row) * (cellH + lineSpacing)
-        enclosingScrollView?.contentView.scroll(to: NSPoint(x: 0, y: max(0, y - 100)))
+        let visibleH = scrollView.documentVisibleRect.height
+        let currentY = scrollView.documentVisibleRect.minY
+
+        // 선택이 보이는 범위 밖이면 스크롤
+        if y < currentY + 20 {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, y - 20)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        } else if y + cellH > currentY + visibleH - 20 {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, y + cellH - visibleH + 20)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
-    // MARK: - 마우스 클릭
+    // MARK: - 마우스
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let col = Int((point.x - inset) / (cellW + spacing))
-        let row = Int((point.y - inset) / (cellH + lineSpacing))
-        let idx = row * cols + col
-        guard idx >= 0, idx < photos.count, col >= 0, col < cols else { return }
-
+        guard let idx = indexAtPoint(point), idx < photos.count else {
+            store?.deselectAll()
+            return
+        }
         let photo = photos[idx]
-        guard !photo.isFolder, !photo.isParentFolder else {
-            // 폴더 더블클릭 → 열기
+
+        if photo.isParentFolder || photo.isFolder {
             if event.clickCount == 2 {
                 store?.loadFolder(photo.jpgURL, restoreRatings: true)
             }
             return
         }
 
-        store?.selectPhoto(photo.id, cmdKey: event.modifierFlags.contains(.command), shiftKey: event.modifierFlags.contains(.shift))
+        store?.selectPhoto(
+            photo.id,
+            cmdKey: event.modifierFlags.contains(.command),
+            shiftKey: event.modifierFlags.contains(.shift)
+        )
     }
 
-    // MARK: - 뷰 설정
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let idx = indexAtPoint(point), idx < photos.count else { return }
+        let photo = photos[idx]
+        guard !photo.isFolder, !photo.isParentFolder else { return }
+
+        // 우클릭한 사진이 선택 안 됐으면 먼저 선택
+        if !(store?.selectedPhotoIDs.contains(photo.id) ?? false) {
+            store?.selectPhoto(photo.id, cmdKey: false)
+        }
+
+        // 컨텍스트 메뉴 — NSMenu
+        let menu = NSMenu()
+        // 별점
+        for r in 0...5 {
+            let item = NSMenuItem(title: r == 0 ? "별점 초기화" : "★ \(r)", action: #selector(setRating(_:)), keyEquivalent: "")
+            item.tag = r
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        // SP
+        let sp = NSMenuItem(title: "SP 토글", action: #selector(toggleSP), keyEquivalent: "")
+        sp.target = self
+        menu.addItem(sp)
+        menu.addItem(.separator())
+        // Finder에서 열기
+        let finder = NSMenuItem(title: "Finder에서 열기", action: #selector(openInFinder), keyEquivalent: "")
+        finder.target = self
+        menu.addItem(finder)
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func setRating(_ sender: NSMenuItem) {
+        guard let store = store else { return }
+        for id in store.selectedPhotoIDs {
+            store.setRating(sender.tag, for: id)
+        }
+    }
+
+    @objc private func toggleSP() {
+        guard let store = store, let id = store.selectedPhotoID else { return }
+        store.toggleSpacePick(for: id)
+    }
+
+    @objc private func openInFinder() {
+        guard let store = store, let photo = store.selectedPhoto else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([photo.jpgURL])
+    }
+
+    // MARK: - 인덱스 계산
+
+    private func indexAtPoint(_ point: CGPoint) -> Int? {
+        let col = Int((point.x - inset) / (cellW + spacing))
+        let row = Int((point.y - inset) / (cellH + lineSpacing))
+        guard col >= 0, col < cols, row >= 0 else { return nil }
+        let idx = row * cols + col
+        return idx >= 0 && idx < photos.count ? idx : nil
+    }
+
+    // MARK: - 초기화
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
     }
-
     required init?(coder: NSCoder) { fatalError() }
 }
 
-// MARK: - 타일 레이어 (개별 썸네일 셀)
+// MARK: - 타일 레이어
 
 class TileLayer: CALayer {
     private let imageLayer = CALayer()
     private let textLayer = CATextLayer()
     private let borderLayer = CALayer()
+    private let badgeLayer = CATextLayer()
     private var currentURL: URL?
-    private var photoID: UUID?
 
     override init() {
         super.init()
         backgroundColor = NSColor.clear.cgColor
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
 
-        // 이미지
         imageLayer.contentsGravity = .resizeAspect
         imageLayer.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
         imageLayer.cornerRadius = 4
         imageLayer.masksToBounds = true
+        imageLayer.contentsScale = scale
         addSublayer(imageLayer)
 
-        // 테두리 (선택 표시)
         borderLayer.borderWidth = 0
-        borderLayer.cornerRadius = 4
+        borderLayer.cornerRadius = 6
         addSublayer(borderLayer)
 
-        // 파일명
         textLayer.fontSize = 10
         textLayer.foregroundColor = NSColor.secondaryLabelColor.cgColor
         textLayer.alignmentMode = .center
-        textLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        textLayer.contentsScale = scale
         textLayer.truncationMode = .end
         addSublayer(textLayer)
+
+        badgeLayer.fontSize = 8
+        badgeLayer.foregroundColor = NSColor.white.cgColor
+        badgeLayer.alignmentMode = .center
+        badgeLayer.contentsScale = scale
+        badgeLayer.cornerRadius = 3
+        badgeLayer.masksToBounds = true
+        badgeLayer.isHidden = true
+        addSublayer(badgeLayer)
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override init(layer: Any) {
-        super.init(layer: layer)
-    }
+    override init(layer: Any) { super.init(layer: layer) }
 
     func configure(photo: PhotoItem, size: CGFloat, isSelected: Bool, isFocused: Bool) {
         CATransaction.begin()
@@ -267,46 +378,60 @@ class TileLayer: CALayer {
         let imgH = size * 0.75
         imageLayer.frame = CGRect(x: 5, y: 2, width: size, height: imgH)
         borderLayer.frame = imageLayer.frame.insetBy(dx: -2, dy: -2)
-        textLayer.frame = CGRect(x: 0, y: imgH + 6, width: bounds.width, height: 14)
+        textLayer.frame = CGRect(x: 0, y: imgH + 4, width: bounds.width, height: 14)
         textLayer.string = photo.fileName
 
-        photoID = photo.id
+        // 뱃지 (R+J, JPG, CR3 등)
+        if !photo.isFolder && !photo.isParentFolder {
+            let (badgeText, badgeColor) = photo.fileTypeBadge
+            badgeLayer.string = badgeText
+            badgeLayer.backgroundColor = badgeColor == "green" ? NSColor.systemGreen.cgColor :
+                                         badgeColor == "blue" ? NSColor.systemBlue.cgColor :
+                                         badgeColor == "orange" ? NSColor.systemOrange.cgColor :
+                                         NSColor.systemGray.cgColor
+            badgeLayer.frame = CGRect(x: size - 30, y: 4, width: 32, height: 16)
+            badgeLayer.isHidden = false
+        } else {
+            badgeLayer.isHidden = true
+        }
+
         updateSelection(isSelected: isSelected, isFocused: isFocused)
 
-        // 썸네일 로딩 (독립 스레드)
+        // 썸네일 로딩
         let url = photo.jpgURL
         currentURL = url
 
-        if !photo.isFolder && !photo.isParentFolder {
-            if let cached = ThumbnailCache.shared.get(url) {
-                imageLayer.contents = cached
-                imageLayer.backgroundColor = nil
-            } else {
-                imageLayer.contents = nil
-                imageLayer.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
-                // 독립 큐에서 로딩 + RunLoop common mode로 전달
-                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                    if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
-                        ThumbnailCache.shared.set(url, image: diskCached)
-                        RunLoop.main.perform(inModes: [.common]) {
-                            guard self?.currentURL == url else { return }
-                            CATransaction.begin()
-                            CATransaction.setDisableActions(true)
-                            self?.imageLayer.contents = diskCached
-                            self?.imageLayer.backgroundColor = nil
-                            CATransaction.commit()
-                        }
-                        return
+        if photo.isFolder || photo.isParentFolder {
+            imageLayer.contents = NSImage(systemSymbolName: photo.isParentFolder ? "arrow.up.circle.fill" : "folder.fill", accessibilityDescription: nil)
+            imageLayer.backgroundColor = NSColor.gray.withAlphaComponent(0.08).cgColor
+        } else if let cached = ThumbnailCache.shared.get(url) {
+            imageLayer.contents = cached
+            imageLayer.backgroundColor = nil
+        } else {
+            imageLayer.contents = nil
+            imageLayer.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
+            // 독립 스레드 + RunLoop.common
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+                    ThumbnailCache.shared.set(url, image: disk)
+                    RunLoop.main.perform(inModes: [.common]) {
+                        guard self?.currentURL == url else { return }
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        self?.imageLayer.contents = disk
+                        self?.imageLayer.backgroundColor = nil
+                        CATransaction.commit()
                     }
-                    ThumbnailLoader.shared.load(url: url) { [weak self] image in
-                        RunLoop.main.perform(inModes: [.common]) {
-                            guard self?.currentURL == url else { return }
-                            CATransaction.begin()
-                            CATransaction.setDisableActions(true)
-                            self?.imageLayer.contents = image
-                            self?.imageLayer.backgroundColor = nil
-                            CATransaction.commit()
-                        }
+                    return
+                }
+                ThumbnailLoader.shared.load(url: url) { [weak self] image in
+                    RunLoop.main.perform(inModes: [.common]) {
+                        guard self?.currentURL == url else { return }
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        self?.imageLayer.contents = image
+                        self?.imageLayer.backgroundColor = nil
+                        CATransaction.commit()
                     }
                 }
             }
@@ -319,10 +444,10 @@ class TileLayer: CALayer {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if isFocused {
-            borderLayer.borderColor = NSColor(red: 50/255, green: 140/255, blue: 255/255, alpha: 1).cgColor
+            borderLayer.borderColor = NSColor(red: 50/255, green: 140/255, blue: 1, alpha: 1).cgColor
             borderLayer.borderWidth = 3
         } else if isSelected {
-            borderLayer.borderColor = NSColor(red: 80/255, green: 180/255, blue: 255/255, alpha: 1).cgColor
+            borderLayer.borderColor = NSColor(red: 80/255, green: 180/255, blue: 1, alpha: 1).cgColor
             borderLayer.borderWidth = 2
         } else {
             borderLayer.borderWidth = 0
@@ -332,10 +457,10 @@ class TileLayer: CALayer {
 
     func reset() {
         currentURL = nil
-        photoID = nil
         imageLayer.contents = nil
         imageLayer.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
         borderLayer.borderWidth = 0
         textLayer.string = ""
+        badgeLayer.isHidden = true
     }
 }

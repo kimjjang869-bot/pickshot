@@ -866,22 +866,24 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            // 미리보기 로딩 우선 — 썸네일 프리로드 일시 양보
-            ThumbnailLoader.shared.throttle()
+            // 미리보기: 0.05초 디바운스 (방향키 꾹 누를 때 매번 로딩 방지)
             preloadWork?.cancel()
             preloadWork = nil
-            viewState.stableImageSize = Self.readImageDimensions(url: url)
-            loadImageDirect(for: url, id: newID)
-            // 0.15초 머물면 hi-res 로딩 + 썸네일 프리로드 복구
+            imageLoadWork?.cancel()
+            let loadWork = DispatchWorkItem {
+                self.viewState.stableImageSize = Self.readImageDimensions(url: url)
+                self.loadImageDirect(for: url, id: newID)
+            }
+            imageLoadWork = loadWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: loadWork)
+            // 1초 머물면 hi-res 로딩 (빠른 탐색 중 360ms 블로킹 방지)
             hiResWorkItem?.cancel()
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
-                // 미리보기 로딩 완료 → 썸네일 프리로드 복구
-                // unthrottle 제거
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
