@@ -36,9 +36,11 @@ struct FileCopyService {
 
         var duplicates: [String] = []
         for photo in photos {
-            let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
-            if fm.fileExists(atPath: jpgDest.path) {
-                duplicates.append(jpgName + "/" + photo.jpgURL.lastPathComponent)
+            if !photo.isRawOnly {
+                let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                if fm.fileExists(atPath: jpgDest.path) {
+                    duplicates.append(jpgName + "/" + photo.jpgURL.lastPathComponent)
+                }
             }
             if let rawURL = photo.rawURL {
                 let rawDest = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
@@ -110,12 +112,15 @@ struct FileCopyService {
             return result
         }
 
+        let jpgOnlyOrPaired = photos.filter { !$0.isRawOnly }
         let photosWithRAW = photos.filter { $0.hasRAW }
-        let totalOperations = photos.count + photosWithRAW.count
+        let totalOperations = jpgOnlyOrPaired.count + photosWithRAW.count
         result.totalFiles = totalOperations
         var completed = 0
 
         for photo in photos {
+            // RAW only 파일은 JPG 폴더에 복사하지 않음
+            if photo.isRawOnly { continue }
             var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
             if fileManager.fileExists(atPath: destURL.path) {
                 switch duplicateHandling {
@@ -190,7 +195,9 @@ struct FileCopyService {
         }
 
         // RAW + JPG 모두 지원 (JPG only도 XMP 생성)
-        let totalOperations = photos.count * 2
+        // 각 사진: 파일복사(1) + XMP(1) + JPG쌍복사(RAW+JPG 페어일 때 1)
+        let pairsCount = photos.filter { $0.hasRAW && !$0.isRawOnly }.count
+        let totalOperations = photos.count * 2 + pairsCount
         result.totalFiles = totalOperations
         var completed = 0
 
@@ -220,12 +227,13 @@ struct FileCopyService {
                 result.failedFiles.append("복사 실패: \(photo.fileName)")
             }
 
-            // JPG도 같이 복사 (RAW+JPG 쌍)
-            if photo.hasRAW {
+            // JPG도 같이 복사 (RAW+JPG 쌍일 때만 — RAW only는 제외)
+            if photo.hasRAW && !photo.isRawOnly {
                 var jpgDest = destinationURL.appendingPathComponent(photo.jpgURL.lastPathComponent)
                 if fileManager.fileExists(atPath: jpgDest.path) {
                     switch duplicateHandling {
-                    case .skip: break  // 건너뛰기
+                    case .skip:
+                        result.skipped += 1
                     case .rename:
                         jpgDest = uniqueURL(for: jpgDest)
                         try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
@@ -239,6 +247,8 @@ struct FileCopyService {
                     try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
                     result.copiedJPG += 1
                 }
+                completed += 1
+                progress(completed, totalOperations)
             }
 
             completed += 1
@@ -335,13 +345,16 @@ struct FileCopyService {
         let fileManager = FileManager.default
 
         for photo in photos {
-            let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
-            guard fileManager.fileExists(atPath: jpgDest.path) else { return false }
+            // RAW-only 파일은 JPG 폴더가 아닌 RAW 폴더에서 확인
+            if !photo.isRawOnly {
+                let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                guard fileManager.fileExists(atPath: jpgDest.path) else { return false }
 
-            guard let srcSize = try? fileManager.attributesOfItem(atPath: photo.jpgURL.path)[.size] as? Int,
-                  let dstSize = try? fileManager.attributesOfItem(atPath: jpgDest.path)[.size] as? Int,
-                  srcSize == dstSize else {
-                return false
+                guard let srcSize = try? fileManager.attributesOfItem(atPath: photo.jpgURL.path)[.size] as? Int,
+                      let dstSize = try? fileManager.attributesOfItem(atPath: jpgDest.path)[.size] as? Int,
+                      srcSize == dstSize else {
+                    return false
+                }
             }
 
             if let rawURL = photo.rawURL {
