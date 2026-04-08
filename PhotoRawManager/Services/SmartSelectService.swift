@@ -54,7 +54,7 @@ struct SmartSelectService {
 
         for (groupIdx, indices) in groups.enumerated() {
             let topIndices = selectTopByIntensity(from: indices, photos: photos, config: config)
-            let bestIdx = topIndices.first ?? indices[0]
+            let bestIdx = topIndices.first ?? indices.first ?? 0
             burstGroups.append(BurstGroup(groupIndex: groupIdx, photoIndices: indices, bestIndex: bestIdx))
             for idx in topIndices {
                 selectedIndices.insert(idx)

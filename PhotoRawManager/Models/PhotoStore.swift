@@ -875,7 +875,7 @@ class PhotoStore: ObservableObject {
 
     func setColorLabelForSelected(_ label: ColorLabel) {
         for id in selectedPhotoIDs {
-            if let i = _photoIndex[id] { photos[i].colorLabel = label }
+            if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }
         }
     }
 
@@ -1453,7 +1453,8 @@ class PhotoStore: ObservableObject {
 
     func applySmartSelect() {
         guard let result = smartSelectResult, !result.selectedIndices.isEmpty else { return }
-        pushUndo(action: "스마트 셀렉", photoIDs: Set(result.selectedIndices.map { photos[$0].id }))
+        let validIndices = result.selectedIndices.filter { $0 < photos.count }
+        pushUndo(action: "스마트 셀렉", photoIDs: Set(validIndices.map { photos[$0].id }))
         for idx in result.selectedIndices {
             guard idx < photos.count else { continue }
             photos[idx].isSpacePicked = true

@@ -53,11 +53,11 @@ struct XMPService {
         let url = xmpURL(for: imageURL)
 
         var attrs = "xmp:Rating=\"\(rating)\""
-        if let label = label, !label.isEmpty {
-            attrs += "\n    xmp:Label=\"\(label)\""
-        }
-        if spacePicked {
+        // spacePicked + colorLabel 둘 다 있으면 colorLabel 우선 (덮어쓰기 방지)
+        if spacePicked && (label == nil || label?.isEmpty == true) {
             attrs += "\n    xmp:Label=\"Red\""
+        } else if let label = label, !label.isEmpty {
+            attrs += "\n    xmp:Label=\"\(label)\""
         }
 
         let xml = """
