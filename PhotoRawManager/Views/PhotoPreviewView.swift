@@ -1251,7 +1251,7 @@ struct PhotoPreviewView: View {
                 let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 fputs("[LD] JPG \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(ms)ms\n", stderr)
                 PreviewImageCache.shared.set(cacheKey, image: loaded)
-                DispatchQueue.main.async {
+                RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id else { return }
                     self.image = loaded
                     self.lowResImage = loaded
@@ -1276,7 +1276,7 @@ struct PhotoPreviewView: View {
                 let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 fputs("[LD] RAW-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms\n", stderr)
 
-                DispatchQueue.main.async {
+                RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id else { return }
                     self.image = fast
                     self.lowResImage = fast
@@ -1294,7 +1294,7 @@ struct PhotoPreviewView: View {
                     }
                     guard self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: finalHR)
-                    DispatchQueue.main.async {
+                    RunLoop.main.perform(inModes: [.common]) {
                         if self.pendingPhotoID == id {
                             self.image = finalHR
                             self.lowResImage = finalHR

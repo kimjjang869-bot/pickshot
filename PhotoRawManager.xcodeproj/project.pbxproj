@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		814650812303154191132241 /* TileGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813185334110140544752309 /* TileGridView.swift */; };
 		380455486888778309501142 /* StringDistance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427320353463566941753404 /* StringDistance.swift */; };
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
 		61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E4A569DDF734271ED6268 /* UpdateService.swift */; };
@@ -99,6 +100,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		813185334110140544752309 /* TileGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TileGridView.swift; path = PhotoRawManager/Views/TileGridView.swift; sourceTree = SOURCE_ROOT; };
 		427320353463566941753404 /* StringDistance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringDistance.swift; sourceTree = "<group>"; };
 		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
 		94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateView.swift; path = PhotoRawManager/Views/UpdateView.swift; sourceTree = SOURCE_ROOT; };

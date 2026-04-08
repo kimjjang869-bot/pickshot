@@ -430,27 +430,25 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
             thumbnailImageView.image = nil
             thumbnailImageView.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
 
-            // 메모리 캐시 히트 → 즉시, 나머지 → 독립 스레드에서 처리
+            // 메모리 캐시 히트 → 즉시, 나머지 → 독립 스레드 + RunLoop common mode
             let url = photo.jpgURL
             if let cached = ThumbnailCache.shared.get(url) {
                 thumbnailImageView.image = cached
                 thumbnailImageView.layer?.backgroundColor = nil
             } else {
-                // 독립 스레드: 디스크 캐시 → 생성 (메인스레드 블로킹 0)
                 Self.thumbLoadQueue.async { [weak self] in
-                    // 디스크 캐시 체크
                     if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
                         ThumbnailCache.shared.set(url, image: diskCached)
-                        DispatchQueue.main.async {
+                        // RunLoop common mode — 키보드 이벤트 트래킹 중에도 실행
+                        RunLoop.main.perform(inModes: [.common]) {
                             guard self?.currentPhotoURL == url else { return }
                             self?.thumbnailImageView.image = diskCached
                             self?.thumbnailImageView.layer?.backgroundColor = nil
                         }
                         return
                     }
-                    // 캐시 미스 → 생성
                     ThumbnailLoader.shared.load(url: url) { [weak self] image in
-                        DispatchQueue.main.async {
+                        RunLoop.main.perform(inModes: [.common]) {
                             guard self?.currentPhotoURL == url else { return }
                             self?.thumbnailImageView.image = image
                             self?.thumbnailImageView.layer?.backgroundColor = nil
