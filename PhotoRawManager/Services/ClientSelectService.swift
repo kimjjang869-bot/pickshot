@@ -165,58 +165,74 @@ class ClientSelectService: ObservableObject {
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         var uploadedFiles: [[String: Any]] = []
+        let uploadLock = NSLock()
+        let concurrency = 4  // 4장 동시 업로드
+        let uploadQueue = DispatchQueue(label: "com.pickshot.upload", attributes: .concurrent)
+        let uploadGroup = DispatchGroup()
+        let uploadSemaphore = DispatchSemaphore(value: concurrency)
 
         for (index, photo) in photos.enumerated() {
             guard !cancelled else { break }
 
-            // 리사이즈 (1200px max, JPEG 0.8)
-            guard let resizedURL = resizePhoto(photo: photo, index: index, tempDir: tempDir) else {
-                continue
-            }
+            uploadSemaphore.wait()  // 동시 4개 제한
+            uploadGroup.enter()
 
-            // 업로드
-            let uploadSemaphore = DispatchSemaphore(value: 0)
-
-            GoogleDriveService.uploadFile(fileURL: resizedURL, folderId: folderID, accessToken: token) { [weak self] result, error in
-                if let result = result {
-                    let info: [String: Any] = [
-                        "index": index + 1,
-                        "filename": resizedURL.lastPathComponent,
-                        "originalFilename": photo.jpgURL.lastPathComponent,
-                        "driveFileId": result.fileId
-                    ]
-                    uploadedFiles.append(info)
+            uploadQueue.async { [weak self] in
+                defer {
+                    uploadSemaphore.signal()
+                    uploadGroup.leave()
                 }
-                uploadSemaphore.signal()
-            }
-            uploadSemaphore.wait()
+                guard !(self?.cancelled ?? true) else { return }
 
-            // 진행률 업데이트
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.uploadDone = index + 1
-                // 업로드 속도 + 남은 시간 (원본 ZIP 포함)
-                if let start = self.uploadStartTime {
-                    let elapsed = Date().timeIntervalSince(start)
-                    if elapsed > 1 {
-                        let photosPerSec = Double(self.uploadDone) / elapsed
-                        // 원본 ZIP 업로드 예상 시간 추가 (사진 10장분 추가)
-                        let zipExtra = self.uploadOriginal ? 10.0 : 0.0
-                        let totalWork = Double(self.uploadTotal) + zipExtra
-                        let doneWork = Double(self.uploadDone)
-                        let remaining = (totalWork - doneWork) / max(photosPerSec, 0.01)
-                        let speed = String(format: "%.1f장/초", photosPerSec)
-                        let eta: String
-                        if remaining < 60 {
-                            eta = String(format: "%.0f초", remaining)
-                        } else {
-                            eta = String(format: "%.0f분 %.0f초", remaining / 60, remaining.truncatingRemainder(dividingBy: 60))
+                // 리사이즈 (1200px max, JPEG 0.8)
+                guard let resizedURL = self?.resizePhoto(photo: photo, index: index, tempDir: tempDir) else { return }
+
+                // 업로드
+                let fileSem = DispatchSemaphore(value: 0)
+                GoogleDriveService.uploadFile(fileURL: resizedURL, folderId: folderID, accessToken: token) { result, error in
+                    if let result = result {
+                        let info: [String: Any] = [
+                            "index": index + 1,
+                            "filename": resizedURL.lastPathComponent,
+                            "originalFilename": photo.jpgURL.lastPathComponent,
+                            "driveFileId": result.fileId
+                        ]
+                        uploadLock.lock()
+                        uploadedFiles.append(info)
+                        uploadLock.unlock()
+                    }
+                    fileSem.signal()
+                }
+                fileSem.wait()
+
+                // 진행률 업데이트 (병렬 안전)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.uploadDone += 1
+                    if let start = self.uploadStartTime {
+                        let elapsed = Date().timeIntervalSince(start)
+                        if elapsed > 1 {
+                            let photosPerSec = Double(self.uploadDone) / elapsed
+                            let zipExtra = self.uploadOriginal ? 10.0 : 0.0
+                            let totalWork = Double(self.uploadTotal) + zipExtra
+                            let doneWork = Double(self.uploadDone)
+                            let remaining = (totalWork - doneWork) / max(photosPerSec, 0.01)
+                            let speed = String(format: "%.1f장/초", photosPerSec)
+                            let eta: String
+                            if remaining < 60 {
+                                eta = String(format: "%.0f초", remaining)
+                            } else {
+                                eta = String(format: "%.0f분 %.0f초", remaining / 60, remaining.truncatingRemainder(dividingBy: 60))
+                            }
+                            self.uploadSpeed = "\(speed) · 남은 시간: \(eta)"
                         }
-                        self.uploadSpeed = "\(speed) · 남은 시간: \(eta)"
                     }
                 }
-            }
-        }
+            } // uploadQueue.async
+        } // for
+
+        // 모든 업로드 완료 대기
+        uploadGroup.wait()
 
         // 임시 폴더 정리
         try? FileManager.default.removeItem(at: tempDir)

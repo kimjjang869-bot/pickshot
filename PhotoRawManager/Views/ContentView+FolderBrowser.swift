@@ -1141,6 +1141,10 @@ struct FolderRowView: View {
             }
             .cornerRadius(4)
             .id(item.url.path)  // ScrollViewReader 스크롤 대상
+            .onDrag {
+                // 폴더 자체를 드래그 소스로
+                NSItemProvider(object: item.url as NSURL)
+            }
             .onDrop(of: [.fileURL], delegate: FolderDropDelegate(
                 store: store,
                 destination: item.url,
@@ -1452,6 +1456,7 @@ struct FolderDropDelegate: DropDelegate {
         isTargeted = false
         let providers = info.itemProviders(for: [.fileURL])
         var fileURLs: [URL] = []
+        var folderURLs: [URL] = []
         let group = DispatchGroup()
 
         for provider in providers {
@@ -1459,15 +1464,36 @@ struct FolderDropDelegate: DropDelegate {
             provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
                 defer { group.leave() }
                 guard let data = item as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil),
-                      !url.hasDirectoryPath else { return }
-                fileURLs.append(url)
+                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                // 자기 자신이나 부모로 이동 방지
+                if url == destination || destination.path.hasPrefix(url.path + "/") { return }
+                if url.hasDirectoryPath {
+                    folderURLs.append(url)
+                } else {
+                    fileURLs.append(url)
+                }
             }
         }
 
         group.notify(queue: .main) {
-            guard !fileURLs.isEmpty else { return }
-            store.movePhotosToFolder(fileURLs: fileURLs, destination: destination)
+            // 파일 이동
+            if !fileURLs.isEmpty {
+                store.movePhotosToFolder(fileURLs: fileURLs, destination: destination)
+            }
+            // 폴더 이동
+            for folderURL in folderURLs {
+                let destURL = destination.appendingPathComponent(folderURL.lastPathComponent)
+                do {
+                    try FileManager.default.moveItem(at: folderURL, to: destURL)
+                    store.showToastMessage("📁 '\(folderURL.lastPathComponent)' → '\(destination.lastPathComponent)'로 이동")
+                } catch {
+                    store.showToastMessage("⚠️ 폴더 이동 실패: \(error.localizedDescription)")
+                }
+            }
+            // 폴더 트리 새로고침
+            if !folderURLs.isEmpty {
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
+            }
         }
         return true
     }
