@@ -133,7 +133,7 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var viewMode: ViewMode = .grid
-    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? false {
+    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? true {
         didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
     }
     @Published var thumbnailSize: CGFloat = {
@@ -217,9 +217,11 @@ class PhotoStore: ObservableObject {
     var thumbsETA: String {
         guard thumbsLoaded > 0, thumbsTotal > thumbsLoaded else { return "" }
         let elapsed = CFAbsoluteTimeGetCurrent() - thumbsStartTime
-        guard elapsed > 0.5 else { return "" }  // Wait 0.5s before showing ETA
+        guard elapsed > 1.0 else { return "" }
         let rate = Double(thumbsLoaded) / elapsed
+        guard rate > 0.1 else { return "" }  // rate 너무 낮으면 ETA 숨김
         let remaining = Double(thumbsTotal - thumbsLoaded) / rate
+        guard remaining < 36000 else { return "" }  // 10시간 이상이면 비정상
         if remaining < 60 { return "\(Int(remaining))초" }
         return "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
     }
@@ -1165,8 +1167,10 @@ class PhotoStore: ObservableObject {
                         self?.selectedPhotoIDs = [fp.id]
                         self?.scrollTrigger += 1
                     }
-                    // 그리드 열 수 재계산 (SwiftUI 레이아웃 완료 후)
-                    self?.recalcColumnsFromRatio()
+                    // 그리드 열 수 재계산 (레이아웃 렌더링 완료 대기)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self?.recalcColumnsFromRatio()
+                    }
                 }
                 // Preload thumbnails with slight delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1275,66 +1279,56 @@ class PhotoStore: ObservableObject {
         // No-op: ExifInfoView loads its own EXIF via @State
     }
 
-    /// Preload all thumbnails in background
+    /// 현재 위치 기반 윈도우 프리페치 — 앞뒤 50장만 로딩
+    private var thumbPrefetchGeneration = 0
+
     private func preloadAllThumbnails() {
-        // Only preload from disk cache (no RAW extraction — that's on-demand only)
-        // This prevents CPU 700% + 7GB memory spike on large folders
-        let urls = photos.map { $0.jpgURL }
-        thumbsTotal = urls.count
-        thumbsLoaded = urls.count  // Show as complete (on-demand loads individually)
-        thumbsStartTime = CFAbsoluteTimeGetCurrent()
-        let generation = thumbsGeneration
-
-        let totalCount = urls.count
-        var completedCount = 0
-        let lock = NSLock()
-        let startTime = thumbsStartTime
-
-        let rawCount = urls.filter { FileMatchingService.rawExtensions.contains($0.pathExtension.lowercased()) }.count
-        let jpgCount = urls.filter { FileMatchingService.jpgExtensions.contains($0.pathExtension.lowercased()) }.count
-        print("📊 [THUMB] Start preload: \(totalCount) files (JPG:\(jpgCount) RAW:\(rawCount)), concurrency=\(ThumbnailLoader.shared.queue.maxConcurrentOperationCount)")
-
-        // Batch loading: 50 at a time to prevent memory spike
-        let batchSize = 50
-        func loadBatch(startIndex: Int) {
-            let end = min(startIndex + batchSize, totalCount)
-            guard startIndex < end else { return }
-
-            for i in startIndex..<end {
-                let url = urls[i]
-            ThumbnailLoader.shared.load(url: url) { [weak self] _ in
-                // Discard stale callbacks from previous folder
-                guard let self = self, self.thumbsGeneration == generation else { return }
-
-                lock.lock()
-                completedCount += 1
-                let current = completedCount
-                lock.unlock()
-
-                // Update UI every 5 items or at completion (smooth progress)
-                if current % 5 == 0 || current == totalCount {
-                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-                    let rate = elapsed > 0 ? Double(current) / elapsed : 0
-                    DispatchQueue.main.async { [weak self] in
-                        guard self?.thumbsGeneration == generation else { return }
-                        self?.thumbsLoaded = current
-                    }
-                    if current == totalCount {
-                        print("📊 [THUMB] DONE: \(totalCount) files in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) files/s)")
-                    } else if current % 50 == 0 {
-                        print("📊 [THUMB] Progress: \(current)/\(totalCount) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) files/s)")
-                    }
-                    // Start next batch when current batch is done
-                    if current == end {
-                        loadBatch(startIndex: end)
-                    }
-                }
-            }
-            } // end for
-        } // end func loadBatch
-
-        loadBatch(startIndex: 0)
+        // on-demand only — NSCollectionView 셀이 보일 때 로딩
+        thumbsTotal = photos.filter { !$0.isFolder && !$0.isParentFolder }.count
+        thumbsLoaded = thumbsTotal  // 프로그레스바 숨김
     }
+
+    /// 선택 변경 시 호출 — 현재 위치 앞뒤 50장만 프리페치
+    func preloadThumbnailsAroundSelection(initialLoad: Bool = false) {
+        let list = filteredPhotos
+        let total = list.count
+        guard total > 0 else { return }
+
+        thumbPrefetchGeneration += 1
+        let gen = thumbPrefetchGeneration
+        thumbsTotal = total
+
+        // 현재 선택 위치 찾기
+        let currentIdx: Int
+        if let selID = selectedPhotoID,
+           let idx = list.firstIndex(where: { $0.id == selID }) {
+            currentIdx = idx
+        } else {
+            currentIdx = 0
+        }
+
+        // 윈도우: 현재 위치에서 앞뒤 100장
+        let windowSize = 100
+        let start = max(0, currentIdx - windowSize)
+        let end = min(total, currentIdx + windowSize)
+
+        for i in start..<end {
+            let url = list[i].jpgURL
+            guard !list[i].isFolder && !list[i].isParentFolder else { continue }
+            // 이미 캐시에 있으면 스킵
+            if ThumbnailCache.shared.get(url) != nil { continue }
+            ThumbnailLoader.shared.load(url: url) { [weak self] _ in
+                guard self?.thumbPrefetchGeneration == gen else { return }
+            }
+        }
+
+        // 진행률 업데이트
+        DispatchQueue.main.async { [weak self] in
+            self?.thumbsLoaded = min(end, total)
+        }
+    }
+
+    // 백그라운드 전체 프리페치 제거 — on-demand + 앞뒤 50장만으로 충분
 
     func runQualityAnalysis() {
         guard !photos.isEmpty, !isAnalyzing else { return }
@@ -1587,14 +1581,22 @@ class PhotoStore: ObservableObject {
         return max(1, actualColumnsPerRow)
     }
 
-    /// hSplitRatio 기반으로 그리드 열 수 재계산
+    /// 그리드 열 수 재계산 — 윈도우 실제 폭 기반
     func recalcColumnsFromRatio() {
-        let screenW = NSScreen.main?.frame.width ?? 1440
-        let leftW = screenW * hSplitRatio
+        // 윈도우 실제 폭 사용 (화면 폭이 아닌)
+        let windowW = NSApp.keyWindow?.frame.width ?? (NSScreen.main?.frame.width ?? 1440)
+        let leftW = windowW * hSplitRatio
         let size = thumbnailSize
-        let spacing: CGFloat = 12
-        let cellWidth = size + spacing
-        let cols = max(1, Int((leftW + spacing) / cellWidth))
+        let cols: Int
+        if useAppKitGrid {
+            // NSCollectionView: itemWidth = size+10, spacing = 12, sectionInset = 16
+            let cellWidth = size + 10 + 12
+            cols = max(1, Int((leftW - 16) / cellWidth))
+        } else {
+            // SwiftUI LazyVGrid: cellWidth = size + 12
+            let cellWidth = size + 12
+            cols = max(1, Int((leftW + 12) / cellWidth))
+        }
         if actualColumnsPerRow != cols {
             actualColumnsPerRow = cols
         }
@@ -1690,22 +1692,7 @@ class PhotoStore: ObservableObject {
             onQuickPreview?(photo.jpgURL)
         }
 
-        // 프리페치 스로틀: 100ms 간격으로만 실행 (매 이동마다 하면 오버헤드)
-        thumbPrefetchWork?.cancel()
-        let capturedIndex = newIndex
-        let capturedList = list
-        let work = DispatchWorkItem { [weak self] in
-            self?.prefetchNearby(list: capturedList, centerIndex: capturedIndex, range: 5)
-            self?.prefetchThumbnailsBoth(list: capturedList, centerIndex: capturedIndex, count: 30)
-        }
-        thumbPrefetchWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
-    private var thumbPrefetchWork: DispatchWorkItem? {
-        get { objc_getAssociatedObject(self, &Self.thumbPrefetchWorkKey) as? DispatchWorkItem }
-        set { objc_setAssociatedObject(self, &Self.thumbPrefetchWorkKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
-    }
-    private static var thumbPrefetchWorkKey: UInt8 = 0
 
     private func prefetchNearby(list: [PhotoItem], centerIndex: Int, range: Int) {
         var urls: [URL] = []

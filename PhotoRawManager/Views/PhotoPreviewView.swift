@@ -407,6 +407,7 @@ struct PhotoPreviewView: View {
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var hiResWorkItem: DispatchWorkItem? = nil
+    @State private var imageLoadWork: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
     @State private var showCropView = false
 
@@ -735,7 +736,7 @@ struct PhotoPreviewView: View {
             // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
             store.onQuickPreview = { [self] url in
                 // 빠른 탐색 중 썸네일 프리로딩 양보
-                ThumbnailLoader.shared.throttle()
+                // throttle 제거 — 방향키 이동 중에도 썸네일 생성 유지
                 // 캐시 히트 → 즉시 표시
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
@@ -853,23 +854,34 @@ struct PhotoPreviewView: View {
             // Show thumbnail instantly while full image loads
             if let thumb = ThumbnailCache.shared.get(url) {
                 image = thumb
+            } else if ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) {
+                // JPG만 동기 추출 (~1ms) — RAW는 느려서 스킵
+                if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                   let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceThumbnailMaxPixelSize: 300,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                   ] as CFDictionary) {
+                    image = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                }
             }
 
-            // 즉시 미리보기 로딩 (Stage1 + Stage2)
+            // 미리보기 로딩 우선 — 썸네일 프리로드 일시 양보
+            ThumbnailLoader.shared.throttle()
             preloadWork?.cancel()
             preloadWork = nil
             viewState.stableImageSize = Self.readImageDimensions(url: url)
             loadImageDirect(for: url, id: newID)
-            // 0.15초 머물면 hi-res 로딩 (빠르게 넘길 때는 스킵)
+            // 0.15초 머물면 hi-res 로딩 + 썸네일 프리로드 복구
             hiResWorkItem?.cancel()
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
+                // 미리보기 로딩 완료 → 썸네일 프리로드 복구
+                // unthrottle 제거
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
-            // 이동 완료 → 썸네일 프리로딩 복구
-            ThumbnailLoader.shared.unthrottle()
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1218,8 +1230,9 @@ struct PhotoPreviewView: View {
         }
 
         let t0 = CFAbsoluteTimeGetCurrent()
-        // Fast concurrent loading — pendingPhotoID handles cancellation
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Cancel previous loading work
+        imageLoadWork?.cancel()
+        let work = DispatchWorkItem(qos: .userInitiated) { [self] in
             guard self.pendingPhotoID == id else { return }
 
             let ext = url.pathExtension.lowercased()
@@ -1298,6 +1311,8 @@ struct PhotoPreviewView: View {
                 self.scheduleSmartPreload(currentID: id, resolution: resolution)
             }
         }
+        imageLoadWork = work
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func loadImage(for url: URL) {

@@ -52,6 +52,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         coordinator.showFileExtension = store.showFileExtension
         coordinator.showFileTypeBadge = store.showFileTypeBadge
 
+        // 스크롤 시 대기 중인 썸네일 로딩 취소 (새 영역만 로딩)
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            coordinator, selector: #selector(Coordinator.scrollViewDidScroll(_:)),
+            name: NSView.boundsDidChangeNotification, object: scrollView.contentView
+        )
+
         return scrollView
     }
 
@@ -59,8 +66,6 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         let coordinator = context.coordinator
         guard let collectionView = coordinator.collectionView else { return }
         coordinator.store = store
-
-        fputs("[GRID] update: old=\(coordinator.photos.count) new=\(store.filteredPhotos.count) ver=\(store.photosVersion) frame=\(Int(scrollView.frame.width))x\(Int(scrollView.frame.height))\n", stderr)
 
         let newPhotos = store.filteredPhotos
         let newSize = store.thumbnailSize
@@ -75,6 +80,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 layout.itemSize = NSSize(width: newSize + 10, height: newSize * 0.75 + 50)
                 layout.invalidateLayout()
             }
+        }
+        // 열 수 계산 (방향키 행 이동용) — NSCollectionView 실제 폭 기반
+        let gridWidth = scrollView.frame.width - 16  // sectionInset left+right
+        let cellWidth = newSize + 10 + 12  // itemWidth + interItemSpacing
+        let cols = max(1, Int(gridWidth / cellWidth))
+        if store.actualColumnsPerRow != cols {
+            store.actualColumnsPerRow = cols
         }
 
         // Update display options
@@ -95,26 +107,23 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             // Restore selection after reload
             syncSelectionToCollectionView(coordinator: coordinator, collectionView: collectionView)
         } else {
-            // Check if individual photo properties changed (ratings, SP, etc.)
-            var changedIndices: [Int] = []
-            for i in 0..<newPhotos.count {
+            // 보이는 셀만 속성 비교 + 변경된 셀만 리로드
+            let visiblePaths = collectionView.indexPathsForVisibleItems()
+            var changedPaths: Set<IndexPath> = []
+            for ip in visiblePaths {
+                let i = ip.item
+                guard i < newPhotos.count, i < coordinator.photos.count else { continue }
                 let old = coordinator.photos[i]
                 let new = newPhotos[i]
                 if old.rating != new.rating || old.isSpacePicked != new.isSpacePicked ||
                    old.isGSelected != new.isGSelected || old.colorLabel != new.colorLabel ||
-                   old.quality?.isAnalyzed != new.quality?.isAnalyzed ||
-                   old.isCorrected != new.isCorrected || old.isAIPick != new.isAIPick ||
-                   old.sceneTag != new.sceneTag || old.aiCategory != new.aiCategory ||
-                   old.aiScore != new.aiScore || old.comments.count != new.comments.count ||
-                   old.faceGroupID != new.faceGroupID {
-                    changedIndices.append(i)
+                   old.isCorrected != new.isCorrected || old.isAIPick != new.isAIPick {
+                    changedPaths.insert(ip)
                 }
             }
             coordinator.photos = newPhotos
-            if !changedIndices.isEmpty {
-                let indexPaths = Set(changedIndices.map { IndexPath(item: $0, section: 0) })
-                // Reload only changed cells
-                collectionView.reloadItems(at: indexPaths)
+            if !changedPaths.isEmpty {
+                collectionView.reloadItems(at: changedPaths)
             }
         }
 
@@ -178,10 +187,21 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             self.store = store
         }
 
+        private var lastScrollY: CGFloat = 0
+        @objc func scrollViewDidScroll(_ notification: Notification) {
+            guard let clipView = notification.object as? NSClipView else { return }
+            let y = clipView.bounds.origin.y
+            let delta = abs(y - lastScrollY)
+            lastScrollY = y
+            // 큰 점프 (300px 이상) → 즉시 대기 큐 취소
+            if delta > 300 {
+                ThumbnailLoader.shared.cancelPending()
+            }
+        }
+
         // MARK: DataSource
 
         func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-            fputs("[GRID] numberOfItems: \(photos.count)\n", stderr)
             return photos.count
         }
 
@@ -276,6 +296,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
 class ThumbnailCollectionViewItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("ThumbnailCollectionViewItem")
+    /// 썸네일 로딩 전용 큐 — 메인스레드와 완전 독립 (방향키 이동과 간섭 없음)
+    static let thumbLoadQueue = DispatchQueue(label: "com.pickshot.thumbload", qos: .userInitiated, attributes: .concurrent)
 
     private var thumbnailImageView: NSImageView!
     private var fileNameLabel: NSTextField!
@@ -408,16 +430,31 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
             thumbnailImageView.image = nil
             thumbnailImageView.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
 
-            // Load from cache or async
-            if let cached = ThumbnailCache.shared.get(photo.jpgURL) {
+            // 메모리 캐시 히트 → 즉시, 나머지 → 독립 스레드에서 처리
+            let url = photo.jpgURL
+            if let cached = ThumbnailCache.shared.get(url) {
                 thumbnailImageView.image = cached
                 thumbnailImageView.layer?.backgroundColor = nil
             } else {
-                ThumbnailLoader.shared.load(url: photo.jpgURL) { [weak self] image in
-                    DispatchQueue.main.async {
-                        guard self?.currentPhotoURL == photo.jpgURL else { return }
-                        self?.thumbnailImageView.image = image
-                        self?.thumbnailImageView.layer?.backgroundColor = nil
+                // 독립 스레드: 디스크 캐시 → 생성 (메인스레드 블로킹 0)
+                Self.thumbLoadQueue.async { [weak self] in
+                    // 디스크 캐시 체크
+                    if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
+                        ThumbnailCache.shared.set(url, image: diskCached)
+                        DispatchQueue.main.async {
+                            guard self?.currentPhotoURL == url else { return }
+                            self?.thumbnailImageView.image = diskCached
+                            self?.thumbnailImageView.layer?.backgroundColor = nil
+                        }
+                        return
+                    }
+                    // 캐시 미스 → 생성
+                    ThumbnailLoader.shared.load(url: url) { [weak self] image in
+                        DispatchQueue.main.async {
+                            guard self?.currentPhotoURL == url else { return }
+                            self?.thumbnailImageView.image = image
+                            self?.thumbnailImageView.layer?.backgroundColor = nil
+                        }
                     }
                 }
             }
@@ -553,6 +590,11 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
         } else {
             layer.backgroundColor = NSColor.clear.cgColor
         }
+    }
+
+    /// 보이는 셀의 선택/별점 등만 빠르게 업데이트 (reloadItems 없이)
+    func updateIfNeeded(photo: PhotoItem, isSelected: Bool, isFocused: Bool) {
+        updateSelection(isSelected: isSelected, isFocused: isFocused, isSpacePicked: photo.isSpacePicked)
     }
 
     override func prepareForReuse() {

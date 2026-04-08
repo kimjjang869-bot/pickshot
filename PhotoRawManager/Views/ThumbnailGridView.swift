@@ -1050,9 +1050,17 @@ class ThumbnailLoader {
         queue.qualityOfService = .utility
     }
 
-    /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮춤)
+    /// 스크롤 시 대기 중인 작업 전부 취소 (보이는 셀만 새로 요청)
+    func cancelPending() {
+        queue.cancelAllOperations()
+        lock.lock()
+        pendingCallbacks.removeAll()
+        lock.unlock()
+    }
+
+    /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
-        queue.maxConcurrentOperationCount = 1
+        queue.maxConcurrentOperationCount = 2
     }
 
     /// 탐색 멈추면 프리로딩 복구
@@ -1165,9 +1173,8 @@ class ThumbnailLoader {
             completion(cached)
             return
         }
-        // 2. Disk cache hit → load synchronously (fast, avoids queue delay on HDD)
-        let modDate = Self.fileModDate(url)
-        if let diskCached = DiskThumbnailCache.shared.get(url: url, modDate: modDate) {
+        // 2. Disk cache hit → path-only lookup (no stat() — 메인스레드 블로킹 방지)
+        if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
             ThumbnailCache.shared.set(url, image: diskCached)
             completion(diskCached)
             return
