@@ -412,9 +412,12 @@ struct LazyListRowWrapper: View {
                 }
                 return provider
             }
+            .onAppear {
+                // 목록뷰에서 보이면 EXIF 자동 로딩
+                store.loadExifIfNeeded(for: photo.id)
+            }
             .onTapGesture {
                 if photo.isParentFolder || photo.isFolder {
-                    // 폴더/상위폴더 → 싱글 클릭으로 열기
                     store.loadFolder(photo.jpgURL, restoreRatings: true)
                 } else {
                     onTap()

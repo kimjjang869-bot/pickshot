@@ -1362,8 +1362,23 @@ class PhotoStore: ObservableObject {
     }
 
     /// EXIF loading is now handled by ExifInfoView directly (self-contained, no photos array mutation)
-    func loadExifOnDemand(for photoID: UUID? = nil) {
-        // No-op: ExifInfoView loads its own EXIF via @State
+    /// 목록뷰에서 보이는 행의 EXIF 로딩
+    func loadExifIfNeeded(for photoID: UUID) {
+        guard let idx = _photoIndex[photoID], idx < photos.count else { return }
+        guard photos[idx].exifData == nil else { return }
+        guard !photos[idx].isFolder && !photos[idx].isParentFolder else { return }
+
+        let url = photos[idx].jpgURL
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let exif = ExifService.extractExif(from: url) else { return }
+            DispatchQueue.main.async {
+                guard let self = self,
+                      let i = self._photoIndex[photoID], i < self.photos.count else { return }
+                self._suppressDidSet = true
+                self.photos[i].exifData = exif
+                self._suppressDidSet = false
+            }
+        }
     }
 
     /// 현재 위치 기반 윈도우 프리페치 — 앞뒤 50장만 로딩
