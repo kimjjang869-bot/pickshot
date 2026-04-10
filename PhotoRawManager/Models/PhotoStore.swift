@@ -711,6 +711,8 @@ class PhotoStore: ObservableObject {
 
     func selectPhoto(_ id: UUID, cmdKey: Bool, shiftKey: Bool = false) {
         restoreKeyFocus()
+        // SwiftUI가 다음 RunLoop에서 TextField로 되돌리는 걸 방지
+        DispatchQueue.main.async { [weak self] in self?.restoreKeyFocus() }
         // 폴더/상위폴더는 선택 불가
         if let idx = _photoIndex[id], idx < photos.count {
             let photo = photos[idx]

@@ -217,8 +217,13 @@ extension ContentView {
                             .textFieldStyle(.plain)
                             .font(.system(size: 11))
                             .frame(width: 80)
+                            .onExitCommand {
+                                // ESC → 포커스 해제
+                                store.restoreKeyFocus()
+                            }
                             .onSubmit {
-                                // Enter 키로 검색 확정 → 포커스 해제
+                                // Enter → 포커스 해제
+                                store.restoreKeyFocus()
                                 DispatchQueue.main.async {
                                     NSApp.keyWindow?.makeFirstResponder(nil)
                                 }
