@@ -1261,6 +1261,10 @@ class PhotoStore: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self?.preloadAllThumbnails()
                 }
+                // 목록뷰용 EXIF 배치 로딩 (1초 후, 첫 50장)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self?.batchLoadExif(count: 50)
+                }
                 // 아이들 시 고화질 미리보기 프리캐싱 (3초 후 시작)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     self?.startIdlePreviewPrefetch()
@@ -1367,6 +1371,33 @@ class PhotoStore: ObservableObject {
     /// 목록뷰에서 보이는 행의 EXIF 로딩 (배치 — 뷰 리빌드 최소화)
     private var exifLoadingIDs: Set<UUID> = []
     private var exifBatchWork: DispatchWorkItem?
+
+    /// 폴더 열 때 첫 N장 EXIF 배치 로딩
+    private func batchLoadExif(count: Int) {
+        let list = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }
+        let batch = list.prefix(count)
+        guard !batch.isEmpty else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var loaded = 0
+            for photo in batch {
+                guard let exif = ExifService.extractExif(from: photo.jpgURL) else { continue }
+                DispatchQueue.main.async {
+                    guard let self = self,
+                          let i = self._photoIndex[photo.id], i < self.photos.count else { return }
+                    self._suppressDidSet = true
+                    self.photos[i].exifData = exif
+                    self._suppressDidSet = false
+                    self.exifLoadingIDs.insert(photo.id)
+                }
+                loaded += 1
+            }
+            // 배치 완료 → UI 업데이트 1번
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
+        }
+    }
 
     func loadExifIfNeeded(for photoID: UUID) {
         guard let idx = _photoIndex[photoID], idx < photos.count else { return }
