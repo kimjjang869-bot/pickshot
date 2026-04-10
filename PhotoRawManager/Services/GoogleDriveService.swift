@@ -419,8 +419,11 @@ class GoogleDriveService {
     // MARK: - OAuth 2.0
 
     // OAuth credentials loaded lazily (avoids keychain popup at app launch)
+    // 기본 OAuth Client ID (Secrets.xcconfig 없는 사용자도 사용 가능)
+    private static let defaultClientID = "661638823938-f9bk0a503pv0js0iskdqd196erkg40ua.apps.googleusercontent.com"
     static var oauthClientID: String {
-        KeychainService.read(key: "gdrive_client_id") ?? ""
+        let saved = KeychainService.read(key: "gdrive_client_id") ?? ""
+        return saved.isEmpty ? defaultClientID : saved
     }
     static var oauthClientSecret: String {
         KeychainService.read(key: "gdrive_client_secret") ?? ""
