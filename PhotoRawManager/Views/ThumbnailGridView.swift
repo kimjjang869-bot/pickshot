@@ -412,7 +412,14 @@ struct LazyListRowWrapper: View {
                 }
                 return provider
             }
-            .onTapGesture { onTap() }
+            .onTapGesture {
+                if photo.isParentFolder || photo.isFolder {
+                    // 폴더/상위폴더 → 싱글 클릭으로 열기
+                    store.loadFolder(photo.jpgURL, restoreRatings: true)
+                } else {
+                    onTap()
+                }
+            }
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
                     Button("Finder에서 열기") {
