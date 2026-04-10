@@ -62,50 +62,46 @@ class ClientSelectService: ObservableObject {
                       photos: [PhotoItem], accessMode: AccessMode) {
         fputs("[CLIENT] startSession: name=\(name), photos=\(photos.count)\n", stderr)
 
-        // 토큰 갱신 — 실패 시 재로그인
-        let sem = DispatchSemaphore(value: 0)
-        var finalToken: String?
+        // 토큰 확보 (비동기 — 메인스레드 블로킹 없음)
+        resolveToken { [weak self] token in
+            guard let self = self, let token = token else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Google Drive 로그인이 필요합니다.\n설정에서 Google 로그인을 해주세요."
+                    self?.isUploading = false
+                }
+                return
+            }
+            fputs("[CLIENT] 토큰 준비: \(token.prefix(10))...\n", stderr)
+            self.continueSession(token: token, name: name, client: client, email: email, photos: photos, accessMode: accessMode)
+        }
+    }
 
+    /// 토큰 확보: 리프레시 → 실패 시 재로그인 (메인스레드 안 막음)
+    private func resolveToken(completion: @escaping (String?) -> Void) {
         if GoogleDriveService.savedAccessToken != nil {
-            // 기존 토큰 → 리프레시 시도
             GoogleDriveService.refreshAccessToken { newToken, error in
                 if let newToken = newToken {
                     fputs("[CLIENT] 토큰 갱신 성공\n", stderr)
-                    finalToken = newToken
+                    completion(newToken)
                 } else {
-                    fputs("[CLIENT] 토큰 갱신 실패: \(error?.localizedDescription ?? "") — 재로그인 시도\n", stderr)
-                    // 리프레시 실패 → 재로그인
-                    GoogleDriveService.startOAuthLogin { token, loginError in
-                        if let token = token {
-                            fputs("[CLIENT] 재로그인 성공\n", stderr)
-                            finalToken = token
-                        } else {
-                            fputs("[CLIENT] 재로그인 실패: \(loginError?.localizedDescription ?? "")\n", stderr)
-                        }
-                        sem.signal()
+                    fputs("[CLIENT] 토큰 갱신 실패 — 재로그인\n", stderr)
+                    GoogleDriveService.startOAuthLogin { token, _ in
+                        fputs("[CLIENT] 재로그인: \(token != nil ? "성공" : "실패")\n", stderr)
+                        completion(token)
                     }
-                    return
                 }
-                sem.signal()
             }
-            sem.wait()
         } else {
-            // 토큰 없음 → 새 로그인
-            GoogleDriveService.startOAuthLogin { token, error in
-                finalToken = token
+            GoogleDriveService.startOAuthLogin { token, _ in
                 fputs("[CLIENT] 새 로그인: \(token != nil ? "성공" : "실패")\n", stderr)
-                sem.signal()
+                completion(token)
             }
-            sem.wait()
         }
+    }
 
-        guard let token = finalToken else {
-            fputs("[CLIENT] ❌ Google Drive 토큰 없음\n", stderr)
-            DispatchQueue.main.async { self.errorMessage = "Google Drive 로그인이 필요합니다.\n설정에서 Google 로그인을 해주세요." }
-            DispatchQueue.main.async { self.isUploading = false }
-            return
-        }
-        fputs("[CLIENT] 토큰 준비: \(token.prefix(10))...\n", stderr)
+    private func continueSession(token: String, name: String, client: String, email: String,
+                                  photos: [PhotoItem], accessMode: AccessMode) {
+        fputs("[CLIENT] continueSession with token\n", stderr)
 
         // 상태 초기화
         sessionName = name
