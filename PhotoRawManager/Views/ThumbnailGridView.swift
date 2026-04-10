@@ -177,7 +177,7 @@ struct ThumbnailGridView: View {
             if cols.contains("lens")       { colDivider; colHeaderStatic("렌즈", width: colW_lens) }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor))
         .contextMenu {
             Toggle("수정일", isOn: Binding(get: { cols.contains("date") }, set: { _ in toggleColumn("date") }))
@@ -197,13 +197,13 @@ struct ThumbnailGridView: View {
 
     private func colHeader(_ title: String, width: CGFloat?, sort: SortMode, altSort: SortMode) -> some View {
         let isActive = store.sortMode == sort || store.sortMode == altSort
-        return HStack(spacing: 2) {
+        return HStack(spacing: 3) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(isActive ? .accentColor : .secondary)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(isActive ? .accentColor : .primary)
             if isActive {
                 Image(systemName: store.sortMode == sort ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 7, weight: .bold)).foregroundColor(.accentColor)
+                    .font(.system(size: 8, weight: .bold)).foregroundColor(.accentColor)
             }
         }
         .frame(width: width, alignment: .leading)
@@ -213,8 +213,8 @@ struct ThumbnailGridView: View {
 
     private func colHeaderStatic(_ title: String, width: CGFloat) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.secondary)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.primary)
             .frame(width: width, alignment: .center)
     }
 
