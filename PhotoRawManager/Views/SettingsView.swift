@@ -35,8 +35,18 @@ struct SettingsView: View {
                 Spacer()
 
                 Button(isSaved ? "저장됨" : "확인") {
+                    // 설정 변경 알림 → 앱 전체에 반영
                     NotificationCenter.default.post(name: .init("SettingsChanged"), object: nil)
                     isSaved = true
+                    // Settings 윈도우 닫기
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if let window = NSApp.windows.first(where: { $0.title.contains("설정") || $0.title.contains("Settings") || $0.identifier?.rawValue.contains("settings") == true }) {
+                            window.close()
+                        } else {
+                            // Fallback: keyWindow가 Settings일 가능성
+                            NSApp.keyWindow?.close()
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
@@ -1068,24 +1078,27 @@ struct PerformanceOptimizeTab: View {
     // MARK: - Apply Profile
 
     private func applyProfile(_ profile: String) {
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024*1024*1024))
+        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
 
         switch profile {
         case "speed":
-            previewMaxResolution = "1000"
-            previewCacheSize = Double(min(10, ramGB / 2))
+            // 속도 우선: 빠른 탐색, 메모리 절약
+            previewMaxResolution = ramGB >= 16 ? "original" : "3000"
+            previewCacheSize = Double(min(15, max(5, ramGB / 4)))
             defaultThumbnailSize = 100
-            thumbnailCacheMaxGB = 1.0
+            thumbnailCacheMaxGB = Double(min(2.0, max(0.5, Double(ramGB) / 16)))
         case "balanced":
-            previewMaxResolution = "2000"
-            previewCacheSize = Double(min(30, ramGB))
-            defaultThumbnailSize = 150
-            thumbnailCacheMaxGB = min(Double(ramGB / 8), 4.0)
+            // 균형 (추천): RAM에 맞는 최적 설정
+            previewMaxResolution = "original"
+            previewCacheSize = Double(min(25, max(10, ramGB / 3)))
+            defaultThumbnailSize = 120
+            thumbnailCacheMaxGB = Double(min(3.0, max(0.5, Double(ramGB) / 10)))
         case "quality":
-            previewMaxResolution = "4000"
-            previewCacheSize = Double(min(100, ramGB * 2))
-            defaultThumbnailSize = 200
-            thumbnailCacheMaxGB = min(Double(ramGB / 4), 8.0)
+            // 화질 우선: 최대 해상도, 큰 캐시
+            previewMaxResolution = "original"
+            previewCacheSize = Double(min(40, max(15, ramGB / 2)))
+            defaultThumbnailSize = 140
+            thumbnailCacheMaxGB = Double(min(6.0, max(1.0, Double(ramGB) / 8)))
         default: break
         }
 

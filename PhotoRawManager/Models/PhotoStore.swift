@@ -430,7 +430,61 @@ class PhotoStore: ObservableObject {
         showToastMessage("\(last.action) 되돌리기 완료")
     }
 
+    // MARK: - System Auto-Optimization on First Launch
+
+    private func autoOptimizeOnFirstLaunch() {
+        let key = "hasOptimized_v6"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
+        let isAppleSilicon = ProcessInfo.processInfo.processorCount >= 8
+
+        if ramGB >= 64 && isAppleSilicon {
+            // 최고성능: 64GB+ RAM + Apple Silicon
+            UserDefaults.standard.set(Double(140), forKey: "savedThumbnailSize")
+            UserDefaults.standard.set(140.0, forKey: "defaultThumbnailSize")
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(30.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(4.0, forKey: "thumbnailCacheMaxGB")
+            thumbnailSize = 140
+            previewResolution = 0
+        } else if ramGB >= 32 {
+            // 고성능: 32GB RAM
+            UserDefaults.standard.set(Double(120), forKey: "savedThumbnailSize")
+            UserDefaults.standard.set(120.0, forKey: "defaultThumbnailSize")
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(25.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(3.0, forKey: "thumbnailCacheMaxGB")
+            thumbnailSize = 120
+            previewResolution = 0
+        } else if ramGB >= 16 {
+            // 일반: 16GB RAM
+            UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
+            UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(15.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(1.5, forKey: "thumbnailCacheMaxGB")
+            thumbnailSize = 100
+            previewResolution = 0
+        } else {
+            // 경량: 8GB 이하
+            UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
+            UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
+            UserDefaults.standard.set("3000", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(10.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(0.5, forKey: "thumbnailCacheMaxGB")
+            thumbnailSize = 100
+            previewResolution = 3000
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
+        fputs("[OPT] 첫 실행 자동 최적화 완료 — RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n", stderr)
+    }
+
     init() {
+        // 첫 실행 시 시스템 사양 기반 자동 최적화
+        autoOptimizeOnFirstLaunch()
+
         // Restore layout mode
         if let savedLayout = defaults.string(forKey: layoutModeKey),
            let mode = LayoutMode(rawValue: savedLayout) {
@@ -448,6 +502,11 @@ class PhotoStore: ObservableObject {
             backupService.startMonitoring()
         }
 
+        // 설정 변경 알림 → 라이브 프로퍼티에 반영
+        NotificationCenter.default.addObserver(forName: .init("SettingsChanged"), object: nil, queue: .main) { [weak self] _ in
+            self?.applySettingsFromDefaults()
+        }
+
         // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
         if let lastPath = defaults.string(forKey: lastFolderKey),
            !lastPath.isEmpty,
@@ -458,6 +517,18 @@ class PhotoStore: ObservableObject {
                 self.restoreLastSession()
             }
         }
+    }
+
+    /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화
+    func applySettingsFromDefaults() {
+        // 썸네일 크기: defaultThumbnailSize → savedThumbnailSize + thumbnailSize
+        let newThumbSize = UserDefaults.standard.double(forKey: "defaultThumbnailSize")
+        if newThumbSize > 0 {
+            thumbnailSize = CGFloat(newThumbSize)
+        }
+        // 미리보기 해상도: previewMaxResolution → previewResolution
+        let resStr = UserDefaults.standard.string(forKey: "previewMaxResolution") ?? "original"
+        previewResolution = (resStr == "original") ? 0 : (Int(resStr) ?? 0)
     }
 
     func setLayoutMode(_ mode: LayoutMode) {

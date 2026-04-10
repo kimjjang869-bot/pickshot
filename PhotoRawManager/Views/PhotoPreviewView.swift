@@ -51,21 +51,26 @@ class PreviewImageCache {
     private var cache: [URL: NSImage] = [:]
     private var accessOrder: [URL] = []  // LRU tracking
     private let lock = NSLock()
-    private let maxEntries: Int
+    private var maxEntries: Int
     private var memoryPressureSource: DispatchSourceMemoryPressure?
     private let diskCacheDir: URL
 
     init() {
-        // Conservative cache: prevent memory bloat (each preview ~5-20MB)
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        if ramGB >= 64 {
-            maxEntries = 20
-        } else if ramGB >= 32 {
-            maxEntries = 15
-        } else if ramGB >= 16 {
-            maxEntries = 10
+        // UserDefaults에 저장된 값 우선, 없으면 RAM 기반 자동 설정
+        let savedEntries = Int(UserDefaults.standard.double(forKey: "previewCacheSize"))
+        if savedEntries > 0 {
+            maxEntries = savedEntries
         } else {
-            maxEntries = 5
+            let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
+            if ramGB >= 64 {
+                maxEntries = 20
+            } else if ramGB >= 32 {
+                maxEntries = 15
+            } else if ramGB >= 16 {
+                maxEntries = 10
+            } else {
+                maxEntries = 5
+            }
         }
 
         // Setup disk cache directory
@@ -79,6 +84,12 @@ class PreviewImageCache {
         }
         source.resume()
         memoryPressureSource = source
+
+        // 설정 변경 시 maxEntries 재조정
+        NotificationCenter.default.addObserver(forName: .init("SettingsChanged"), object: nil, queue: .main) { [weak self] _ in
+            let newVal = Int(UserDefaults.standard.double(forKey: "previewCacheSize"))
+            if newVal > 0 { self?.maxEntries = newVal }
+        }
     }
 
     /// Stable hash for disk cache filename from URL

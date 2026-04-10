@@ -978,24 +978,14 @@ class ThumbnailCache {
     static let shared = ThumbnailCache()
     private let cache = NSCache<NSURL, NSImage>()
     private var memoryPressureSource: DispatchSourceMemoryPressure?
+    private var baseCountLimit: Int = 10000
 
     init() {
-        // RAM 기반 캐시 크기 — macOS 시스템과 조화
-        // NSCache가 메모리 압박 시 자동 evict + 우리도 추가 대응
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        if ramGB >= 64 {
-            cache.countLimit = 20000
-            cache.totalCostLimit = 2 * 1024 * 1024  // 2GB in KB
-        } else if ramGB >= 32 {
-            cache.countLimit = 10000
-            cache.totalCostLimit = 1 * 1024 * 1024  // 1GB in KB
-        } else if ramGB >= 16 {
-            cache.countLimit = 5000
-            cache.totalCostLimit = 512 * 1024  // 512MB in KB
-        } else {
-            // 8GB 이하 — 보수적
-            cache.countLimit = 2000
-            cache.totalCostLimit = 256 * 1024  // 256MB in KB
+        applyCacheLimits()
+
+        // 설정 변경 시 캐시 크기 재조정
+        NotificationCenter.default.addObserver(forName: .init("SettingsChanged"), object: nil, queue: .main) { [weak self] _ in
+            self?.applyCacheLimits()
         }
 
         // macOS 메모리 압박 감지 → 캐시 자동 축소 (전체 삭제 아닌 NSCache 자연 evict 유도)
@@ -1013,12 +1003,49 @@ class ThumbnailCache {
                 fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(currentLimit/2)\n", stderr)
                 // 5초 후 복원
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    self?.cache.countLimit = currentLimit
+                    self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
                 }
             }
         }
         source.resume()
         memoryPressureSource = source
+    }
+
+    /// UserDefaults 또는 RAM 기반으로 캐시 크기 설정
+    private func applyCacheLimits() {
+        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
+        // UserDefaults의 previewCacheSize를 썸네일 countLimit 힌트로 사용
+        let savedCacheGB = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
+
+        if savedCacheGB > 0 {
+            // UserDefaults 기반: GB → KB 단위 totalCostLimit
+            let gbValue = savedCacheGB
+            cache.totalCostLimit = Int(gbValue * 1024 * 1024)  // GB → KB
+            // countLimit은 GB 비례
+            let count: Int
+            if gbValue >= 2.0 { count = 20000 }
+            else if gbValue >= 1.0 { count = 10000 }
+            else if gbValue >= 0.5 { count = 5000 }
+            else { count = 2000 }
+            cache.countLimit = count
+            baseCountLimit = count
+        } else {
+            // 기본: RAM 기반 자동 설정
+            if ramGB >= 64 {
+                cache.countLimit = 20000
+                cache.totalCostLimit = 2 * 1024 * 1024
+            } else if ramGB >= 32 {
+                cache.countLimit = 10000
+                cache.totalCostLimit = 1 * 1024 * 1024
+            } else if ramGB >= 16 {
+                cache.countLimit = 5000
+                cache.totalCostLimit = 512 * 1024
+            } else {
+                cache.countLimit = 2000
+                cache.totalCostLimit = 256 * 1024
+            }
+            baseCountLimit = cache.countLimit
+        }
     }
 
     func get(_ url: URL) -> NSImage? {
@@ -1044,7 +1071,7 @@ class ThumbnailLoader {
     let queue = OperationQueue()
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
     private let lock = NSLock()
-    private var normalConcurrency: Int = 4
+    var normalConcurrency: Int = 4
 
     init() {
         queue.maxConcurrentOperationCount = 4
