@@ -419,7 +419,7 @@ struct ContentView: View {
             handleDrop(providers: providers)
         }
         .preferredColorScheme(store.isDarkMode ? .dark : .light)
-        .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen = true }, onHideFullscreen: { showFullscreen = false }))
+        .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen.toggle() }, onHideFullscreen: { showFullscreen = false }))
         .overlay(alignment: .bottom) {
             if store.showToast {
                 Text(store.toastMessage)

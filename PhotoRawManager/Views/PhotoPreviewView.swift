@@ -620,9 +620,10 @@ struct PhotoPreviewView: View {
                         }
                     }
                     .frame(width: vSize.width, height: vSize.height)
+                    .background(store.previewBackgroundColor)
                 } else {
-                    // No image yet - show empty background (NEVER show thumbnail as preview)
-                    Color(nsColor: .controlBackgroundColor)
+                    // No image yet - show empty background
+                    store.previewBackgroundColor
                         .frame(width: vSize.width, height: vSize.height)
                 }
                 }
@@ -688,6 +689,31 @@ struct PhotoPreviewView: View {
                 Divider().frame(height: 20).opacity(0.2)
 
                 zoomBar
+
+                Divider().frame(height: 20).opacity(0.2)
+
+                // 배경색 메뉴
+                Menu {
+                    Button("디폴트") { store.previewBgMode = "default" }
+                    Divider()
+                    Button("검정") { store.previewBgMode = "black" }
+                    Button("흰색") { store.previewBgMode = "white" }
+                    Button("다크 그레이") { store.previewBgMode = "darkGray" }
+                    Button("미디엄 그레이") { store.previewBgMode = "mediumGray" }
+                    Button("라이트 그레이") { store.previewBgMode = "lightGray" }
+                    Divider()
+                    Button("커스텀 컬러...") {
+                        store.previewBgMode = "custom"
+                    }
+                } label: {
+                    Image(systemName: "paintbrush")
+                        .font(.system(size: AppTheme.iconSmall))
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                .background(AppTheme.toolbarButtonBg)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help("미리보기 배경색")
             }
             .padding(.horizontal, AppTheme.space8)
         }

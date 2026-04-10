@@ -328,6 +328,30 @@ class PhotoStore: ObservableObject {
         didSet { UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode") }
     }
 
+    /// 미리보기 배경색 (디폴트/검정/흰색/다크그레이/미디엄그레이/라이트그레이/커스텀)
+    @Published var previewBgMode: String = UserDefaults.standard.string(forKey: "previewBgMode") ?? "default" {
+        didSet { UserDefaults.standard.set(previewBgMode, forKey: "previewBgMode") }
+    }
+    @Published var previewBgCustomHex: String = UserDefaults.standard.string(forKey: "previewBgCustomHex") ?? "#333333" {
+        didSet { UserDefaults.standard.set(previewBgCustomHex, forKey: "previewBgCustomHex") }
+    }
+
+    var previewBackgroundColor: Color {
+        switch previewBgMode {
+        case "black": return .black
+        case "white": return .white
+        case "darkGray": return Color(nsColor: NSColor(white: 0.2, alpha: 1))
+        case "mediumGray": return Color(nsColor: NSColor(white: 0.4, alpha: 1))
+        case "lightGray": return Color(nsColor: NSColor(white: 0.7, alpha: 1))
+        case "custom":
+            if let color = NSColor.fromHex(previewBgCustomHex) {
+                return Color(nsColor: color)
+            }
+            return Color(nsColor: .controlBackgroundColor)
+        default: return Color(nsColor: .controlBackgroundColor)
+        }
+    }
+
     // AI Smart Classification
     @Published var isAIClassifying: Bool = false
     @Published var aiClassifyProgress: (Int, Int) = (0, 0)
@@ -2427,5 +2451,20 @@ class PhotoStore: ObservableObject {
         }
 
         return (successCount, errors)
+    }
+}
+
+// MARK: - NSColor Hex Extension
+extension NSColor {
+    static func fromHex(_ hex: String) -> NSColor? {
+        var h = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let val = UInt64(h, radix: 16) else { return nil }
+        return NSColor(
+            red: CGFloat((val >> 16) & 0xFF) / 255,
+            green: CGFloat((val >> 8) & 0xFF) / 255,
+            blue: CGFloat(val & 0xFF) / 255,
+            alpha: 1
+        )
     }
 }

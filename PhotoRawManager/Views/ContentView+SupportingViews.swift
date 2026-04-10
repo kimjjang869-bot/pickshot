@@ -609,7 +609,8 @@ class KeyCaptureView: NSView {
                 store.undo()
                 return
             } else if charOrCode("f", 3) {
-                showFullscreen?()  // 전체화면 토글
+                // Cmd+F: 전체화면 토글 (진입/복귀)
+                showFullscreen?()
                 return
             } else if keyCode == 36 { // Cmd+Enter → 전체화면 닫기
                 hideFullscreen?()
