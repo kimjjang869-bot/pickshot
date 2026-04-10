@@ -1364,12 +1364,17 @@ class PhotoStore: ObservableObject {
     }
 
     /// EXIF loading is now handled by ExifInfoView directly (self-contained, no photos array mutation)
-    /// 목록뷰에서 보이는 행의 EXIF 로딩
+    /// 목록뷰에서 보이는 행의 EXIF 로딩 (배치 — 뷰 리빌드 최소화)
+    private var exifLoadingIDs: Set<UUID> = []
+    private var exifBatchWork: DispatchWorkItem?
+
     func loadExifIfNeeded(for photoID: UUID) {
         guard let idx = _photoIndex[photoID], idx < photos.count else { return }
         guard photos[idx].exifData == nil else { return }
         guard !photos[idx].isFolder && !photos[idx].isParentFolder else { return }
+        guard !exifLoadingIDs.contains(photoID) else { return }
 
+        exifLoadingIDs.insert(photoID)
         let url = photos[idx].jpgURL
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let exif = ExifService.extractExif(from: url) else { return }
@@ -1379,7 +1384,14 @@ class PhotoStore: ObservableObject {
                 self._suppressDidSet = true
                 self.photos[i].exifData = exif
                 self._suppressDidSet = false
-                self.objectWillChange.send()
+
+                // 배치: 0.5초 디바운스로 objectWillChange 1번만
+                self.exifBatchWork?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    self?.objectWillChange.send()
+                }
+                self.exifBatchWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
             }
         }
     }
