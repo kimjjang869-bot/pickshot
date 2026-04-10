@@ -776,24 +776,18 @@ struct PhotoPreviewView: View {
 
             // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
             store.onQuickPreview = { [self] url in
-                // 빠른 탐색 중 썸네일 프리로딩 양보
-                // throttle 제거 — 방향키 이동 중에도 썸네일 생성 유지
-                // 캐시 히트 → 즉시 표시
+                // 현재 선택된 사진인지 확인 (이전 사진 섞임 방지)
+                guard url == store.selectedPhoto?.jpgURL else { return }
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
-                } else {
-                    // 빠른 이동 중 캐시 미스 → 300px 초소형 썸네일 (메인 스레드 OK — 1~2ms)
-                    let opts: [NSString: Any] = [
-                        kCGImageSourceThumbnailMaxPixelSize: 300,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                    ]
-                    if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                       let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) {
-                        self.image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-                    }
+                } else if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                            kCGImageSourceThumbnailMaxPixelSize: 300,
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                            kCGImageSourceCreateThumbnailWithTransform: true
+                          ] as CFDictionary) {
+                    self.image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                 }
-                // 고화질 로딩은 onChange의 debounce에서 처리
             }
 
             // Scroll wheel zoom monitor (only when mouse is over preview)
