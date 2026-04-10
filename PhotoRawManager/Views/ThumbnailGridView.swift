@@ -157,10 +157,14 @@ struct ThumbnailGridView: View {
     private var listHeader: some View {
         let cols = visibleColumns
         return HStack(spacing: 0) {
-            // 이름 (가변)
-            colHeader("이름", width: nil, sort: .nameAsc, altSort: .nameDesc)
-                .padding(.leading, 30)
-            Spacer()
+            // 이름 (가변 — 전체 클릭 가능)
+            HStack(spacing: 4) {
+                colHeader("이름", width: nil, sort: .nameAsc, altSort: .nameDesc)
+                Spacer()
+            }
+            .padding(.leading, 30)
+            .contentShape(Rectangle())
+            .onTapGesture { store.sortMode = store.sortMode == .nameAsc ? .nameDesc : .nameAsc }
             if cols.contains("date")       { colDivider; colHeader("수정일", width: colW_date, sort: .dateDesc, altSort: .dateAsc) }
             if cols.contains("size")       { colDivider; colHeader("크기", width: colW_size, sort: .sizeDesc, altSort: .sizeAsc) }
             if cols.contains("type")       { colDivider; colHeader("종류", width: colW_type, sort: .extensionSort, altSort: .extensionSort) }
