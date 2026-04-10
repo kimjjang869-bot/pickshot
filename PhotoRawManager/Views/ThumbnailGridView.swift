@@ -413,7 +413,10 @@ struct LazyListRowWrapper: View {
                 return provider
             }
             .onAppear {
-                // 목록뷰에서 보이면 EXIF 자동 로딩
+                store.loadExifIfNeeded(for: photo.id)
+            }
+            .onChange(of: store.photosVersion) { _ in
+                // 정렬/필터 변경 후에도 EXIF 재로딩
                 store.loadExifIfNeeded(for: photo.id)
             }
             .onTapGesture {

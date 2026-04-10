@@ -1380,6 +1380,7 @@ class PhotoStore: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let exif = ExifService.extractExif(from: url) else {
                 fputs("[EXIF] FAIL \(fileName)\n", stderr)
+                DispatchQueue.main.async { self?.exifLoadingIDs.remove(photoID) }
                 return
             }
             fputs("[EXIF] OK \(fileName) lens=\(exif.lensModel ?? "nil") w=\(exif.imageWidth ?? 0)\n", stderr)
