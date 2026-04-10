@@ -233,8 +233,12 @@ struct ContentView: View {
 
                                 // Right panel
                                 VStack(spacing: 0) {
-                                    if let photo = store.selectedPhoto {
-                                        // Preview
+                                    if store.selectionCount > 1 {
+                                        // 다중 선택 — 썸네일 그리드
+                                        MultiPreviewGrid(store: store)
+                                            .frame(height: previewH)
+                                    } else if let photo = store.selectedPhoto {
+                                        // 단일 선택 — 기존 미리보기
                                         PhotoPreviewView(photo: photo)
                                             .overlay(
                                                 photo.isSpacePicked ?
@@ -475,6 +479,134 @@ struct ContentView: View {
             self.dualWindow = nil
         }
         dualWindow = window
+    }
+}
+
+// MARK: - Multi Preview Grid (Adobe Bridge 스타일)
+
+struct MultiPreviewGrid: View {
+    @ObservedObject var store: PhotoStore
+
+    var body: some View {
+        let photos = store.multiSelectedPhotos
+        let count = photos.count
+
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            // 최적 열/행 계산 — 미리보기 창 비율에 맞춤
+            let cols = optimalCols(count: count, width: w, height: h)
+            let rows = (count + cols - 1) / cols
+            let spacing: CGFloat = 3
+            let cellW = (w - spacing * CGFloat(cols - 1)) / CGFloat(cols)
+            let cellH = (h - spacing * CGFloat(rows - 1)) / CGFloat(rows)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(cellW), spacing: spacing), count: cols), spacing: spacing) {
+                ForEach(photos) { photo in
+                    MultiPreviewCell(photo: photo, store: store, cellW: cellW, cellH: cellH)
+                        .frame(width: cellW, height: cellH)
+                }
+            }
+        }
+    }
+
+    private func optimalCols(count: Int, width: CGFloat, height: CGFloat) -> Int {
+        // 이미지 가로세로 비율 3:2 기준으로 최적 배치
+        let aspect: CGFloat = 3.0 / 2.0
+        for cols in 1...8 {
+            let rows = (count + cols - 1) / cols
+            let cellW = width / CGFloat(cols)
+            let cellH = height / CGFloat(rows)
+            if cellW / cellH <= aspect * 1.5 { return cols }
+        }
+        return min(count, 4)
+    }
+}
+
+struct MultiPreviewCell: View {
+    let photo: PhotoItem
+    @ObservedObject var store: PhotoStore
+    let cellW: CGFloat
+    let cellH: CGFloat
+    @State private var hiResImage: NSImage?
+
+    var body: some View {
+        ZStack {
+            store.previewBackgroundColor
+
+            if let hi = hiResImage {
+                Image(nsImage: hi)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else if let thumb = ThumbnailCache.shared.get(photo.jpgURL) {
+                Image(nsImage: thumb)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                ProgressView().scaleEffect(0.5)
+            }
+
+            // SP
+            if photo.isSpacePicked {
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.red, lineWidth: 3)
+            }
+
+            // 파일명 + 별점
+            VStack {
+                if photo.rating > 0 {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 1) {
+                            ForEach(1...photo.rating, id: \.self) { _ in
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 7))
+                                    .foregroundColor(AppTheme.starGold)
+                            }
+                        }
+                        .padding(2)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(2)
+                        .padding(3)
+                    }
+                }
+                Spacer()
+                Text(photo.fileName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(2)
+                    .padding(.bottom, 3)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .onTapGesture {
+            store.selectPhoto(photo.id, cmdKey: false)
+        }
+        .onAppear {
+            // 고화질 로딩 (선명하게)
+            loadHiRes()
+        }
+    }
+
+    private func loadHiRes() {
+        let url = photo.jpgURL
+        // PreviewImageCache에 있으면 즉시
+        let cacheKey = url.appendingPathExtension("orig")
+        if let cached = PreviewImageCache.shared.get(cacheKey) {
+            hiResImage = cached
+            return
+        }
+        // 백그라운드 로딩
+        DispatchQueue.global(qos: .userInitiated).async {
+            let img = PreviewImageCache.loadOptimized(url: url, maxPixel: 800)
+            DispatchQueue.main.async {
+                hiResImage = img
+            }
+        }
     }
 }
 
