@@ -293,6 +293,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showShortcutHelp) { ShortcutHelpView() }
         .sheet(isPresented: $store.showAbout) { AboutView() }
         .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
+        .sheet(isPresented: $store.showSmartCull) { SmartCullView().environmentObject(store) }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }

@@ -304,6 +304,7 @@ class PhotoStore: ObservableObject {
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
     @Published var showSmartSelect: Bool = false
+    @Published var showSmartCull: Bool = false
     @Published var showCustomPrompt: Bool = false
     @Published var showBatchProcess: Bool = false
     @Published var showFaceCompare: Bool = false
