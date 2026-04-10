@@ -12,8 +12,15 @@ class PerformanceMonitor {
     private let queue = DispatchQueue(label: "com.pickshot.perfmonitor", qos: .utility)
 
     // Thresholds
-    private let memoryWarningMB: Double = 2048      // 2GB
-    private let memoryCriticalMB: Double = 4096     // 4GB
+    // RAM 기반 동적 임계값 — 전체 RAM의 25% / 50%
+    private let memoryWarningMB: Double = {
+        let ramMB = Double(ProcessInfo.processInfo.physicalMemory / (1024 * 1024))
+        return max(2048, ramMB * 0.25)  // 최소 2GB, RAM의 25%
+    }()
+    private let memoryCriticalMB: Double = {
+        let ramMB = Double(ProcessInfo.processInfo.physicalMemory / (1024 * 1024))
+        return max(4096, ramMB * 0.50)  // 최소 4GB, RAM의 50%
+    }()
     private let cpuWarningPercent: Double = 80       // 80%
     private let cpuCriticalPercent: Double = 150     // 150% (multi-core)
 
