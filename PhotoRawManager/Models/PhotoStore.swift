@@ -1390,13 +1390,13 @@ class PhotoStore: ObservableObject {
                 self.photos[i].exifData = exif
                 self._suppressDidSet = false
 
-                // 배치: 0.5초 디바운스로 objectWillChange 1번만
+                // 배치: 0.1초 디바운스로 objectWillChange
                 self.exifBatchWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     self?.objectWillChange.send()
                 }
                 self.exifBatchWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
             }
         }
     }

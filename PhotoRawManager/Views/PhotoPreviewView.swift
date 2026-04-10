@@ -1776,12 +1776,13 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            DispatchQueue.main.async {
+            RunLoop.main.perform(inModes: [.common]) {
                 guard self.pendingPhotoID == photoID else { return }
+                // 현재 선택된 사진 URL과도 재확인
+                guard url == self.store.selectedPhoto?.jpgURL || url == self.store.selectedPhoto?.rawURL else { return }
                 let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 if let hi = hiRes {
                     fputs("[HIRES] loaded \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms\n", stderr)
-                    // hi-res가 현재 이미지보다 작으면 덮어쓰지 않음 (DNG 임베디드가 320px인 경우)
                     let currentSize = max(self.image?.size.width ?? 0, self.image?.size.height ?? 0)
                     let hiResSize = max(hi.size.width, hi.size.height)
                     guard hiResSize > currentSize else {
