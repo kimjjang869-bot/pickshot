@@ -1091,13 +1091,13 @@ struct PerformanceOptimizeTab: View {
             // 균형 (추천): RAM에 맞는 최적 설정
             previewMaxResolution = "original"
             previewCacheSize = Double(min(25, max(10, ramGB / 3)))
-            defaultThumbnailSize = 120
+            defaultThumbnailSize = 100
             thumbnailCacheMaxGB = Double(min(3.0, max(0.5, Double(ramGB) / 10)))
         case "quality":
             // 화질 우선: 최대 해상도, 큰 캐시
             previewMaxResolution = "original"
             previewCacheSize = Double(min(40, max(15, ramGB / 2)))
-            defaultThumbnailSize = 140
+            defaultThumbnailSize = 100
             thumbnailCacheMaxGB = Double(min(6.0, max(1.0, Double(ramGB) / 8)))
         default: break
         }

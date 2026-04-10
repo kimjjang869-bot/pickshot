@@ -439,41 +439,30 @@ class PhotoStore: ObservableObject {
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         let isAppleSilicon = ProcessInfo.processInfo.processorCount >= 8
 
+        // 썸네일 표시 크기는 100px 고정 (생성 픽셀 200px이면 Retina 충분)
+        UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
+        UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
+        thumbnailSize = 100
+
         if ramGB >= 64 && isAppleSilicon {
-            // 최고성능: 64GB+ RAM + Apple Silicon
-            UserDefaults.standard.set(Double(140), forKey: "savedThumbnailSize")
-            UserDefaults.standard.set(140.0, forKey: "defaultThumbnailSize")
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(30.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(4.0, forKey: "thumbnailCacheMaxGB")
-            thumbnailSize = 140
             previewResolution = 0
         } else if ramGB >= 32 {
-            // 고성능: 32GB RAM
-            UserDefaults.standard.set(Double(120), forKey: "savedThumbnailSize")
-            UserDefaults.standard.set(120.0, forKey: "defaultThumbnailSize")
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(25.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(3.0, forKey: "thumbnailCacheMaxGB")
-            thumbnailSize = 120
             previewResolution = 0
         } else if ramGB >= 16 {
-            // 일반: 16GB RAM
-            UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
-            UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(15.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(1.5, forKey: "thumbnailCacheMaxGB")
-            thumbnailSize = 100
             previewResolution = 0
         } else {
-            // 경량: 8GB 이하
-            UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
-            UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
             UserDefaults.standard.set("3000", forKey: "previewMaxResolution")
             UserDefaults.standard.set(10.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(0.5, forKey: "thumbnailCacheMaxGB")
-            thumbnailSize = 100
             previewResolution = 3000
         }
 
