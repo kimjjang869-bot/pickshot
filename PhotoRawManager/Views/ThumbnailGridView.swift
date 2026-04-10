@@ -141,46 +141,36 @@ struct ThumbnailGridView: View {
         listColumnsRaw = cols.sorted().joined(separator: ",")
     }
 
-    /// 목록 헤더 (고정 — 스크롤 안 됨)
+    // 컬럼 폭 정의 (헤더 + 행 공유)
+    private let colW_date: CGFloat = 150
+    private let colW_size: CGFloat = 75
+    private let colW_type: CGFloat = 55
+    private let colW_rating: CGFloat = 70
+    private let colW_resolution: CGFloat = 90
+    private let colW_camera: CGFloat = 100
+    private let colW_iso: CGFloat = 55
+    private let colW_shutter: CGFloat = 65
+    private let colW_aperture: CGFloat = 55
+    private let colW_lens: CGFloat = 110
+
+    /// 목록 헤더 (고정)
     private var listHeader: some View {
         let cols = visibleColumns
         return HStack(spacing: 0) {
-            Text("이름")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .frame(minWidth: 150, alignment: .leading)
-                .padding(.leading, 34)
-                .onTapGesture { store.sortMode = store.sortMode == .nameAsc ? .nameDesc : .nameAsc }
-            if store.sortMode == .nameAsc || store.sortMode == .nameDesc {
-                Image(systemName: store.sortMode == .nameAsc ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .bold)).foregroundColor(.accentColor)
-            }
+            // 이름 (가변)
+            colHeader("이름", width: nil, sort: .nameAsc, altSort: .nameDesc)
+                .padding(.leading, 30)
             Spacer()
-            if cols.contains("date") {
-                Text("수정일").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .dateDesc || store.sortMode == .dateAsc ? .accentColor : .secondary)
-                    .frame(width: 130, alignment: .leading)
-                    .onTapGesture { store.sortMode = store.sortMode == .dateDesc ? .dateAsc : .dateDesc }
-            }
-            if cols.contains("size") {
-                Text("크기").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .sizeDesc || store.sortMode == .sizeAsc ? .accentColor : .secondary)
-                    .frame(width: 70, alignment: .trailing)
-                    .onTapGesture { store.sortMode = store.sortMode == .sizeDesc ? .sizeAsc : .sizeDesc }
-            }
-            if cols.contains("type") {
-                Text("종류").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
-                    .frame(width: 55, alignment: .center)
-            }
-            if cols.contains("rating") {
-                Text("별점").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .ratingDesc || store.sortMode == .ratingAsc ? .accentColor : .secondary)
-                    .frame(width: 60, alignment: .center)
-                    .onTapGesture { store.sortMode = store.sortMode == .ratingDesc ? .ratingAsc : .ratingDesc }
-            }
-            if cols.contains("resolution") { Text("해상도").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 80, alignment: .center) }
-            if cols.contains("camera") { Text("카메라").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 90, alignment: .leading) }
-            if cols.contains("iso") { Text("ISO").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 50, alignment: .trailing) }
-            if cols.contains("shutter") { Text("셔터").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 60, alignment: .center) }
-            if cols.contains("aperture") { Text("조리개").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 50, alignment: .center) }
-            if cols.contains("lens") { Text("렌즈").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 100, alignment: .leading) }
+            if cols.contains("date")       { colDivider; colHeader("수정일", width: colW_date, sort: .dateDesc, altSort: .dateAsc) }
+            if cols.contains("size")       { colDivider; colHeader("크기", width: colW_size, sort: .sizeDesc, altSort: .sizeAsc) }
+            if cols.contains("type")       { colDivider; colHeader("종류", width: colW_type, sort: .extensionSort, altSort: .extensionSort) }
+            if cols.contains("rating")     { colDivider; colHeader("별점", width: colW_rating, sort: .ratingDesc, altSort: .ratingAsc) }
+            if cols.contains("resolution") { colDivider; colHeaderStatic("해상도", width: colW_resolution) }
+            if cols.contains("camera")     { colDivider; colHeader("카메라", width: colW_camera, sort: .cameraSort, altSort: .cameraSort) }
+            if cols.contains("iso")        { colDivider; colHeaderStatic("ISO", width: colW_iso) }
+            if cols.contains("shutter")    { colDivider; colHeaderStatic("셔터", width: colW_shutter) }
+            if cols.contains("aperture")   { colDivider; colHeaderStatic("조리개", width: colW_aperture) }
+            if cols.contains("lens")       { colDivider; colHeaderStatic("렌즈", width: colW_lens) }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -199,6 +189,33 @@ struct ThumbnailGridView: View {
             Toggle("셔터속도", isOn: Binding(get: { cols.contains("shutter") }, set: { _ in toggleColumn("shutter") }))
             Toggle("조리개", isOn: Binding(get: { cols.contains("aperture") }, set: { _ in toggleColumn("aperture") }))
         }
+    }
+
+    private func colHeader(_ title: String, width: CGFloat?, sort: SortMode, altSort: SortMode) -> some View {
+        let isActive = store.sortMode == sort || store.sortMode == altSort
+        return HStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isActive ? .accentColor : .secondary)
+            if isActive {
+                Image(systemName: store.sortMode == sort ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 7, weight: .bold)).foregroundColor(.accentColor)
+            }
+        }
+        .frame(width: width, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { store.sortMode = store.sortMode == sort ? altSort : sort }
+    }
+
+    private func colHeaderStatic(_ title: String, width: CGFloat) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.secondary)
+            .frame(width: width, alignment: .center)
+    }
+
+    private var colDivider: some View {
+        Divider().frame(height: 12).padding(.horizontal, 2)
     }
 
     /// 목록 본문 (스크롤)
@@ -370,7 +387,7 @@ struct LazyListRowWrapper: View {
     @EnvironmentObject var store: PhotoStore
 
     var body: some View {
-        ListRow(photo: photo, isSelected: isSelected, isFocused: isFocused)
+        ListRow(photo: photo, isSelected: isSelected, isFocused: isFocused, thumbSize: store.thumbnailSize)
             .contentShape(Rectangle())
             .onDrag {
                 let ids = store.selectedPhotoIDs.contains(photo.id) ? store.selectedPhotoIDs : [photo.id]
@@ -914,10 +931,23 @@ struct ListRow: View {
     let photo: PhotoItem
     let isSelected: Bool
     let isFocused: Bool
+    let thumbSize: CGFloat  // 썸네일 크기 (슬라이더 연동)
     @EnvironmentObject var store: PhotoStore
     @AppStorage("listColumns") private var listColumnsRaw: String = "date,size,type,rating"
 
     private var cols: Set<String> { Set(listColumnsRaw.split(separator: ",").map(String.init)) }
+
+    // 헤더와 동일한 컬럼 폭
+    private let cW_date: CGFloat = 150
+    private let cW_size: CGFloat = 75
+    private let cW_type: CGFloat = 55
+    private let cW_rating: CGFloat = 70
+    private let cW_resolution: CGFloat = 90
+    private let cW_camera: CGFloat = 100
+    private let cW_iso: CGFloat = 55
+    private let cW_shutter: CGFloat = 65
+    private let cW_aperture: CGFloat = 55
+    private let cW_lens: CGFloat = 110
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -929,105 +959,105 @@ struct ListRow: View {
         let c = cols
         let isFile = !photo.isFolder && !photo.isParentFolder
         let exif = photo.exifData
+        let imgSize = max(20, min(thumbSize * 0.4, 60))  // 목록 썸네일 크기
 
         HStack(spacing: 0) {
-            // 이름 컬럼 (항상)
+            // 이름 (가변폭)
             HStack(spacing: 6) {
                 Group {
                     if photo.isParentFolder {
-                        Image(systemName: "chevron.up.circle.fill").font(.system(size: 14)).foregroundColor(.blue)
+                        Image(systemName: "chevron.up.circle.fill").font(.system(size: imgSize * 0.7)).foregroundColor(.blue)
                     } else if photo.isFolder {
-                        Image(systemName: "folder.fill").font(.system(size: 14)).foregroundColor(.blue)
+                        Image(systemName: "folder.fill").font(.system(size: imgSize * 0.7)).foregroundColor(.blue)
                     } else {
                         AsyncThumbnailView(url: photo.jpgURL)
-                            .frame(width: 20, height: 20)
+                            .frame(width: imgSize, height: imgSize * 0.67)
                             .clipShape(RoundedRectangle(cornerRadius: 2))
                     }
                 }
-                .frame(width: 20, height: 20)
+                .frame(width: imgSize, height: imgSize * 0.67)
 
                 HStack(spacing: 3) {
                     Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-
+                        .font(.system(size: 12)).lineLimit(1)
                     if isFile {
                         let badge = photo.fileTypeBadge
-                        Text(badge.text)
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(badgeColor(badge.color).opacity(0.8))
-                            .cornerRadius(2)
+                        Text(badge.text).font(.system(size: 7, weight: .bold)).foregroundColor(.white)
+                            .padding(.horizontal, 3).padding(.vertical, 1)
+                            .background(badgeColor(badge.color).opacity(0.8)).cornerRadius(2)
                     }
-
                     if photo.isSpacePicked {
-                        Text("SP").font(.system(size: 7, weight: .black))
-                            .foregroundColor(.white).padding(.horizontal, 2).padding(.vertical, 1)
+                        Text("SP").font(.system(size: 7, weight: .black)).foregroundColor(.white)
+                            .padding(.horizontal, 2).padding(.vertical, 1)
                             .background(AppTheme.error).cornerRadius(2)
                     }
                 }
                 Spacer()
             }
-            .frame(minWidth: 150)
 
-            // 동적 컬럼
+            // 동적 컬럼 (세로 구분선 포함)
             if c.contains("date") {
+                colDiv
                 Text(isFile ? Self.dateFormatter.string(from: photo.fileModDate) : "--")
-                    .font(.system(size: 11)).foregroundColor(.secondary).frame(width: 130, alignment: .leading)
+                    .font(.system(size: 11)).foregroundColor(.secondary).frame(width: cW_date, alignment: .leading)
             }
             if c.contains("size") {
+                colDiv
                 Text(isFile ? formatSize(photo.jpgFileSize + photo.rawFileSize) : "--")
-                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary).frame(width: 70, alignment: .trailing)
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary).frame(width: cW_size, alignment: .trailing)
             }
             if c.contains("type") {
+                colDiv
                 Text(photo.isFolder ? "폴더" : photo.isParentFolder ? "" : photo.jpgURL.pathExtension.uppercased())
-                    .font(.system(size: 11)).foregroundColor(.secondary).frame(width: 55, alignment: .center)
+                    .font(.system(size: 11)).foregroundColor(.secondary).frame(width: cW_type, alignment: .center)
             }
             if c.contains("rating") {
+                colDiv
                 if photo.rating > 0 {
                     HStack(spacing: 0) {
                         ForEach(1...photo.rating, id: \.self) { _ in
                             Image(systemName: "star.fill").font(.system(size: 7)).foregroundColor(AppTheme.starGold)
                         }
-                    }.frame(width: 60)
-                } else {
-                    Text("").frame(width: 60)
-                }
+                    }.frame(width: cW_rating)
+                } else { Text("").frame(width: cW_rating) }
             }
             if c.contains("resolution") {
+                colDiv
                 Text(isFile && exif?.imageWidth != nil ? "\(exif!.imageWidth!)×\(exif!.imageHeight ?? 0)" : "")
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: 80, alignment: .center)
+                    .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: cW_resolution, alignment: .center)
             }
             if c.contains("camera") {
-                Text(exif?.cameraModel ?? "")
-                    .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1).frame(width: 90, alignment: .leading)
+                colDiv
+                Text(exif?.cameraModel ?? "").font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1).frame(width: cW_camera, alignment: .leading)
             }
             if c.contains("iso") {
-                Text(exif?.iso != nil ? "ISO \(exif!.iso!)" : "")
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: 50, alignment: .trailing)
+                colDiv
+                Text(exif?.iso != nil ? "\(exif!.iso!)" : "").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: cW_iso, alignment: .trailing)
             }
             if c.contains("shutter") {
-                Text(exif?.shutterSpeed ?? "")
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: 60, alignment: .center)
+                colDiv
+                Text(exif?.shutterSpeed ?? "").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: cW_shutter, alignment: .center)
             }
             if c.contains("aperture") {
-                Text(exif?.aperture != nil ? String(format: "f/%.1f", exif!.aperture!) : "")
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: 50, alignment: .center)
+                colDiv
+                Text(exif?.aperture != nil ? String(format: "f/%.1f", exif!.aperture!) : "").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).frame(width: cW_aperture, alignment: .center)
             }
             if c.contains("lens") {
-                Text(exif?.lensModel ?? "")
-                    .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1).frame(width: 100, alignment: .leading)
+                colDiv
+                Text(exif?.lensModel ?? "").font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1).frame(width: cW_lens, alignment: .leading)
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .padding(.vertical, max(2, imgSize * 0.1))
         .background(
             isFocused ? AppTheme.accent.opacity(0.25) :
             isSelected ? AppTheme.accent.opacity(0.12) :
             Color.clear
         )
+    }
+
+    private var colDiv: some View {
+        Divider().frame(height: 16).padding(.horizontal, 2).opacity(0.3)
     }
 
     private func formatSize(_ bytes: Int64) -> String {
