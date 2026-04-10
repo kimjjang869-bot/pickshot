@@ -663,12 +663,6 @@ extension ContentView {
 
                 Divider()
 
-                Section("🧠 AI 스마트 셀렉") {
-                    Button(action: { store.showSmartCull = true }) {
-                        Label("스마트 셀렉 (유사 그룹 + A컷 추천)", systemImage: "brain")
-                    }
-                }
-
                 // 프리셋 프롬프트로 분류 실행
                 Section("🤖 AI 분류 실행") {
                     ForEach(ClaudeVisionService.classifyPresets, id: \.name) { preset in
