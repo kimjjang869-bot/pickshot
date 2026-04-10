@@ -1097,9 +1097,11 @@ class PhotoStore: ObservableObject {
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        // Cancel previous thumbnail loading immediately
+        // 이전 폴더 메모리 해제 — 썸네일 캐시 비우기 (디스크 캐시는 유지)
         ThumbnailLoader.shared.cancelAll()
-        thumbsGeneration += 1  // Invalidate stale callbacks from previous folder
+        ThumbnailCache.shared.removeAll()
+        PreviewImageCache.shared.clearCache()
+        thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
 

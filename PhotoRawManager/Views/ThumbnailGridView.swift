@@ -980,19 +980,20 @@ class ThumbnailCache {
 
     init() {
         // 대용량 폴더 지원: 최대 8GB 썸네일 캐시
+        // cost가 KB 단위이므로 totalCostLimit도 KB 단위로 설정
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
             cache.countLimit = 50000
-            cache.totalCostLimit = 8 * 1024 * 1024 * 1024  // 8GB
+            cache.totalCostLimit = 4 * 1024 * 1024  // 4GB in KB
         } else if ramGB >= 32 {
-            cache.countLimit = 30000
-            cache.totalCostLimit = 4 * 1024 * 1024 * 1024  // 4GB
+            cache.countLimit = 20000
+            cache.totalCostLimit = 2 * 1024 * 1024  // 2GB in KB
         } else if ramGB >= 16 {
-            cache.countLimit = 15000
-            cache.totalCostLimit = 2 * 1024 * 1024 * 1024  // 2GB
+            cache.countLimit = 10000
+            cache.totalCostLimit = 1 * 1024 * 1024  // 1GB in KB
         } else {
-            cache.countLimit = 5000
-            cache.totalCostLimit = 1024 * 1024 * 1024      // 1GB
+            cache.countLimit = 3000
+            cache.totalCostLimit = 512 * 1024  // 512MB in KB
         }
     }
 
