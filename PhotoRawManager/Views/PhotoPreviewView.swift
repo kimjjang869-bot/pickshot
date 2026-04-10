@@ -621,9 +621,11 @@ struct PhotoPreviewView: View {
                     }
                     .frame(width: vSize.width, height: vSize.height)
                     .background(store.previewBackgroundColor)
+                    .contextMenu { previewBgMenu }
                 } else {
                     // No image yet - show empty background
                     store.previewBackgroundColor
+                        .contextMenu { previewBgMenu }
                         .frame(width: vSize.width, height: vSize.height)
                 }
                 }
@@ -689,31 +691,6 @@ struct PhotoPreviewView: View {
                 Divider().frame(height: 20).opacity(0.2)
 
                 zoomBar
-
-                Divider().frame(height: 20).opacity(0.2)
-
-                // 배경색 메뉴
-                Menu {
-                    Button("디폴트") { store.previewBgMode = "default" }
-                    Divider()
-                    Button("검정") { store.previewBgMode = "black" }
-                    Button("흰색") { store.previewBgMode = "white" }
-                    Button("다크 그레이") { store.previewBgMode = "darkGray" }
-                    Button("미디엄 그레이") { store.previewBgMode = "mediumGray" }
-                    Button("라이트 그레이") { store.previewBgMode = "lightGray" }
-                    Divider()
-                    Button("커스텀 컬러...") {
-                        store.previewBgMode = "custom"
-                    }
-                } label: {
-                    Image(systemName: "paintbrush")
-                        .font(.system(size: AppTheme.iconSmall))
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .background(AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("미리보기 배경색")
             }
             .padding(.horizontal, AppTheme.space8)
         }
@@ -1089,6 +1066,29 @@ struct PhotoPreviewView: View {
         guard let img = correctionResult?.correctedImage else { return }
         if let savedURL = ImageCorrectionService.saveCorrected(image: img, originalURL: photo.jpgURL) {
             NSWorkspace.shared.activateFileViewerSelecting([savedURL])
+        }
+    }
+
+    @ViewBuilder
+    private var previewBgMenu: some View {
+        Button { store.previewBgMode = "default" } label: {
+            Label("디폴트", systemImage: store.previewBgMode == "default" ? "checkmark" : "")
+        }
+        Divider()
+        Button { store.previewBgMode = "black" } label: {
+            Label("검정 계열", systemImage: store.previewBgMode == "black" ? "checkmark" : "")
+        }
+        Button { store.previewBgMode = "white" } label: {
+            Label("흰색 계열", systemImage: store.previewBgMode == "white" ? "checkmark" : "")
+        }
+        Button { store.previewBgMode = "darkGray" } label: {
+            Label("다크 그레이", systemImage: store.previewBgMode == "darkGray" ? "checkmark" : "")
+        }
+        Button { store.previewBgMode = "mediumGray" } label: {
+            Label("미디엄 그레이", systemImage: store.previewBgMode == "mediumGray" ? "checkmark" : "")
+        }
+        Button { store.previewBgMode = "lightGray" } label: {
+            Label("라이트 그레이", systemImage: store.previewBgMode == "lightGray" ? "checkmark" : "")
         }
     }
 
