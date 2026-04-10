@@ -16,18 +16,26 @@ struct ThumbnailGridView: View {
                 emptyStateView
             } else {
                 // SwiftUI LazyVGrid / List (안정적 + 메모리 캐시 8GB)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        if store.viewMode == .grid {
-                            gridView
-                        } else {
-                            listView
-                        }
+                VStack(spacing: 0) {
+                    // 목록뷰 헤더 (고정 — 스크롤 안 됨)
+                    if store.viewMode == .list {
+                        listHeader
+                        Divider()
                     }
-                    .scrollIndicators(.visible)
-                    .onChange(of: store.scrollTrigger) { _ in
-                        guard let id = store.selectedPhotoID else { return }
-                        proxy.scrollTo(id, anchor: nil)
+
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            if store.viewMode == .grid {
+                                gridView
+                            } else {
+                                listBody
+                            }
+                        }
+                        .scrollIndicators(.visible)
+                        .onChange(of: store.scrollTrigger) { _ in
+                            guard let id = store.selectedPhotoID else { return }
+                            proxy.scrollTo(id, anchor: nil)
+                        }
                     }
                 }
             }
@@ -133,89 +141,81 @@ struct ThumbnailGridView: View {
         listColumnsRaw = cols.sorted().joined(separator: ",")
     }
 
-    private var listView: some View {
+    /// 목록 헤더 (고정 — 스크롤 안 됨)
+    private var listHeader: some View {
         let cols = visibleColumns
-        return VStack(spacing: 0) {
-            // Finder 스타일 컬럼 헤더 + 우클릭 메뉴
-            HStack(spacing: 0) {
-                listSortButton("이름", mode: .nameAsc, altMode: .nameDesc, width: nil)
-                    .frame(minWidth: 150)
-                if cols.contains("date") {
-                    Divider().frame(height: 14)
-                    listSortButton("수정일", mode: .dateDesc, altMode: .dateAsc, width: 130)
-                }
-                if cols.contains("size") {
-                    Divider().frame(height: 14)
-                    listSortButton("크기", mode: .sizeDesc, altMode: .sizeAsc, width: 70)
-                }
-                if cols.contains("type") {
-                    Divider().frame(height: 14)
-                    listSortButton("종류", mode: .extensionSort, altMode: .extensionSort, width: 55)
-                }
-                if cols.contains("rating") {
-                    Divider().frame(height: 14)
-                    listSortButton("별점", mode: .ratingDesc, altMode: .ratingAsc, width: 60)
-                }
-                if cols.contains("resolution") {
-                    Divider().frame(height: 14)
-                    Text("해상도").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 80)
-                }
-                if cols.contains("camera") {
-                    Divider().frame(height: 14)
-                    listSortButton("카메라", mode: .cameraSort, altMode: .cameraSort, width: 90)
-                }
-                if cols.contains("iso") {
-                    Divider().frame(height: 14)
-                    Text("ISO").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 50)
-                }
-                if cols.contains("shutter") {
-                    Divider().frame(height: 14)
-                    Text("셔터").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 60)
-                }
-                if cols.contains("aperture") {
-                    Divider().frame(height: 14)
-                    Text("조리개").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 50)
-                }
-                if cols.contains("lens") {
-                    Divider().frame(height: 14)
-                    Text("렌즈").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 100)
-                }
+        return HStack(spacing: 0) {
+            Text("이름")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(minWidth: 150, alignment: .leading)
+                .padding(.leading, 34)
+                .onTapGesture { store.sortMode = store.sortMode == .nameAsc ? .nameDesc : .nameAsc }
+            if store.sortMode == .nameAsc || store.sortMode == .nameDesc {
+                Image(systemName: store.sortMode == .nameAsc ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 8, weight: .bold)).foregroundColor(.accentColor)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
-            .contextMenu {
-                // 컬럼 토글 메뉴
-                Toggle("수정일", isOn: Binding(get: { cols.contains("date") }, set: { _ in toggleColumn("date") }))
-                Toggle("크기", isOn: Binding(get: { cols.contains("size") }, set: { _ in toggleColumn("size") }))
-                Toggle("종류", isOn: Binding(get: { cols.contains("type") }, set: { _ in toggleColumn("type") }))
-                Divider()
-                Toggle("별점", isOn: Binding(get: { cols.contains("rating") }, set: { _ in toggleColumn("rating") }))
-                Toggle("해상도", isOn: Binding(get: { cols.contains("resolution") }, set: { _ in toggleColumn("resolution") }))
-                Divider()
-                Toggle("카메라", isOn: Binding(get: { cols.contains("camera") }, set: { _ in toggleColumn("camera") }))
-                Toggle("렌즈", isOn: Binding(get: { cols.contains("lens") }, set: { _ in toggleColumn("lens") }))
-                Toggle("ISO", isOn: Binding(get: { cols.contains("iso") }, set: { _ in toggleColumn("iso") }))
-                Toggle("셔터속도", isOn: Binding(get: { cols.contains("shutter") }, set: { _ in toggleColumn("shutter") }))
-                Toggle("조리개", isOn: Binding(get: { cols.contains("aperture") }, set: { _ in toggleColumn("aperture") }))
+            Spacer()
+            if cols.contains("date") {
+                Text("수정일").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .dateDesc || store.sortMode == .dateAsc ? .accentColor : .secondary)
+                    .frame(width: 130, alignment: .leading)
+                    .onTapGesture { store.sortMode = store.sortMode == .dateDesc ? .dateAsc : .dateDesc }
             }
-
+            if cols.contains("size") {
+                Text("크기").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .sizeDesc || store.sortMode == .sizeAsc ? .accentColor : .secondary)
+                    .frame(width: 70, alignment: .trailing)
+                    .onTapGesture { store.sortMode = store.sortMode == .sizeDesc ? .sizeAsc : .sizeDesc }
+            }
+            if cols.contains("type") {
+                Text("종류").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+                    .frame(width: 55, alignment: .center)
+            }
+            if cols.contains("rating") {
+                Text("별점").font(.system(size: 11, weight: .semibold)).foregroundColor(store.sortMode == .ratingDesc || store.sortMode == .ratingAsc ? .accentColor : .secondary)
+                    .frame(width: 60, alignment: .center)
+                    .onTapGesture { store.sortMode = store.sortMode == .ratingDesc ? .ratingAsc : .ratingDesc }
+            }
+            if cols.contains("resolution") { Text("해상도").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 80, alignment: .center) }
+            if cols.contains("camera") { Text("카메라").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 90, alignment: .leading) }
+            if cols.contains("iso") { Text("ISO").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 50, alignment: .trailing) }
+            if cols.contains("shutter") { Text("셔터").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 60, alignment: .center) }
+            if cols.contains("aperture") { Text("조리개").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 50, alignment: .center) }
+            if cols.contains("lens") { Text("렌즈").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).frame(width: 100, alignment: .leading) }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .contextMenu {
+            Toggle("수정일", isOn: Binding(get: { cols.contains("date") }, set: { _ in toggleColumn("date") }))
+            Toggle("크기", isOn: Binding(get: { cols.contains("size") }, set: { _ in toggleColumn("size") }))
+            Toggle("종류", isOn: Binding(get: { cols.contains("type") }, set: { _ in toggleColumn("type") }))
             Divider()
+            Toggle("별점", isOn: Binding(get: { cols.contains("rating") }, set: { _ in toggleColumn("rating") }))
+            Toggle("해상도", isOn: Binding(get: { cols.contains("resolution") }, set: { _ in toggleColumn("resolution") }))
+            Divider()
+            Toggle("카메라", isOn: Binding(get: { cols.contains("camera") }, set: { _ in toggleColumn("camera") }))
+            Toggle("렌즈", isOn: Binding(get: { cols.contains("lens") }, set: { _ in toggleColumn("lens") }))
+            Toggle("ISO", isOn: Binding(get: { cols.contains("iso") }, set: { _ in toggleColumn("iso") }))
+            Toggle("셔터속도", isOn: Binding(get: { cols.contains("shutter") }, set: { _ in toggleColumn("shutter") }))
+            Toggle("조리개", isOn: Binding(get: { cols.contains("aperture") }, set: { _ in toggleColumn("aperture") }))
+        }
+    }
 
-            LazyVStack(spacing: 0) {
-                ForEach(store.filteredPhotos) { photo in
-                    LazyListRowWrapper(
-                        photo: photo,
-                        isSelected: store.isSelected(photo.id),
-                        isFocused: store.selectedPhotoID == photo.id,
-                        onTap: {
-                            let flags = NSEvent.modifierFlags
-                            store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
-                        }
-                    )
-                    .id(photo.id)
-                    Divider().opacity(0.15).padding(.leading, 40)
-                }
+    /// 목록 본문 (스크롤)
+    private var listBody: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(store.filteredPhotos) { photo in
+                LazyListRowWrapper(
+                    photo: photo,
+                    isSelected: store.isSelected(photo.id),
+                    isFocused: store.selectedPhotoID == photo.id,
+                    onTap: {
+                        let flags = NSEvent.modifierFlags
+                        store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
+                    }
+                )
+                .id(photo.id)
+                Divider().opacity(0.15).padding(.leading, 34)
             }
         }
     }
