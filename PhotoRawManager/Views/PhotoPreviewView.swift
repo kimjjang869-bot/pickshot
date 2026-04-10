@@ -59,13 +59,13 @@ class PreviewImageCache {
         // Conservative cache: prevent memory bloat (each preview ~5-20MB)
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
-            maxEntries = 50
-        } else if ramGB >= 32 {
-            maxEntries = 30
-        } else if ramGB >= 16 {
             maxEntries = 20
-        } else {
+        } else if ramGB >= 32 {
+            maxEntries = 15
+        } else if ramGB >= 16 {
             maxEntries = 10
+        } else {
+            maxEntries = 5
         }
 
         // Setup disk cache directory
@@ -410,6 +410,8 @@ struct PhotoPreviewView: View {
     @State private var imageLoadWork: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
     @State private var showCropView = false
+    @State private var showColorPicker = false
+    @State private var customBgColor = Color(nsColor: .controlBackgroundColor)
 
     private static let imageLoadQueue: OperationQueue = {
         let q = OperationQueue()
@@ -705,6 +707,31 @@ struct PhotoPreviewView: View {
             CropView(photo: photo) { croppedImage in
                 self.image = croppedImage
             }
+        }
+        .sheet(isPresented: $showColorPicker) {
+            VStack(spacing: 16) {
+                Text("커스텀 배경색").font(.headline)
+                ColorPicker("컬러 선택", selection: $customBgColor, supportsOpacity: false)
+                    .labelsHidden()
+                    .frame(width: 200, height: 40)
+                HStack {
+                    Button("취소") { showColorPicker = false }
+                    Spacer()
+                    Button("적용") {
+                        // NSColor → hex
+                        let ns = NSColor(customBgColor)
+                        let r = Int(ns.redComponent * 255)
+                        let g = Int(ns.greenComponent * 255)
+                        let b = Int(ns.blueComponent * 255)
+                        store.previewBgCustomHex = String(format: "#%02X%02X%02X", r, g, b)
+                        store.previewBgMode = "custom"
+                        showColorPicker = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(20)
+            .frame(width: 280, height: 160)
         }
         .popover(isPresented: $showCorrectionPanel) {
             if store.selectionCount > 1 {
@@ -1089,6 +1116,13 @@ struct PhotoPreviewView: View {
         }
         Button { store.previewBgMode = "lightGray" } label: {
             Label("라이트 그레이", systemImage: store.previewBgMode == "lightGray" ? "checkmark" : "")
+        }
+        Divider()
+        Button {
+            store.previewBgMode = "custom"
+            showColorPicker = true
+        } label: {
+            Label("커스텀 컬러...", systemImage: store.previewBgMode == "custom" ? "checkmark" : "")
         }
     }
 

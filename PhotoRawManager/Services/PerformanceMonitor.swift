@@ -89,10 +89,15 @@ class PerformanceMonitor {
         if memMB > peakMemoryMB { peakMemoryMB = memMB }
         if cpu > peakCPU { peakCPU = cpu }
 
-        // Memory warnings
+        // Memory warnings + 자동 해제
         if memMB > memoryCriticalMB {
-            logWarning("🔴 CRITICAL MEMORY: \(String(format: "%.0f", memMB))MB (limit: \(Int(memoryCriticalMB))MB)")
+            logWarning("🔴 CRITICAL MEMORY: \(String(format: "%.0f", memMB))MB (limit: \(Int(memoryCriticalMB))MB) — 캐시 자동 해제")
             warningCount += 1
+            // 메모리 압박 시 캐시 즉시 해제
+            DispatchQueue.main.async {
+                ThumbnailCache.shared.removeAll()
+                PreviewImageCache.shared.clearCache()
+            }
         } else if memMB > memoryWarningMB {
             logWarning("🟡 HIGH MEMORY: \(String(format: "%.0f", memMB))MB")
             warningCount += 1
