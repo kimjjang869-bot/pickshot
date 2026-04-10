@@ -977,24 +977,48 @@ struct ListRow: View {
 class ThumbnailCache {
     static let shared = ThumbnailCache()
     private let cache = NSCache<NSURL, NSImage>()
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
 
     init() {
-        // 대용량 폴더 지원: 최대 8GB 썸네일 캐시
-        // cost가 KB 단위이므로 totalCostLimit도 KB 단위로 설정
+        // RAM 기반 캐시 크기 — macOS 시스템과 조화
+        // NSCache가 메모리 압박 시 자동 evict + 우리도 추가 대응
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
         if ramGB >= 64 {
-            cache.countLimit = 50000
-            cache.totalCostLimit = 4 * 1024 * 1024  // 4GB in KB
-        } else if ramGB >= 32 {
             cache.countLimit = 20000
             cache.totalCostLimit = 2 * 1024 * 1024  // 2GB in KB
-        } else if ramGB >= 16 {
+        } else if ramGB >= 32 {
             cache.countLimit = 10000
             cache.totalCostLimit = 1 * 1024 * 1024  // 1GB in KB
-        } else {
-            cache.countLimit = 3000
+        } else if ramGB >= 16 {
+            cache.countLimit = 5000
             cache.totalCostLimit = 512 * 1024  // 512MB in KB
+        } else {
+            // 8GB 이하 — 보수적
+            cache.countLimit = 2000
+            cache.totalCostLimit = 256 * 1024  // 256MB in KB
         }
+
+        // macOS 메모리 압박 감지 → 캐시 자동 축소 (전체 삭제 아닌 NSCache 자연 evict 유도)
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in
+            let event = source.data
+            if event.contains(.critical) {
+                // 크리티컬: 전체 비움 → 디스크 캐시에서 복원
+                self?.cache.removeAllObjects()
+                fputs("⚠️ [CACHE] CRITICAL memory pressure — 썸네일 캐시 전체 해제\n", stderr)
+            } else {
+                // 경고: countLimit 50% 축소 → NSCache가 오래된 것 evict
+                let currentLimit = self?.cache.countLimit ?? 0
+                self?.cache.countLimit = max(500, currentLimit / 2)
+                fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(currentLimit/2)\n", stderr)
+                // 5초 후 복원
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    self?.cache.countLimit = currentLimit
+                }
+            }
+        }
+        source.resume()
+        memoryPressureSource = source
     }
 
     func get(_ url: URL) -> NSImage? {
@@ -1004,7 +1028,7 @@ class ThumbnailCache {
     func set(_ url: URL, image: NSImage) {
         let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
         let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
-        let cost = max(1, (pixelW * pixelH * 4) / 1024)  // Approximate KB (4 bytes/pixel for RGBA)
+        let cost = max(1, (pixelW * pixelH * 4) / 1024)
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 

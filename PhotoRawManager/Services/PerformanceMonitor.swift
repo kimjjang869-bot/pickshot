@@ -91,13 +91,10 @@ class PerformanceMonitor {
 
         // Memory warnings + 자동 해제
         if memMB > memoryCriticalMB {
-            logWarning("🔴 CRITICAL MEMORY: \(String(format: "%.0f", memMB))MB (limit: \(Int(memoryCriticalMB))MB) — 캐시 자동 해제")
+            logWarning("🔴 CRITICAL MEMORY: \(String(format: "%.0f", memMB))MB (limit: \(Int(memoryCriticalMB))MB)")
             warningCount += 1
-            // 메모리 압박 시 캐시 즉시 해제
-            DispatchQueue.main.async {
-                ThumbnailCache.shared.removeAll()
-                PreviewImageCache.shared.clearCache()
-            }
+            // 메모리 캐시는 DispatchSource.memoryPressure에서 자동 관리
+            // PerformanceMonitor는 로깅만
         } else if memMB > memoryWarningMB {
             logWarning("🟡 HIGH MEMORY: \(String(format: "%.0f", memMB))MB")
             warningCount += 1

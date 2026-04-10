@@ -1121,9 +1121,8 @@ class PhotoStore: ObservableObject {
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        // 이전 폴더 메모리 해제 — 썸네일 캐시 비우기 (디스크 캐시는 유지)
+        // 이전 폴더 로딩 취소 + 미리보기 캐시만 비움 (썸네일은 자연 evict)
         ThumbnailLoader.shared.cancelAll()
-        ThumbnailCache.shared.removeAll()
         PreviewImageCache.shared.clearCache()
         thumbsGeneration += 1
         thumbsLoaded = 0
