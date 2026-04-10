@@ -1181,9 +1181,10 @@ class PhotoStore: ObservableObject {
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        // 이전 폴더 로딩 취소 + 미리보기 캐시만 비움 (썸네일은 자연 evict)
+        // 이전 폴더 로딩/프리페치 취소 + 미리보기 캐시 비움
         ThumbnailLoader.shared.cancelAll()
         PreviewImageCache.shared.clearCache()
+        idlePrefetchGeneration += 1  // 이전 프리페치 취소
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
@@ -1257,6 +1258,10 @@ class PhotoStore: ObservableObject {
                 // Preload thumbnails with slight delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self?.preloadAllThumbnails()
+                }
+                // 아이들 시 고화질 미리보기 프리캐싱 (3초 후 시작)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    self?.startIdlePreviewPrefetch()
                 }
             }
 
@@ -1365,9 +1370,92 @@ class PhotoStore: ObservableObject {
     private var thumbPrefetchGeneration = 0
 
     private func preloadAllThumbnails() {
-        // on-demand only — NSCollectionView 셀이 보일 때 로딩
         thumbsTotal = photos.filter { !$0.isFolder && !$0.isParentFolder }.count
-        thumbsLoaded = thumbsTotal  // 프로그레스바 숨김
+        thumbsLoaded = thumbsTotal
+    }
+
+    // MARK: - 아이들 프리뷰 프리캐싱 (현재 폴더만)
+    // CPU/메모리 여유 시 백그라운드에서 미리보기 이미지를 디스크 캐시에 저장
+    // 사용자가 클릭하면 디스크→메모리 즉시 로딩 (파일 디코딩 스킵)
+
+    private var idlePrefetchGeneration = 0
+    private var idlePrefetchWork: DispatchWorkItem?
+
+    func startIdlePreviewPrefetch() {
+        idlePrefetchGeneration += 1
+        let gen = idlePrefetchGeneration
+        let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
+        guard !list.isEmpty else { return }
+
+        // 선택 위치에서 가까운 순으로 정렬
+        let currentIdx: Int
+        if let selID = selectedPhotoID,
+           let idx = list.firstIndex(where: { $0.id == selID }) {
+            currentIdx = idx
+        } else {
+            currentIdx = 0
+        }
+
+        // 가까운 것부터 정렬
+        let sorted = list.indices.sorted { abs($0 - currentIdx) < abs($1 - currentIdx) }
+
+        let batchSize = 3
+        func prefetchBatch(from startIdx: Int) {
+            guard startIdx < sorted.count, self.idlePrefetchGeneration == gen else { return }
+
+            // CPU/메모리 체크 — 여유 있을 때만
+            let memMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
+            let currentMemMB = Self.currentAppMemoryMB()
+            let memUsage = currentMemMB / memMB
+            guard memUsage < 0.3 else {
+                // 메모리 30% 이상 사용 중 → 10초 후 재시도
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    prefetchBatch(from: startIdx)
+                }
+                return
+            }
+
+            let end = min(startIdx + batchSize, sorted.count)
+            DispatchQueue.global(qos: .background).async { [weak self] in
+                for i in startIdx..<end {
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    let photo = list[sorted[i]]
+                    let url = photo.jpgURL
+                    let cacheKey = url.appendingPathExtension("orig")
+
+                    // 이미 캐시에 있으면 스킵
+                    if PreviewImageCache.shared.get(cacheKey) != nil { continue }
+
+                    // 고화질 로딩 → 캐시에 저장
+                    if let img = PreviewImageCache.loadOptimized(url: url, maxPixel: PreviewImageCache.optimalPreviewSize()) {
+                        PreviewImageCache.shared.set(cacheKey, image: img)
+                        // 썸네일 캐시에도
+                        ThumbnailCache.shared.set(url, image: img)
+                    }
+                }
+
+                // 다음 배치: 1초 간격 (CPU 부담 최소)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    prefetchBatch(from: end)
+                }
+            }
+        }
+
+        prefetchBatch(from: 0)
+    }
+
+    /// 현재 앱 메모리 사용량 (MB)
+    private static func currentAppMemoryMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.resident_size) / (1024 * 1024) : 0
     }
 
     /// 선택 변경 시 호출 — 현재 위치 앞뒤 50장만 프리페치
