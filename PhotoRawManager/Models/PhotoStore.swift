@@ -1376,8 +1376,13 @@ class PhotoStore: ObservableObject {
 
         exifLoadingIDs.insert(photoID)
         let url = photos[idx].jpgURL
+        let fileName = url.lastPathComponent
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let exif = ExifService.extractExif(from: url) else { return }
+            guard let exif = ExifService.extractExif(from: url) else {
+                fputs("[EXIF] FAIL \(fileName)\n", stderr)
+                return
+            }
+            fputs("[EXIF] OK \(fileName) lens=\(exif.lensModel ?? "nil") w=\(exif.imageWidth ?? 0)\n", stderr)
             DispatchQueue.main.async {
                 guard let self = self,
                       let i = self._photoIndex[photoID], i < self.photos.count else { return }
