@@ -141,17 +141,17 @@ struct ThumbnailGridView: View {
         listColumnsRaw = cols.sorted().joined(separator: ",")
     }
 
-    // 컬럼 폭 (UserDefaults 저장 — 드래그로 조절 가능)
-    @AppStorage("colW_date") private var colW_date: Double = 150
-    @AppStorage("colW_size") private var colW_size: Double = 75
-    @AppStorage("colW_type") private var colW_type: Double = 55
-    @AppStorage("colW_rating") private var colW_rating: Double = 70
-    @AppStorage("colW_resolution") private var colW_resolution: Double = 90
-    @AppStorage("colW_camera") private var colW_camera: Double = 100
-    @AppStorage("colW_iso") private var colW_iso: Double = 55
-    @AppStorage("colW_shutter") private var colW_shutter: Double = 65
-    @AppStorage("colW_aperture") private var colW_aperture: Double = 55
-    @AppStorage("colW_lens") private var colW_lens: Double = 110
+    // 컬럼 폭 고정
+    private let colW_date: CGFloat = 150
+    private let colW_size: CGFloat = 75
+    private let colW_type: CGFloat = 55
+    private let colW_rating: CGFloat = 70
+    private let colW_resolution: CGFloat = 90
+    private let colW_camera: CGFloat = 100
+    private let colW_iso: CGFloat = 55
+    private let colW_shutter: CGFloat = 65
+    private let colW_aperture: CGFloat = 55
+    private let colW_lens: CGFloat = 110
 
     /// 목록 헤더 (고정)
     private var listHeader: some View {
@@ -165,16 +165,16 @@ struct ThumbnailGridView: View {
             .padding(.leading, 30)
             .contentShape(Rectangle())
             .onTapGesture { store.sortMode = store.sortMode == .nameAsc ? .nameDesc : .nameAsc }
-            if cols.contains("date")       { colResizer(binding: $colW_date); colHeader("수정일", width: CGFloat(colW_date), sort: .dateDesc, altSort: .dateAsc) }
-            if cols.contains("size")       { colResizer(binding: $colW_size); colHeader("크기", width: CGFloat(colW_size), sort: .sizeDesc, altSort: .sizeAsc) }
-            if cols.contains("type")       { colResizer(binding: $colW_type); colHeader("종류", width: CGFloat(colW_type), sort: .extensionSort, altSort: .extensionSort) }
-            if cols.contains("rating")     { colResizer(binding: $colW_rating); colHeader("별점", width: CGFloat(colW_rating), sort: .ratingDesc, altSort: .ratingAsc) }
-            if cols.contains("resolution") { colResizer(binding: $colW_resolution); colHeaderStatic("해상도", width: CGFloat(colW_resolution)) }
-            if cols.contains("camera")     { colResizer(binding: $colW_camera); colHeader("카메라", width: CGFloat(colW_camera), sort: .cameraSort, altSort: .cameraSort) }
-            if cols.contains("iso")        { colResizer(binding: $colW_iso); colHeaderStatic("ISO", width: CGFloat(colW_iso)) }
-            if cols.contains("shutter")    { colResizer(binding: $colW_shutter); colHeaderStatic("셔터", width: CGFloat(colW_shutter)) }
-            if cols.contains("aperture")   { colResizer(binding: $colW_aperture); colHeaderStatic("조리개", width: CGFloat(colW_aperture)) }
-            if cols.contains("lens")       { colResizer(binding: $colW_lens); colHeaderStatic("렌즈", width: CGFloat(colW_lens)) }
+            if cols.contains("date")       { colDivider; colHeader("수정일", width: colW_date, sort: .dateDesc, altSort: .dateAsc) }
+            if cols.contains("size")       { colDivider; colHeader("크기", width: colW_size, sort: .sizeDesc, altSort: .sizeAsc) }
+            if cols.contains("type")       { colDivider; colHeader("종류", width: colW_type, sort: .extensionSort, altSort: .extensionSort) }
+            if cols.contains("rating")     { colDivider; colHeader("별점", width: colW_rating, sort: .ratingDesc, altSort: .ratingAsc) }
+            if cols.contains("resolution") { colDivider; colHeaderStatic("해상도", width: colW_resolution) }
+            if cols.contains("camera")     { colDivider; colHeader("카메라", width: colW_camera, sort: .cameraSort, altSort: .cameraSort) }
+            if cols.contains("iso")        { colDivider; colHeaderStatic("ISO", width: colW_iso) }
+            if cols.contains("shutter")    { colDivider; colHeaderStatic("셔터", width: colW_shutter) }
+            if cols.contains("aperture")   { colDivider; colHeaderStatic("조리개", width: colW_aperture) }
+            if cols.contains("lens")       { colDivider; colHeaderStatic("렌즈", width: colW_lens) }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
@@ -973,17 +973,17 @@ struct ListRow: View {
 
     private var cols: Set<String> { Set(listColumnsRaw.split(separator: ",").map(String.init)) }
 
-    // 헤더와 동일한 컬럼 폭 (AppStorage 공유)
-    @AppStorage("colW_date") private var cW_date: Double = 150
-    @AppStorage("colW_size") private var cW_size: Double = 75
-    @AppStorage("colW_type") private var cW_type: Double = 55
-    @AppStorage("colW_rating") private var cW_rating: Double = 70
-    @AppStorage("colW_resolution") private var cW_resolution: Double = 90
-    @AppStorage("colW_camera") private var cW_camera: Double = 100
-    @AppStorage("colW_iso") private var cW_iso: Double = 55
-    @AppStorage("colW_shutter") private var cW_shutter: Double = 65
-    @AppStorage("colW_aperture") private var cW_aperture: Double = 55
-    @AppStorage("colW_lens") private var cW_lens: Double = 110
+    // 헤더와 동일한 컬럼 폭
+    private let cW_date: CGFloat = 150
+    private let cW_size: CGFloat = 75
+    private let cW_type: CGFloat = 55
+    private let cW_rating: CGFloat = 70
+    private let cW_resolution: CGFloat = 90
+    private let cW_camera: CGFloat = 100
+    private let cW_iso: CGFloat = 55
+    private let cW_shutter: CGFloat = 65
+    private let cW_aperture: CGFloat = 55
+    private let cW_lens: CGFloat = 110
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
