@@ -123,6 +123,13 @@ extension ContentView {
                     .buttonStyle(.plain)
                     .help("파일명/JPG/AI 매칭 셀렉")
 
+                    // AI 스마트 셀렉
+                    Button(action: { store.showSmartCull = true }) {
+                        actionLabel("brain", "AI 셀렉", .indigo)
+                    }
+                    .buttonStyle(.plain)
+                    .help("유사 그룹핑 + A컷 자동 추천")
+
                     // G Select
                     gSelectButton
                 }
