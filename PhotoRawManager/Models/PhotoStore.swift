@@ -1379,6 +1379,7 @@ class PhotoStore: ObservableObject {
                 self._suppressDidSet = true
                 self.photos[i].exifData = exif
                 self._suppressDidSet = false
+                self.objectWillChange.send()
             }
         }
     }
