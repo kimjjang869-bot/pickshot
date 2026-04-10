@@ -94,14 +94,16 @@ struct BatchProcessService {
 
         let sourceURL = photo.jpgURL
 
-        // Load via CGImageSource (fast, no color conversion)
-        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
             return false
         }
 
-        let origW = cgImage.width
-        let origH = cgImage.height
+        // Get original dimensions from image properties (no full decode)
+        guard let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let origW = props[kCGImagePropertyPixelWidth] as? Int,
+              let origH = props[kCGImagePropertyPixelHeight] as? Int else {
+            return false
+        }
 
         // Calculate target size
         let (targetW, targetH) = calculateTargetSize(
@@ -110,37 +112,51 @@ struct BatchProcessService {
             maintainAspect: options.maintainAspect
         )
 
-        // Create CGContext for resize
-        let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        // Use CGImageSource subsample resize — no full decode needed
+        let maxDim = max(targetW, targetH)
+        let thumbOptions: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxDim,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let resizedImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbOptions as CFDictionary) else {
+            return false
+        }
 
-        guard let context = CGContext(
-            data: nil,
-            width: targetW,
-            height: targetH,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        ) else { return false }
-
-        context.interpolationQuality = CGInterpolationQuality.high
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetW, height: targetH))
-
-        // Draw watermark
+        // Draw watermark if needed (requires CGContext)
+        let resultImage: CGImage
         if !options.watermarkText.isEmpty {
+            let colorSpace = resizedImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            guard let context = CGContext(
+                data: nil,
+                width: resizedImage.width,
+                height: resizedImage.height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo.rawValue
+            ) else { return false }
+
+            context.interpolationQuality = .high
+            context.draw(resizedImage, in: CGRect(x: 0, y: 0, width: resizedImage.width, height: resizedImage.height))
+
             drawWatermark(
                 context: context,
-                width: targetW,
-                height: targetH,
+                width: resizedImage.width,
+                height: resizedImage.height,
                 text: options.watermarkText,
                 position: options.watermarkPosition,
                 opacity: options.watermarkOpacity,
                 fontSize: options.watermarkFontSize
             )
-        }
 
-        guard let resultImage = context.makeImage() else { return false }
+            guard let watermarked = context.makeImage() else { return false }
+            resultImage = watermarked
+        } else {
+            resultImage = resizedImage
+        }
 
         // Save
         let baseName = sourceURL.deletingPathExtension().lastPathComponent

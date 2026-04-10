@@ -112,63 +112,98 @@ struct FileCopyService {
             return result
         }
 
-        let jpgOnlyOrPaired = photos.filter { !$0.isRawOnly }
-        let photosWithRAW = photos.filter { $0.hasRAW }
-        let totalOperations = jpgOnlyOrPaired.count + photosWithRAW.count
-        result.totalFiles = totalOperations
-        var completed = 0
-
-        for photo in photos {
-            // RAW only 파일은 JPG 폴더에 복사하지 않음
-            if photo.isRawOnly { continue }
-            var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
-            if fileManager.fileExists(atPath: destURL.path) {
-                switch duplicateHandling {
-                case .skip:
-                    result.skipped += 1
-                    completed += 1
-                    progress(completed, totalOperations)
-                    continue
-                case .rename:
-                    destURL = uniqueURL(for: destURL)
-                case .overwrite:
-                    try? fileManager.removeItem(at: destURL)
-                }
-            }
-            do {
-                try fileManager.copyItem(at: photo.jpgURL, to: destURL)
-                result.copiedJPG += 1
-            } catch {
-                result.failedFiles.append("JPG 복사 실패: \(photo.fileName)")
-            }
-            completed += 1
-            progress(completed, totalOperations)
+        // Build list of all copy operations (source → dest, type)
+        enum CopyType { case jpg, raw }
+        struct CopyOp {
+            let source: URL
+            let dest: URL
+            let type: CopyType
+            let fileName: String
+            let skip: Bool
         }
 
-        for photo in photosWithRAW {
-            guard let rawURL = photo.rawURL else { continue }
-            var destURL = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
+        var ops: [CopyOp] = []
+
+        // JPG copies (skip RAW-only)
+        for photo in photos {
+            if photo.isRawOnly { continue }
+            var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+            var shouldSkip = false
             if fileManager.fileExists(atPath: destURL.path) {
                 switch duplicateHandling {
                 case .skip:
-                    result.skipped += 1
-                    completed += 1
-                    progress(completed, totalOperations)
-                    continue
+                    shouldSkip = true
                 case .rename:
                     destURL = uniqueURL(for: destURL)
                 case .overwrite:
                     try? fileManager.removeItem(at: destURL)
                 }
             }
-            do {
-                try fileManager.copyItem(at: rawURL, to: destURL)
-                result.copiedRAW += 1
-            } catch {
-                result.failedFiles.append("RAW 복사 실패: \(photo.fileName)")
+            ops.append(CopyOp(source: photo.jpgURL, dest: destURL, type: .jpg, fileName: photo.fileName, skip: shouldSkip))
+        }
+
+        // RAW copies
+        for photo in photos where photo.hasRAW {
+            guard let rawURL = photo.rawURL else { continue }
+            var destURL = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
+            var shouldSkip = false
+            if fileManager.fileExists(atPath: destURL.path) {
+                switch duplicateHandling {
+                case .skip:
+                    shouldSkip = true
+                case .rename:
+                    destURL = uniqueURL(for: destURL)
+                case .overwrite:
+                    try? fileManager.removeItem(at: destURL)
+                }
             }
-            completed += 1
-            progress(completed, totalOperations)
+            ops.append(CopyOp(source: rawURL, dest: destURL, type: .raw, fileName: photo.fileName, skip: shouldSkip))
+        }
+
+        let totalOperations = ops.count
+        result.totalFiles = totalOperations
+
+        // Parallel copy with concurrency 4
+        let lock = NSLock()
+        let semaphore = DispatchSemaphore(value: 4)
+        var completed = 0
+
+        DispatchQueue.concurrentPerform(iterations: ops.count) { index in
+            semaphore.wait()
+            defer { semaphore.signal() }
+
+            let op = ops[index]
+
+            if op.skip {
+                lock.lock()
+                result.skipped += 1
+                completed += 1
+                let c = completed
+                lock.unlock()
+                DispatchQueue.main.async { progress(c, totalOperations) }
+                return
+            }
+
+            do {
+                try FileManager.default.copyItem(at: op.source, to: op.dest)
+                lock.lock()
+                switch op.type {
+                case .jpg: result.copiedJPG += 1
+                case .raw: result.copiedRAW += 1
+                }
+                completed += 1
+                let c = completed
+                lock.unlock()
+                DispatchQueue.main.async { progress(c, totalOperations) }
+            } catch {
+                let msg = op.type == .jpg ? "JPG 복사 실패: \(op.fileName)" : "RAW 복사 실패: \(op.fileName)"
+                lock.lock()
+                result.failedFiles.append(msg)
+                completed += 1
+                let c = completed
+                lock.unlock()
+                DispatchQueue.main.async { progress(c, totalOperations) }
+            }
         }
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)

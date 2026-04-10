@@ -356,7 +356,7 @@ class MemoryCardBackupService: ObservableObject {
         return manualBufferCopy(from: srcPath, to: dstPath)
     }
 
-    /// 4MB 버퍼로 직접 read/write — SD카드 USB3.0에서 큰 버퍼가 빠름
+    /// 8MB 버퍼로 직접 read/write — SSD/USB3 최적
     private static func manualBufferCopy(from srcPath: String, to dstPath: String) -> Bool {
         guard let srcFd = fopen(srcPath, "rb") else { return false }
         defer { fclose(srcFd) }
@@ -367,7 +367,7 @@ class MemoryCardBackupService: ObservableObject {
         fcntl(fileno(srcFd), F_NOCACHE, 1)
         fcntl(fileno(dstFd), F_NOCACHE, 1)
 
-        let bufferSize = 4 * 1024 * 1024  // 4MB — SD카드 USB3.0 최적
+        let bufferSize = 8 * 1024 * 1024  // 8MB — SSD/USB3 최적
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
         defer { buffer.deallocate() }
 
