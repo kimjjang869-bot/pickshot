@@ -89,6 +89,14 @@ struct ClientSelectSetupView: View {
             sessionName = defaultSessionName
             gSelect.isLoggedIn = GoogleDriveService.isLoggedIn
         }
+        .alert("업로드 오류", isPresented: Binding(
+            get: { service.errorMessage != nil },
+            set: { if !$0 { service.errorMessage = nil } }
+        )) {
+            Button("확인") { service.errorMessage = nil }
+        } message: {
+            Text(service.errorMessage ?? "")
+        }
     }
 
     // MARK: - 설정 폼

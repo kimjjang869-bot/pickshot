@@ -62,28 +62,47 @@ class ClientSelectService: ObservableObject {
                       photos: [PhotoItem], accessMode: AccessMode) {
         fputs("[CLIENT] startSession: name=\(name), photos=\(photos.count)\n", stderr)
 
-        // 토큰 갱신 시도 후 시작
+        // 토큰 갱신 — 실패 시 재로그인
         let sem = DispatchSemaphore(value: 0)
         var finalToken: String?
 
-        if let token = GoogleDriveService.savedAccessToken {
-            finalToken = token
-            // 먼저 토큰 갱신 시도 (만료 대비)
+        if GoogleDriveService.savedAccessToken != nil {
+            // 기존 토큰 → 리프레시 시도
             GoogleDriveService.refreshAccessToken { newToken, error in
                 if let newToken = newToken {
                     fputs("[CLIENT] 토큰 갱신 성공\n", stderr)
                     finalToken = newToken
                 } else {
-                    fputs("[CLIENT] 토큰 갱신 실패 (기존 토큰 사용): \(error?.localizedDescription ?? "")\n", stderr)
+                    fputs("[CLIENT] 토큰 갱신 실패: \(error?.localizedDescription ?? "") — 재로그인 시도\n", stderr)
+                    // 리프레시 실패 → 재로그인
+                    GoogleDriveService.startOAuthLogin { token, loginError in
+                        if let token = token {
+                            fputs("[CLIENT] 재로그인 성공\n", stderr)
+                            finalToken = token
+                        } else {
+                            fputs("[CLIENT] 재로그인 실패: \(loginError?.localizedDescription ?? "")\n", stderr)
+                        }
+                        sem.signal()
+                    }
+                    return
                 }
+                sem.signal()
+            }
+            sem.wait()
+        } else {
+            // 토큰 없음 → 새 로그인
+            GoogleDriveService.startOAuthLogin { token, error in
+                finalToken = token
+                fputs("[CLIENT] 새 로그인: \(token != nil ? "성공" : "실패")\n", stderr)
                 sem.signal()
             }
             sem.wait()
         }
 
-        guard let token = finalToken ?? GoogleDriveService.savedAccessToken else {
+        guard let token = finalToken else {
             fputs("[CLIENT] ❌ Google Drive 토큰 없음\n", stderr)
-            errorMessage = "Google Drive 로그인이 필요합니다"
+            DispatchQueue.main.async { self.errorMessage = "Google Drive 로그인이 필요합니다.\n설정에서 Google 로그인을 해주세요." }
+            DispatchQueue.main.async { self.isUploading = false }
             return
         }
         fputs("[CLIENT] 토큰 준비: \(token.prefix(10))...\n", stderr)
