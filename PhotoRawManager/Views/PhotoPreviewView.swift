@@ -913,14 +913,14 @@ struct PhotoPreviewView: View {
             imageLoadWork?.cancel()
             viewState.stableImageSize = Self.readImageDimensions(url: url)
             loadImageDirect(for: url, id: newID)
-            // 1초 머물면 hi-res 로딩 (빠른 탐색 중 360ms 블로킹 방지)
+            // 0.15초 후 hi-res 로딩 (방향키 꾹 누르면 cancel 됨)
             hiResWorkItem?.cancel()
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
