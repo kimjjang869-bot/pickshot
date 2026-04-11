@@ -35,6 +35,37 @@ struct ThumbnailGridView: View {
                                 gridView
                             }
                             .scrollIndicators(.visible)
+                            .contextMenu {
+                                // 빈 영역 우클릭 — 정렬 + 새 폴더
+                                Menu("정렬") {
+                                    Button("이름순") { store.sortMode = .nameAsc }
+                                    Button("이름순 (역순)") { store.sortMode = .nameDesc }
+                                    Divider()
+                                    Button("날짜순 (최신)") { store.sortMode = .dateDesc }
+                                    Button("날짜순 (오래된)") { store.sortMode = .dateAsc }
+                                    Divider()
+                                    Button("크기순") { store.sortMode = .sizeDesc }
+                                    Button("별점순") { store.sortMode = .ratingDesc }
+                                }
+                                Divider()
+                                Button(action: {
+                                    guard let parentURL = store.folderURL else { return }
+                                    let alert = NSAlert()
+                                    alert.messageText = "새 폴더 만들기"
+                                    let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+                                    tf.stringValue = "새 폴더"
+                                    alert.accessoryView = tf
+                                    alert.addButton(withTitle: "만들기")
+                                    alert.addButton(withTitle: "취소")
+                                    if alert.runModal() == .alertFirstButtonReturn {
+                                        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+                                        guard !name.isEmpty else { return }
+                                        try? FileManager.default.createDirectory(at: parentURL.appendingPathComponent(name), withIntermediateDirectories: true)
+                                    }
+                                }) {
+                                    Label("새 폴더 만들기", systemImage: "folder.badge.plus")
+                                }
+                            }
                             .onChange(of: store.scrollTrigger) { _ in
                                 guard let id = store.selectedPhotoID else { return }
                                 proxy.scrollTo(id, anchor: nil)
@@ -628,8 +659,8 @@ struct LazyThumbnailWrapper: View {
                 if NSApp.currentEvent?.clickCount == 2 {
                     store.loadFolder(photo.jpgURL)
                 } else {
-                    store.selectedPhotoID = photo.id
-                    store.selectedPhotoIDs = [photo.id]
+                    let flags = NSEvent.modifierFlags
+                    store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
                 }
             }
             .help("클릭: 선택 / 더블클릭: 이동 / Enter: 이동")
@@ -674,8 +705,8 @@ struct LazyThumbnailWrapper: View {
                 if NSApp.currentEvent?.clickCount == 2 {
                     store.loadFolder(photo.jpgURL)
                 } else {
-                    store.selectedPhotoID = photo.id
-                    store.selectedPhotoIDs = [photo.id]
+                    let flags = NSEvent.modifierFlags
+                    store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
                 }
             }
             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
@@ -1045,6 +1076,28 @@ struct PhotoContextMenu: View {
             Label("이름 변경 (\(targetCount)장)", systemImage: "pencil")
         }
 
+        // 새 폴더로 이동
+        Button(action: {
+            let alert = NSAlert()
+            alert.messageText = "새 폴더로 이동"
+            alert.informativeText = "폴더 이름을 입력하세요"
+            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            tf.placeholderString = "새 폴더"
+            alert.accessoryView = tf
+            alert.addButton(withTitle: "이동")
+            alert.addButton(withTitle: "취소")
+            if alert.runModal() == .alertFirstButtonReturn {
+                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty, let folderURL = store.folderURL else { return }
+                let newDir = folderURL.appendingPathComponent(name)
+                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+                let urls = collectFileURLs()
+                store.movePhotosToFolder(fileURLs: urls, destination: newDir)
+            }
+        }) {
+            Label("새 폴더로 이동", systemImage: "folder.fill.badge.plus")
+        }
+
         // Remove from list
         Button(action: {
             store.photosToRemove = targetIDs
@@ -1059,15 +1112,6 @@ struct PhotoContextMenu: View {
             store.showDeleteOriginalConfirm = true
         }) {
             Label("휴지통으로 이동", systemImage: "trash")
-        }
-
-        Divider()
-
-        // 새 폴더 만들기 (현재 폴더 안에)
-        Button(action: {
-            createNewFolderInCurrentFolder()
-        }) {
-            Label("새 폴더 만들기", systemImage: "folder.badge.plus")
         }
 
     }

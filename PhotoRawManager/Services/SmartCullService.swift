@@ -29,18 +29,20 @@ class SmartCullService: ObservableObject {
         case event = "행사/컨퍼런스"
         case portrait = "인물"
         case landscape = "풍경"
+        case lookbook = "쇼핑몰/룩북"
 
         var id: String { rawValue }
 
-        /// 유사도 임계값 (낮을수록 엄격)
+        /// 유사도 임계값 (VNFeaturePrint 거리 0~1, 낮을수록 엄격)
         var similarityThreshold: Float {
             switch self {
-            case .general: return 18.0
-            case .wedding: return 22.0     // 비슷한 포즈 많으므로 넓게
-            case .sports: return 12.0      // 순간 차이 중요 → 엄격
-            case .event: return 20.0
-            case .portrait: return 15.0    // 표정 차이 중요
-            case .landscape: return 25.0   // 구도 유사 많음
+            case .general: return 0.45
+            case .wedding: return 0.55     // 비슷한 포즈 많으므로 넓게
+            case .sports: return 0.30      // 순간 차이 중요 → 엄격
+            case .event: return 0.50
+            case .portrait: return 0.40    // 표정 차이 중요
+            case .landscape: return 0.60   // 구도 유사 많음
+            case .lookbook: return 0.55    // 같은 옷끼리 묶기 (포즈/앵글 차이 허용)
             }
         }
 
@@ -53,6 +55,7 @@ class SmartCullService: ObservableObject {
             case .event: return 0.9
             case .portrait: return 0.7     // 구도/표정 중심
             case .landscape: return 1.2    // 선명도 중요
+            case .lookbook: return 1.3     // 선명도 + 디테일 중요 (옷 질감)
             }
         }
 
@@ -65,6 +68,7 @@ class SmartCullService: ObservableObject {
             case .event: return 0.35       // 35%
             case .portrait: return 0.4     // 40%
             case .landscape: return 0.5    // 50%
+            case .lookbook: return 0.2     // 20% (연사 많고 베스트컷만)
             }
         }
 
@@ -76,6 +80,7 @@ class SmartCullService: ObservableObject {
             case .event: return "person.3"
             case .portrait: return "person"
             case .landscape: return "mountain.2"
+            case .lookbook: return "tshirt"
             }
         }
     }
@@ -101,6 +106,10 @@ class SmartCullService: ObservableObject {
         let url: URL
         var featurePrint: VNFeaturePrintObservation?
         var qualityScore: Double = 0
+        var isBlurry: Bool = false
+        var hasClosedEyes: Bool = false
+        var sharpness: Double = 0
+        var colorSignature: [Float] = []  // 옷 컬러 시그니처 (상의RGB + 하의RGB = 6차원)
     }
 
     // MARK: - 1단계: 유사 그룹핑
@@ -140,7 +149,16 @@ class SmartCullService: ObservableObject {
                 guard !self.cancelled else { break }
                 let groupVectors = vectors.filter { v in group.contains(where: { $0.id == v.photoID }) }
                 fputs("[CULL] 그룹 \(groupIdx+1): 벡터 \(groupVectors.count)개\n", stderr)
-                let clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: self.genre.similarityThreshold)
+                // 자동 threshold: 샘플 거리 기반 (상대적)
+                let autoThreshold = self.calculateAutoThreshold(vectors: groupVectors, genre: self.genre)
+                fputs("[CULL] 자동 threshold: \(String(format: "%.4f", autoThreshold)) (장르: \(self.genre.rawValue))\n", stderr)
+
+                var clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: autoThreshold)
+
+                // 2차 병합: 룩북에서만 (같은 옷 묶기)
+                if self.genre == .lookbook {
+                    clusters = self.mergeSimilarClusters(clusters: clusters, vectors: groupVectors, mergeThreshold: autoThreshold * 1.3)
+                }
 
                 let timeRange = group.compactMap({ $0.fileModDate }).sorted()
                 resultGroups.append(PhotoGroup(
@@ -177,9 +195,10 @@ class SmartCullService: ObservableObject {
             fputs("[CULL] 최종 결과: \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, \(totalPhotosInClusters)장, A컷 \(aCuts)개\n", stderr)
 
             self.updateStatus("결과 적용 중...")
+            let capturedVectors = vectors
             DispatchQueue.main.async {
                 self.groups = resultGroups
-                self.applyResults(groups: resultGroups, store: store)
+                self.applyResults(groups: resultGroups, store: store, vectors: capturedVectors)
                 self.updateProgress(1.0)
                 self.statusMessage = "완료! \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, A컷 \(aCuts)개"
                 self.isProcessing = false
@@ -189,6 +208,71 @@ class SmartCullService: ObservableObject {
 
     func cancel() {
         cancelled = true
+    }
+
+    /// 클러스터별 폴더 분류 — 유사 사진끼리 하위 폴더로 이동/복사
+    func sortIntoFolders(store: PhotoStore, copy: Bool = true) {
+        guard !groups.isEmpty, let folderURL = store.folderURL else { return }
+
+        let fm = FileManager.default
+        let baseDir = folderURL.appendingPathComponent("_AI분류")
+        try? fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
+
+        var totalMoved = 0
+
+        for group in groups {
+            for (clusterIdx, cluster) in group.clusters.enumerated() {
+                guard cluster.photoIDs.count >= 2 else { continue }  // 1장짜리는 건너뜀
+
+                let folderName = String(format: "클러스터_%03d_%d장", clusterIdx + 1, cluster.photoIDs.count)
+                let clusterDir = baseDir.appendingPathComponent(folderName)
+                try? fm.createDirectory(at: clusterDir, withIntermediateDirectories: true)
+
+                for photoID in cluster.photoIDs {
+                    guard let idx = store._photoIndex[photoID], idx < store.photos.count else { continue }
+                    let photo = store.photos[idx]
+
+                    // JPG 복사/이동
+                    let destJPG = clusterDir.appendingPathComponent(photo.jpgURL.lastPathComponent)
+                    if !fm.fileExists(atPath: destJPG.path) {
+                        if copy {
+                            try? fm.copyItem(at: photo.jpgURL, to: destJPG)
+                        } else {
+                            try? fm.moveItem(at: photo.jpgURL, to: destJPG)
+                        }
+                    }
+
+                    // RAW 복사/이동
+                    if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                        let destRAW = clusterDir.appendingPathComponent(rawURL.lastPathComponent)
+                        if !fm.fileExists(atPath: destRAW.path) {
+                            if copy {
+                                try? fm.copyItem(at: rawURL, to: destRAW)
+                            } else {
+                                try? fm.moveItem(at: rawURL, to: destRAW)
+                            }
+                        }
+                    }
+
+                    // A컷은 파일명 앞에 ★ 표시
+                    if cluster.bestPhotoID == photoID {
+                        let starName = "★_" + photo.jpgURL.lastPathComponent
+                        let starDest = clusterDir.appendingPathComponent(starName)
+                        try? fm.copyItem(at: photo.jpgURL, to: starDest)
+                    }
+
+                    totalMoved += 1
+                }
+            }
+        }
+
+        fputs("[CULL] 폴더 분류 완료: \(totalMoved)장 → \(baseDir.path)\n", stderr)
+
+        // 분류 폴더 열기
+        DispatchQueue.main.async {
+            store.loadFolder(baseDir, restoreRatings: false)
+            NSWorkspace.shared.open(baseDir)
+        }
     }
 
     // MARK: - FeaturePrint 추출
@@ -232,8 +316,34 @@ class SmartCullService: ObservableObject {
                 return
             }
 
-            var vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
-            vector.qualityScore = Self.quickQualityScore(cgImage: image) * self.genre.sharpnessWeight
+            // 룩북: 인물 세그멘테이션으로 사람+옷만 추출
+            var finalFP = result
+            if self.genre == .lookbook {
+                if let personOnly = Self.extractPersonRegion(cgImage: image) {
+                    let req2 = VNGenerateImageFeaturePrintRequest()
+                    let h2 = VNImageRequestHandler(cgImage: personOnly, options: [:])
+                    try? h2.perform([req2])
+                    if let fp2 = req2.results?.first as? VNFeaturePrintObservation {
+                        finalFP = fp2
+                    }
+                }
+            }
+
+            var vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: finalFP)
+            let sharpness = Self.quickQualityScore(cgImage: image)
+            vector.sharpness = sharpness
+            vector.qualityScore = sharpness * self.genre.sharpnessWeight
+
+            vector.isBlurry = sharpness < 8  // 10 이하만 진짜 블러
+
+            if self.genre == .lookbook || self.genre == .portrait || self.genre == .wedding {
+                vector.hasClosedEyes = Self.detectClosedEyes(cgImage: image)
+            }
+
+            // 룩북: 상의/하의 컬러 시그니처 추출
+            if self.genre == .lookbook {
+                vector.colorSignature = Self.extractClothingColorSignature(cgImage: image)
+            }
 
             lock.lock()
             vectors.append(vector)
@@ -271,6 +381,150 @@ class SmartCullService: ObservableObject {
         }
 
         return nil
+    }
+
+    /// 상의/하의 컬러 시그니처 추출 (6차원: 상의RGB + 하의RGB)
+    private static func extractClothingColorSignature(cgImage: CGImage) -> [Float] {
+        let w = cgImage.width
+        let h = cgImage.height
+
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return [] }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return [] }
+        let ptr = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+
+        // 인물 세그멘테이션 마스크
+        let segRequest = VNGeneratePersonSegmentationRequest()
+        segRequest.qualityLevel = .fast
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([segRequest])
+
+        var maskData: UnsafeMutablePointer<UInt8>?
+        var maskW = 0, maskH = 0, maskBPR = 0
+
+        if let seg = segRequest.results?.first {
+            let buf: CVPixelBuffer = seg.pixelBuffer
+            CVPixelBufferLockBaseAddress(buf, .readOnly)
+            if let baseAddr = CVPixelBufferGetBaseAddress(buf) {
+                maskData = baseAddr.assumingMemoryBound(to: UInt8.self)
+            }
+            maskW = CVPixelBufferGetWidth(buf)
+            maskH = CVPixelBufferGetHeight(buf)
+            maskBPR = CVPixelBufferGetBytesPerRow(buf)
+        }
+
+        // 상의 영역: 인물 마스크 상위 40~60% (가슴~허리)
+        // 하의 영역: 인물 마스크 하위 60~80% (허리~무릎)
+        var topR: Float = 0, topG: Float = 0, topB: Float = 0, topCount: Float = 0
+        var botR: Float = 0, botG: Float = 0, botB: Float = 0, botCount: Float = 0
+
+        let centerX = w / 2
+        let sampleWidth = w / 3  // 중앙 1/3만 샘플링
+
+        for y in 0..<h {
+            let yRatio = Float(y) / Float(h)  // CGContext: y=0이 top
+
+            for x in (centerX - sampleWidth/2)..<(centerX + sampleWidth/2) {
+                // 마스크 체크 (인물 영역만)
+                if let mask = maskData, maskW > 0 {
+                    let mx = x * maskW / w
+                    let my = y * maskH / h
+                    let maskVal = mask[my * maskBPR + mx]
+                    if maskVal < 128 { continue }  // 배경 스킵
+                }
+
+                let i = (y * w + x) * 4
+                let r = Float(ptr[i])
+                let g = Float(ptr[i + 1])
+                let b = Float(ptr[i + 2])
+
+                if yRatio > 0.25 && yRatio < 0.50 {
+                    // 상의 영역
+                    topR += r; topG += g; topB += b; topCount += 1
+                } else if yRatio > 0.50 && yRatio < 0.75 {
+                    // 하의 영역
+                    botR += r; botG += g; botB += b; botCount += 1
+                }
+            }
+        }
+
+        if let seg = segRequest.results?.first {
+            CVPixelBufferUnlockBaseAddress(seg.pixelBuffer, .readOnly)
+        }
+
+        // 정규화 (0~1)
+        let sig: [Float]
+        if topCount > 0 && botCount > 0 {
+            sig = [
+                topR / topCount / 255, topG / topCount / 255, topB / topCount / 255,
+                botR / botCount / 255, botG / botCount / 255, botB / botCount / 255
+            ]
+        } else if topCount > 0 {
+            sig = [topR / topCount / 255, topG / topCount / 255, topB / topCount / 255, 0, 0, 0]
+        } else {
+            sig = [0, 0, 0, 0, 0, 0]
+        }
+
+        return sig
+    }
+
+    /// 컬러 시그니처 거리 (유클리드)
+    private static func colorDistance(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 1.0 }
+        var sum: Float = 0
+        for i in 0..<a.count {
+            let d = a[i] - b[i]
+            sum += d * d
+        }
+        return sqrt(sum)
+    }
+
+    /// Vision 인물 세그멘테이션 — 사람+옷 영역만 추출 (배경 완전 제거)
+    private static func extractPersonRegion(cgImage: CGImage) -> CGImage? {
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .fast  // balanced보다 빠름
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
+
+        guard let result = request.results?.first else { return nil }
+        let maskBuffer = result.pixelBuffer
+
+        // 마스크를 CIImage로 변환
+        let maskCI = CIImage(cvPixelBuffer: maskBuffer)
+        let originalCI = CIImage(cgImage: cgImage)
+
+        // 마스크 크기를 원본에 맞춤
+        let scaleX = originalCI.extent.width / maskCI.extent.width
+        let scaleY = originalCI.extent.height / maskCI.extent.height
+        let scaledMask = maskCI.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+
+        // 마스크 적용 (사람 영역만 남기고 배경은 검정)
+        guard let blendFilter = CIFilter(name: "CIBlendWithMask") else { return nil }
+        blendFilter.setValue(originalCI, forKey: kCIInputImageKey)
+        blendFilter.setValue(CIImage(color: .black).cropped(to: originalCI.extent), forKey: kCIInputBackgroundImageKey)
+        blendFilter.setValue(scaledMask, forKey: kCIInputMaskImageKey)
+
+        guard let output = blendFilter.outputImage else { return nil }
+
+        let ctx = CIContext(options: [.useSoftwareRenderer: false])
+        return ctx.createCGImage(output, from: originalCI.extent)
+    }
+
+    /// 중앙 크롭 — 배경 제거하고 옷 영역만 추출
+    private static func centerCrop(cgImage: CGImage, ratio: CGFloat) -> CGImage? {
+        let w = CGFloat(cgImage.width)
+        let h = CGFloat(cgImage.height)
+        let cropW = w * ratio
+        let cropH = h * ratio
+        let x = (w - cropW) / 2
+        let y = (h - cropH) / 2
+        let rect = CGRect(x: x, y: y, width: cropW, height: cropH)
+        return cgImage.cropping(to: rect)
     }
 
     private static func createThumbnail(url: URL, maxSize: Int) -> CGImage? {
@@ -339,10 +593,18 @@ class SmartCullService: ObservableObject {
                 guard !assigned.contains(other.photoID) else { continue }
                 guard let otherFP = other.featurePrint else { continue }
 
-                var distance: Float = 0
-                try? fp.computeDistance(&distance, to: otherFP)
+                var fpDistance: Float = 0
+                try? fp.computeDistance(&fpDistance, to: otherFP)
 
-                // distance가 낮을수록 유사 (0 = 동일)
+                // 컬러 거리 합산 (룩북: 컬러 비중 높게)
+                var distance = fpDistance
+                if !vector.colorSignature.isEmpty && !other.colorSignature.isEmpty {
+                    let colorDist = Self.colorDistance(vector.colorSignature, other.colorSignature)
+                    // 컬러 거리를 FeaturePrint 스케일로 정규화 후 합산
+                    // colorDist 범위: 0~1.7 (6차원 유클리드), 0.3 이상이면 다른 옷
+                    distance = fpDistance * 0.4 + colorDist * 0.6  // 컬러 60% 비중
+                }
+
                 if distance < threshold {
                     clusterIDs.append(other.photoID)
                     assigned.insert(other.photoID)
@@ -362,26 +624,157 @@ class SmartCullService: ObservableObject {
         return clusters
     }
 
-    // MARK: - A컷 추천
+    // MARK: - 자동 Threshold 계산 (거리 분포 기반)
+
+    private func calculateAutoThreshold(vectors: [FeatureVector], genre: CullGenre) -> Float {
+        guard vectors.count >= 2 else { return genre.similarityThreshold }
+
+        // 랜덤 쌍 100개의 거리 샘플링
+        var distances: [Float] = []
+        let sampleCount = min(100, vectors.count * (vectors.count - 1) / 2)
+
+        for _ in 0..<sampleCount {
+            let i = Int.random(in: 0..<vectors.count)
+            var j = Int.random(in: 0..<vectors.count)
+            while j == i { j = Int.random(in: 0..<vectors.count) }
+
+            guard let fpA = vectors[i].featurePrint,
+                  let fpB = vectors[j].featurePrint else { continue }
+            var dist: Float = 0
+            try? fpA.computeDistance(&dist, to: fpB)
+            distances.append(dist)
+        }
+
+        guard !distances.isEmpty else { return genre.similarityThreshold }
+        distances.sort()
+
+        // 장르별 퍼센타일로 threshold 결정
+        let percentile: Double
+        switch genre {
+        case .lookbook:  percentile = 0.25  // 하위 25% = 같은 옷 수준
+        case .sports:    percentile = 0.10  // 하위 10% = 매우 유사만
+        case .portrait:  percentile = 0.20
+        case .wedding:   percentile = 0.30
+        case .landscape: percentile = 0.35
+        case .event:     percentile = 0.25
+        case .general:   percentile = 0.20
+        }
+
+        let idx = Int(Double(distances.count) * percentile)
+        let threshold = distances[min(idx, distances.count - 1)]
+
+        fputs("[CULL] 거리 분포: min=\(String(format: "%.4f", distances.first!)), median=\(String(format: "%.4f", distances[distances.count/2])), max=\(String(format: "%.4f", distances.last!)), P\(Int(percentile*100))=\(String(format: "%.4f", threshold))\n", stderr)
+
+        return threshold
+    }
+
+    // MARK: - 2차 병합 (클러스터 대표 벡터끼리 비교)
+
+    private func mergeSimilarClusters(clusters: [PhotoCluster], vectors: [FeatureVector], mergeThreshold: Float) -> [PhotoCluster] {
+        guard clusters.count > 1 else { return clusters }
+        var merged = clusters
+        var changed = true
+
+        while changed {
+            changed = false
+            var i = 0
+            while i < merged.count {
+                var j = i + 1
+                while j < merged.count {
+                    // 각 클러스터의 첫 번째 사진 벡터로 대표
+                    guard let fpA = vectors.first(where: { $0.photoID == merged[i].photoIDs.first })?.featurePrint,
+                          let fpB = vectors.first(where: { $0.photoID == merged[j].photoIDs.first })?.featurePrint else {
+                        j += 1; continue
+                    }
+
+                    var distance: Float = 0
+                    try? fpA.computeDistance(&distance, to: fpB)
+
+                    if distance < mergeThreshold {
+                        // 병합
+                        merged[i].photoIDs.append(contentsOf: merged[j].photoIDs)
+                        merged[i].similarity = (merged[i].similarity + merged[j].similarity) / 2
+                        merged.remove(at: j)
+                        changed = true
+                    } else {
+                        j += 1
+                    }
+                }
+                i += 1
+            }
+        }
+
+        fputs("[CULL] 2차 병합: \(clusters.count) → \(merged.count) 클러스터\n", stderr)
+        return merged
+    }
+
+    // MARK: - A컷 추천 (품질 + 이슈 감점)
 
     private func findBestInCluster(photoIDs: [UUID], photos: [PhotoItem], vectors: [FeatureVector]) -> UUID? {
         var bestID: UUID?
         var bestScore: Double = -1
 
         for id in photoIDs {
-            if let vector = vectors.first(where: { $0.photoID == id }) {
-                if vector.qualityScore > bestScore {
-                    bestScore = vector.qualityScore
-                    bestID = id
-                }
+            guard let vector = vectors.first(where: { $0.photoID == id }) else { continue }
+
+            var score = vector.qualityScore
+
+            // 이슈 감점
+            if vector.isBlurry { score -= 50 }        // 흔들림 → 크게 감점
+            if vector.hasClosedEyes { score -= 40 }    // 눈감김 → 감점
+
+            if score > bestScore {
+                bestScore = score
+                bestID = id
             }
         }
         return bestID
     }
 
+    // MARK: - 눈감김 감지 (Vision)
+
+    private static func detectClosedEyes(cgImage: CGImage) -> Bool {
+        let request = VNDetectFaceLandmarksRequest()
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
+
+        guard let results = request.results else { return false }
+
+        for face in results {
+            guard let landmarks = face.landmarks else { continue }
+
+            // 눈 열림 비율 체크 (눈 높이 / 눈 폭)
+            if let leftEye = landmarks.leftEye, let rightEye = landmarks.rightEye {
+                let leftRatio = eyeOpenRatio(leftEye)
+                let rightRatio = eyeOpenRatio(rightEye)
+                // 양쪽 눈 모두 0.15 이하면 감김
+                if leftRatio < 0.15 && rightRatio < 0.15 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func eyeOpenRatio(_ eye: VNFaceLandmarkRegion2D) -> CGFloat {
+        guard eye.pointCount >= 6 else { return 1.0 }
+        let points = eye.normalizedPoints
+
+        // 눈의 상하 높이 vs 좌우 폭 비율
+        let minY = points.map(\.y).min() ?? 0
+        let maxY = points.map(\.y).max() ?? 0
+        let minX = points.map(\.x).min() ?? 0
+        let maxX = points.map(\.x).max() ?? 0
+
+        let width = maxX - minX
+        guard width > 0 else { return 1.0 }
+        return (maxY - minY) / width
+    }
+
     // MARK: - 결과 적용
 
-    private func applyResults(groups: [PhotoGroup], store: PhotoStore) {
+    private func applyResults(groups: [PhotoGroup], store: PhotoStore, vectors: [FeatureVector] = []) {
+        var rejectCount = 0
         for group in groups {
             for cluster in group.clusters {
                 // A컷 → 별점 5 + 녹색 라벨
@@ -391,15 +784,28 @@ class SmartCullService: ObservableObject {
                     store.photos[idx].colorLabel = .green
                 }
 
-                // 나머지 → 별점 3
                 for photoID in cluster.photoIDs where photoID != cluster.bestPhotoID {
-                    if let idx = store._photoIndex[photoID], idx < store.photos.count {
-                        if store.photos[idx].rating == 0 {
-                            store.photos[idx].rating = 3
+                    guard let idx = store._photoIndex[photoID], idx < store.photos.count else { continue }
+
+                    // 이슈 체크 (흔들림/눈감김 → 탈락)
+                    if let vec = vectors.first(where: { $0.photoID == photoID }) {
+                        if vec.isBlurry || vec.hasClosedEyes {
+                            store.photos[idx].rating = 1  // 탈락
+                            store.photos[idx].colorLabel = .orange
+                            rejectCount += 1
+                            continue
                         }
+                    }
+
+                    // 정상 사진 → 별점 3
+                    if store.photos[idx].rating == 0 {
+                        store.photos[idx].rating = 3
                     }
                 }
             }
+        }
+        if rejectCount > 0 {
+            fputs("[CULL] 이슈 탈락: \(rejectCount)장 (흔들림/눈감김)\n", stderr)
         }
     }
 

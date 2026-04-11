@@ -97,6 +97,24 @@ struct SmartCullView: View {
                     .disabled(store.photos.filter { $0.rating > 0 || $0.isSpacePicked }.isEmpty)
 
                     if !cullService.groups.isEmpty {
+                        Menu {
+                            Button(action: {
+                                cullService.sortIntoFolders(store: store, copy: true)
+                            }) {
+                                Label("폴더로 복사 분류", systemImage: "doc.on.doc")
+                            }
+                            Button(action: {
+                                cullService.sortIntoFolders(store: store, copy: false)
+                            }) {
+                                Label("폴더로 이동 분류", systemImage: "folder.badge.arrow.right")
+                            }
+                        } label: {
+                            Label("폴더로 분류", systemImage: "folder.badge.plus")
+                                .font(.system(size: 12))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 110)
+
                         Button("결과 초기화") {
                             cullService.groups = []
                         }

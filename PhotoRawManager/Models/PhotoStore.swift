@@ -877,7 +877,6 @@ class PhotoStore: ObservableObject {
         // 폴더/상위폴더는 선택 불가
         if let idx = _photoIndex[id], idx < photos.count {
             let photo = photos[idx]
-            if photo.isFolder || photo.isParentFolder { return }
             AppLogger.log(.selection, "selectPhoto: \(photo.fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
         }
         if shiftKey {
@@ -1030,6 +1029,11 @@ class PhotoStore: ObservableObject {
 
         AppLogger.log(.export, "Deleted \(deleted) files (\(failed) failed) to Trash")
 
+        // 삭제 효과음
+        if deleted > 0 {
+            NSSound(contentsOfFile: "/System/Library/Sounds/Funk.aiff", byReference: true)?.play()
+        }
+
         // Remove from list
         removePhotosFromList(ids: ids)
     }
@@ -1049,6 +1053,9 @@ class PhotoStore: ObservableObject {
             } catch {
                 fputs("[DELETE] 폴더 삭제 실패: \(error.localizedDescription)\n", stderr)
             }
+        }
+        if deleted > 0 {
+            NSSound(contentsOfFile: "/System/Library/Sounds/Funk.aiff", byReference: true)?.play()
         }
         if deleted > 0, let url = folderURL {
             loadFolder(url, restoreRatings: true)
