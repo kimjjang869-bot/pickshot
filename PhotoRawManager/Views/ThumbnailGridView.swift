@@ -372,7 +372,7 @@ struct LazyThumbnailWrapper: View {
             .overlay(
                 MultiFileDragView(photo: photo, store: store)
             )
-            .onDrop(of: [.text], delegate: PhotoReorderDropDelegate(
+            .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
                 photo: photo, store: store
             ))
             .onTapGesture { onTap() }
@@ -1785,19 +1785,21 @@ struct MultiFileDragView: NSViewRepresentable {
             }
             guard !fileURLs.isEmpty else { return }
 
-            // Create dragging items for each file
+            // Create dragging items — 파일 URL + photo ID (리오더용)
             var items: [NSDraggingItem] = []
-            for (i, url) in fileURLs.enumerated() {
-                let pbItem = NSPasteboardItem()
-                pbItem.setString(url.absoluteString, forType: .fileURL)
-                let dragItem = NSDraggingItem(pasteboardWriter: pbItem)
-                let offset = CGFloat(i * 3)
-                dragItem.setDraggingFrame(
-                    NSRect(x: offset, y: offset, width: 40, height: 40),
-                    contents: NSWorkspace.shared.icon(forFile: url.path)
-                )
-                items.append(dragItem)
+            let pbItem = NSPasteboardItem()
+            // 파일 URL (Finder 드롭용)
+            if let firstURL = fileURLs.first {
+                pbItem.setString(firstURL.absoluteString, forType: .fileURL)
             }
+            // Photo ID (그리드 내 리오더용)
+            pbItem.setString(photo.id.uuidString, forType: .string)
+            let dragItem = NSDraggingItem(pasteboardWriter: pbItem)
+            dragItem.setDraggingFrame(
+                NSRect(x: 0, y: 0, width: 40, height: 40),
+                contents: NSWorkspace.shared.icon(forFile: fileURLs.first?.path ?? "")
+            )
+            items.append(dragItem)
 
             beginDraggingSession(with: items, event: event, source: self)
         }
@@ -2275,8 +2277,8 @@ struct PhotoReorderDropDelegate: DropDelegate {
     let store: PhotoStore
 
     func performDrop(info: DropInfo) -> Bool {
-        guard let item = info.itemProviders(for: [.text]).first else { return false }
-        item.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+        guard let item = info.itemProviders(for: [.utf8PlainText]).first else { return false }
+        item.loadItem(forTypeIdentifier: "public.utf8-plain-text", options: nil) { data, _ in
             guard let data = data as? Data,
                   let idString = String(data: data, encoding: .utf8),
                   let sourceID = UUID(uuidString: idString) else { return }
