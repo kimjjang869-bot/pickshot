@@ -366,21 +366,12 @@ class ClientSelectService: ObservableObject {
 
         var thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
 
-        // RAW fallback: CGImageSource 실패 시 NSImage로
+        // RAW fallback: CGImageSource 실패 시 PreviewImageCache로 (CIRAWFilter 포함)
         if thumbnail == nil {
-            fputs("[CLIENT] CGImageSource 썸네일 실패 → NSImage fallback: \(sourceURL.lastPathComponent)\n", stderr)
-            if let nsImage = NSImage(contentsOf: sourceURL),
-               let tiff = nsImage.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiff) {
-                let scale = min(1200.0 / CGFloat(bitmap.pixelsWide), 1200.0 / CGFloat(bitmap.pixelsHigh), 1.0)
-                let newW = Int(CGFloat(bitmap.pixelsWide) * scale)
-                let newH = Int(CGFloat(bitmap.pixelsHigh) * scale)
-                if let ctx = CGContext(data: nil, width: newW, height: newH, bitsPerComponent: 8, bytesPerRow: 0,
-                                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
-                   let cgImg = bitmap.cgImage {
-                    ctx.draw(cgImg, in: CGRect(x: 0, y: 0, width: newW, height: newH))
-                    thumbnail = ctx.makeImage()
-                }
+            fputs("[CLIENT] CGImageSource 실패 → loadOptimized fallback: \(sourceURL.lastPathComponent)\n", stderr)
+            if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: 1200),
+               let cgImg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                thumbnail = cgImg
             }
         }
 
