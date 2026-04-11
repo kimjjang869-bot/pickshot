@@ -27,6 +27,7 @@ enum SortMode: String, CaseIterable {
     case sizeAsc = "파일 크기 (작은순)"
     case extensionSort = "확장자별"
     case cameraSort = "카메라별"
+    case customOrder = "사용자 정렬"
 
     var icon: String {
         switch self {
@@ -41,6 +42,7 @@ enum SortMode: String, CaseIterable {
         case .sizeAsc: return "arrow.up.doc"
         case .extensionSort: return "doc.text"
         case .cameraSort: return "camera"
+        case .customOrder: return "hand.draw"
         }
     }
 }
@@ -1173,6 +1175,9 @@ class PhotoStore: ObservableObject {
             return list.sorted { $0.jpgURL.pathExtension.lowercased() < $1.jpgURL.pathExtension.lowercased() }
         case .cameraSort:
             return list.sorted { ($0.exifData?.cameraModel ?? "zzz") < ($1.exifData?.cameraModel ?? "zzz") }
+        case .customOrder:
+            // 사용자 정렬 — customOrderMap 기반, 없으면 원래 순서 유지
+            return list.sorted { (customOrderMap[$0.id] ?? Int.max) < (customOrderMap[$1.id] ?? Int.max) }
         }
     }
 
@@ -1812,6 +1817,45 @@ class PhotoStore: ObservableObject {
     /// Number of columns in the current grid layout
     /// Matches LazyVGrid(.adaptive(minimum: size, maximum: size + 40), spacing: 8)
     /// Actual columns per row - updated from GeometryReader
+    // MARK: - 사용자 정렬 (드래그로 순서 변경)
+    var customOrderMap: [UUID: Int] = [:]
+
+    /// 사진 위치 이동 (드래그드롭)
+    func movePhoto(from sourceID: UUID, to targetID: UUID) {
+        let list = filteredPhotos
+        guard let fromIdx = list.firstIndex(where: { $0.id == sourceID }),
+              let toIdx = list.firstIndex(where: { $0.id == targetID }),
+              fromIdx != toIdx else { return }
+
+        // 커스텀 순서 맵 초기화 (처음이면)
+        if customOrderMap.isEmpty {
+            for (i, photo) in list.enumerated() {
+                customOrderMap[photo.id] = i
+            }
+        }
+
+        // from을 to 위치로 이동
+        let fromOrder = customOrderMap[sourceID] ?? fromIdx
+        let toOrder = customOrderMap[targetID] ?? toIdx
+
+        if fromOrder < toOrder {
+            for (id, order) in customOrderMap where order > fromOrder && order <= toOrder {
+                customOrderMap[id] = order - 1
+            }
+        } else {
+            for (id, order) in customOrderMap where order >= toOrder && order < fromOrder {
+                customOrderMap[id] = order + 1
+            }
+        }
+        customOrderMap[sourceID] = toOrder
+
+        // 사용자 정렬 모드로 전환
+        if sortMode != .customOrder {
+            sortMode = .customOrder
+        }
+        invalidateFilterCache()
+    }
+
     @Published var actualColumnsPerRow: Int = 4
 
     var columnsPerRow: Int {

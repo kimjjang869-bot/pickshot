@@ -372,6 +372,9 @@ struct LazyThumbnailWrapper: View {
             .overlay(
                 MultiFileDragView(photo: photo, store: store)
             )
+            .onDrop(of: [.text], delegate: PhotoReorderDropDelegate(
+                photo: photo, store: store
+            ))
             .onTapGesture { onTap() }
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
@@ -2265,3 +2268,27 @@ class TileLayer: CALayer {
         badgeLayer.isHidden = true
     }
 }
+
+// MARK: - 사진 순서 변경 드롭 (Bridge 스타일)
+struct PhotoReorderDropDelegate: DropDelegate {
+    let photo: PhotoItem
+    let store: PhotoStore
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let item = info.itemProviders(for: [.text]).first else { return false }
+        item.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+            guard let data = data as? Data,
+                  let idString = String(data: data, encoding: .utf8),
+                  let sourceID = UUID(uuidString: idString) else { return }
+            DispatchQueue.main.async {
+                store.movePhoto(from: sourceID, to: photo.id)
+            }
+        }
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+}
+
