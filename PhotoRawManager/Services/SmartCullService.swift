@@ -14,6 +14,66 @@ class SmartCullService: ObservableObject {
     @Published var groups: [PhotoGroup] = []
 
     var cancelled = false
+    @Published var genre: CullGenre = .general
+
+    // MARK: - 장르별 셀렉 설정
+    enum CullGenre: String, CaseIterable, Identifiable {
+        case general = "일반"
+        case wedding = "웨딩"
+        case sports = "스포츠"
+        case event = "행사/컨퍼런스"
+        case portrait = "인물"
+        case landscape = "풍경"
+
+        var id: String { rawValue }
+
+        /// 유사도 임계값 (낮을수록 엄격)
+        var similarityThreshold: Float {
+            switch self {
+            case .general: return 18.0
+            case .wedding: return 22.0     // 비슷한 포즈 많으므로 넓게
+            case .sports: return 12.0      // 순간 차이 중요 → 엄격
+            case .event: return 20.0
+            case .portrait: return 15.0    // 표정 차이 중요
+            case .landscape: return 25.0   // 구도 유사 많음
+            }
+        }
+
+        /// 품질 점수 가중치 (선명도 vs 구도)
+        var sharpnessWeight: Double {
+            switch self {
+            case .general: return 1.0
+            case .wedding: return 0.8      // 표정 > 선명도
+            case .sports: return 1.5       // 선명도 최우선
+            case .event: return 0.9
+            case .portrait: return 0.7     // 구도/표정 중심
+            case .landscape: return 1.2    // 선명도 중요
+            }
+        }
+
+        /// A컷 선택 비율 (상위 N%)
+        var keepRatio: Double {
+            switch self {
+            case .general: return 0.3      // 30%
+            case .wedding: return 0.25     // 25% (많이 촬영)
+            case .sports: return 0.15      // 15% (연사 많음)
+            case .event: return 0.35       // 35%
+            case .portrait: return 0.4     // 40%
+            case .landscape: return 0.5    // 50%
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .general: return "camera"
+            case .wedding: return "heart"
+            case .sports: return "figure.run"
+            case .event: return "person.3"
+            case .portrait: return "person"
+            case .landscape: return "mountain.2"
+            }
+        }
+    }
 
     // MARK: - 데이터 모델
 
@@ -75,7 +135,7 @@ class SmartCullService: ObservableObject {
                 guard !self.cancelled else { break }
                 let groupVectors = vectors.filter { v in group.contains(where: { $0.id == v.photoID }) }
                 fputs("[CULL] 그룹 \(groupIdx+1): 벡터 \(groupVectors.count)개\n", stderr)
-                let clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: 18.0)
+                let clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: self.genre.similarityThreshold)
 
                 let timeRange = group.compactMap({ $0.fileModDate }).sorted()
                 resultGroups.append(PhotoGroup(
@@ -168,7 +228,7 @@ class SmartCullService: ObservableObject {
             }
 
             var vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
-            vector.qualityScore = Self.quickQualityScore(cgImage: image)
+            vector.qualityScore = Self.quickQualityScore(cgImage: image) * self.genre.sharpnessWeight
 
             lock.lock()
             vectors.append(vector)

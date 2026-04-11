@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct PhotoRawManagerApp: App {
@@ -39,6 +40,22 @@ struct PhotoRawManagerApp: App {
                     updateService.checkForUpdate(userInitiated: true)
                 }
                 .disabled(updateService.isChecking)
+            }
+            CommandGroup(replacing: .newItem) {
+                Button("폴더 열기...") {
+                    store.openFolder()
+                }
+                .keyboardShortcut("o")
+
+                Button("ZIP 파일 열기...") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.zip]
+                    panel.message = "사진이 포함된 ZIP 파일을 선택하세요"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        store.openZipFile(url)
+                    }
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
             }
             CommandMenu("셀렉") {
                 Button("스마트 셀렉...") {

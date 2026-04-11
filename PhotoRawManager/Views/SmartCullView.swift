@@ -166,6 +166,34 @@ struct SmartCullView: View {
                 .foregroundColor(.secondary)
             }
 
+            // 장르 선택
+            VStack(spacing: 4) {
+                Text("촬영 장르")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    ForEach(SmartCullService.CullGenre.allCases) { g in
+                        Button(action: { cullService.genre = g }) {
+                            VStack(spacing: 2) {
+                                Image(systemName: g.icon)
+                                    .font(.system(size: 12))
+                                Text(g.rawValue)
+                                    .font(.system(size: 8))
+                            }
+                            .frame(width: 52, height: 36)
+                            .background(cullService.genre == g ? Color.purple.opacity(0.3) : Color.gray.opacity(0.1))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(cullService.genre == g ? Color.purple : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(cullService.genre == g ? .purple : .secondary)
+                    }
+                }
+            }
+
             Text("예상 소요: \(estimatedTime(photoCount))")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)

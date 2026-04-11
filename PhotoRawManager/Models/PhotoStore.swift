@@ -1666,6 +1666,49 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    // MARK: - ZIP 파일 열기
+
+    private var zipTempDir: URL?
+
+    func openZipFile(_ zipURL: URL) {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pickshot_zip_\(UUID().uuidString)")
+
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+            // unzip 명령어로 임시 폴더에 풀기
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            process.arguments = ["-o", "-q", zipURL.path, "-d", tempDir.path]
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                fputs("[ZIP] unzip 실패: \(zipURL.lastPathComponent)\n", stderr)
+                return
+            }
+
+            // 이전 임시 폴더 정리
+            cleanupZipTemp()
+
+            zipTempDir = tempDir
+            fputs("[ZIP] 열기: \(zipURL.lastPathComponent) → \(tempDir.path)\n", stderr)
+
+            // 임시 폴더를 폴더로 로딩
+            loadFolder(tempDir, restoreRatings: false)
+        } catch {
+            fputs("[ZIP] 오류: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    func cleanupZipTemp() {
+        if let dir = zipTempDir {
+            try? FileManager.default.removeItem(at: dir)
+            zipTempDir = nil
+        }
+    }
+
     func exifFor(_ id: UUID) -> ExifData? {
         guard let idx = _photoIndex[id], idx < photos.count else { return nil }
         return photos[idx].exifData
