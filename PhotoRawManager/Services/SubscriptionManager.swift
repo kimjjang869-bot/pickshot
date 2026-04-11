@@ -80,6 +80,62 @@ class SubscriptionManager: ObservableObject {
     @Published var currentTier: SubscriptionTier = .free
     @Published var products: [Product] = []
     @Published var purchasedProductIDs: Set<String> = []
+    @Published var isTrialExpired: Bool = false
+    @Published var trialDaysRemaining: Int = 21
+
+    // MARK: - 3주 트라이얼
+
+    private static let trialStartKey = "trialStartDate"
+    private static let trialDuration: TimeInterval = 21 * 24 * 60 * 60  // 21일
+
+    var trialStartDate: Date {
+        if let saved = UserDefaults.standard.object(forKey: Self.trialStartKey) as? Date {
+            return saved
+        }
+        // 처음 실행 → 지금부터 시작
+        let now = Date()
+        UserDefaults.standard.set(now, forKey: Self.trialStartKey)
+        return now
+    }
+
+    func checkTrialStatus() {
+        let elapsed = Date().timeIntervalSince(trialStartDate)
+        let remaining = Self.trialDuration - elapsed
+        trialDaysRemaining = max(0, Int(ceil(remaining / (24 * 60 * 60))))
+        isTrialExpired = remaining <= 0
+
+        // 구독자는 트라이얼 무시
+        if currentTier != .free {
+            isTrialExpired = false
+            trialDaysRemaining = 999
+        }
+    }
+
+    /// 트라이얼 만료 시 경고 표시 + 5초 후 종료
+    func enforceTrialIfExpired() {
+        checkTrialStatus()
+        guard isTrialExpired && currentTier == .free else { return }
+
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "체험 기간이 만료되었습니다"
+            alert.informativeText = "PickShot 3주 무료 체험이 종료되었습니다.\n계속 사용하려면 구독을 구매해주세요.\n\n5초 후 프로그램이 종료됩니다."
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "구매하기")
+            alert.addButton(withTitle: "종료")
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                // 구매 페이지 열기 (PaywallView)
+                // 5초 후 종료
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                    NSApplication.shared.terminate(nil)
+                }
+            } else {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
 
     var featureAccess: FeatureAccess {
         FeatureAccess(tier: currentTier)
@@ -96,6 +152,10 @@ class SubscriptionManager: ObservableObject {
         transactionListener = Task { await listenForTransactions() }
         Task { await checkCurrentEntitlements() }
         Task { await loadProducts() }
+        // 2초 후 트라이얼 체크 (구독 상태 확인 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.enforceTrialIfExpired()
+        }
     }
 
     deinit { transactionListener?.cancel() }
