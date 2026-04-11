@@ -49,6 +49,7 @@ struct BatchProcessService {
         case bottomLeft = "좌하"
         case bottomRight = "우하"
         case center = "중앙"
+        case diagonalFill = "사선 채우기"
     }
 
     // MARK: - Process
@@ -376,6 +377,29 @@ struct BatchProcessService {
         let x: CGFloat
         let y: CGFloat
 
+        if position == .diagonalFill {
+            // 사선 반복 채우기
+            let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = nsContext
+
+            let spacing = textSize.width * 1.8
+            let rowSpacing = textSize.height * 3.5
+            let angle: CGFloat = -30
+
+            for row in stride(from: -CGFloat(height), through: CGFloat(height) * 2, by: rowSpacing) {
+                for col in stride(from: -CGFloat(width), through: CGFloat(width) * 2, by: spacing) {
+                    context.saveGState()
+                    context.translateBy(x: col, y: row)
+                    context.rotate(by: angle * .pi / 180)
+                    attributedString.draw(at: .zero)
+                    context.restoreGState()
+                }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
+
         switch position {
         case .topLeft:
             x = margin
@@ -392,14 +416,15 @@ struct BatchProcessService {
         case .center:
             x = (CGFloat(width) - textSize.width) / 2
             y = (CGFloat(height) - textSize.height) / 2
+        case .diagonalFill:
+            x = 0; y = 0  // handled above
         }
 
-        // Use NSGraphicsContext to draw attributed string on CGContext
         let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsContext
 
-        // Draw shadow background
+        // Draw shadow
         let shadowAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.black.withAlphaComponent(opacity * 0.5)
@@ -407,7 +432,6 @@ struct BatchProcessService {
         let shadowString = NSAttributedString(string: text, attributes: shadowAttrs)
         shadowString.draw(at: NSPoint(x: x + 1, y: y - 1))
 
-        // Draw main text
         attributedString.draw(at: NSPoint(x: x, y: y))
 
         NSGraphicsContext.restoreGraphicsState()
@@ -449,6 +473,27 @@ struct BatchProcessService {
             x = CGFloat(width) - drawW - margin; y = margin
         case .center:
             x = (CGFloat(width) - drawW) / 2; y = (CGFloat(height) - drawH) / 2
+        case .diagonalFill:
+            // 사선 반복: 로고를 타일링
+            context.saveGState()
+            context.setAlpha(CGFloat(opacity))
+            let spacingX = drawW * 2.0
+            let spacingY = drawH * 2.5
+            var row = -CGFloat(height)
+            while row < CGFloat(height) * 2 {
+                var col = -CGFloat(width)
+                while col < CGFloat(width) * 2 {
+                    context.saveGState()
+                    context.translateBy(x: col, y: row)
+                    context.rotate(by: -30 * .pi / 180)
+                    context.draw(logoImage, in: CGRect(x: 0, y: 0, width: drawW, height: drawH))
+                    context.restoreGState()
+                    col += spacingX
+                }
+                row += spacingY
+            }
+            context.restoreGState()
+            return
         }
 
         context.saveGState()

@@ -185,80 +185,81 @@ struct BatchProcessView: View {
 
                     // Watermark section
                     sectionHeader("워터마크", icon: "textformat")
-                    TextField("워터마크 텍스트 (비우면 생략)", text: $watermarkText)
-                        .textFieldStyle(.roundedBorder)
 
-                    if !watermarkText.isEmpty {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("위치")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                                Picker("위치", selection: $watermarkPosition) {
-                                    ForEach(BatchProcessService.WatermarkPosition.allCases, id: \.self) { pos in
-                                        Text(pos.rawValue).tag(pos)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .frame(width: 80)
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("폰트 크기")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                                HStack {
-                                    Slider(value: $watermarkFontSize, in: 12...72, step: 1)
-                                        .frame(width: 120)
-                                    Text("\(Int(watermarkFontSize))pt")
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .frame(width: 36)
-                                }
-                            }
-                        }
-
-                        HStack {
-                            Text("불투명도:")
-                                .font(.system(size: 12))
-                            Slider(value: $watermarkOpacity, in: 0.1...1.0, step: 0.05)
-                            Text("\(Int(watermarkOpacity * 100))%")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .frame(width: 40)
-                        }
-                    }
-
-                    // 이미지 워터마크 (로고)
-                    HStack {
-                        Text("로고 이미지:")
-                            .font(.system(size: 12))
-                        if let url = watermarkImageURL {
-                            Text(url.lastPathComponent)
-                                .font(.system(size: 11))
+                    HStack(alignment: .top, spacing: 16) {
+                        // 왼쪽: 미리보기
+                        VStack(spacing: 4) {
+                            Text("미리보기")
+                                .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
-                                .lineLimit(1)
-                            Button("제거") { watermarkImageURL = nil }
-                                .font(.system(size: 10))
+                            WatermarkPreviewView(
+                                photo: store.filteredPhotos.first(where: { !$0.isFolder && !$0.isParentFolder }),
+                                text: watermarkText,
+                                imageURL: watermarkImageURL,
+                                position: watermarkPosition,
+                                opacity: watermarkOpacity,
+                                fontSize: watermarkFontSize,
+                                imageScale: watermarkImageScale
+                            )
+                            .frame(width: 240, height: 160)
+                            .background(Color.black)
+                            .cornerRadius(6)
                         }
-                        Spacer()
-                        Button("선택") {
-                            let panel = NSOpenPanel()
-                            panel.allowedContentTypes = [.png, .jpeg, .tiff]
-                            panel.message = "워터마크로 사용할 로고 이미지를 선택하세요"
-                            if panel.runModal() == .OK {
-                                watermarkImageURL = panel.url
-                            }
-                        }
-                        .font(.system(size: 11))
-                    }
 
-                    if watermarkImageURL != nil {
-                        HStack {
-                            Text("로고 크기:")
-                                .font(.system(size: 12))
-                            Slider(value: $watermarkImageScale, in: 0.05...0.4, step: 0.01)
-                            Text("\(Int(watermarkImageScale * 100))%")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .frame(width: 40)
+                        // 오른쪽: 설정
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("워터마크 텍스트", text: $watermarkText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11))
+
+                            // 로고
+                            HStack(spacing: 6) {
+                                if let url = watermarkImageURL {
+                                    Text(url.lastPathComponent)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                    Button("X") { watermarkImageURL = nil }
+                                        .font(.system(size: 9))
+                                }
+                                Spacer()
+                                Button("로고 선택") {
+                                    let panel = NSOpenPanel()
+                                    panel.allowedContentTypes = [.png, .jpeg, .tiff]
+                                    if panel.runModal() == .OK { watermarkImageURL = panel.url }
+                                }
+                                .font(.system(size: 10))
+                            }
+
+                            // 위치
+                            Picker("위치", selection: $watermarkPosition) {
+                                ForEach(BatchProcessService.WatermarkPosition.allCases, id: \.self) { pos in
+                                    Text(pos.rawValue).tag(pos)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            // 크기 + 투명도
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("크기 \(Int(watermarkFontSize))pt")
+                                        .font(.system(size: 9)).foregroundColor(.secondary)
+                                    Slider(value: $watermarkFontSize, in: 12...72, step: 1)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("투명도 \(Int(watermarkOpacity * 100))%")
+                                        .font(.system(size: 9)).foregroundColor(.secondary)
+                                    Slider(value: $watermarkOpacity, in: 0.1...1.0, step: 0.05)
+                                }
+                            }
+
+                            if watermarkImageURL != nil {
+                                HStack {
+                                    Text("로고 크기 \(Int(watermarkImageScale * 100))%")
+                                        .font(.system(size: 9)).foregroundColor(.secondary)
+                                    Slider(value: $watermarkImageScale, in: 0.05...0.4, step: 0.01)
+                                }
+                            }
                         }
                     }
 
