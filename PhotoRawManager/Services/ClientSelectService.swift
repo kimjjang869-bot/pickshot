@@ -458,8 +458,8 @@ class ClientSelectService: ObservableObject {
                     "filename": info["filename"] ?? "",
                     "originalFilename": info["originalFilename"] ?? "",
                     "driveFileId": fid,
-                    "thumbUrl": "https://drive.google.com/uc?export=view&id=\(fid)",
-                    "fullUrl": "https://drive.google.com/uc?export=view&id=\(fid)"
+                    "thumbUrl": "https://lh3.googleusercontent.com/d/\(fid)=s200",
+                    "fullUrl": "https://lh3.googleusercontent.com/d/\(fid)=s1200"
                 ]
             }
         ]
@@ -558,8 +558,8 @@ class ClientSelectService: ObservableObject {
                     "filename": info["filename"] ?? "",
                     "originalFilename": info["originalFilename"] ?? "",
                     "driveFileId": fileId,
-                    "thumbUrl": "https://drive.google.com/uc?export=view&id=\(fileId)",
-                    "fullUrl": "https://drive.google.com/uc?export=view&id=\(fileId)",
+                    "thumbUrl": "https://lh3.googleusercontent.com/d/\(fileId)=s200",
+                    "fullUrl": "https://lh3.googleusercontent.com/d/\(fileId)=s1200",
                     "selected": false,
                     "comments": [] as [Any],
                     "annotations": [] as [Any]
