@@ -150,6 +150,8 @@ struct FileCopyService {
         jpgFolderName: String = "JPG",
         rawFolderName: String = "RAW",
         duplicateHandling: DuplicateHandling = .overwrite,
+        exportJPG: Bool = true,
+        exportRAW: Bool = true,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
         let fileManager = FileManager.default
@@ -180,8 +182,9 @@ struct FileCopyService {
 
         var ops: [CopyOp] = []
 
-        // JPG copies (skip RAW-only)
+        // JPG copies (skip RAW-only, skip if exportJPG=false)
         for photo in photos {
+            if !exportJPG { break }
             if photo.isRawOnly { continue }
             var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
             var shouldSkip = false
@@ -198,8 +201,8 @@ struct FileCopyService {
             ops.append(CopyOp(source: photo.jpgURL, dest: destURL, type: .jpg, fileName: photo.fileName, skip: shouldSkip))
         }
 
-        // RAW copies
-        for photo in photos where photo.hasRAW {
+        // RAW copies (skip if exportRAW=false)
+        for photo in photos where photo.hasRAW && exportRAW {
             guard let rawURL = photo.rawURL else { continue }
             var destURL = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
             var shouldSkip = false

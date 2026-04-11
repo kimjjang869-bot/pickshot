@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import ImageIO
 import Vision
+import CoreLocation
 
 
 // MARK: - Analysis Options
@@ -118,8 +119,10 @@ class PhotoStore: ObservableObject {
     }
     @Published var selectedPhotoID: UUID? {
         didSet {
-            // 프리페치는 키 연타가 아닐 때만
-            if !isKeyRepeat { prefetchNearbyThumbnails() }
+            if !isKeyRepeat {
+                prefetchNearbyThumbnails()
+                if let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
+            }
         }
     }
     @Published var selectedPhotoIDs: Set<UUID> = []
@@ -1602,6 +1605,38 @@ class PhotoStore: ObservableObject {
     }
 
     /// Table 셀에서 최신 데이터 조회 (struct 복사 문제 우회)
+    // MARK: - 역지오코딩 (GPS → 장소명)
+
+    private var geocodeCache: [String: String] = [:]  // "lat,lon" → placeName
+    private let geocoder = CLGeocoder()
+
+    func reverseGeocodeIfNeeded(for photoID: UUID) {
+        guard let idx = _photoIndex[photoID], idx < photos.count else { return }
+        guard let exif = photos[idx].exifData,
+              let lat = exif.latitude, let lon = exif.longitude,
+              exif.placeName == nil else { return }
+
+        let key = String(format: "%.4f,%.4f", lat, lon)
+        if let cached = geocodeCache[key] {
+            photos[idx].exifData?.placeName = cached
+            return
+        }
+
+        let location = CLLocation(latitude: lat, longitude: lon)
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, error in
+            guard let self = self, let pm = placemarks?.first else { return }
+            let name = [pm.locality, pm.subLocality, pm.thoroughfare]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            let result = name.isEmpty ? (pm.country ?? "Unknown") : name
+            self.geocodeCache[key] = result
+            DispatchQueue.main.async {
+                guard let i = self._photoIndex[photoID], i < self.photos.count else { return }
+                self.photos[i].exifData?.placeName = result
+            }
+        }
+    }
+
     func exifFor(_ id: UUID) -> ExifData? {
         guard let idx = _photoIndex[id], idx < photos.count else { return nil }
         return photos[idx].exifData

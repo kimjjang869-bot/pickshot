@@ -28,6 +28,7 @@ struct ExifData {
     var afPoint: AFPoint?
     var latitude: Double?
     var longitude: Double?
+    var placeName: String?  // 역지오코딩 결과 (시/구/동)
 
     // Camera Picture Style / Creative Look / Film Simulation
     var pictureStyle: String?       // "Standard", "Portrait", "Vivid", "Classic Chrome" 등

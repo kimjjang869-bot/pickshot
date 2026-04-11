@@ -100,6 +100,7 @@
 		SMC10001 /* SmartCullService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10002 /* SmartCullService.swift */; };
 		SMC10003 /* SmartCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10004 /* SmartCullView.swift */; };
 		STL10001 /* StyleLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = STL10002 /* StyleLearner.swift */; };
+		ZEB10001 /* ZebraWarningOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = ZEB10002 /* ZebraWarningOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -195,6 +196,7 @@
 		SMC10002 /* SmartCullService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullService.swift; sourceTree = "<group>"; };
 		SMC10004 /* SmartCullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullView.swift; sourceTree = "<group>"; };
 		STL10002 /* StyleLearner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
+		ZEB10002 /* ZebraWarningOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZebraWarningOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -284,6 +286,7 @@
 				BP10004 /* BatchProcessView.swift */,
 				PS10004 /* PictureStylePreviewView.swift */,
 				SMC10004 /* SmartCullView.swift */,
+				ZEB10002 /* ZebraWarningOverlay.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -485,6 +488,7 @@
 				SMC10001 /* SmartCullService.swift in Sources */,
 				SMC10003 /* SmartCullView.swift in Sources */,
 				STL10001 /* StyleLearner.swift in Sources */,
+				ZEB10001 /* ZebraWarningOverlay.swift in Sources */,
 				CS10001 /* ClientSelectService.swift in Sources */,
 				CS10002 /* ClientSelectSetupView.swift in Sources */,
 			);

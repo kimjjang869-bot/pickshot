@@ -11,6 +11,8 @@ struct ExportView: View {
     @State private var isComplete = false
     @State private var jpgFolderName: String = "JPG"
     @State private var rawFolderName: String = "RAW"
+    @State private var exportJPG: Bool = true
+    @State private var exportRAW: Bool = true
 
     // 중복 처리 상태
     @State private var showDuplicateAlert = false
@@ -206,26 +208,44 @@ struct ExportView: View {
 
             // Folder name customization (only for folder export)
             if exportTarget == .folder {
-                HStack(spacing: 12) {
-                    HStack(spacing: 4) {
-                        Text("JPG 폴더명")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 65, alignment: .trailing)
-                        TextField("JPG", text: $jpgFolderName)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-                            .frame(width: 120)
+                HStack(spacing: 16) {
+                    Toggle(isOn: $exportJPG) {
+                        Text("JPG 내보내기")
+                            .font(.system(size: 12))
                     }
-                    HStack(spacing: 4) {
-                        Text("RAW 폴더명")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 65, alignment: .trailing)
-                        TextField("RAW", text: $rawFolderName)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-                            .frame(width: 120)
+                    .toggleStyle(.checkbox)
+
+                    Toggle(isOn: $exportRAW) {
+                        Text("RAW 내보내기")
+                            .font(.system(size: 12))
+                    }
+                    .toggleStyle(.checkbox)
+                }
+
+                HStack(spacing: 12) {
+                    if exportJPG {
+                        HStack(spacing: 4) {
+                            Text("JPG 폴더명")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 65, alignment: .trailing)
+                            TextField("JPG", text: $jpgFolderName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12, design: .monospaced))
+                                .frame(width: 120)
+                        }
+                    }
+                    if exportRAW {
+                        HStack(spacing: 4) {
+                            Text("RAW 폴더명")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 65, alignment: .trailing)
+                            TextField("RAW", text: $rawFolderName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12, design: .monospaced))
+                                .frame(width: 120)
+                        }
                     }
                 }
             }
@@ -535,6 +555,8 @@ struct ExportView: View {
         dismiss()
 
         let jpgName = jpgFolderName
+        let doJPG = exportJPG
+        let doRAW = exportRAW
         let rawName = rawFolderName
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -558,7 +580,9 @@ struct ExportView: View {
                     to: destURL,
                     jpgFolderName: jpgName,
                     rawFolderName: rawName,
-                    duplicateHandling: duplicateHandling
+                    duplicateHandling: duplicateHandling,
+                    exportJPG: doJPG,
+                    exportRAW: doRAW
                 ) { done, total in
                     DispatchQueue.main.async {
                         guard !store.bgExportCancelled else { return }

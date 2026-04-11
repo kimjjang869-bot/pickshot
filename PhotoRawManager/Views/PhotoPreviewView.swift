@@ -413,6 +413,8 @@ struct PhotoPreviewView: View {
     @State private var isCorrecting = false
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
+    @State private var showZebraWarning: Bool = false  // 과노출/저노출 얼룩말
+    @State private var hexInput: String = "333333"
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var rotatedImage: NSImage?  // Actual rotated pixel data
     @State private var showAIResult: Bool = false
@@ -572,15 +574,33 @@ struct PhotoPreviewView: View {
                                     }
                             )
 
+                        // 얼룩말 경고 오버레이
+                        if showZebraWarning, let img = self.image {
+                            ZebraWarningOverlay(image: img)
+                                .allowsHitTesting(false)
+                        }
+
                         // Overlays (fixed to view size, not image size)
                         VStack {
-                            // Top-right: Histogram (toggleable)
+                            // Top-right: Histogram + Zebra toggle
                             HStack {
                                 Spacer()
-                                if showHistogram {
-                                    HistogramOverlay(photo: photo)
-                                        .padding(8)
+                                VStack(spacing: 4) {
+                                    if showHistogram {
+                                        HistogramOverlay(photo: photo)
+                                    }
+                                    // 얼룩말 토글 버튼
+                                    Button(action: { showZebraWarning.toggle() }) {
+                                        Image(systemName: showZebraWarning ? "sun.max.trianglebadge.exclamationmark.fill" : "sun.max.trianglebadge.exclamationmark")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(showZebraWarning ? .yellow : .white.opacity(0.6))
+                                            .padding(6)
+                                            .background(Color.black.opacity(0.5))
+                                            .cornerRadius(6)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
+                                .padding(8)
                             }
                             Spacer()
                             // Bottom-left: Client comment (클라이언트 코멘트)
@@ -719,18 +739,43 @@ struct PhotoPreviewView: View {
                 self.image = croppedImage
             }
         }
-        .sheet(isPresented: $showColorPicker) {
-            VStack(spacing: 16) {
-                Text("커스텀 배경색").font(.headline)
-                ColorPicker("컬러 선택", selection: $customBgColor, supportsOpacity: false)
+        .popover(isPresented: $showColorPicker, arrowEdge: .leading) {
+            VStack(spacing: 12) {
+                Text("커스텀 배경색")
+                    .font(.system(size: 13, weight: .semibold))
+                ColorPicker("", selection: $customBgColor, supportsOpacity: false)
                     .labelsHidden()
-                    .frame(width: 200, height: 40)
+
+                // HEX 코드 입력
+                HStack(spacing: 8) {
+                    Text("#")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    TextField("FF0000", text: $hexInput)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(width: 80)
+                        .onSubmit {
+                            let clean = hexInput.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                            guard clean.count == 6, let val = UInt64(clean, radix: 16) else { return }
+                            let r = Double((val >> 16) & 0xFF) / 255.0
+                            let g = Double((val >> 8) & 0xFF) / 255.0
+                            let b = Double(val & 0xFF) / 255.0
+                            customBgColor = Color(nsColor: NSColor(red: r, green: g, blue: b, alpha: 1))
+                        }
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(customBgColor)
+                        .frame(width: 30, height: 24)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.4), lineWidth: 1))
+                }
+
                 HStack {
                     Button("취소") { showColorPicker = false }
                     Spacer()
                     Button("적용") {
-                        // NSColor → hex
-                        let ns = NSColor(customBgColor)
+                        // 안전한 RGB 변환 (색공간 변환 후 접근)
+                        let ns = NSColor(customBgColor).usingColorSpace(.sRGB) ?? NSColor.darkGray
                         let r = Int(ns.redComponent * 255)
                         let g = Int(ns.greenComponent * 255)
                         let b = Int(ns.blueComponent * 255)
@@ -741,8 +786,8 @@ struct PhotoPreviewView: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .padding(20)
-            .frame(width: 280, height: 160)
+            .padding(16)
+            .frame(width: 260)
         }
         .popover(isPresented: $showCorrectionPanel) {
             if store.selectionCount > 1 {
@@ -2091,6 +2136,15 @@ struct MetadataOverlayView: View {
                     if let lens = photo.exifData?.lensModel {
                         Text(lens)
                             .font(.system(size: 11, design: .monospaced))
+                    }
+                    if let place = photo.exifData?.placeName {
+                        HStack(spacing: 3) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.orange)
+                            Text(place)
+                                .font(.system(size: 10))
+                        }
                     }
                 }
                 .foregroundColor(.white)
