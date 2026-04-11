@@ -1849,11 +1849,14 @@ class PhotoStore: ObservableObject {
         }
         customOrderMap[sourceID] = toOrder
 
-        // 사용자 정렬 모드로 전환
+        // 사용자 정렬 모드로 전환 + 뷰 리프레시
         if sortMode != .customOrder {
             sortMode = .customOrder
         }
         invalidateFilterCache()
+        photosVersion += 1
+        objectWillChange.send()
+        fputs("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n", stderr)
     }
 
     @Published var actualColumnsPerRow: Int = 4
