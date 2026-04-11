@@ -438,7 +438,6 @@ struct PhotoPreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Image area
-            ZStack(alignment: .topTrailing) {
             GeometryReader { geo in
                 let vSize = geo.size
 
@@ -667,7 +666,6 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            } // ZStack 닫기
 
             Divider()
 
@@ -719,6 +717,25 @@ struct PhotoPreviewView: View {
                 .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help("오른쪽 90° 회전")
+
+                Divider().frame(height: 20).opacity(0.2)
+
+                // 얼룩말 + 포커스피킹
+                Button { showZebraWarning.toggle() } label: {
+                    Image(systemName: "sun.max.trianglebadge.exclamationmark")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(showZebraWarning ? .yellow : .secondary)
+                .help("과노출/저노출 경고")
+
+                Button { showFocusPeaking.toggle() } label: {
+                    Image(systemName: "scope")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(showFocusPeaking ? .red : .secondary)
+                .help("포커스 피킹")
 
                 Divider().frame(height: 20).opacity(0.2)
 

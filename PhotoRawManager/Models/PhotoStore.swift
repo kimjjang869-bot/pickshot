@@ -1031,7 +1031,7 @@ class PhotoStore: ObservableObject {
 
         // 삭제 효과음
         if deleted > 0 {
-            NSSound(contentsOfFile: "/System/Library/Sounds/Funk.aiff", byReference: true)?.play()
+            NSSound(contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif", byReference: true)?.play()
         }
 
         // Remove from list
@@ -1055,7 +1055,7 @@ class PhotoStore: ObservableObject {
             }
         }
         if deleted > 0 {
-            NSSound(contentsOfFile: "/System/Library/Sounds/Funk.aiff", byReference: true)?.play()
+            NSSound(contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif", byReference: true)?.play()
         }
         if deleted > 0, let url = folderURL {
             loadFolder(url, restoreRatings: true)
