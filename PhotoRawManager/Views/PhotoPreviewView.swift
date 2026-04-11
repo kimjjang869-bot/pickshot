@@ -1354,9 +1354,11 @@ struct PhotoPreviewView: View {
         // Cache key includes resolution
         let cacheKey = resolution > 0 ? url.appendingPathExtension("r\(resolution)") : url.appendingPathExtension("orig")
         if let cached = PreviewImageCache.shared.get(cacheKey) {
-            fputs("[LD] HIT \(fileName)\n", stderr)
+            fputs("[LD] HIT \(fileName) \(Int(cached.size.width))x\(Int(cached.size.height))\n", stderr)
             self.image = cached
-            return
+            self.lowResImage = cached
+            // 캐시 히트라도 해상도가 낮으면 고화질 계속 로딩
+            if cached.size.width > 1500 { return }
         }
 
         let t0 = CFAbsoluteTimeGetCurrent()

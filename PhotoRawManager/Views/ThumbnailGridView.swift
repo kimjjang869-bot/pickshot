@@ -61,6 +61,8 @@ struct ThumbnailGridView: View {
                                         let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
                                         guard !name.isEmpty else { return }
                                         try? FileManager.default.createDirectory(at: parentURL.appendingPathComponent(name), withIntermediateDirectories: true)
+                                        // 즉시 리로드
+                                        store.loadFolder(parentURL, restoreRatings: true)
                                     }
                                 }) {
                                     Label("새 폴더 만들기", systemImage: "folder.badge.plus")

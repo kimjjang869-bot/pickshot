@@ -137,9 +137,20 @@ class SmartCullService: ObservableObject {
             var vectors = self.extractFeatureVectors(photos: photoList)
             guard !self.cancelled else { self.finish(); return }
 
-            // Step 2: 시간 기반 그룹 분리
+            // Step 2: 시간 기반 그룹 분리 (장르별 간격)
             self.updateStatus("시간 기반 그룹 분리 중...")
-            let timeGroups = self.groupByTime(photos: photoList, gap: 300) // 5분 간격
+            let timeGap: TimeInterval
+            switch self.genre {
+            case .lookbook: timeGap = 90    // 옷 교체 ~100초
+            case .sports:   timeGap = 30    // 경기 장면 전환
+            case .wedding:  timeGap = 600   // 세레모니 간격 넓음
+            case .event:    timeGap = 300
+            case .portrait: timeGap = 120
+            case .landscape: timeGap = 600
+            case .general:  timeGap = 300
+            }
+            let timeGroups = self.groupByTime(photos: photoList, gap: timeGap)
+            fputs("[CULL] 시간 그룹: \(timeGroups.count)개 (간격 \(Int(timeGap))초)\n", stderr)
 
             // Step 3: 각 그룹 내 유사도 클러스터링
             self.updateStatus("유사 사진 클러스터링 중...")
