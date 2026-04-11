@@ -79,8 +79,8 @@ class PreviewImageCache {
 
         // Listen for memory pressure → auto-clear cache
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [weak self] in
-            self?.clearCache()
+        source.setEventHandler { [self] in
+            self.clearCache()
         }
         source.resume()
         memoryPressureSource = source
@@ -204,9 +204,9 @@ class PreviewImageCache {
             let maxPx: CGFloat = resolution > 0 ? CGFloat(resolution) : screenPx
             let key = url.appendingPathExtension("r\(Int(maxPx))")
             if has(key) { continue }
-            Self.prefetchQueue.addOperation { [weak self] in
+            Self.prefetchQueue.addOperation { [self] in
                 autoreleasepool {
-                    guard let self = self, !self.has(key) else { return }
+                    guard !self.has(key) else { return }
                     let img = Self.loadOptimized(url: url, maxPixel: maxPx)
                     if let img = img { self.set(key, image: img) }
                 }
@@ -840,8 +840,8 @@ struct PhotoPreviewView: View {
                 viewState.scrollMonitor = nil
             }
             viewState.scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .otherMouseDown]) { [self] event in
-                // Verify monitor is still active (guard against stale callbacks)
-                guard self.viewState.scrollMonitor != nil else { return event }
+                // Verify monitor is still active
+                guard viewState.scrollMonitor != nil else { return event }
                 guard let window = event.window,
                       window.isKeyWindow else { return event }
 

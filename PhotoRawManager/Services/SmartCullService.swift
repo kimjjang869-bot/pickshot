@@ -13,7 +13,12 @@ class SmartCullService: ObservableObject {
     @Published var statusMessage = ""
     @Published var groups: [PhotoGroup] = []
 
-    var cancelled = false
+    private var _cancelled = false
+    private let cancelLock = NSLock()
+    var cancelled: Bool {
+        get { cancelLock.lock(); defer { cancelLock.unlock() }; return _cancelled }
+        set { cancelLock.lock(); _cancelled = newValue; cancelLock.unlock() }
+    }
     @Published var genre: CullGenre = .general
 
     // MARK: - 장르별 셀렉 설정

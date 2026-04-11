@@ -1601,7 +1601,7 @@ class PhotoStore: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 self?.invalidateFilterCache()
                 self?.photosVersion += 1
-                self?.objectWillChange.send()
+                // @Published가 자동 알림 → objectWillChange 중복 제거
             }
         }
     }
@@ -1609,7 +1609,7 @@ class PhotoStore: ObservableObject {
     /// Table 셀에서 최신 데이터 조회 (struct 복사 문제 우회)
     // MARK: - 역지오코딩 (GPS → 장소명)
 
-    private var geocodeCache: [String: String] = [:]  // "lat,lon" → placeName
+    private var geocodeCache: [String: String] = [:]  // "lat,lon" → placeName (max 500)
     private let geocoder = CLGeocoder()
 
     func reverseGeocodeIfNeeded(for photoID: UUID) {
@@ -1631,6 +1631,7 @@ class PhotoStore: ObservableObject {
                 .compactMap { $0 }
                 .joined(separator: " ")
             let result = name.isEmpty ? (pm.country ?? "Unknown") : name
+            if self.geocodeCache.count > 500 { self.geocodeCache.removeAll() }
             self.geocodeCache[key] = result
             DispatchQueue.main.async {
                 guard let i = self._photoIndex[photoID], i < self.photos.count else { return }
@@ -1748,7 +1749,6 @@ class PhotoStore: ObservableObject {
                 let work = DispatchWorkItem { [weak self] in
                     self?.invalidateFilterCache()
                     self?.photosVersion += 1
-                    self?.objectWillChange.send()
                 }
                 self.exifBatchWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
@@ -3006,7 +3006,9 @@ class PhotoStore: ObservableObject {
         // 연속 구분자 정리 (빈 값으로 인한 __, --, .. 등)
         for sep in ["__", "--", "..", "_.","._","-_","_-",".-","-."] {
             while result.contains(sep) {
-                result = result.replacingOccurrences(of: sep, with: String(sep.first!))
+                if let firstChar = sep.first {
+                    result = result.replacingOccurrences(of: sep, with: String(firstChar))
+                }
             }
         }
         // 선행/후행 구분자 제거
