@@ -30,7 +30,22 @@ struct FolderItem: Identifiable {
             }
         }
         dirs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        return dirs.map { FolderItem(url: $0, name: $0.lastPathComponent) }
+        return dirs.map { dirURL in
+            // 하위 폴더 존재 여부 미리 체크 (빠른 디렉토리 스캔)
+            let hasSub = Self.checkHasSubfolders(dirURL)
+            return FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: hasSub)
+        }
+    }
+
+    static func checkHasSubfolders(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return false }
+        for item in items {
+            if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                return true
+            }
+        }
+        return false
     }
 
     static func hasImages(in url: URL) -> Bool {
@@ -1041,14 +1056,14 @@ struct FolderRowView: View {
                     let systemPaths = ["/Volumes", "/System", "/Library", "/usr", "/private"]
                     let isSystem = systemPaths.contains(item.url.path) || item.url.path == "/"
 
-                    // Expand tree immediately
+                    // 트리 펼치기
                     if item.hasSubfolders && !item.isExpanded { toggleExpand() }
 
-                    // Load folder (slight delay to let tree animation complete)
+                    // 폴더 로딩 (트리 펼치기와 분리하여 약간의 딜레이)
                     if !isSystem {
                         store.startupMode = .viewer
                         let targetURL = item.url
-                        DispatchQueue.main.async {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             store.loadFolder(targetURL, restoreRatings: true)
                         }
                     }
@@ -1179,13 +1194,23 @@ struct FolderRowView: View {
 
             .onAppear { }
 
-            // Children
-            if item.isExpanded, let children = item.children {
-                ForEach(children.indices, id: \.self) { i in
+            // Children — 안전한 인덱스 바인딩
+            if item.isExpanded, let children = item.children, !children.isEmpty {
+                let safeChildren = children  // 캡처하여 반복 중 변경 방지
+                ForEach(Array(safeChildren.enumerated()), id: \.element.id) { i, child in
                     FolderRowView(
                         item: Binding(
-                            get: { guard let children = item.children, i < children.count else { return FolderItem(url: URL(fileURLWithPath: "/"), name: "?") }; return children[i] },
-                            set: { newValue in guard var children = item.children, i < children.count else { return }; children[i] = newValue; item.children = children }
+                            get: {
+                                guard let ch = item.children, i < ch.count else {
+                                    return FolderItem(url: URL(fileURLWithPath: "/tmp"), name: "")
+                                }
+                                return ch[i]
+                            },
+                            set: { newValue in
+                                guard var ch = item.children, i < ch.count else { return }
+                                ch[i] = newValue
+                                item.children = ch
+                            }
                         ),
                         store: store,
                         level: level + 1,

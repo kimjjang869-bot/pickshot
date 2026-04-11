@@ -18,8 +18,10 @@ class FolderWatcherService {
     var debounceInterval: TimeInterval = 1.5
 
     /// Called on the main queue when new files are detected.
-    /// The Set contains URLs of newly added files.
     var onNewFilesDetected: ((Set<URL>) -> Void)?
+
+    /// Called on the main queue when folder structure changes (new/deleted subfolder).
+    var onFolderStructureChanged: (() -> Void)?
 
     /// Start watching the given folder URL for changes.
     /// Captures the current file list as baseline.
@@ -28,6 +30,7 @@ class FolderWatcherService {
 
         watchedURL = folder
         knownFiles = currentFileNames(in: folder)
+        knownSubfolders = currentSubfolderNames(in: folder)
 
         let fd = open(folder.path, O_EVTONLY)
         guard fd >= 0 else {
@@ -98,8 +101,27 @@ class FolderWatcherService {
     private func checkForNewFiles() {
         guard let folder = watchedURL else { return }
 
+        // 폴더 구조 변경 감지 (새 폴더 생성/삭제)
+        let currentFolders = currentSubfolderNames(in: folder)
+        if currentFolders != knownSubfolders {
+            knownSubfolders = currentFolders
+            DispatchQueue.main.async { [weak self] in
+                self?.onFolderStructureChanged?()
+            }
+        }
+
         let currentFiles = currentFileNames(in: folder)
         let newFileNames = currentFiles.subtracting(knownFiles)
+
+        // 파일 삭제 감지도 처리
+        let deletedFiles = knownFiles.subtracting(currentFiles)
+        if !deletedFiles.isEmpty {
+            knownFiles = currentFiles
+            DispatchQueue.main.async { [weak self] in
+                self?.onFolderStructureChanged?()
+            }
+            if newFileNames.isEmpty { return }
+        }
 
         guard !newFileNames.isEmpty else { return }
 
@@ -144,24 +166,37 @@ class FolderWatcherService {
         }
     }
 
+    private var knownSubfolders: Set<String> = []
+
     private func currentFileNames(in folder: URL) -> Set<String> {
         let fm = FileManager.default
         var names = Set<String>()
 
-        guard let enumerator = fm.enumerator(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-        ) else {
+        guard let items = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: [.skipsHiddenFiles]) else {
             return names
         }
 
-        while let fileURL = enumerator.nextObject() as? URL {
-            guard let rv = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
-                  rv.isRegularFile == true else { continue }
-            names.insert(fileURL.lastPathComponent)
+        for item in items {
+            if let rv = try? item.resourceValues(forKeys: [.isRegularFileKey]),
+               rv.isRegularFile == true {
+                names.insert(item.lastPathComponent)
+            }
         }
 
         return names
+    }
+
+    private func currentSubfolderNames(in folder: URL) -> Set<String> {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return []
+        }
+        var dirs = Set<String>()
+        for item in items {
+            if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                dirs.insert(item.lastPathComponent)
+            }
+        }
+        return dirs
     }
 }

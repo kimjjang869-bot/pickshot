@@ -1,23 +1,14 @@
 import SwiftUI
 
-// MARK: - Rename Component Types
+// MARK: - Rename Types
 
 enum RenameComponent: String, CaseIterable, Identifiable {
     case text = "텍스트"
-    case sequence = "파일 번호"
+    case sequence = "시퀀스 번호"
     case date = "촬영 날짜"
     case original = "원본 파일명"
-
+    case camera = "카메라 모델"
     var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .text: return "textformat"
-        case .sequence: return "number"
-        case .date: return "calendar"
-        case .original: return "doc"
-        }
-    }
 }
 
 enum DateFormatOption: String, CaseIterable, Identifiable {
@@ -25,7 +16,6 @@ enum DateFormatOption: String, CaseIterable, Identifiable {
     case dashSeparated = "YYYY-MM-DD"
     case yymmdd = "YYMMDD"
     case dotSeparated = "YYYY.MM.DD"
-
     var id: String { rawValue }
 
     var dateFormat: String {
@@ -36,7 +26,6 @@ enum DateFormatOption: String, CaseIterable, Identifiable {
         case .dotSeparated: return "yyyy.MM.dd"
         }
     }
-
     var example: String {
         switch self {
         case .yyyymmdd: return "20260322"
@@ -52,9 +41,7 @@ enum SeparatorOption: String, CaseIterable, Identifiable {
     case dash = "-"
     case dot = "."
     case none = ""
-
     var id: String { rawValue + "sep" }
-
     var displayName: String {
         switch self {
         case .underscore: return "_ (언더스코어)"
@@ -68,16 +55,7 @@ enum SeparatorOption: String, CaseIterable, Identifiable {
 enum RenameTarget: String, CaseIterable, Identifiable {
     case selected = "선택한 사진만"
     case all = "전체 사진"
-
     var id: String { rawValue }
-}
-
-struct RenamePreset: Identifiable {
-    let id = UUID()
-    let name: String
-    let components: [RenameComponent]
-    let separator: SeparatorOption
-    let example: String
 }
 
 struct RenameComponentItem: Identifiable {
@@ -86,42 +64,37 @@ struct RenameComponentItem: Identifiable {
     var textValue: String = ""
 }
 
-// MARK: - BatchRenameView
+// MARK: - BatchRenameView (Capture One 스타일)
 
 struct BatchRenameView: View {
     @EnvironmentObject var store: PhotoStore
     @Environment(\.dismiss) var dismiss
 
     @State private var components: [RenameComponentItem] = [
-        RenameComponentItem(type: .text, textValue: ""),
-        RenameComponentItem(type: .sequence)
+        RenameComponentItem(type: .sequence),
+        RenameComponentItem(type: .text, textValue: "")
     ]
     @State private var separator: SeparatorOption = .underscore
     @State private var dateFormat: DateFormatOption = .yyyymmdd
     @State private var seqStart: Int = 1
-    @State private var seqDigits: Int = 3
+    @State private var seqDigits: Int = 4
     @State private var target: RenameTarget = .selected
+    @State private var preserveRatings = true
     @State private var isRenaming = false
     @State private var resultMessage: String?
     @State private var resultIsError = false
-
-    private let presets: [RenamePreset] = [
-        RenamePreset(name: "텍스트 + 번호", components: [.text, .sequence], separator: .underscore, example: "행사_001"),
-        RenamePreset(name: "날짜 + 텍스트 + 번호", components: [.date, .text, .sequence], separator: .underscore, example: "20260322_행사_001"),
-        RenamePreset(name: "날짜 + 번호", components: [.date, .sequence], separator: .underscore, example: "20260322_001"),
-        RenamePreset(name: "원본 + 번호", components: [.original, .sequence], separator: .dash, example: "IMG_0001-001"),
-        RenamePreset(name: "텍스트 + 날짜 + 번호", components: [.text, .date, .sequence], separator: .underscore, example: "촬영_20260322_001"),
-    ]
+    @State private var canUndo = false
 
     private var targetPhotos: [PhotoItem] {
+        let photos = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
         switch target {
         case .selected:
             if store.selectedPhotoIDs.count > 1 {
-                return store.filteredPhotos.filter { store.selectedPhotoIDs.contains($0.id) }
+                return photos.filter { store.selectedPhotoIDs.contains($0.id) }
             }
-            return store.filteredPhotos
+            return photos
         case .all:
-            return store.filteredPhotos
+            return photos
         }
     }
 
@@ -132,429 +105,521 @@ struct BatchRenameView: View {
             case .sequence: return "{seq}"
             case .date: return "{date}"
             case .original: return "{original}"
+            case .camera: return "{camera}"
             }
-        }
+        }.filter { !$0.isEmpty }
         return parts.joined(separator: separator.rawValue)
     }
 
     private var previewItems: [(original: String, renamed: String)] {
-        let photos = Array(targetPhotos.prefix(4))
-        return photos.enumerated().map { (index, photo) in
+        Array(targetPhotos.prefix(5)).enumerated().map { (index, photo) in
             let newName = PhotoStore.previewRename(
-                photo: photo,
-                pattern: builtPattern,
-                index: index,
-                dateFormat: dateFormat.dateFormat,
-                seqDigits: seqDigits,
-                seqStart: seqStart
+                photo: photo, pattern: builtPattern, index: index,
+                dateFormat: dateFormat.dateFormat, seqDigits: seqDigits, seqStart: seqStart
             )
             let ext = photo.jpgURL.pathExtension
-            return (original: photo.fileName + "." + ext, renamed: newName + "." + ext)
+            return (photo.fileNameWithExtension, newName + "." + ext)
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            headerSection
-            Divider()
-            contentSection
-            Divider()
-            previewSection
-            if let msg = resultMessage {
-                resultSection(msg)
+            // 타이틀 바
+            HStack {
+                Text("일괄 이름 바꾸기")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    presetSection
+                    nameBuilderSection
+                    optionsSection
+                    previewSection
+                }
+                .padding(16)
+            }
+
             Divider()
             footerSection
         }
-        .frame(minWidth: 750, idealWidth: 850, minHeight: 600, idealHeight: 700)
+        .frame(width: 620, height: 580)
         .onAppear { target = store.selectedPhotoIDs.count > 1 ? .selected : .all }
     }
 
-    // MARK: - Header
-    private var headerSection: some View {
-        HStack {
-            Image(systemName: "pencil.and.list.clipboard")
-                    .font(.system(size: 14))
-                    .foregroundColor(.blue)
-                Text("파일 이름 변경")
-                    .font(.system(size: 14, weight: .bold))
-                Spacer()
+    // MARK: - 사전 설정
 
-                // Target + count
+    private var presetSection: some View {
+        GroupBox(label: sectionLabel("사전 설정")) {
+            HStack(spacing: 8) {
+                Menu {
+                    Button("텍스트 + 번호") { applyPreset([.text, .sequence], .underscore) }
+                    Button("번호 + 텍스트") { applyPreset([.sequence, .text], .underscore) }
+                    Divider()
+                    Button("날짜 + 번호") { applyPreset([.date, .sequence], .underscore) }
+                    Button("날짜 + 텍스트 + 번호") { applyPreset([.date, .text, .sequence], .underscore) }
+                    Divider()
+                    Button("원본 + 번호") { applyPreset([.original, .sequence], .dash) }
+                } label: {
+                    HStack {
+                        Text("프리셋 선택")
+                            .font(.system(size: 11))
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(5)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(maxWidth: .infinity)
+
+                // 대상 선택
                 Picker("", selection: $target) {
                     ForEach(RenameTarget.allCases) { t in
                         Text(t.rawValue).tag(t)
                     }
                 }
-                .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 180)
+                .frame(width: 200)
 
                 Text("\(targetPhotos.count)장")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(.blue)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                     .background(Color.blue.opacity(0.1))
                     .cornerRadius(4)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+        }
     }
 
-    // MARK: - Content
-    private var contentSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Preset + Component builder side by side
-                HStack(alignment: .top, spacing: 12) {
-                    // Left: Component builder
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("이름 구성")
-                                .font(.system(size: 11, weight: .bold))
-                            Spacer()
+    // MARK: - 새 파일 이름
 
-                            // Preset dropdown
-                            Menu {
-                                ForEach(presets) { preset in
-                                    Button(action: { applyPreset(preset) }) {
-                                        Text("\(preset.name)  →  \(preset.example)")
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.system(size: 9))
-                                    Text("프리셋")
-                                        .font(.system(size: 10))
-                                }
-                                .foregroundColor(.blue)
-                            }
-                            .menuStyle(.borderlessButton)
-                            .frame(width: 70)
+    @State private var draggingCompID: UUID?
+    @State private var dropInsertIndex: Int?
+
+    private var nameBuilderSection: some View {
+        GroupBox(label: sectionLabel("새 파일 이름")) {
+            VStack(spacing: 0) {
+                ForEach(Array(components.enumerated()), id: \.element.id) { idx, comp in
+                    VStack(spacing: 0) {
+                        // 드롭 인디케이터 (행 위)
+                        if dropInsertIndex == idx {
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(height: 3)
+                                .cornerRadius(1.5)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
                         }
 
-                        List {
-                            ForEach(components) { comp in
-                                RenameComponentRow(
-                                    comp: comp,
-                                    components: $components,
-                                    dateFormat: dateFormat,
-                                    seqDigits: seqDigits,
-                                    seqStart: seqStart
-                                )
+                        componentRow(comp: comp, index: idx)
+                            .opacity(draggingCompID == comp.id ? 0.3 : 1.0)
+                            .onDrag {
+                                draggingCompID = comp.id
+                                return NSItemProvider(object: comp.id.uuidString as NSString)
                             }
-                            .onMove { from, to in
-                                components.move(fromOffsets: from, toOffset: to)
-                            }
-                        }
-                        .listStyle(.plain)
-                        .frame(height: CGFloat(min(components.count, 5)) * 42 + 4)
-
-                        // Add component
-                        if components.count < 5 {
-                            Menu {
-                                ForEach(RenameComponent.allCases) { type in
-                                    Button { components.append(RenameComponentItem(type: type)) } label: {
-                                        Label(type.rawValue, systemImage: type.icon)
-                                    }
-                                }
-                            } label: {
-                                Label("추가", systemImage: "plus.circle")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.blue)
-                            }
-                            .menuStyle(.borderlessButton)
-                        }
+                            .onDrop(of: [.utf8PlainText], delegate: CompReorderDropDelegate(
+                                targetID: comp.id, components: $components,
+                                draggingID: $draggingCompID, dropInsertIndex: $dropInsertIndex
+                            ))
                     }
-
-                    Divider()
-
-                    // Right: Options
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("옵션")
-                            .font(.system(size: 11, weight: .bold))
-
-                        // Separator
-                        HStack(spacing: 4) {
-                            Text("구분자")
-                                .font(.system(size: 10))
-                                .frame(width: 45, alignment: .leading)
-                            Picker("", selection: $separator) {
-                                ForEach(SeparatorOption.allCases) { opt in
-                                    Text(opt.displayName).tag(opt)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 120)
-                        }
-
-                        // Date format
-                        if components.contains(where: { $0.type == .date }) {
-                            HStack(spacing: 4) {
-                                Text("날짜")
-                                    .font(.system(size: 10))
-                                    .frame(width: 45, alignment: .leading)
-                                Picker("", selection: $dateFormat) {
-                                    ForEach(DateFormatOption.allCases) { opt in
-                                        Text(opt.rawValue).tag(opt)
-                                    }
-                                }
-                                .labelsHidden()
-                                .frame(width: 120)
-                            }
-                        }
-
-                        // Sequence options
-                        if components.contains(where: { $0.type == .sequence }) {
-                            HStack(spacing: 4) {
-                                Text("시작")
-                                    .font(.system(size: 10))
-                                    .frame(width: 45, alignment: .leading)
-                                TextField("", value: $seqStart, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 45)
-                                    .font(.system(size: 10, design: .monospaced))
-
-                                Text("자릿수")
-                                    .font(.system(size: 10))
-                                Picker("", selection: $seqDigits) {
-                                    Text("01").tag(2)
-                                    Text("001").tag(3)
-                                    Text("0001").tag(4)
-                                }
-                                .labelsHidden()
-                                .frame(width: 65)
-                            }
-                        }
-                    }
-                    .frame(width: 190)
+                }
+                // 마지막 행 아래 드롭 인디케이터
+                if dropInsertIndex == components.count {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 3)
+                        .cornerRadius(1.5)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
                 }
 
-            }
-            .padding(14)
-    }
-
-    // MARK: - Preview
-    private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("미리보기")
-                            .font(.system(size: 11, weight: .bold))
-                        Spacer()
-                        Text(builtPattern)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-
-                    if previewItems.isEmpty {
-                        Text("미리보기할 사진이 없습니다")
+                HStack {
+                    // 구분자
+                    HStack(spacing: 6) {
+                        Text("구분자")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
-                            .padding(6)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(previewItems.enumerated()), id: \.offset) { _, item in
-                                HStack(spacing: 0) {
-                                    Text(item.original)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.white.opacity(0.4))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-
-                                    Image(systemName: "arrow.right")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundColor(.blue)
-                                        .frame(width: 24)
-
-                                    Text(item.renamed)
-                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.blue)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                            }
-
-                            if targetPhotos.count > 4 {
-                                Text("... 외 \(targetPhotos.count - 4)개")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .padding(4)
+                        Picker("", selection: $separator) {
+                            ForEach(SeparatorOption.allCases) { opt in
+                                Text(opt.displayName).tag(opt)
                             }
                         }
-                        .background(Color.black.opacity(0.15))
-                        .cornerRadius(6)
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+
+                    Spacer()
+
+                    // 추가 버튼
+                    if components.count < 5 {
+                        Menu {
+                            ForEach(RenameComponent.allCases) { type in
+                                Button(type.rawValue) {
+                                    components.append(RenameComponentItem(type: type))
+                                }
+                            }
+                        } label: {
+                            Label("추가", systemImage: "plus")
+                                .font(.system(size: 10))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 60)
                     }
                 }
-            .padding(14)
-    }
-
-    // MARK: - Result
-    private func resultSection(_ msg: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: resultIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundColor(resultIsError ? .red : .green)
-            Text(msg)
-                .font(.system(size: 10))
-                .foregroundColor(resultIsError ? .red : .green)
-        }
-        .padding(6)
-        .background((resultIsError ? Color.red : Color.green).opacity(0.1))
-        .cornerRadius(5)
-        .padding(.horizontal, 14)
-    }
-
-    // MARK: - Footer
-    private var footerSection: some View {
-        HStack {
-                Button("취소") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Text("⚠️ 되돌릴 수 없음")
-                    .font(.system(size: 9))
-                    .foregroundColor(.orange)
-                Spacer()
-                Button(action: performRename) {
-                    HStack(spacing: 3) {
-                        if isRenaming { ProgressView().scaleEffect(0.5) }
-                        Text("이름 변경 (\(targetPhotos.count)장)")
-                            .font(.system(size: 12))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .disabled(builtPattern.trimmingCharacters(in: .whitespaces).isEmpty || isRenaming)
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(12)
-    }
-
-    // MARK: - Helpers
-
-    private func componentDescription(_ type: RenameComponent) -> String {
-        switch type {
-        case .text: return ""
-        case .sequence: return "\(String(repeating: "0", count: seqDigits - 1))\(seqStart)~"
-        case .date: return dateFormat.example
-        case .original: return "원본 유지"
-        }
-    }
-
-    private func moveComponent(_ index: Int, by offset: Int) {
-        let newIndex = index + offset
-        guard newIndex >= 0 && newIndex < components.count else { return }
-        components.swapAt(index, newIndex)
-    }
-
-    private func applyPreset(_ preset: RenamePreset) {
-        components = preset.components.map { type in
-            RenameComponentItem(type: type)
-        }
-        separator = preset.separator
-    }
-
-    private func performRename() {
-        isRenaming = true
-        resultMessage = nil
-        let pat = builtPattern
-        let df = dateFormat.dateFormat
-        let digits = seqDigits
-        let start = seqStart
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = store.batchRename(pattern: pat, dateFormat: df, seqDigits: digits, seqStart: start)
-            DispatchQueue.main.async {
-                isRenaming = false
-                if result.errors.isEmpty {
-                    resultMessage = "✅ \(result.success)개 파일 이름 변경 완료"
-                    resultIsError = false
-                } else {
-                    resultMessage = "성공: \(result.success)개, 실패: \(result.errors.count)개"
-                    resultIsError = true
-                }
+                .padding(.top, 4)
             }
         }
     }
-}
 
-// MARK: - Rename Component Row (Draggable)
-
-struct RenameComponentRow: View {
-    let comp: RenameComponentItem
-    @Binding var components: [RenameComponentItem]
-    let dateFormat: DateFormatOption
-    let seqDigits: Int
-    let seqStart: Int
-
-    private var index: Int {
-        components.firstIndex(where: { $0.id == comp.id }) ?? 0
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            // Drag handle
+    private func componentRow(comp: RenameComponentItem, index: Int) -> some View {
+        HStack(spacing: 6) {
+            // 드래그 핸들
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.4))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary.opacity(0.5))
+                .frame(width: 14)
 
-            // Type picker
+            // 타입 선택
             Picker("", selection: Binding(
                 get: { comp.type },
                 set: { newType in
-                    let i = index
-                    components[i].type = newType
-                    if newType != .text { components[i].textValue = "" }
+                    components[index].type = newType
+                    if newType != .text { components[index].textValue = "" }
                 }
             )) {
                 ForEach(RenameComponent.allCases) { type in
-                    Label(type.rawValue, systemImage: type.icon).tag(type)
+                    Text(type.rawValue).tag(type)
                 }
             }
             .labelsHidden()
-            .frame(width: 110)
+            .frame(width: 120)
 
-            // Value
-            if comp.type == .text {
+            // 값 입력
+            switch comp.type {
+            case .text:
                 TextField("텍스트 입력", text: Binding(
                     get: { comp.textValue },
                     set: { components[index].textValue = $0 }
                 ))
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11, design: .monospaced))
-            } else if comp.type == .sequence {
-                Text(String(format: "%0\(seqDigits)d~", seqStart))
+
+            case .sequence:
+                HStack(spacing: 6) {
+                    TextField("", value: Binding(
+                        get: { seqStart },
+                        set: { seqStart = $0 }
+                    ), format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if comp.type == .date {
-                Text(dateFormat.example)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text("원본 유지")
-                    .font(.system(size: 11))
+
+                    Picker("", selection: $seqDigits) {
+                        Text("2자리").tag(2)
+                        Text("3자리").tag(3)
+                        Text("4자리").tag(4)
+                    }
+                    .labelsHidden()
+                    .frame(width: 80)
+
+                    Spacer()
+                }
+
+            case .date:
+                HStack(spacing: 6) {
+                    Picker("", selection: $dateFormat) {
+                        ForEach(DateFormatOption.allCases) { opt in
+                            Text(opt.example).tag(opt)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                    Spacer()
+                }
+
+            case .original, .camera:
+                Text(comp.type == .original ? "원본 파일명 유지" : "카메라 모델명")
+                    .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Remove
-            if components.count > 1 {
-                Button(action: {
-                    let i = index
-                    withAnimation { _ = components.remove(at: i) }
-                }) {
-                    Image(systemName: "minus.circle.fill")
-                        .foregroundColor(.red.opacity(0.6))
-                        .font(.system(size: 14))
+            // 삭제 / 추가 버튼
+            Button(action: {
+                if components.count > 1 {
+                    withAnimation { components.remove(at: index) }
                 }
-                .buttonStyle(.plain)
+            }) {
+                Image(systemName: "minus")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 20, height: 20)
+                    .background(Color.secondary.opacity(0.15))
+                    .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .disabled(components.count <= 1)
+
+            Button(action: {
+                if components.count < 5 {
+                    components.insert(RenameComponentItem(type: .text), at: index + 1)
+                }
+            }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 20, height: 20)
+                    .background(Color.secondary.opacity(0.15))
+                    .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .disabled(components.count >= 5)
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+        .cornerRadius(5)
+    }
+
+    // MARK: - 옵션
+
+    private var optionsSection: some View {
+        GroupBox(label: sectionLabel("옵션")) {
+            HStack(spacing: 16) {
+                Toggle(isOn: $preserveRatings) {
+                    Text("레이팅/컬러라벨 보존")
+                        .font(.system(size: 11))
+                }
+                .toggleStyle(.checkbox)
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Text("호환성")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Text("Mac")
+                        .font(.system(size: 10))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.15))
+                        .cornerRadius(3)
+                }
             }
         }
-        .padding(.vertical, 2)
+    }
+
+    // MARK: - 미리 보기
+
+    private var previewSection: some View {
+        GroupBox(label: sectionLabel("미리 보기")) {
+            VStack(spacing: 0) {
+                if previewItems.isEmpty {
+                    Text("미리보기할 사진이 없습니다")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(8)
+                } else {
+                    ForEach(Array(previewItems.enumerated()), id: \.offset) { _, item in
+                        HStack(spacing: 0) {
+                            Text(item.original)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(1)
+
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.blue)
+                                .frame(width: 28)
+
+                            Text(item.renamed)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        if item.original != previewItems.last?.original {
+                            Divider().padding(.horizontal, 8)
+                        }
+                    }
+
+                    if targetPhotos.count > 5 {
+                        Text("... 외 \(targetPhotos.count - 5)개")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 11))
+                        Text("\(targetPhotos.count)개 파일 이름 변경 예정")
+                            .font(.system(size: 11))
+                        Spacer()
+                    }
+                    .padding(6)
+                }
+            }
+        }
+    }
+
+    // MARK: - 결과 + 하단
+
+    private var footerSection: some View {
+        HStack {
+            Button(action: performRename) {
+                HStack(spacing: 4) {
+                    if isRenaming { ProgressView().scaleEffect(0.5) }
+                    Text("이름 바꾸기")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            .disabled(builtPattern.trimmingCharacters(in: .whitespaces).isEmpty || isRenaming)
+            .keyboardShortcut(.defaultAction)
+
+            if canUndo {
+                Button(action: performUndo) {
+                    Label("되돌리기", systemImage: "arrow.uturn.backward")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Spacer()
+
+            if let msg = resultMessage {
+                HStack(spacing: 4) {
+                    Image(systemName: resultIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(resultIsError ? .orange : .green)
+                    Text(msg)
+                        .font(.system(size: 10))
+                }
+            }
+
+            Spacer()
+
+            Button("닫기") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Actions
+
+    private func applyPreset(_ types: [RenameComponent], _ sep: SeparatorOption) {
+        components = types.map { RenameComponentItem(type: $0) }
+        separator = sep
+    }
+
+    private func performRename() {
+        isRenaming = true
+        resultMessage = nil
+        canUndo = false
+
+        let pat = builtPattern
+        let df = dateFormat.dateFormat
+        let digits = seqDigits
+        let start = seqStart
+        let preserve = preserveRatings
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = store.batchRename(
+                pattern: pat, dateFormat: df,
+                seqDigits: digits, seqStart: start,
+                preserveRatings: preserve
+            )
+            DispatchQueue.main.async {
+                isRenaming = false
+                if result.errors.isEmpty {
+                    resultMessage = "\(result.success)개 파일 변경 완료"
+                    resultIsError = false
+                    canUndo = !store.lastRenameMap.isEmpty
+                } else {
+                    resultMessage = "성공 \(result.success), 실패 \(result.errors.count)"
+                    resultIsError = true
+                    canUndo = !store.lastRenameMap.isEmpty
+                }
+            }
+        }
+    }
+
+    private func performUndo() {
+        isRenaming = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let success = store.undoBatchRename()
+            DispatchQueue.main.async {
+                isRenaming = false
+                canUndo = false
+                resultMessage = success ? "되돌리기 완료" : "되돌리기 실패"
+                resultIsError = !success
+            }
+        }
+    }
+
+    // MARK: - Helper
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.secondary)
+    }
+}
+
+// MARK: - 컴포넌트 순서 변경 DropDelegate
+
+struct CompReorderDropDelegate: DropDelegate {
+    let targetID: UUID
+    @Binding var components: [RenameComponentItem]
+    @Binding var draggingID: UUID?
+    @Binding var dropInsertIndex: Int?
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let dragID = draggingID else { dropInsertIndex = nil; return false }
+        guard let fromIdx = components.firstIndex(where: { $0.id == dragID }),
+              let toIdx = components.firstIndex(where: { $0.id == targetID }),
+              fromIdx != toIdx else {
+            draggingID = nil
+            dropInsertIndex = nil
+            return true
+        }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            components.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
+        }
+        draggingID = nil
+        dropInsertIndex = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragID = draggingID, dragID != targetID else { return }
+        guard let fromIdx = components.firstIndex(where: { $0.id == dragID }),
+              let toIdx = components.firstIndex(where: { $0.id == targetID }) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            dropInsertIndex = toIdx > fromIdx ? toIdx + 1 : toIdx
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        dropInsertIndex = nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }

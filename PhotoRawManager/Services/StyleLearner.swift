@@ -24,14 +24,12 @@ class StyleLearner: ObservableObject {
         loadProfile()
     }
 
-    // MARK: - 학습 (현재 폴더에서 사용자 셀렉 분석)
+    // MARK: - 학습
 
-    /// 사용자가 셀렉한 사진 vs 안 한 사진 비교 → 스타일 학습
     func learnFromSelection(selected: [PhotoItem], rejected: [PhotoItem]) {
         guard !selected.isEmpty else { return }
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            // 선택된 사진 특징 벡터
             let selVectors = selected.compactMap { Self.extractFeatureVector(url: $0.jpgURL) }
             let rejVectors = rejected.prefix(selected.count * 2).compactMap { Self.extractFeatureVector(url: $0.jpgURL) }
 
@@ -46,27 +44,8 @@ class StyleLearner: ObservableObject {
         }
     }
 
-    // MARK: - 추천 (학습된 스타일로 점수 매기기)
+    // MARK: - 추천 (배치)
 
-    /// 사진의 스타일 점수 (0~100) — 학습 데이터가 많을수록 정확
-    func styleScore(for photo: PhotoItem) -> Double {
-        guard !selectedVectors.isEmpty else { return 50 } // 학습 안 됐으면 중립
-
-        guard let vector = Self.extractFeatureVector(url: photo.jpgURL) else { return 50 }
-
-        // 선호 벡터들과의 평균 코사인 유사도
-        let selSimilarity = selectedVectors.map { cosineSimilarity(vector, $0) }.reduce(0, +) / Double(selectedVectors.count)
-
-        // 비선호 벡터들과의 평균 유사도
-        let rejSimilarity = rejectedVectors.isEmpty ? 0 :
-            rejectedVectors.map { cosineSimilarity(vector, $0) }.reduce(0, +) / Double(rejectedVectors.count)
-
-        // 선호에 가까울수록 높은 점수
-        let score = (selSimilarity - rejSimilarity + 1) / 2 * 100
-        return max(0, min(100, score))
-    }
-
-    /// 배치 스타일 점수
     func batchStyleScores(photos: [PhotoItem], completion: @escaping ([UUID: Double]) -> Void) {
         guard !selectedVectors.isEmpty else {
             completion([:])
@@ -75,16 +54,70 @@ class StyleLearner: ObservableObject {
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
-            var scores: [UUID: Double] = [:]
+
+            // 1. 모든 사진의 벡터 추출
+            var photoVectors: [(UUID, [Float])] = []
             for photo in photos {
-                guard let vector = Self.extractFeatureVector(url: photo.jpgURL) else { continue }
-                let selSim = self.selectedVectors.map { self.cosineSimilarity(vector, $0) }.reduce(0, +) / Double(self.selectedVectors.count)
-                let rejSim = self.rejectedVectors.isEmpty ? 0 :
-                    self.rejectedVectors.map { self.cosineSimilarity(vector, $0) }.reduce(0, +) / Double(self.rejectedVectors.count)
-                scores[photo.id] = max(0, min(100, (selSim - rejSim + 1) / 2 * 100))
+                if let vector = Self.extractFeatureVector(url: photo.jpgURL) {
+                    photoVectors.append((photo.id, vector))
+                }
             }
-            DispatchQueue.main.async { completion(scores) }
+
+            guard !photoVectors.isEmpty else {
+                DispatchQueue.main.async { completion([:]) }
+                return
+            }
+
+            // 2. 각 사진의 raw 점수 계산
+            var rawScores: [UUID: Double] = [:]
+            for (id, vector) in photoVectors {
+                let score = self.rawStyleScore(vector: vector)
+                rawScores[id] = score
+            }
+
+            // 3. 상대 점수 정규화 (min-max → 0~100)
+            let allScores = rawScores.values
+            let minScore = allScores.min() ?? 0
+            let maxScore = allScores.max() ?? 1
+            let range = maxScore - minScore
+
+            var normalizedScores: [UUID: Double] = [:]
+            if range > 0.001 {
+                for (id, score) in rawScores {
+                    // min-max 정규화 → 20~95 범위로 매핑
+                    let normalized = ((score - minScore) / range) * 75 + 20
+                    normalizedScores[id] = normalized
+                }
+            } else {
+                // 모든 점수가 동일 → 전부 50
+                for (id, _) in rawScores {
+                    normalizedScores[id] = 50
+                }
+            }
+
+            fputs("[STYLE] 점수 범위: raw \(String(format: "%.4f", minScore))~\(String(format: "%.4f", maxScore)), 정규화 20~95\n", stderr)
+
+            DispatchQueue.main.async { completion(normalizedScores) }
         }
+    }
+
+    /// 단일 사진 raw 점수 (정규화 전)
+    private func rawStyleScore(vector: [Float]) -> Double {
+        // Top-K 유사도 (가장 가까운 벡터 3개 평균) — 평균보다 민감
+        let k = min(3, selectedVectors.count)
+        let selSims = selectedVectors.map { cosineSimilarity(vector, $0) }.sorted(by: >)
+        let topSelSim = selSims.prefix(k).reduce(0, +) / Double(k)
+
+        if rejectedVectors.isEmpty {
+            return topSelSim
+        }
+
+        let rejK = min(3, rejectedVectors.count)
+        let rejSims = rejectedVectors.map { cosineSimilarity(vector, $0) }.sorted(by: >)
+        let topRejSim = rejSims.prefix(rejK).reduce(0, +) / Double(rejK)
+
+        // 선호 유사도 - 비선호 유사도 (차이를 증폭)
+        return topSelSim - topRejSim * 0.8
     }
 
     // MARK: - 프로필 저장/로드
@@ -113,7 +146,6 @@ class StyleLearner: ObservableObject {
         sessionCount = dict["sessionCount"] as? Int ?? 0
     }
 
-    /// 프로필 초기화
     func resetProfile() {
         selectedVectors = []
         rejectedVectors = []
@@ -127,20 +159,29 @@ class StyleLearner: ObservableObject {
     // MARK: - VNFeaturePrint 추출
 
     private static func extractFeatureVector(url: URL) -> [Float]? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceThumbnailMaxPixelSize: 400,
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true
-              ] as CFDictionary) else { return nil }
+        let cgImage: CGImage?
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceThumbnailMaxPixelSize: 400,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true
+           ] as CFDictionary) {
+            cgImage = thumb
+        } else if let nsImage = NSImage(contentsOf: url),
+                  let img = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            cgImage = img
+        } else {
+            return nil
+        }
+
+        guard let image = cgImage else { return nil }
 
         let request = VNGenerateImageFeaturePrintRequest()
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try? handler.perform([request])
 
         guard let result = request.results?.first as? VNFeaturePrintObservation else { return nil }
 
-        // VNFeaturePrint → Float 배열
         let data = result.data
         let count = data.count / MemoryLayout<Float>.stride
         var floats = [Float](repeating: 0, count: count)

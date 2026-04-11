@@ -13,9 +13,11 @@ struct BatchProcessService {
         var quality: Double = 0.92    // JPEG quality
         var format: OutputFormat = .jpeg
         var watermarkText: String = ""
+        var watermarkImageURL: URL? = nil   // 이미지 워터마크 (로고)
         var watermarkPosition: WatermarkPosition = .bottomRight
         var watermarkOpacity: Double = 0.5
         var watermarkFontSize: CGFloat = 24
+        var watermarkImageScale: Double = 0.15  // 이미지 워터마크 크기 (원본 대비 비율)
     }
 
     enum OutputFormat: String, CaseIterable {
@@ -126,7 +128,8 @@ struct BatchProcessService {
 
         // Draw watermark if needed (requires CGContext)
         let resultImage: CGImage
-        if !options.watermarkText.isEmpty {
+        let needsWatermark = !options.watermarkText.isEmpty || options.watermarkImageURL != nil
+        if needsWatermark {
             let colorSpace = resizedImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
             let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
             guard let context = CGContext(
@@ -142,15 +145,29 @@ struct BatchProcessService {
             context.interpolationQuality = .high
             context.draw(resizedImage, in: CGRect(x: 0, y: 0, width: resizedImage.width, height: resizedImage.height))
 
-            drawWatermark(
-                context: context,
-                width: resizedImage.width,
-                height: resizedImage.height,
-                text: options.watermarkText,
-                position: options.watermarkPosition,
-                opacity: options.watermarkOpacity,
-                fontSize: options.watermarkFontSize
-            )
+            if !options.watermarkText.isEmpty {
+                drawWatermark(
+                    context: context,
+                    width: resizedImage.width,
+                    height: resizedImage.height,
+                    text: options.watermarkText,
+                    position: options.watermarkPosition,
+                    opacity: options.watermarkOpacity,
+                    fontSize: options.watermarkFontSize
+                )
+            }
+
+            if let logoURL = options.watermarkImageURL {
+                drawImageWatermark(
+                    context: context,
+                    width: resizedImage.width,
+                    height: resizedImage.height,
+                    imageURL: logoURL,
+                    position: options.watermarkPosition,
+                    opacity: options.watermarkOpacity,
+                    scale: options.watermarkImageScale
+                )
+            }
 
             guard let watermarked = context.makeImage() else { return false }
             resultImage = watermarked
@@ -218,7 +235,8 @@ struct BatchProcessService {
 
         // If watermark needed, draw it on a 16-bit context
         let finalImage: CGImage
-        if !options.watermarkText.isEmpty {
+        let needsWM2 = !options.watermarkText.isEmpty || options.watermarkImageURL != nil
+        if needsWM2 {
             let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Big.rawValue)
             guard let context = CGContext(
                 data: nil,
@@ -233,15 +251,28 @@ struct BatchProcessService {
             context.interpolationQuality = .high
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetW, height: targetH))
 
-            drawWatermark(
-                context: context,
-                width: targetW,
-                height: targetH,
-                text: options.watermarkText,
-                position: options.watermarkPosition,
-                opacity: options.watermarkOpacity,
-                fontSize: options.watermarkFontSize
-            )
+            if !options.watermarkText.isEmpty {
+                drawWatermark(
+                    context: context,
+                    width: targetW,
+                    height: targetH,
+                    text: options.watermarkText,
+                    position: options.watermarkPosition,
+                    opacity: options.watermarkOpacity,
+                    fontSize: options.watermarkFontSize
+                )
+            }
+            if let logoURL = options.watermarkImageURL {
+                drawImageWatermark(
+                    context: context,
+                    width: targetW,
+                    height: targetH,
+                    imageURL: logoURL,
+                    position: options.watermarkPosition,
+                    opacity: options.watermarkOpacity,
+                    scale: options.watermarkImageScale
+                )
+            }
 
             guard let result = context.makeImage() else { return false }
             finalImage = result
@@ -380,6 +411,50 @@ struct BatchProcessService {
         attributedString.draw(at: NSPoint(x: x, y: y))
 
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// 이미지 워터마크 (로고)
+    private static func drawImageWatermark(
+        context: CGContext,
+        width: Int, height: Int,
+        imageURL: URL,
+        position: WatermarkPosition,
+        opacity: Double,
+        scale: Double
+    ) {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let logoImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
+
+        // 로고 크기 계산 (원본 장변 대비 비율)
+        let longEdge = CGFloat(max(width, height))
+        let logoMaxSize = longEdge * CGFloat(scale)
+        let logoW = CGFloat(logoImage.width)
+        let logoH = CGFloat(logoImage.height)
+        let ratio = min(logoMaxSize / logoW, logoMaxSize / logoH)
+        let drawW = logoW * ratio
+        let drawH = logoH * ratio
+        let margin: CGFloat = longEdge * 0.02
+
+        let x: CGFloat
+        let y: CGFloat
+
+        switch position {
+        case .topLeft:
+            x = margin; y = CGFloat(height) - margin - drawH
+        case .topRight:
+            x = CGFloat(width) - drawW - margin; y = CGFloat(height) - margin - drawH
+        case .bottomLeft:
+            x = margin; y = margin
+        case .bottomRight:
+            x = CGFloat(width) - drawW - margin; y = margin
+        case .center:
+            x = (CGFloat(width) - drawW) / 2; y = (CGFloat(height) - drawH) / 2
+        }
+
+        context.saveGState()
+        context.setAlpha(CGFloat(opacity))
+        context.draw(logoImage, in: CGRect(x: x, y: y, width: drawW, height: drawH))
+        context.restoreGState()
     }
 
     private static func saveImage(_ image: CGImage, to url: URL, format: OutputFormat, quality: Double) -> Bool {

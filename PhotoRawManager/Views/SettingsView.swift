@@ -69,6 +69,7 @@ struct GeneralSettingsTab: View {
     @AppStorage("autoOpenLastFolder") private var autoOpenLastFolder = true
     @AppStorage("showFileTypeBadge") private var showFileTypeBadge = true
     @AppStorage("showFileExtension") private var showFileExtension = true
+    @AppStorage("showFolderPreview") private var showFolderPreview = true
     @AppStorage("deleteOriginalFile") private var deleteOriginalFile = false
     @AppStorage("windowStartSize") private var windowStartSize = "default"
     @AppStorage("appLanguage") private var appLanguage = "ko"

@@ -74,7 +74,8 @@ class SmartCullService: ObservableObject {
             for (groupIdx, group) in timeGroups.enumerated() {
                 guard !self.cancelled else { break }
                 let groupVectors = vectors.filter { v in group.contains(where: { $0.id == v.photoID }) }
-                let clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: 0.5)
+                fputs("[CULL] 그룹 \(groupIdx+1): 벡터 \(groupVectors.count)개\n", stderr)
+                let clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: 18.0)
 
                 let timeRange = group.compactMap({ $0.fileModDate }).sorted()
                 resultGroups.append(PhotoGroup(
@@ -105,12 +106,17 @@ class SmartCullService: ObservableObject {
             self.updateProgress(0.9)
 
             // Step 5: 결과 적용
+            let totalClusters = resultGroups.flatMap(\.clusters).count
+            let totalPhotosInClusters = resultGroups.flatMap(\.clusters).flatMap(\.photoIDs).count
+            let aCuts = resultGroups.flatMap(\.clusters).compactMap(\.bestPhotoID).count
+            fputs("[CULL] 최종 결과: \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, \(totalPhotosInClusters)장, A컷 \(aCuts)개\n", stderr)
+
             self.updateStatus("결과 적용 중...")
             DispatchQueue.main.async {
                 self.groups = resultGroups
                 self.applyResults(groups: resultGroups, store: store)
                 self.updateProgress(1.0)
-                self.statusMessage = "완료! \(resultGroups.count)개 그룹, \(resultGroups.flatMap(\.clusters).count)개 클러스터"
+                self.statusMessage = "완료! \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, A컷 \(aCuts)개"
                 self.isProcessing = false
             }
         }
@@ -126,44 +132,90 @@ class SmartCullService: ObservableObject {
         var vectors: [FeatureVector] = []
         let lock = NSLock()
         let total = photos.count
+        var failCount = 0
+
+        fputs("[CULL] 특징 벡터 추출 시작: \(total)장\n", stderr)
 
         DispatchQueue.concurrentPerform(iterations: total) { index in
             guard !cancelled else { return }
             let photo = photos[index]
 
-            // 800px 축소 이미지로 FeaturePrint (속도 + 메모리)
-            guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil),
-                  let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceThumbnailMaxPixelSize: 800,
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true
-                  ] as CFDictionary) else { return }
+            // CGImage 로딩 (JPG → RAW 순서 시도)
+            let cgImage: CGImage? = Self.loadCGImage(from: photo, maxSize: 800)
+
+            guard let image = cgImage else {
+                lock.lock()
+                failCount += 1
+                lock.unlock()
+                if failCount <= 3 {
+                    fputs("[CULL] 이미지 로딩 실패: \(photo.jpgURL.lastPathComponent)\n", stderr)
+                }
+                return
+            }
 
             let request = VNGenerateImageFeaturePrintRequest()
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                fputs("[CULL] FeaturePrint 추출 실패: \(error.localizedDescription)\n", stderr)
+                return
+            }
 
-            guard let result = request.results?.first as? VNFeaturePrintObservation else { return }
+            guard let result = request.results?.first as? VNFeaturePrintObservation else {
+                fputs("[CULL] FeaturePrint 결과 없음: \(photo.jpgURL.lastPathComponent)\n", stderr)
+                return
+            }
 
             var vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
-
-            // 품질 점수 (간단 버전 — Laplacian sharpness)
-            vector.qualityScore = Self.quickQualityScore(cgImage: cgImage)
+            vector.qualityScore = Self.quickQualityScore(cgImage: image)
 
             lock.lock()
             vectors.append(vector)
             lock.unlock()
 
-            // 진행률
             let done = vectors.count
-            if done % 10 == 0 {
+            if done % 10 == 0 || done == 1 {
                 self.updateProgress(Double(done) / Double(total) * 0.5)
                 self.updateStatus("특징 벡터 추출 중... (\(done)/\(total))")
             }
         }
 
+        fputs("[CULL] 특징 벡터 추출 완료: \(vectors.count)/\(total)장 성공, \(failCount)장 실패\n", stderr)
         return vectors
+    }
+
+    /// CGImage 로딩 — JPG 우선, RAW fallback
+    private static func loadCGImage(from photo: PhotoItem, maxSize: Int) -> CGImage? {
+        // 1차: jpgURL 시도
+        if let img = createThumbnail(url: photo.jpgURL, maxSize: maxSize) {
+            return img
+        }
+
+        // 2차: RAW URL이 있으면 시도
+        if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+            if let img = createThumbnail(url: rawURL, maxSize: maxSize) {
+                return img
+            }
+        }
+
+        // 3차: NSImage fallback (모든 macOS 지원 포맷)
+        if let nsImage = NSImage(contentsOf: photo.jpgURL),
+           let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return cgImage
+        }
+
+        return nil
+    }
+
+    private static func createThumbnail(url: URL, maxSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceThumbnailMaxPixelSize: maxSize,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
     }
 
     // MARK: - 시간 기반 그룹 분리
@@ -194,10 +246,20 @@ class SmartCullService: ObservableObject {
     // MARK: - 유사도 클러스터링
 
     private func clusterBySimilarity(vectors: [FeatureVector], threshold: Float) -> [PhotoCluster] {
-        guard !vectors.isEmpty else { return [] }
+        guard !vectors.isEmpty else {
+            fputs("[CULL] 클러스터링: 벡터 0개 → 빈 결과\n", stderr)
+            return []
+        }
 
         var assigned = Set<UUID>()
         var clusters: [PhotoCluster] = []
+
+        // 디버그: 처음 몇 쌍의 거리 출력
+        if vectors.count >= 2, let fp1 = vectors[0].featurePrint, let fp2 = vectors[1].featurePrint {
+            var sampleDist: Float = 0
+            try? fp1.computeDistance(&sampleDist, to: fp2)
+            fputs("[CULL] 샘플 거리(0↔1): \(sampleDist), threshold: \(threshold)\n", stderr)
+        }
 
         for vector in vectors {
             guard !assigned.contains(vector.photoID) else { continue }
@@ -219,7 +281,7 @@ class SmartCullService: ObservableObject {
                 if distance < threshold {
                     clusterIDs.append(other.photoID)
                     assigned.insert(other.photoID)
-                    totalSimilarity += (1.0 - distance)
+                    totalSimilarity += (1.0 - distance / threshold)
                     comparisons += 1
                 }
             }
@@ -231,6 +293,7 @@ class SmartCullService: ObservableObject {
             ))
         }
 
+        fputs("[CULL] 클러스터링 결과: \(clusters.count)개 클러스터 (2장 이상: \(clusters.filter { $0.photoIDs.count >= 2 }.count)개)\n", stderr)
         return clusters
     }
 

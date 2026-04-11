@@ -135,11 +135,21 @@ struct MemoryCardBackupResultView: View {
                 Text("다음 메모리카드를 백업하시겠습니까?")
                     .font(.system(size: 13))
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Button("종료") {
                         backup.finishBackup()
                         dismiss()
                     }
+
+                    Button(action: {
+                        backup.ejectAndFinish()
+                        dismiss()
+                    }) {
+                        Label("꺼내기", systemImage: "eject.fill")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
 
                     Button("다음 카드 대기") {
                         backup.waitForNextCard()

@@ -901,20 +901,43 @@ struct PhotoPreviewView: View {
                 }
             }
 
-            // 즉시 미리보기 로딩 (캐시 히트는 즉시, 미스는 백그라운드)
+            // 미리보기 로딩 (키 연타 시 디바운스)
             preloadWork?.cancel()
             preloadWork = nil
             imageLoadWork?.cancel()
-            viewState.stableImageSize = Self.readImageDimensions(url: url)
-            loadImageDirect(for: url, id: newID)
-            // 0.15초 후 hi-res 로딩 (방향키 꾹 누르면 cancel 됨)
             hiResWorkItem?.cancel()
+            viewState.stableImageSize = Self.readImageDimensions(url: url)
+
+            if store.isKeyRepeat {
+                // 빠른 이동 중 → 짧은 디바운스 (캐시 히트만 즉시, 미스는 대기)
+                let cacheKey2 = store.previewResolution > 0
+                    ? url.appendingPathExtension("r\(store.previewResolution)")
+                    : url.appendingPathExtension("orig")
+                if let cached = PreviewImageCache.shared.get(cacheKey2) {
+                    image = cached
+                    lowResImage = cached
+                } else if let thumb = ThumbnailCache.shared.get(url) {
+                    image = thumb  // 썸네일이라도 즉시 표시
+                }
+
+                let delayedWork = DispatchWorkItem {
+                    guard self.pendingPhotoID == newID else { return }
+                    self.loadImageDirect(for: url, id: newID)
+                }
+                imageLoadWork = delayedWork
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: delayedWork)
+            } else {
+                // 단일 이동 → 즉시 로딩
+                loadImageDirect(for: url, id: newID)
+            }
+
+            // hi-res 로딩 (방향키 꾹 누르면 cancel)
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
@@ -1317,7 +1340,8 @@ struct PhotoPreviewView: View {
                 // 미리보기 이미지로 썸네일 캐시도 채우기 (디스크 I/O 없이 즉시)
                 ThumbnailCache.shared.set(url, image: loaded)
                 RunLoop.main.perform(inModes: [.common]) {
-                    guard self.pendingPhotoID == id else { return }
+                    guard self.pendingPhotoID == id,
+                          store.selectedPhoto?.jpgURL == url else { return }
                     self.image = loaded
                     self.lowResImage = loaded
                 }
@@ -1345,7 +1369,8 @@ struct PhotoPreviewView: View {
                 ThumbnailCache.shared.set(url, image: fast)
 
                 RunLoop.main.perform(inModes: [.common]) {
-                    guard self.pendingPhotoID == id else { return }
+                    guard self.pendingPhotoID == id,
+                          store.selectedPhoto?.jpgURL == url else { return }
                     self.image = fast
                     self.lowResImage = fast
                 }

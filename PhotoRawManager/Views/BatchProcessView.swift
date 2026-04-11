@@ -46,9 +46,11 @@ struct BatchProcessView: View {
 
     // Watermark
     @State private var watermarkText: String = ""
+    @State private var watermarkImageURL: URL? = nil
     @State private var watermarkPosition: BatchProcessService.WatermarkPosition = .bottomRight
     @State private var watermarkOpacity: Double = 0.5
     @State private var watermarkFontSize: CGFloat = 24
+    @State private var watermarkImageScale: Double = 0.15
 
     // Destination
     @State private var destinationURL: URL?
@@ -225,6 +227,41 @@ struct BatchProcessView: View {
                         }
                     }
 
+                    // 이미지 워터마크 (로고)
+                    HStack {
+                        Text("로고 이미지:")
+                            .font(.system(size: 12))
+                        if let url = watermarkImageURL {
+                            Text(url.lastPathComponent)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            Button("제거") { watermarkImageURL = nil }
+                                .font(.system(size: 10))
+                        }
+                        Spacer()
+                        Button("선택") {
+                            let panel = NSOpenPanel()
+                            panel.allowedContentTypes = [.png, .jpeg, .tiff]
+                            panel.message = "워터마크로 사용할 로고 이미지를 선택하세요"
+                            if panel.runModal() == .OK {
+                                watermarkImageURL = panel.url
+                            }
+                        }
+                        .font(.system(size: 11))
+                    }
+
+                    if watermarkImageURL != nil {
+                        HStack {
+                            Text("로고 크기:")
+                                .font(.system(size: 12))
+                            Slider(value: $watermarkImageScale, in: 0.05...0.4, step: 0.01)
+                            Text("\(Int(watermarkImageScale * 100))%")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .frame(width: 40)
+                        }
+                    }
+
                     Divider()
 
                     // Destination section
@@ -385,9 +422,11 @@ struct BatchProcessView: View {
         opts.quality = jpegQuality
         opts.format = outputFormat
         opts.watermarkText = watermarkText
+        opts.watermarkImageURL = watermarkImageURL
         opts.watermarkPosition = watermarkPosition
         opts.watermarkOpacity = watermarkOpacity
         opts.watermarkFontSize = watermarkFontSize
+        opts.watermarkImageScale = watermarkImageScale
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = BatchProcessService.process(

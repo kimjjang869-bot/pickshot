@@ -97,6 +97,9 @@
 			AE10001 /* AIEnhanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE10002 /* AIEnhanceService.swift */; };
 		PS10001 /* PictureStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10002 /* PictureStyleService.swift */; };
 		PS10003 /* PictureStylePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10004 /* PictureStylePreviewView.swift */; };
+		SMC10001 /* SmartCullService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10002 /* SmartCullService.swift */; };
+		SMC10003 /* SmartCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10004 /* SmartCullView.swift */; };
+		STL10001 /* StyleLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = STL10002 /* StyleLearner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -189,6 +192,9 @@
 			AE10002 /* AIEnhanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEnhanceService.swift; sourceTree = "<group>"; };
 		PS10002 /* PictureStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStyleService.swift; sourceTree = "<group>"; };
 		PS10004 /* PictureStylePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStylePreviewView.swift; sourceTree = "<group>"; };
+		SMC10002 /* SmartCullService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullService.swift; sourceTree = "<group>"; };
+		SMC10004 /* SmartCullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullView.swift; sourceTree = "<group>"; };
+		STL10002 /* StyleLearner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -277,6 +283,7 @@
 				CR10002,
 				BP10004 /* BatchProcessView.swift */,
 				PS10004 /* PictureStylePreviewView.swift */,
+				SMC10004 /* SmartCullView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -316,6 +323,8 @@
 				SC10002 /* SmartCropService.swift */,
 				AE10002 /* AIEnhanceService.swift */,
 				PS10002 /* PictureStyleService.swift */,
+				SMC10002 /* SmartCullService.swift */,
+				STL10002 /* StyleLearner.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -473,6 +482,9 @@
 				AE10001 /* AIEnhanceService.swift in Sources */,
 				PS10001 /* PictureStyleService.swift in Sources */,
 				PS10003 /* PictureStylePreviewView.swift in Sources */,
+				SMC10001 /* SmartCullService.swift in Sources */,
+				SMC10003 /* SmartCullView.swift in Sources */,
+				STL10001 /* StyleLearner.swift in Sources */,
 				CS10001 /* ClientSelectService.swift in Sources */,
 				CS10002 /* ClientSelectSetupView.swift in Sources */,
 			);
@@ -525,7 +537,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -579,7 +591,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GCC_OPTIMIZATION_LEVEL = s;
 				LLVM_LTO = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -597,7 +609,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -608,7 +620,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 6.5.1;
+				MARKETING_VERSION = 7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -625,7 +637,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -636,7 +648,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 6.5.1;
+				MARKETING_VERSION = 7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

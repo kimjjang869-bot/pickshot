@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Darwin
 
 struct CopyResult {
     var totalFiles: Int = 0
@@ -86,6 +87,61 @@ struct FileCopyService {
         }
     }
 
+    // MARK: - 고속 복사 (Finder보다 빠르게)
+
+    /// APFS 클론 → copyfile() C API → FileManager fallback
+    private static func fastCopy(from source: URL, to dest: URL) throws {
+        let src = source.path
+        let dst = dest.path
+
+        // 1차: APFS 클론 시도 (같은 볼륨이면 즉시, ~0ms)
+        let cloneResult = src.withCString { srcPtr in
+            dst.withCString { dstPtr in
+                Darwin.copyfile(srcPtr, dstPtr, nil, copyfile_flags_t(COPYFILE_CLONE | COPYFILE_ALL))
+            }
+        }
+        if cloneResult == 0 { return }  // 클론 성공
+
+        // 2차: F_NOCACHE + 8MB 버퍼 직접 복사 (캐시 bypass → 메모리 효율 + 속도)
+        let srcFD = open(src, O_RDONLY)
+        guard srcFD >= 0 else {
+            throw NSError(domain: "FileCopy", code: -1, userInfo: [NSLocalizedDescriptionKey: "소스 파일 열기 실패"])
+        }
+        defer { close(srcFD) }
+
+        // 소스 파일 속성 가져오기
+        var srcStat = stat()
+        fstat(srcFD, &srcStat)
+
+        let dstFD = open(dst, O_WRONLY | O_CREAT | O_TRUNC, srcStat.st_mode)
+        guard dstFD >= 0 else {
+            throw NSError(domain: "FileCopy", code: -2, userInfo: [NSLocalizedDescriptionKey: "대상 파일 생성 실패"])
+        }
+        defer { close(dstFD) }
+
+        // F_NOCACHE: 커널 캐시 bypass (대용량 파일 복사 시 메모리 절약 + 속도 향상)
+        fcntl(srcFD, F_NOCACHE, 1)
+        fcntl(dstFD, F_NOCACHE, 1)
+
+        // 8MB 버퍼로 복사
+        let bufferSize = 8 * 1024 * 1024  // 8MB
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while true {
+            let bytesRead = read(srcFD, buffer, bufferSize)
+            if bytesRead <= 0 { break }
+            var written = 0
+            while written < bytesRead {
+                let w = write(dstFD, buffer + written, bytesRead - written)
+                if w < 0 {
+                    throw NSError(domain: "FileCopy", code: -3, userInfo: [NSLocalizedDescriptionKey: "쓰기 실패"])
+                }
+                written += w
+            }
+        }
+    }
+
     // MARK: - Standard Export (JPG + RAW folders)
 
     static func copyPhotos(
@@ -163,10 +219,12 @@ struct FileCopyService {
         let totalOperations = ops.count
         result.totalFiles = totalOperations
 
-        // Parallel copy with concurrency 4
+        // Parallel copy — SSD: 8동시, HDD: 4동시
+        let concurrency = min(ProcessInfo.processInfo.activeProcessorCount, 8)
         let lock = NSLock()
-        let semaphore = DispatchSemaphore(value: 4)
+        let semaphore = DispatchSemaphore(value: concurrency)
         var completed = 0
+        let copyStart = CFAbsoluteTimeGetCurrent()
 
         DispatchQueue.concurrentPerform(iterations: ops.count) { index in
             semaphore.wait()
@@ -185,7 +243,7 @@ struct FileCopyService {
             }
 
             do {
-                try FileManager.default.copyItem(at: op.source, to: op.dest)
+                try fastCopy(from: op.source, to: op.dest)
                 lock.lock()
                 switch op.type {
                 case .jpg: result.copiedJPG += 1
@@ -205,6 +263,10 @@ struct FileCopyService {
                 DispatchQueue.main.async { progress(c, totalOperations) }
             }
         }
+
+        let copyElapsed = CFAbsoluteTimeGetCurrent() - copyStart
+        let totalCopied = result.copiedJPG + result.copiedRAW
+        fputs("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초 (동시 \(concurrency)개)\n", stderr)
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)
         return result
@@ -256,7 +318,7 @@ struct FileCopyService {
             }
 
             do {
-                try fileManager.copyItem(at: sourceURL, to: destFile)
+                try fastCopy(from: sourceURL, to: destFile)
                 if photo.hasRAW { result.copiedRAW += 1 } else { result.copiedJPG += 1 }
             } catch {
                 result.failedFiles.append("복사 실패: \(photo.fileName)")
@@ -271,15 +333,15 @@ struct FileCopyService {
                         result.skipped += 1
                     case .rename:
                         jpgDest = uniqueURL(for: jpgDest)
-                        try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                        try? fastCopy(from: photo.jpgURL, to: jpgDest)
                         result.copiedJPG += 1
                     case .overwrite:
                         try? fileManager.removeItem(at: jpgDest)
-                        try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                        try? fastCopy(from: photo.jpgURL, to: jpgDest)
                         result.copiedJPG += 1
                     }
                 } else {
-                    try? fileManager.copyItem(at: photo.jpgURL, to: jpgDest)
+                    try? fastCopy(from: photo.jpgURL, to: jpgDest)
                     result.copiedJPG += 1
                 }
                 completed += 1

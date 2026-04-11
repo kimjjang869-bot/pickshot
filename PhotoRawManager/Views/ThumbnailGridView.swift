@@ -1,6 +1,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - 드래그 드롭 상태 (PhotoStore와 분리 — 성능 최적화)
+class DragDropState: ObservableObject {
+    static let shared = DragDropState()
+    @Published var dropTargetID: UUID? = nil
+    @Published var dropLeading: Bool = true
+}
+
 private struct GridWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
@@ -12,34 +19,43 @@ struct ThumbnailGridView: View {
     var body: some View {
         GeometryReader { geo in
             Group {
+            let _ = updateColumns(width: geo.size.width)
             if store.filteredPhotos.isEmpty {
                 emptyStateView
             } else {
                 // SwiftUI LazyVGrid / List (안정적 + 메모리 캐시 8GB)
                 VStack(spacing: 0) {
-                    // 목록뷰 헤더 (고정 — 스크롤 안 됨)
                     if store.viewMode == .list {
-                        listHeader
-                        Divider()
-                    }
-
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            if store.viewMode == .grid {
+                        // SwiftUI Table — Finder와 동일한 컬럼 리사이즈/정렬
+                        NativeListView()
+                            .environmentObject(store)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView {
                                 gridView
-                            } else {
-                                listBody
                             }
-                        }
-                        .scrollIndicators(.visible)
-                        .onChange(of: store.scrollTrigger) { _ in
-                            guard let id = store.selectedPhotoID else { return }
-                            proxy.scrollTo(id, anchor: nil)
+                            .scrollIndicators(.visible)
+                            .onChange(of: store.scrollTrigger) { _ in
+                                guard let id = store.selectedPhotoID else { return }
+                                proxy.scrollTo(id, anchor: nil)
+                            }
                         }
                     }
                 }
             }
             } // Group
+        }
+    }
+
+    private func updateColumns(width: CGFloat) {
+        let size = store.thumbnailSize
+        let spacing: CGFloat = 12
+        let cellWidth = size + spacing
+        let cols = max(1, Int((width + spacing) / cellWidth))
+        if store.actualColumnsPerRow != cols {
+            DispatchQueue.main.async {
+                store.actualColumnsPerRow = cols
+            }
         }
     }
 
@@ -141,40 +157,41 @@ struct ThumbnailGridView: View {
         listColumnsRaw = cols.sorted().joined(separator: ",")
     }
 
-    // 컬럼 폭 고정
-    private let colW_date: CGFloat = 150
-    private let colW_size: CGFloat = 75
-    private let colW_type: CGFloat = 55
-    private let colW_rating: CGFloat = 70
-    private let colW_resolution: CGFloat = 90
-    private let colW_camera: CGFloat = 100
-    private let colW_iso: CGFloat = 55
-    private let colW_shutter: CGFloat = 65
-    private let colW_aperture: CGFloat = 55
-    private let colW_lens: CGFloat = 110
+    // 컬럼 폭 (드래그 조절 가능, UserDefaults 저장)
+    @AppStorage("colW_name") private var colW_name: Double = 200
+    @AppStorage("colW_date") private var colW_date: Double = 150
+    @AppStorage("colW_size") private var colW_size: Double = 75
+    @AppStorage("colW_type") private var colW_type: Double = 55
+    @AppStorage("colW_rating") private var colW_rating: Double = 70
+    @AppStorage("colW_resolution") private var colW_resolution: Double = 90
+    @AppStorage("colW_camera") private var colW_camera: Double = 100
+    @AppStorage("colW_iso") private var colW_iso: Double = 55
+    @AppStorage("colW_shutter") private var colW_shutter: Double = 65
+    @AppStorage("colW_aperture") private var colW_aperture: Double = 55
+    @AppStorage("colW_lens") private var colW_lens: Double = 110
 
     /// 목록 헤더 (고정)
     private var listHeader: some View {
         let cols = visibleColumns
         return HStack(spacing: 0) {
-            // 이름 (가변 — 전체 클릭 가능)
+            // 이름 (가변폭 — 남은 공간 채움)
             HStack(spacing: 4) {
                 colHeader("이름", width: nil, sort: .nameAsc, altSort: .nameDesc)
-                Spacer()
+                Spacer(minLength: 4)
             }
-            .padding(.leading, 30)
+            .frame(minWidth: 120)
             .contentShape(Rectangle())
             .onTapGesture { store.sortMode = store.sortMode == .nameAsc ? .nameDesc : .nameAsc }
-            if cols.contains("date")       { colDivider; colHeader("수정일", width: colW_date, sort: .dateDesc, altSort: .dateAsc) }
-            if cols.contains("size")       { colDivider; colHeader("크기", width: colW_size, sort: .sizeDesc, altSort: .sizeAsc) }
-            if cols.contains("type")       { colDivider; colHeader("종류", width: colW_type, sort: .extensionSort, altSort: .extensionSort) }
-            if cols.contains("rating")     { colDivider; colHeader("별점", width: colW_rating, sort: .ratingDesc, altSort: .ratingAsc) }
-            if cols.contains("resolution") { colDivider; colHeaderStatic("해상도", width: colW_resolution) }
-            if cols.contains("camera")     { colDivider; colHeader("카메라", width: colW_camera, sort: .cameraSort, altSort: .cameraSort) }
-            if cols.contains("iso")        { colDivider; colHeaderStatic("ISO", width: colW_iso) }
-            if cols.contains("shutter")    { colDivider; colHeaderStatic("셔터", width: colW_shutter) }
-            if cols.contains("aperture")   { colDivider; colHeaderStatic("조리개", width: colW_aperture) }
-            if cols.contains("lens")       { colDivider; colHeaderStatic("렌즈", width: colW_lens) }
+            if cols.contains("date")       { colHeader("수정일", width: colW_date, sort: .dateDesc, altSort: .dateAsc); colResizer(binding: $colW_date, min: 80) }
+            if cols.contains("size")       { colHeader("크기", width: colW_size, sort: .sizeDesc, altSort: .sizeAsc); colResizer(binding: $colW_size, min: 50) }
+            if cols.contains("type")       { colHeader("종류", width: colW_type, sort: .extensionSort, altSort: .extensionSort); colResizer(binding: $colW_type, min: 40) }
+            if cols.contains("rating")     { colHeader("별점", width: colW_rating, sort: .ratingDesc, altSort: .ratingAsc); colResizer(binding: $colW_rating, min: 50) }
+            if cols.contains("resolution") { colHeaderStatic("해상도", width: colW_resolution); colResizer(binding: $colW_resolution, min: 60) }
+            if cols.contains("camera")     { colHeader("카메라", width: colW_camera, sort: .cameraSort, altSort: .cameraSort); colResizer(binding: $colW_camera, min: 60) }
+            if cols.contains("iso")        { colHeaderStatic("ISO", width: colW_iso); colResizer(binding: $colW_iso, min: 35) }
+            if cols.contains("shutter")    { colHeaderStatic("셔터", width: colW_shutter); colResizer(binding: $colW_shutter, min: 40) }
+            if cols.contains("aperture")   { colHeaderStatic("조리개", width: colW_aperture); colResizer(binding: $colW_aperture, min: 40) }
+            if cols.contains("lens")       { colHeaderStatic("렌즈", width: colW_lens); colResizer(binding: $colW_lens, min: 60) }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
@@ -195,7 +212,7 @@ struct ThumbnailGridView: View {
         }
     }
 
-    private func colHeader(_ title: String, width: CGFloat?, sort: SortMode, altSort: SortMode) -> some View {
+    private func colHeader(_ title: String, width: Double?, sort: SortMode, altSort: SortMode) -> some View {
         let isActive = store.sortMode == sort || store.sortMode == altSort
         return HStack(spacing: 3) {
             Text(title)
@@ -206,45 +223,341 @@ struct ThumbnailGridView: View {
                     .font(.system(size: 8, weight: .bold)).foregroundColor(.accentColor)
             }
         }
-        .frame(width: width, alignment: .leading)
+        .frame(width: width.map { CGFloat($0) }, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { store.sortMode = store.sortMode == sort ? altSort : sort }
     }
 
-    private func colHeaderStatic(_ title: String, width: CGFloat) -> some View {
+    private func colHeaderStatic(_ title: String, width: Double) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(.primary)
-            .frame(width: width, alignment: .center)
+            .frame(width: CGFloat(width), alignment: .center)
     }
 
     /// 드래그 가능한 컬럼 구분선
     private func colResizer(binding: Binding<Double>, min: CGFloat = 40) -> some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.01))
-            .frame(width: 8, height: 20)
-            .overlay(Divider().frame(height: 12))
-            .cursor(NSCursor.resizeLeftRight)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        let newW = binding.wrappedValue + Double(value.translation.width)
-                        binding.wrappedValue = Swift.max(Double(min), newW)
-                    }
-            )
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+        ColResizerView(width: binding, minWidth: Double(min))
     }
-
     private var colDivider: some View {
         Divider().frame(height: 12).padding(.horizontal, 2)
     }
+}
+
+// MARK: - 네이티브 Table 목록뷰 (Finder 스타일 컬럼 리사이즈)
+
+struct NativeListView: View {
+    @EnvironmentObject var store: PhotoStore
+    @State private var selection: Set<UUID> = []
+    @State private var sortOrder: [KeyPathComparator<PhotoItem>] = [
+        .init(\.fileModDate, order: .reverse)
+    ]
+    @State private var columnCustomization = TableColumnCustomization<PhotoItem>()
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f
+    }()
+
+    var body: some View {
+        Table(store.filteredPhotos, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
+            TableColumn("이름") { photo in
+                let livePhoto = store.livePhoto(photo.id) ?? photo
+                HStack(spacing: 6) {
+                    if photo.isParentFolder {
+                        Image(systemName: "chevron.up.circle.fill")
+                            .font(.system(size: 16)).foregroundColor(.blue)
+                    } else if photo.isFolder {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 16)).foregroundColor(.blue)
+                    } else {
+                        AsyncThumbnailView(url: photo.jpgURL)
+                            .frame(width: 42, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                    }
+                    Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                    if !photo.isFolder && !photo.isParentFolder {
+                        let badge = photo.fileTypeBadge
+                        Text(badge.text)
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 3).padding(.vertical, 1)
+                            .background(badgeColor(badge.color).opacity(0.8))
+                            .cornerRadius(2)
+                    }
+                    if livePhoto.isSpacePicked {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.red)
+                    }
+                }
+                .frame(height: 32)
+                .background(
+                    GeometryReader { geo in
+                        if livePhoto.isSpacePicked {
+                            // 행 전체 폭으로 확장 (2000px — 모든 컬럼 커버)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.red.opacity(0.08))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(Color.red.opacity(0.5), lineWidth: 2)
+                                )
+                                .frame(width: 2000, height: geo.size.height + 4)
+                                .offset(x: -8, y: -2)
+                        }
+                    }
+                )
+                .onAppear {
+                    if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
+                        store.loadExifIfNeeded(for: photo.id)
+                    }
+                }
+            }
+            .width(min: 150, ideal: 250, max: 600)
+            .customizationID("name")
+            .disabledCustomizationBehavior(.visibility)
+
+            TableColumn("수정일", value: \.fileModDate) { photo in
+                Text(photo.isFolder ? "--" : Self.dateFormatter.string(from: photo.fileModDate))
+                    .font(.system(size: 11)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .width(min: 80, ideal: 95, max: 160)
+            .customizationID("date")
+
+            TableColumn("크기") { photo in
+                Text(formatSize(photo.jpgFileSize + photo.rawFileSize))
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
+            .width(min: 40, ideal: 55, max: 80)
+            .customizationID("size")
+
+            TableColumn("종류") { photo in
+                Text(photo.isFolder ? "폴더" : photo.jpgURL.pathExtension.uppercased())
+                    .font(.system(size: 11)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .width(min: 35, ideal: 50, max: 80)
+            .customizationID("type")
+
+            TableColumn("별점") { photo in
+                let rating = store.livePhoto(photo.id)?.rating ?? photo.rating
+                HStack(spacing: 0) {
+                    if rating > 0 {
+                        ForEach(1...rating, id: \.self) { _ in
+                            Image(systemName: "star.fill").font(.system(size: 8)).foregroundColor(AppTheme.starGold)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .width(min: 40, ideal: 65, max: 100)
+            .customizationID("rating")
+
+            TableColumn("해상도") { photo in
+                let exif = store.exifFor(photo.id)
+                Group {
+                    if let w = exif?.imageWidth, let h = exif?.imageHeight {
+                        Text("\(w)×\(h)")
+                            .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                    } else { Text("") }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .width(min: 70, ideal: 100, max: 150)
+            .customizationID("resolution")
+            .defaultVisibility(.hidden)
+
+            TableColumn("카메라") { photo in
+                Text(store.exifFor(photo.id)?.cameraModel ?? "")
+                    .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .width(min: 60, ideal: 110, max: 200)
+            .customizationID("camera")
+            .defaultVisibility(.hidden)
+
+            TableColumn("렌즈") { photo in
+                Text(store.exifFor(photo.id)?.lensModel ?? "")
+                    .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .width(min: 60, ideal: 120, max: 200)
+            .customizationID("lens")
+            .defaultVisibility(.hidden)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .contextMenu(forSelectionType: UUID.self) { ids in
+            // 행 우클릭 메뉴
+            Button {
+                store.selectedPhotoIDs = ids
+                store.pendingDeleteIDs = ids
+                store.showDeleteOriginalConfirm = true
+            } label: {
+                Label("휴지통으로 이동", systemImage: "trash")
+            }
+        } primaryAction: { ids in
+            // 더블클릭 — 폴더면 진입
+            if let id = ids.first, let idx = store._photoIndex[id], idx < store.photos.count {
+                let photo = store.photos[idx]
+                if photo.isFolder || photo.isParentFolder {
+                    store.loadFolder(photo.jpgURL, restoreRatings: true)
+                }
+            }
+        }
+        .onChange(of: selection) { newSelection in
+            store.selectedPhotoIDs = newSelection
+            if newSelection.count == 1, let first = newSelection.first {
+                store.selectedPhotoID = first
+            } else if newSelection.count > 1 {
+                // 다중 선택 — selectedPhotoID는 마지막 추가된 것
+                if let current = store.selectedPhotoID, newSelection.contains(current) {
+                    // 유지
+                } else {
+                    store.selectedPhotoID = newSelection.first
+                }
+            }
+        }
+        .onChange(of: store.selectedPhotoIDs) { newIDs in
+            if newIDs != selection {
+                selection = newIDs
+            }
+        }
+        .onAppear {
+            selection = store.selectedPhotoIDs
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                store.triggerListExifLoad()
+            }
+        }
+        .onChange(of: store.photosVersion) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                store.triggerListExifLoad()
+            }
+        }
+        .focusable()
+        .onKeyPress { press in
+            handleKeyPress(press)
+        }
+    }
+
+    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        let chars = press.characters
+
+        // 스페이스바: SP 셀렉
+        if chars == " " {
+            if store.selectedPhotoIDs.count > 1 {
+                store.toggleSpacePickForSelected()
+            } else if let id = store.selectedPhotoID {
+                store.toggleSpacePick(for: id)
+            }
+            return .handled
+        }
+
+        // 0~5: 별점
+        if let ch = chars.first, let rating = Int(String(ch)), rating >= 0 && rating <= 5 {
+            if store.selectedPhotoIDs.count > 1 {
+                for id in store.selectedPhotoIDs {
+                    store.setRating(rating, for: id)
+                }
+            } else if let id = store.selectedPhotoID {
+                store.setRating(rating, for: id)
+            }
+            return .handled
+        }
+
+        // 백스페이스/Delete: 삭제 확인
+        if press.key == .delete || press.key == .deleteForward {
+            if !store.selectedPhotoIDs.isEmpty {
+                store.pendingDeleteIDs = store.selectedPhotoIDs
+                store.showDeleteOriginalConfirm = true
+            }
+            return .handled
+        }
+
+        return .ignored
+    }
+
+    private func formatSize(_ bytes: Int64) -> String {
+        if bytes <= 0 { return "--" }
+        if bytes > 1_073_741_824 { return String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
+        if bytes > 1_048_576 { return String(format: "%.1f MB", Double(bytes) / 1_048_576) }
+        return String(format: "%.0f KB", Double(bytes) / 1024)
+    }
+
+    private func badgeColor(_ color: String) -> Color {
+        switch color {
+        case "green": return .green; case "orange": return .orange
+        case "blue": return .blue; case "purple": return .purple
+        case "teal": return .teal; default: return .gray
+        }
+    }
+}
+
+// MARK: - 컬럼 리사이저 (각 인스턴스 독립 @State)
+struct ColResizerView: View {
+    @Binding var width: Double
+    let minWidth: Double
+    @State private var startWidth: Double = 0
+
+    var body: some View {
+        // 히트 영역 12px, 표시 구분선 1px
+        Color.clear
+            .frame(width: 12, height: 24)
+            .overlay(
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 1, height: 14)
+            )
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if startWidth == 0 { startWidth = width }
+                        let newW = startWidth + Double(value.translation.width)
+                        width = Swift.max(minWidth, Swift.min(500, newW))
+                    }
+                    .onEnded { _ in
+                        startWidth = 0
+                    }
+            )
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() }
+                else { NSCursor.pop() }
+            }
+    }
+}
+
+// MARK: - SP 행 하이라이트 modifier
+struct SPRowHighlight: ViewModifier {
+    let isSP: Bool
+    func body(content: Content) -> some View {
+        content
+            .background(isSP ? Color.red.opacity(0.08) : Color.clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(isSP ? Color.red.opacity(0.5) : Color.clear, lineWidth: 1.5)
+            )
+    }
+}
+
+extension View {
+    func spRowHighlight(store: PhotoStore, id: UUID) -> some View {
+        let sp = store.livePhoto(id)?.isSpacePicked ?? false
+        return self.modifier(SPRowHighlight(isSP: sp))
+    }
+}
+
+extension ThumbnailGridView {
 
     /// 목록 본문 (스크롤)
     private var listBody: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(store.filteredPhotos) { photo in
+        let photos = store.filteredPhotos
+        return LazyVStack(spacing: 0, pinnedViews: []) {
+            ForEach(photos) { photo in
                 LazyListRowWrapper(
                     photo: photo,
                     isSelected: store.isSelected(photo.id),
@@ -255,9 +568,14 @@ struct ThumbnailGridView: View {
                     }
                 )
                 .id(photo.id)
+                .onTapGesture {
+                    let flags = NSEvent.modifierFlags
+                    store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
+                }
                 Divider().opacity(0.15).padding(.leading, 34)
             }
         }
+        .frame(minHeight: 100)
     }
 }
 
@@ -321,24 +639,28 @@ struct LazyThumbnailWrapper: View {
                 return true
             }
         } else if photo.isFolder {
-            // Subfolder item
+            // Subfolder item — 미리보기 사진 4장 or 폴더 아이콘
             VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.gray.opacity(0.08))
-                        .frame(width: size, height: size * 0.75)
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: size * 0.25))
-                        .foregroundColor(.blue.opacity(0.6))
+                if store.showFolderPreview {
+                    FolderPreviewGrid(folderURL: photo.jpgURL, size: size)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.gray.opacity(0.08))
+                            .frame(width: size, height: size * 0.75)
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: size * 0.25))
+                            .foregroundColor(.blue.opacity(0.6))
+                    }
                 }
                 Text(photo.jpgURL.lastPathComponent)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11, weight: .bold))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(width: size)
             }
             .frame(width: size)
-            .padding(4)
+            .padding(5)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
@@ -357,9 +679,20 @@ struct LazyThumbnailWrapper: View {
                 }
             }
             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
-                // 하위 폴더로 드래그 이동
                 handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
                 return true
+            }
+            .contextMenu {
+                Button("Finder에서 열기") {
+                    NSWorkspace.shared.open(photo.jpgURL)
+                }
+                Divider()
+                Button(role: .destructive) {
+                    store.pendingDeleteIDs = [photo.id]
+                    store.showDeleteOriginalConfirm = true
+                } label: {
+                    Label("휴지통으로 이동", systemImage: "trash")
+                }
             }
         } else {
             ThumbnailCell(
@@ -372,15 +705,26 @@ struct LazyThumbnailWrapper: View {
             .overlay(
                 MultiFileDragView(photo: photo, store: store)
             )
+            .overlay(
+                DropIndicatorOverlay(photoID: photo.id)
+            )
             .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
-                photo: photo, store: store
+                photo: photo, store: store, cellWidth: size
             ))
             .onTapGesture { onTap() }
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
-                    // 폴더 전용 간단 메뉴
                     Button("Finder에서 열기") {
                         NSWorkspace.shared.open(photo.jpgURL)
+                    }
+                    if photo.isFolder {
+                        Divider()
+                        Button(role: .destructive) {
+                            store.pendingDeleteIDs = [photo.id]
+                            store.showDeleteOriginalConfirm = true
+                        } label: {
+                            Label("휴지통으로 이동", systemImage: "trash")
+                        }
                     }
                 } else {
                     PhotoContextMenu(photo: photo, store: store)
@@ -710,13 +1054,11 @@ struct PhotoContextMenu: View {
         }
 
         // Delete original (if setting enabled)
-        if UserDefaults.standard.bool(forKey: "deleteOriginalFile") {
-            Button(role: .destructive, action: {
-                store.pendingDeleteIDs = targetIDs
-                store.showDeleteOriginalConfirm = true
-            }) {
-                Label("원본 삭제 (휴지통)", systemImage: "trash")
-            }
+        Button(role: .destructive, action: {
+            store.pendingDeleteIDs = targetIDs
+            store.showDeleteOriginalConfirm = true
+        }) {
+            Label("휴지통으로 이동", systemImage: "trash")
         }
 
         Divider()
@@ -789,9 +1131,11 @@ struct ThumbnailCell: View {
             // File name
             Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
                 .font(.system(size: AppTheme.fontCaption))
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .truncationMode(.middle)
                 .foregroundColor(.primary)
+                .frame(width: size)
 
             // Star rating
             starsView
@@ -962,6 +1306,7 @@ struct ThumbnailCell: View {
                            AppTheme.cellBorderWidth
             )
     }
+
 }
 
 // MARK: - List Row
@@ -976,17 +1321,18 @@ struct ListRow: View {
 
     private var cols: Set<String> { Set(listColumnsRaw.split(separator: ",").map(String.init)) }
 
-    // 헤더와 동일한 컬럼 폭
-    private let cW_date: CGFloat = 150
-    private let cW_size: CGFloat = 75
-    private let cW_type: CGFloat = 55
-    private let cW_rating: CGFloat = 70
-    private let cW_resolution: CGFloat = 90
-    private let cW_camera: CGFloat = 100
-    private let cW_iso: CGFloat = 55
-    private let cW_shutter: CGFloat = 65
-    private let cW_aperture: CGFloat = 55
-    private let cW_lens: CGFloat = 110
+    // 헤더와 동일한 컬럼 폭 (드래그 조절 연동)
+    @AppStorage("colW_name") private var cW_name: Double = 200
+    @AppStorage("colW_date") private var cW_date: Double = 150
+    @AppStorage("colW_size") private var cW_size: Double = 75
+    @AppStorage("colW_type") private var cW_type: Double = 55
+    @AppStorage("colW_rating") private var cW_rating: Double = 70
+    @AppStorage("colW_resolution") private var cW_resolution: Double = 90
+    @AppStorage("colW_camera") private var cW_camera: Double = 100
+    @AppStorage("colW_iso") private var cW_iso: Double = 55
+    @AppStorage("colW_shutter") private var cW_shutter: Double = 65
+    @AppStorage("colW_aperture") private var cW_aperture: Double = 55
+    @AppStorage("colW_lens") private var cW_lens: Double = 110
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -1001,7 +1347,7 @@ struct ListRow: View {
         let imgSize = max(20, min(thumbSize * 0.4, 60))  // 목록 썸네일 크기
 
         HStack(spacing: 0) {
-            // 이름 (가변폭)
+            // 이름 (최소 150px 보장)
             HStack(spacing: 6) {
                 Group {
                     if photo.isParentFolder {
@@ -1031,8 +1377,9 @@ struct ListRow: View {
                             .background(AppTheme.error).cornerRadius(2)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 4)
             }
+            .frame(minWidth: 120)
 
             // 동적 컬럼 (세로 구분선 포함)
             if c.contains("date") {
@@ -1093,6 +1440,12 @@ struct ListRow: View {
             isSelected ? AppTheme.accent.opacity(0.12) :
             Color.clear
         )
+        .onAppear {
+            // 목록뷰에서 보이는 행의 EXIF on-demand 로딩
+            if isFile && photo.exifData == nil {
+                store.loadExifIfNeeded(for: photo.id)
+            }
+        }
     }
 
     private var colDiv: some View {
@@ -1400,10 +1753,6 @@ class ThumbnailLoader {
             guard !op.isCancelled else { return }
             let thumbStart = CFAbsoluteTimeGetCurrent()
             var image = Self.extractThumbnail(url: url)
-            if image == nil && ThumbnailLoader.shared.isSlowDisk {
-                Thread.sleep(forTimeInterval: 0.1)
-                image = Self.extractThumbnail(url: url)
-            }
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
             if extractElapsed > 5 {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
@@ -1629,6 +1978,7 @@ struct AsyncThumbnailView: View {
     let url: URL
     @State private var image: NSImage?
     @State private var loadedURL: URL?
+    @State private var retryCount: Int = 0
     /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
     static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
 
@@ -1644,13 +1994,20 @@ struct AsyncThumbnailView: View {
             }
         }
         .onAppear {
-            if image == nil || loadedURL != url {
+            if image == nil {
+                loadThumbnail()
+            } else if loadedURL != url {
                 loadThumbnail()
             }
         }
         .onChange(of: url) { newURL in
             if loadedURL != newURL {
-                // Don't nil out image - keep old one until new loads
+                loadThumbnail()
+            }
+        }
+        .onChange(of: retryCount) { _ in
+            // 재시도 트리거
+            if image == nil {
                 loadThumbnail()
             }
         }
@@ -1658,6 +2015,7 @@ struct AsyncThumbnailView: View {
 
     private func loadThumbnail() {
         loadedURL = url
+        retryCount = 0
         let currentURL = url
 
         // 1. 메모리 캐시 히트 → 즉시
@@ -1691,10 +2049,10 @@ struct AsyncThumbnailView: View {
                     guard self.loadedURL == currentURL else { return }
                     self.image = ns
                 }
-                // 고화질 교체
+                // 고화질 교체 (백그라운드)
                 ThumbnailLoader.shared.load(url: currentURL) { img in
                     RunLoop.main.perform(inModes: [.common]) {
-                        if self.loadedURL == currentURL && img.size.width > 2 {
+                        if self.loadedURL == currentURL, img.size.width > 2 {
                             self.image = img
                         }
                     }
@@ -1704,8 +2062,16 @@ struct AsyncThumbnailView: View {
             // 임베디드 없음 → 생성
             ThumbnailLoader.shared.load(url: currentURL) { img in
                 RunLoop.main.perform(inModes: [.common]) {
-                    if self.loadedURL == currentURL && img.size.width > 2 {
-                        self.image = img
+                    if self.loadedURL == currentURL {
+                        if img.size.width > 2 {
+                            self.image = img
+                        } else if self.retryCount < 3 {
+                            // 실패 시 재시도 (최대 3회, 점진적 딜레이)
+                            let delay = 0.1 * Double(self.retryCount + 1)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                self.retryCount += 1
+                            }
+                        }
                     }
                 }
             }
@@ -1788,16 +2154,52 @@ struct MultiFileDragView: NSViewRepresentable {
             // Create dragging items — 파일 URL + photo ID (리오더용)
             var items: [NSDraggingItem] = []
             let pbItem = NSPasteboardItem()
-            // 파일 URL (Finder 드롭용)
             if let firstURL = fileURLs.first {
                 pbItem.setString(firstURL.absoluteString, forType: .fileURL)
             }
-            // Photo ID (그리드 내 리오더용)
             pbItem.setString(photo.id.uuidString, forType: .string)
             let dragItem = NSDraggingItem(pasteboardWriter: pbItem)
+
+            // 드래그 미리보기: 썸네일 이미지 (80x80) + 선택 개수 배지
+            let previewSize: CGFloat = 80
+            let dragImage: NSImage
+            if let thumbImage = DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
+                ?? NSImage(contentsOf: photo.jpgURL) {
+                // 리사이즈
+                let resized = NSImage(size: NSSize(width: previewSize, height: previewSize))
+                resized.lockFocus()
+                NSGraphicsContext.current?.imageInterpolation = .high
+                let ratio = min(previewSize / thumbImage.size.width, previewSize / thumbImage.size.height)
+                let drawW = thumbImage.size.width * ratio
+                let drawH = thumbImage.size.height * ratio
+                thumbImage.draw(in: NSRect(x: (previewSize - drawW) / 2, y: (previewSize - drawH) / 2,
+                                           width: drawW, height: drawH))
+
+                // 다중 선택 배지
+                if ids.count > 1 {
+                    let badge = "\(ids.count)"
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let badgeSize = (badge as NSString).size(withAttributes: attrs)
+                    let badgeW = max(20, badgeSize.width + 8)
+                    let badgeRect = NSRect(x: previewSize - badgeW - 2, y: previewSize - 18, width: badgeW, height: 16)
+                    NSColor.systemBlue.setFill()
+                    NSBezierPath(roundedRect: badgeRect, xRadius: 8, yRadius: 8).fill()
+                    (badge as NSString).draw(at: NSPoint(x: badgeRect.midX - badgeSize.width / 2,
+                                                         y: badgeRect.midY - badgeSize.height / 2),
+                                             withAttributes: attrs)
+                }
+                resized.unlockFocus()
+                dragImage = resized
+            } else {
+                dragImage = NSWorkspace.shared.icon(forFile: fileURLs.first?.path ?? "")
+            }
+
             dragItem.setDraggingFrame(
-                NSRect(x: 0, y: 0, width: 40, height: 40),
-                contents: NSWorkspace.shared.icon(forFile: fileURLs.first?.path ?? "")
+                NSRect(x: 0, y: 0, width: previewSize, height: previewSize),
+                contents: dragImage
             )
             items.append(dragItem)
 
@@ -1808,11 +2210,13 @@ struct MultiFileDragView: NSViewRepresentable {
 
 extension MultiFileDragView.DragOverlayNSView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        return context == .outsideApplication ? [.copy, .move] : [.move, .copy]
+        return context == .outsideApplication ? .copy : .move
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        // 앱 내부 이동은 PhotoStore.movePhotosToFolder에서 처리
+        DispatchQueue.main.async { [weak self] in
+            DragDropState.shared.dropTargetID = nil
+        }
     }
 }
 
@@ -2275,8 +2679,13 @@ class TileLayer: CALayer {
 struct PhotoReorderDropDelegate: DropDelegate {
     let photo: PhotoItem
     let store: PhotoStore
+    let cellWidth: CGFloat
+
+    private var ds: DragDropState { DragDropState.shared }
 
     func performDrop(info: DropInfo) -> Bool {
+        ds.dropTargetID = nil
+
         guard let item = info.itemProviders(for: [.utf8PlainText]).first else { return false }
         item.loadItem(forTypeIdentifier: "public.utf8-plain-text", options: nil) { data, _ in
             guard let data = data as? Data,
@@ -2289,8 +2698,249 @@ struct PhotoReorderDropDelegate: DropDelegate {
         return true
     }
 
+    func dropEntered(info: DropInfo) {
+        guard !photo.isFolder && !photo.isParentFolder else { return }
+        ds.dropTargetID = photo.id
+    }
+
+    func dropExited(info: DropInfo) {
+        if ds.dropTargetID == photo.id {
+            ds.dropTargetID = nil
+        }
+    }
+
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        let localX = info.location.x
+        let newLeading = localX < cellWidth / 2
+        // 변경 시만 업데이트 (불필요한 @Published 발행 방지)
+        if ds.dropLeading != newLeading {
+            ds.dropLeading = newLeading
+        }
+        return DropProposal(operation: .move)
+    }
+}
+
+// MARK: - 폴더 미리보기 그리드 (4장 썸네일)
+
+// 폴더 미리보기 캐시 (폴더 재진입 시 리프레시 방지)
+class FolderPreviewCache {
+    static let shared = FolderPreviewCache()
+    private var cache: [URL: (images: [NSImage], count: Int, subfolders: Int)] = [:]
+    private let lock = NSLock()
+
+    func get(_ url: URL) -> (images: [NSImage], count: Int, subfolders: Int)? {
+        lock.lock(); defer { lock.unlock() }
+        return cache[url]
+    }
+    func set(_ url: URL, images: [NSImage], count: Int, subfolders: Int) {
+        lock.lock(); defer { lock.unlock() }
+        cache[url] = (images, count, subfolders)
+    }
+}
+
+struct FolderPreviewGrid: View {
+    let folderURL: URL
+    let size: CGFloat
+    @State private var previewImages: [NSImage] = []
+    @State private var photoCount: Int = 0
+    @State private var subfolderCount: Int = 0
+    @State private var loaded = false
+
+    private var cellH: CGFloat { size * 0.75 }
+    private var halfW: CGFloat { (size - 6) / 2 }
+    private var halfH: CGFloat { (cellH - 20) / 2 }  // 상단 폴더탭 영역 확보
+
+    // 폴더 아이콘 내부 썸네일 영역 비율 (macOS 폴더 아이콘 기준)
+    private var iconSize: CGFloat { size * 0.85 }
+    // 폴더 앞면 영역 (아이콘 하단 60% 영역)
+    private var gridW: CGFloat { iconSize * 0.68 }
+    private var gridH: CGFloat { iconSize * 0.42 }
+    private var gridOffsetY: CGFloat { iconSize * 0.12 }
+
+    var body: some View {
+        ZStack {
+            // macOS 폴더 아이콘
+            Image(nsImage: NSWorkspace.shared.icon(forFile: folderURL.path))
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: iconSize, height: iconSize)
+
+            // 빈 폴더 표시 (사진 없고 하위 폴더도 없을 때만)
+            if loaded && previewImages.isEmpty {
+                let lang = UserDefaults.standard.string(forKey: "appLanguage") ?? "ko"
+                if subfolderCount > 0 {
+                    // 하위 폴더만 있는 경우
+                    VStack(spacing: 2) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: size * 0.1))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text(lang == "ko" ? "\(subfolderCount)개 폴더" : "\(subfolderCount) folders")
+                            .font(.system(size: max(8, size * 0.055), weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .offset(y: gridOffsetY)
+                } else if photoCount == 0 {
+                    Text(lang == "ko" ? "파일 없음" : "No files")
+                        .font(.system(size: max(8, size * 0.06), weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .offset(y: gridOffsetY)
+                }
+            }
+
+            // 2x2 썸네일 그리드 (폴더 앞면 안에)
+            if !previewImages.isEmpty {
+                VStack(spacing: 1) {
+                    HStack(spacing: 1) {
+                        previewThumb(0)
+                        previewThumb(1)
+                    }
+                    HStack(spacing: 1) {
+                        previewThumb(2)
+                        previewThumb(3)
+                    }
+                }
+                .frame(width: gridW, height: gridH)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .offset(y: gridOffsetY)
+            }
+
+            // 사진 수 배지 (우하단)
+            if photoCount > 0 {
+                Text("\(photoCount)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.blue.opacity(0.8))
+                    .cornerRadius(4)
+                    .frame(maxWidth: iconSize, maxHeight: iconSize, alignment: .bottomTrailing)
+                    .offset(x: -2, y: -4)
+            }
+        }
+        .frame(width: size, height: size * 0.75)
+        .onAppear {
+            if !loaded { loadFolderPreviews() }
+        }
+    }
+
+    @ViewBuilder
+    private func previewThumb(_ index: Int) -> some View {
+        if index < previewImages.count {
+            Image(nsImage: previewImages[index])
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: (gridW - 1) / 2, height: (gridH - 1) / 2)
+                .clipped()
+        } else {
+            Color.clear
+                .frame(width: (gridW - 1) / 2, height: (gridH - 1) / 2)
+        }
+    }
+
+    private func loadFolderPreviews() {
+        // 캐시 히트
+        if let cached = FolderPreviewCache.shared.get(folderURL) {
+            previewImages = cached.images
+            photoCount = cached.count
+            subfolderCount = cached.subfolders
+            loaded = true
+            return
+        }
+
+        let url = folderURL
+        DispatchQueue.global(qos: .utility).async {
+            let fm = FileManager.default
+            guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+                DispatchQueue.main.async { loaded = true }
+                return
+            }
+
+            let imageExts = Set(["jpg", "jpeg", "png", "tif", "tiff", "heic",
+                                  "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng"])
+            let imageFiles = items.filter { imageExts.contains($0.pathExtension.lowercased()) }
+            let count = imageFiles.count
+
+            // 하위 폴더 수 카운트
+            let folders = items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            let folderCnt = folders.count
+
+            // 이미지가 없으면 하위 폴더에서 찾기 (1단계만)
+            var allImageFiles = imageFiles
+            if allImageFiles.isEmpty && !folders.isEmpty {
+                for subFolder in folders.prefix(4) {
+                    if let subItems = try? fm.contentsOfDirectory(at: subFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        let subImages = subItems.filter { imageExts.contains($0.pathExtension.lowercased()) }
+                        if let first = subImages.first {
+                            allImageFiles.append(first)
+                        }
+                    }
+                    if allImageFiles.count >= 4 { break }
+                }
+            }
+
+            var sampled: [URL] = []
+            if allImageFiles.count <= 4 {
+                sampled = allImageFiles
+            } else {
+                let step = allImageFiles.count / 4
+                for i in 0..<4 { sampled.append(allImageFiles[i * step]) }
+            }
+
+            var thumbs: [NSImage] = []
+            for fileURL in sampled {
+                if let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+                   let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceThumbnailMaxPixelSize: 120,
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: false
+                   ] as CFDictionary) {
+                    thumbs.append(NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height)))
+                }
+            }
+
+            // 캐시 저장
+            FolderPreviewCache.shared.set(url, images: thumbs, count: count, subfolders: folderCnt)
+
+            DispatchQueue.main.async {
+                previewImages = thumbs
+                photoCount = count
+                subfolderCount = folderCnt
+                loaded = true
+            }
+        }
+    }
+}
+
+// MARK: - 드롭 위치 | 바 오버레이
+struct DropIndicatorOverlay: View {
+    let photoID: UUID
+    @ObservedObject private var dragState = DragDropState.shared
+
+    var body: some View {
+        GeometryReader { geo in
+            if dragState.dropTargetID == photoID {
+                let xPos: CGFloat = dragState.dropLeading ? -3 : geo.size.width + 3
+                dropBar(height: geo.size.height)
+                    .position(x: xPos, y: geo.size.height / 2)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func dropBar(height: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 10, height: 10)
+            Rectangle()
+                .fill(Color.blue)
+                .frame(width: 3, height: height - 24)
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 10, height: 10)
+        }
+        .shadow(color: Color.blue.opacity(0.6), radius: 4)
     }
 }
 

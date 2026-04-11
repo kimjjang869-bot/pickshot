@@ -116,7 +116,12 @@ class PhotoStore: ObservableObject {
             cachedFolderSizeText = String(format: "%.0f KB", Double(totalBytes) / 1024)
         }
     }
-    @Published var selectedPhotoID: UUID?
+    @Published var selectedPhotoID: UUID? {
+        didSet {
+            // 프리페치는 키 연타가 아닐 때만
+            if !isKeyRepeat { prefetchNearbyThumbnails() }
+        }
+    }
     @Published var selectedPhotoIDs: Set<UUID> = []
     /// Incremented when keyboard navigation happens, triggers scroll
     @Published var scrollTrigger: Int = 0
@@ -307,6 +312,9 @@ class PhotoStore: ObservableObject {
     @Published var showDeleteConfirm: Bool = false
     @Published var showSmartSelect: Bool = false
     @Published var showSmartCull: Bool = false
+    // 드래그 드롭 상태 (DragDropState로 분리 — PhotoStore 리드로우 방지)
+    // dropTargetID/dropLeading 삭제 → DragDropState 사용
+    var lastRenameMap: [(oldURL: URL, newURL: URL)] = []  // Undo용 이름 변경 기록
     @Published var showCustomPrompt: Bool = false
     @Published var showBatchProcess: Bool = false
     @Published var showFaceCompare: Bool = false
@@ -321,7 +329,10 @@ class PhotoStore: ObservableObject {
     @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
-    @Published var showFileExtension: Bool = UserDefaults.standard.object(forKey: "showFileExtension") as? Bool ?? false {
+    @Published var showFolderPreview: Bool = UserDefaults.standard.object(forKey: "showFolderPreview") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showFolderPreview, forKey: "showFolderPreview") }
+    }
+    @Published var showFileExtension: Bool = UserDefaults.standard.object(forKey: "showFileExtension") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileExtension, forKey: "showFileExtension") }
     }
     @Published var folderHistory: [URL] = []
@@ -362,6 +373,60 @@ class PhotoStore: ObservableObject {
     @Published var showAIClassifyError = false
     @Published var aiClassifyErrorMessage = ""
     @Published var aiCategoryFilter: String? = nil { didSet { invalidateFilterCache() } }   // 카테고리별 필터
+
+    // MARK: - 스마트 컬렉션 (저장된 필터 조합)
+    struct SmartCollection: Codable, Identifiable {
+        var id = UUID()
+        var name: String
+        var minRating: Int = 0
+        var colorLabel: String = "none"
+        var qualityFilter: String = "all"
+        var sceneTag: String?
+        var keyword: String?
+        var searchText: String = ""
+    }
+
+    @Published var savedCollections: [SmartCollection] = [] {
+        didSet { saveCollections() }
+    }
+
+    func saveCurrentFilter(name: String) {
+        let col = SmartCollection(
+            name: name,
+            minRating: minimumRatingFilter,
+            colorLabel: colorLabelFilter.rawValue,
+            qualityFilter: qualityFilter.rawValue,
+            sceneTag: sceneTagFilter,
+            keyword: keywordFilter,
+            searchText: searchText
+        )
+        savedCollections.append(col)
+    }
+
+    func applyCollection(_ col: SmartCollection) {
+        minimumRatingFilter = col.minRating
+        colorLabelFilter = ColorLabel(rawValue: col.colorLabel) ?? .none
+        qualityFilter = QualityFilter(rawValue: col.qualityFilter) ?? .all
+        sceneTagFilter = col.sceneTag
+        keywordFilter = col.keyword
+        searchText = col.searchText
+    }
+
+    func deleteCollection(_ id: UUID) {
+        savedCollections.removeAll { $0.id == id }
+    }
+
+    private func saveCollections() {
+        if let data = try? JSONEncoder().encode(savedCollections) {
+            UserDefaults.standard.set(data, forKey: "smartCollections")
+        }
+    }
+
+    func loadCollections() {
+        guard let data = UserDefaults.standard.data(forKey: "smartCollections"),
+              let cols = try? JSONDecoder().decode([SmartCollection].self, from: data) else { return }
+        savedCollections = cols
+    }
 
     // Search
     @Published var searchText: String = "" { didSet { invalidateFilterCache() } }
@@ -509,6 +574,7 @@ class PhotoStore: ObservableObject {
                 self.restoreLastSession()
             }
         }
+        loadCollections()
     }
 
     /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화
@@ -534,6 +600,14 @@ class PhotoStore: ObservableObject {
         folderWatcher.onNewFilesDetected = { [weak self] newURLs in
             guard let self = self, self.isFolderWatchingEnabled else { return }
             self.handleNewFiles(newURLs)
+        }
+        folderWatcher.onFolderStructureChanged = { [weak self] in
+            guard let self = self, self.isFolderWatchingEnabled else { return }
+            // 폴더 구조 변경 → 현재 폴더 리로드 (새 폴더/파일 삭제 반영)
+            if let url = self.folderURL {
+                fputs("[WATCH] 폴더 구조 변경 감지 → 리로드\n", stderr)
+                self.loadFolder(url, restoreRatings: true)
+            }
         }
     }
 
@@ -579,6 +653,42 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
+
+    private var prefetchWorkItem: DispatchWorkItem?
+
+    private func prefetchNearbyThumbnails() {
+        // 디바운스: 빠른 키 연타 시 마지막 한 번만 실행
+        prefetchWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, let id = self.selectedPhotoID else { return }
+            let list = self.filteredPhotos
+            self.ensureFilteredIndex()
+            guard let idx = self._filteredIndex[id] else { return }
+
+            // 앞뒤 20장 중 메모리 캐시 미스만 로딩
+            let start = max(0, idx - 20)
+            let end = min(list.count - 1, idx + 20)
+            guard start <= end else { return }
+
+            var toLoad: [URL] = []
+            for i in start...end {
+                let photo = list[i]
+                guard !photo.isFolder && !photo.isParentFolder else { continue }
+                if ThumbnailCache.shared.get(photo.jpgURL) == nil {
+                    toLoad.append(photo.jpgURL)
+                }
+            }
+
+            // 최대 10장만 큐에 추가 (과도한 큐 적재 방지)
+            for url in toLoad.prefix(10) {
+                ThumbnailLoader.shared.load(url: url) { _ in }
+            }
+        }
+        prefetchWorkItem = work
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: work)
+    }
+
     // MARK: - Session Persistence
 
     private func restoreLastSession() {
@@ -600,11 +710,28 @@ class PhotoStore: ObservableObject {
     }
 
     private func saveRatings() {
+        // 폴더별 저장 (경로 해시 키)
+        guard let folderPath = folderURL?.path else { return }
+
         var ratings: [String: Int] = [:]
-        for photo in photos where photo.rating > 0 {
-            ratings[photo.fileName] = photo.rating
+        var spPicks: [String: Bool] = [:]
+        var colorLabels: [String: String] = [:]
+        for photo in photos {
+            if photo.rating > 0 { ratings[photo.fileName] = photo.rating }
+            if photo.isSpacePicked { spPicks[photo.fileName] = true }
+            if photo.colorLabel != .none { colorLabels[photo.fileName] = photo.colorLabel.rawValue }
         }
+
+        // 전역 (하위 호환)
         defaults.set(ratings, forKey: ratingsKey)
+
+        // 폴더별 SP + 컬러라벨
+        var allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
+        var allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
+        allSP[folderPath] = spPicks
+        allColors[folderPath] = colorLabels
+        defaults.set(allSP, forKey: "folderSpacePicks")
+        defaults.set(allColors, forKey: "folderColorLabels")
 
         // Write XMP sidecar files in background
         let snapshot = photos.map { (url: $0.jpgURL, rating: $0.rating, label: $0.colorLabel, spacePicked: $0.isSpacePicked) }
@@ -618,15 +745,36 @@ class PhotoStore: ObservableObject {
 
     private func applySavedRatings() {
         let savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
+        let folderPath = folderURL?.path ?? ""
+        let allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]]
+        let allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]]
+        let savedSP = allSP?[folderPath]
+        let savedColors = allColors?[folderPath]
 
+        fputs("[RESTORE] folder=\(folderURL?.lastPathComponent ?? "nil"), ratings=\(savedRatings?.count ?? 0), SP=\(savedSP?.count ?? 0), colors=\(savedColors?.count ?? 0)\n", stderr)
+
+        var restoredSP = 0
+        var restoredRating = 0
         for i in 0..<photos.count {
             let fileName = photos[i].fileName
 
-            // 저장된 별점 (PickShot에서 매긴 것)
+            // 저장된 별점
             if let saved = savedRatings?[fileName] {
                 photos[i].rating = saved
+                restoredRating += 1
+            }
+            // 저장된 SP 셀렉
+            if savedSP?[fileName] == true {
+                photos[i].isSpacePicked = true
+                restoredSP += 1
+            }
+            // 저장된 컬러라벨
+            if let colorStr = savedColors?[fileName],
+               let color = ColorLabel(rawValue: colorStr) {
+                photos[i].colorLabel = color
             }
         }
+        fputs("[RESTORE] 적용: rating \(restoredRating)장, SP \(restoredSP)장\n", stderr)
 
         // 백그라운드: XMP sidecar + EXIF Rating 읽기 (저장된 별점 없는 사진만)
         let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }
@@ -876,6 +1024,45 @@ class PhotoStore: ObservableObject {
         removePhotosFromList(ids: ids)
     }
 
+    /// 폴더를 휴지통으로 이동
+    func deleteFolders(ids: Set<UUID>) {
+        let fm = FileManager.default
+        var deleted = 0
+        for id in ids {
+            guard let idx = _photoIndex[id], idx < photos.count else { continue }
+            let photo = photos[idx]
+            guard photo.isFolder else { continue }
+            do {
+                try fm.trashItem(at: photo.jpgURL, resultingItemURL: nil)
+                deleted += 1
+                fputs("[DELETE] 폴더 휴지통 이동: \(photo.jpgURL.lastPathComponent)\n", stderr)
+            } catch {
+                fputs("[DELETE] 폴더 삭제 실패: \(error.localizedDescription)\n", stderr)
+            }
+        }
+        if deleted > 0, let url = folderURL {
+            loadFolder(url, restoreRatings: true)
+        }
+    }
+
+    /// 선택된 파일/폴더를 휴지통으로 이동 (통합)
+    func deleteSelectedItems() {
+        let ids = selectedPhotoIDs
+        guard !ids.isEmpty else { return }
+
+        let hasFolder = ids.contains { id in
+            guard let idx = _photoIndex[id], idx < photos.count else { return false }
+            return photos[idx].isFolder
+        }
+        let hasFile = ids.contains { id in
+            guard let idx = _photoIndex[id], idx < photos.count else { return false }
+            return !photos[idx].isFolder && !photos[idx].isParentFolder
+        }
+
+        if hasFolder { deleteFolders(ids: ids) }
+        if hasFile { deleteOriginalFiles(ids: ids) }
+    }
+
     /// 선택된 사진 파일을 대상 폴더로 이동
     func movePhotosToFolder(fileURLs: [URL], destination: URL) {
         let fm = FileManager.default
@@ -972,6 +1159,9 @@ class PhotoStore: ObservableObject {
         guard let i = idx(photoID) else { return }
         pushUndo(action: "SP 토글", photoIDs: [photoID])
         photos[i].isSpacePicked.toggle()
+        invalidateFilterCache()
+        photosVersion += 1
+        saveRatings()
     }
 
     func toggleSpacePickForSelected() {
@@ -979,6 +1169,9 @@ class PhotoStore: ObservableObject {
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].isSpacePicked.toggle() }
         }
+        invalidateFilterCache()
+        photosVersion += 1
+        saveRatings()
     }
 
     var spacePickedCount: Int {
@@ -1267,9 +1460,10 @@ class PhotoStore: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self?.preloadAllThumbnails()
                 }
-                // 목록뷰용 EXIF 배치 로딩 (1초 후, 첫 50장)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self?.batchLoadExif(count: 50)
+                // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let count = self?.viewMode == .list ? 200 : 50
+                    self?.batchLoadExif(count: count)
                 }
                 // 아이들 시 고화질 미리보기 프리캐싱 (3초 후 시작)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
@@ -1379,7 +1573,7 @@ class PhotoStore: ObservableObject {
     private var exifBatchWork: DispatchWorkItem?
 
     /// 폴더 열 때 첫 N장 EXIF 배치 로딩
-    private func batchLoadExif(count: Int) {
+    func batchLoadExif(count: Int) {
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }
         let batch = list.prefix(count)
         guard !batch.isEmpty else { return }
@@ -1398,11 +1592,24 @@ class PhotoStore: ObservableObject {
                 }
                 loaded += 1
             }
-            // 배치 완료 → UI 업데이트 1번
+            // 배치 완료 → UI 업데이트 (Table 갱신을 위해 photosVersion 증가)
             DispatchQueue.main.async { [weak self] in
+                self?.invalidateFilterCache()
+                self?.photosVersion += 1
                 self?.objectWillChange.send()
             }
         }
+    }
+
+    /// Table 셀에서 최신 데이터 조회 (struct 복사 문제 우회)
+    func exifFor(_ id: UUID) -> ExifData? {
+        guard let idx = _photoIndex[id], idx < photos.count else { return nil }
+        return photos[idx].exifData
+    }
+
+    func livePhoto(_ id: UUID) -> PhotoItem? {
+        guard let idx = _photoIndex[id], idx < photos.count else { return nil }
+        return photos[idx]
     }
 
     func loadExifIfNeeded(for photoID: UUID) {
@@ -1410,6 +1617,7 @@ class PhotoStore: ObservableObject {
         guard photos[idx].exifData == nil else { return }
         guard !photos[idx].isFolder && !photos[idx].isParentFolder else { return }
         guard !exifLoadingIDs.contains(photoID) else { return }
+        fputs("[EXIF] loadIfNeeded: \(photos[idx].fileName)\n", stderr)
 
         exifLoadingIDs.insert(photoID)
         let url = photos[idx].jpgURL
@@ -1428,15 +1636,28 @@ class PhotoStore: ObservableObject {
                 self.photos[i].exifData = exif
                 self._suppressDidSet = false
 
-                // 배치: 0.1초 디바운스로 objectWillChange
+                // 배치: 0.3초 디바운스로 Table 갱신
                 self.exifBatchWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
+                    self?.invalidateFilterCache()
+                    self?.photosVersion += 1
                     self?.objectWillChange.send()
                 }
                 self.exifBatchWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
             }
         }
+    }
+
+    /// 목록뷰 전환 시 전체 EXIF 배치 로딩
+    private var lastExifLoadVersion: Int = -1
+    func triggerListExifLoad() {
+        let needExif = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }.count
+        fputs("[EXIF] triggerListExifLoad: need=\(needExif), version=\(photosVersion), last=\(lastExifLoadVersion)\n", stderr)
+        guard lastExifLoadVersion != photosVersion else { return }
+        lastExifLoadVersion = photosVersion
+        guard needExif > 0 else { return }
+        batchLoadExif(count: photos.count)
     }
 
     /// 현재 위치 기반 윈도우 프리페치 — 앞뒤 50장만 로딩
@@ -2618,30 +2839,53 @@ class PhotoStore: ObservableObject {
     static func previewRename(photo: PhotoItem, pattern: String, index: Int, dateFormat: String, seqDigits: Int, seqStart: Int) -> String {
         var result = pattern
 
+        // EXIF 직접 읽기 (미로딩 시)
+        var dateTaken = photo.exifData?.dateTaken
+        var cameraName = photo.exifData?.cameraModel
+        if dateTaken == nil || cameraName == nil {
+            if let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                if dateTaken == nil, let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any],
+                   let dateStr = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+                    let df = DateFormatter()
+                    df.dateFormat = "yyyy:MM:dd HH:mm:ss"
+                    dateTaken = df.date(from: dateStr)
+                }
+                if cameraName == nil, let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] {
+                    cameraName = tiff[kCGImagePropertyTIFFModel as String] as? String
+                }
+            }
+        }
+
         // {date}
-        if let date = photo.exifData?.dateTaken {
+        if let date = dateTaken {
             let df = DateFormatter()
             df.dateFormat = dateFormat
             result = result.replacingOccurrences(of: "{date}", with: df.string(from: date))
         } else {
-            result = result.replacingOccurrences(of: "{date}", with: "nodate")
+            // 날짜 없으면 파일 수정일 사용
+            let df = DateFormatter()
+            df.dateFormat = dateFormat
+            result = result.replacingOccurrences(of: "{date}", with: df.string(from: photo.fileModDate))
         }
 
         // {time} → HHmmss
-        if let date = photo.exifData?.dateTaken {
+        if let date = dateTaken {
             let df = DateFormatter()
             df.dateFormat = "HHmmss"
             result = result.replacingOccurrences(of: "{time}", with: df.string(from: date))
         } else {
-            result = result.replacingOccurrences(of: "{time}", with: "notime")
+            let df = DateFormatter()
+            df.dateFormat = "HHmmss"
+            result = result.replacingOccurrences(of: "{time}", with: df.string(from: photo.fileModDate))
         }
 
-        // {camera} → camera model
-        if let model = photo.exifData?.cameraModel {
-            let cleaned = model.replacingOccurrences(of: " ", with: "_")
+        // {camera}
+        if let model = cameraName {
+            let cleaned = model.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: " ", with: "_")
             result = result.replacingOccurrences(of: "{camera}", with: cleaned)
         } else {
-            result = result.replacingOccurrences(of: "{camera}", with: "unknown")
+            result = result.replacingOccurrences(of: "{camera}", with: "")
         }
 
         // {seq} → sequence number
@@ -2652,6 +2896,16 @@ class PhotoStore: ObservableObject {
         // {original} → original file name (without extension)
         result = result.replacingOccurrences(of: "{original}", with: photo.fileName)
 
+        // 연속 구분자 정리 (빈 값으로 인한 __, --, .. 등)
+        for sep in ["__", "--", "..", "_.","._","-_","_-",".-","-."] {
+            while result.contains(sep) {
+                result = result.replacingOccurrences(of: sep, with: String(sep.first!))
+            }
+        }
+        // 선행/후행 구분자 제거
+        let trimChars = CharacterSet(charactersIn: "_-.")
+        result = result.trimmingCharacters(in: trimChars)
+
         return result
     }
 
@@ -2660,17 +2914,28 @@ class PhotoStore: ObservableObject {
         return batchRename(pattern: pattern, dateFormat: "yyyyMMdd", seqDigits: 3, seqStart: 1)
     }
 
-    func batchRename(pattern: String, dateFormat: String, seqDigits: Int, seqStart: Int) -> (success: Int, errors: [String]) {
+    func batchRename(pattern: String, dateFormat: String, seqDigits: Int, seqStart: Int, preserveRatings: Bool = true) -> (success: Int, errors: [String]) {
         let targets: [PhotoItem]
         if selectedPhotoIDs.count > 1 {
-            targets = filteredPhotos.filter { selectedPhotoIDs.contains($0.id) }
+            targets = filteredPhotos.filter { selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }
         } else {
-            targets = filteredPhotos
+            targets = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
         }
 
         var successCount = 0
         var errors: [String] = []
         let fm = FileManager.default
+        var renameMap: [(oldURL: URL, newURL: URL)] = []
+        var ratingMap: [String: Int] = [:]  // oldFilename → rating
+
+        // 레이팅 보존: 이름 변경 전 레이팅 수집
+        if preserveRatings {
+            for photo in targets {
+                if photo.rating > 0 {
+                    ratingMap[photo.fileName] = photo.rating
+                }
+            }
+        }
 
         for (index, photo) in targets.enumerated() {
             let newBaseName = Self.previewRename(photo: photo, pattern: pattern, index: index, dateFormat: dateFormat, seqDigits: seqDigits, seqStart: seqStart)
@@ -2678,27 +2943,43 @@ class PhotoStore: ObservableObject {
             let parentDir = photo.jpgURL.deletingLastPathComponent()
             let newJPGURL = parentDir.appendingPathComponent("\(newBaseName).\(jpgExt)")
 
-            // Skip if same name
             if newJPGURL == photo.jpgURL { continue }
 
-            // Check for conflicts
-            if fm.fileExists(atPath: newJPGURL.path) && newJPGURL != photo.jpgURL {
-                errors.append("\(photo.fileName): 이름 충돌 - \(newBaseName).\(jpgExt)")
+            if fm.fileExists(atPath: newJPGURL.path) {
+                errors.append("\(photo.fileName): 이름 충돌")
                 continue
             }
 
             do {
-                // Rename JPG
+                // JPG 이름 변경
                 try fm.moveItem(at: photo.jpgURL, to: newJPGURL)
+                renameMap.append((photo.jpgURL, newJPGURL))
 
-                // Rename matching RAW if exists
-                if let rawURL = photo.rawURL {
+                // RAW 이름 변경
+                if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
                     let rawExt = rawURL.pathExtension
                     let rawParent = rawURL.deletingLastPathComponent()
                     let newRAWURL = rawParent.appendingPathComponent("\(newBaseName).\(rawExt)")
                     if !fm.fileExists(atPath: newRAWURL.path) {
                         try fm.moveItem(at: rawURL, to: newRAWURL)
+                        renameMap.append((rawURL, newRAWURL))
                     }
+                }
+
+                // XMP 사이드카 이동
+                let xmpURL = photo.jpgURL.deletingPathExtension().appendingPathExtension("xmp")
+                if fm.fileExists(atPath: xmpURL.path) {
+                    let newXMPURL = parentDir.appendingPathComponent("\(newBaseName).xmp")
+                    try? fm.moveItem(at: xmpURL, to: newXMPURL)
+                    renameMap.append((xmpURL, newXMPURL))
+                }
+
+                // 레이팅 보존: UserDefaults 키 갱신
+                if preserveRatings, let rating = ratingMap[photo.fileName] {
+                    var saved = UserDefaults.standard.dictionary(forKey: "photoRatings") as? [String: Int] ?? [:]
+                    saved.removeValue(forKey: photo.fileName)
+                    saved[newBaseName] = rating
+                    UserDefaults.standard.set(saved, forKey: "photoRatings")
                 }
 
                 successCount += 1
@@ -2707,12 +2988,45 @@ class PhotoStore: ObservableObject {
             }
         }
 
-        // Reload folder to reflect changes
+        // Undo 기록 저장
+        lastRenameMap = renameMap
+        fputs("[RENAME] 완료: \(successCount)개 성공, \(errors.count)개 실패, undo \(renameMap.count)개 기록\n", stderr)
+
+        // 폴더 리로드
         if successCount > 0, let url = folderURL {
-            loadFolder(url)
+            loadFolder(url, restoreRatings: true)
         }
 
         return (successCount, errors)
+    }
+
+    /// 이름 변경 되돌리기
+    func undoBatchRename() -> Bool {
+        guard !lastRenameMap.isEmpty else { return false }
+        let fm = FileManager.default
+        var success = true
+
+        // 역순으로 되돌리기
+        for entry in lastRenameMap.reversed() {
+            do {
+                if fm.fileExists(atPath: entry.newURL.path) {
+                    try fm.moveItem(at: entry.newURL, to: entry.oldURL)
+                }
+            } catch {
+                fputs("[RENAME] Undo 실패: \(error.localizedDescription)\n", stderr)
+                success = false
+            }
+        }
+
+        lastRenameMap = []
+
+        // 폴더 리로드
+        if let url = folderURL {
+            loadFolder(url, restoreRatings: true)
+        }
+
+        fputs("[RENAME] Undo 완료: \(success)\n", stderr)
+        return success
     }
 }
 

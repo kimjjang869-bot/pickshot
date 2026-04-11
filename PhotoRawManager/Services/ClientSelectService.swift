@@ -175,7 +175,37 @@ class ClientSelectService: ObservableObject {
 
         guard !cancelled else { return }
 
-        // 3. 사진 리사이즈 + 업로드
+        // 3. 중복 체크 — 기존 파일 목록 조회
+        var existingFileNames: Set<String> = []
+        let listSemaphore = DispatchSemaphore(value: 0)
+        GoogleDriveService.listFiles(folderId: folderID, accessToken: token) { names, _ in
+            existingFileNames = Set(names)
+            listSemaphore.signal()
+        }
+        listSemaphore.wait()
+
+        // 중복 제거
+        let originalCount = photos.count
+        let filteredPhotos = photos.filter { !existingFileNames.contains($0.jpgURL.lastPathComponent) }
+        let skippedCount = originalCount - filteredPhotos.count
+        if skippedCount > 0 {
+            fputs("[CLIENT] 중복 건너뛰기: \(skippedCount)장 (기존 파일과 동일 이름)\n", stderr)
+            DispatchQueue.main.async { [weak self] in
+                self?.errorMessage = "\(skippedCount)장 중복 건너뛰기"
+            }
+        }
+
+        let photosToUpload = filteredPhotos
+        guard !photosToUpload.isEmpty else {
+            fputs("[CLIENT] 업로드할 새 파일 없음 (전부 중복)\n", stderr)
+            DispatchQueue.main.async { [weak self] in
+                self?.isUploading = false
+                self?.errorMessage = "업로드할 새 파일 없음 (\(skippedCount)장 이미 존재)"
+            }
+            return
+        }
+
+        // 4. 사진 리사이즈 + 업로드
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pickshot_clientselect_\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -188,10 +218,10 @@ class ClientSelectService: ObservableObject {
         let uploadGroup = DispatchGroup()
         let uploadSemaphore = DispatchSemaphore(value: concurrency)
 
-        fputs("[CLIENT] 사진 업로드 시작: \(photos.count)장\n", stderr)
-        for (index, photo) in photos.enumerated() {
+        fputs("[CLIENT] 사진 업로드 시작: \(photosToUpload.count)장 (중복 \(skippedCount)장 건너뜀)\n", stderr)
+        for (index, photo) in photosToUpload.enumerated() {
             guard !cancelled else { break }
-            fputs("[CLIENT] 업로드 \(index+1)/\(photos.count): \(photo.jpgURL.lastPathComponent)\n", stderr)
+            fputs("[CLIENT] 업로드 \(index+1)/\(photosToUpload.count): \(photo.jpgURL.lastPathComponent)\n", stderr)
 
             uploadSemaphore.wait()  // 동시 4개 제한
             uploadGroup.enter()

@@ -220,10 +220,12 @@ class MemoryCardBackupService: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let fm = FileManager.default
+            let backupStartTime = CFAbsoluteTimeGetCurrent()
             var failedFiles: [FailedFile] = []
             var skippedCount = 0
             let dcimPath = sourceVolume.appendingPathComponent("DCIM").path
 
+            // SD카드 순차 복사 (16MB 버퍼 + F_NOCACHE + F_RDAHEAD)
             for (index, sourceURL) in photos.enumerated() {
                 if session.isCancelled { break }
 
@@ -232,7 +234,6 @@ class MemoryCardBackupService: ObservableObject {
                 let destDir = destURL.deletingLastPathComponent()
                 try? fm.createDirectory(at: destDir, withIntermediateDirectories: true)
 
-                // 이미 존재하면 크기까지 비교 — 일치하면 스킵, 다르면 재복사
                 let srcSize = Self.fileSize(sourceURL)
                 if fm.fileExists(atPath: destURL.path) {
                     let dstSize = Self.fileSize(destURL)
@@ -249,28 +250,21 @@ class MemoryCardBackupService: ObservableObject {
                     try? fm.removeItem(at: destURL)
                 }
 
-                let tmpURL = destURL.appendingPathExtension("tmp_복사중")
                 var success = false
 
                 for retry in 0..<3 {
-                    try? fm.removeItem(at: tmpURL)
-                    // copyfile() C API — F_NOCACHE로 큰 파일 빠르게 복사
-                    if Self.fastCopy(from: sourceURL, to: tmpURL) {
-                        let dstSize = Self.fileSize(tmpURL)
+                    try? fm.removeItem(at: destURL)
+                    if Self.fastCopy(from: sourceURL, to: destURL) {
+                        let dstSize = Self.fileSize(destURL)
                         if srcSize > 0 && srcSize == dstSize {
-                            do {
-                                try fm.moveItem(at: tmpURL, to: destURL)
-                                session.bytesCopied += srcSize
-                                success = true
-                                break
-                            } catch {
-                                try? fm.removeItem(at: tmpURL)
-                            }
+                            session.bytesCopied += srcSize
+                            success = true
+                            break
                         } else {
-                            try? fm.removeItem(at: tmpURL)
+                            try? fm.removeItem(at: destURL)
                         }
                     } else {
-                        try? fm.removeItem(at: tmpURL)
+                        try? fm.removeItem(at: destURL)
                         if retry == 2 {
                             fputs("[BACKUP] 실패: \(sourceURL.lastPathComponent)\n", stderr)
                         }
@@ -305,18 +299,16 @@ class MemoryCardBackupService: ObservableObject {
                 self.objectWillChange.send()
 
                 let allSuccess = failedFiles.isEmpty && !session.isCancelled
-                fputs("[BACKUP] 완료: \(result.success)/\(result.total), 실패: \(failedFiles.count)\n", stderr)
+                let elapsed = CFAbsoluteTimeGetCurrent() - backupStartTime
+                let totalMB = Double(session.bytesCopied) / 1_048_576.0
+                let speed = elapsed > 0 ? totalMB / elapsed : 0
+                fputs("[BACKUP] 완료: \(result.success)/\(result.total), 실패: \(failedFiles.count), \(String(format: "%.1f", totalMB))MB, \(String(format: "%.1f", elapsed))초, \(String(format: "%.1f", speed))MB/s\n", stderr)
 
                 if allSuccess {
                     // 완료된 세션 제거
                     self.sessions.removeAll { $0.id == session.id }
-                    // eject 완료 후 waitingForNextCard 설정 (타이밍 이슈 방지)
-                    self.ejectVolume(sourceVolume) {
-                        DispatchQueue.main.async {
-                            self.waitingForNextCard = true
-                            fputs("[CARD] 추출 완료 → 다음 카드 대기 중\n", stderr)
-                        }
-                    }
+                    // 자동 eject 안 함 — 사용자가 "다음 카드"(eject) or "종료"(eject 안 함) 선택
+                    fputs("[CARD] 백업 완료 → 사용자 선택 대기 (다음 카드/종료)\n", stderr)
                 }
             }
         }
@@ -332,52 +324,64 @@ class MemoryCardBackupService: ObservableObject {
 
     // MARK: - Fast Copy (copyfile C API + F_NOCACHE)
 
-    /// copyfile() C API로 파일 복사 — FileManager.copyItem보다 빠름
-    /// COPYFILE_CLONE: APFS→APFS면 즉시, 아니면 자동 fallback
-    /// F_NOCACHE: 큰 파일을 unified buffer cache에 안 올림 (메모리 절약 + 속도 향상)
+    /// 파일 복사 — copyfile() → 수동 버퍼 → FileManager fallback
     private static func fastCopy(from src: URL, to dst: URL) -> Bool {
         let srcPath = src.path
         let dstPath = dst.path
 
-        // copyfile() with CLONE 시도 (APFS→APFS면 즉시복사)
+        // 1차: copyfile() C API (APFS 클론 + 메타데이터 복사)
         let flags: copyfile_flags_t = UInt32(COPYFILE_ALL | COPYFILE_CLONE)
-        let result = copyfile(srcPath, dstPath, nil, flags)
-
-        if result == 0 {
-            // 소스/대상에 F_NOCACHE 설정 — 대용량 파일 캐시 오염 방지
-            if let fd = fopen(dstPath, "r") {
-                fcntl(fileno(fd), F_NOCACHE, 1)
-                fclose(fd)
-            }
+        if copyfile(srcPath, dstPath, nil, flags) == 0 {
             return true
         }
 
-        // copyfile 실패 시 수동 버퍼 복사 (4MB 버퍼)
-        return manualBufferCopy(from: srcPath, to: dstPath)
+        // 2차: 수동 버퍼 복사 (16MB + F_NOCACHE)
+        if manualBufferCopy(from: srcPath, to: dstPath) {
+            return true
+        }
+
+        // 3차: FileManager fallback (가장 안전)
+        do {
+            try FileManager.default.copyItem(at: src, to: dst)
+            return true
+        } catch {
+            fputs("[BACKUP] copyItem도 실패: \(src.lastPathComponent) → \(error.localizedDescription)\n", stderr)
+            return false
+        }
     }
 
-    /// 8MB 버퍼로 직접 read/write — SSD/USB3 최적
+    /// 16MB 버퍼 + F_NOCACHE + read/write syscall
     private static func manualBufferCopy(from srcPath: String, to dstPath: String) -> Bool {
-        guard let srcFd = fopen(srcPath, "rb") else { return false }
-        defer { fclose(srcFd) }
-        guard let dstFd = fopen(dstPath, "wb") else { return false }
-        defer { fclose(dstFd) }
+        let srcFd = open(srcPath, O_RDONLY)
+        guard srcFd >= 0 else { return false }
+        defer { close(srcFd) }
 
-        // F_NOCACHE — 큰 파일이 시스템 캐시를 오염시키지 않게
-        fcntl(fileno(srcFd), F_NOCACHE, 1)
-        fcntl(fileno(dstFd), F_NOCACHE, 1)
+        // 0o644 — 안전한 기본 퍼미션 (SD카드 st_mode가 이상할 수 있음)
+        let dstFd = open(dstPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        guard dstFd >= 0 else {
+            return false
+        }
+        defer { close(dstFd) }
 
-        let bufferSize = 8 * 1024 * 1024  // 8MB — SSD/USB3 최적
+        fcntl(srcFd, F_NOCACHE, 1)
+        fcntl(dstFd, F_NOCACHE, 1)
+        fcntl(srcFd, F_RDAHEAD, 1)
+
+        let bufferSize = 16 * 1024 * 1024
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
         defer { buffer.deallocate() }
 
         while true {
-            let bytesRead = fread(buffer, 1, bufferSize, srcFd)
-            if bytesRead == 0 { break }
-            let bytesWritten = fwrite(buffer, 1, bytesRead, dstFd)
-            if bytesWritten != bytesRead { return false }
+            let bytesRead = read(srcFd, buffer, bufferSize)
+            if bytesRead <= 0 { break }
+            var written = 0
+            while written < bytesRead {
+                let w = write(dstFd, buffer + written, bytesRead - written)
+                if w < 0 { return false }
+                written += w
+            }
         }
-        return ferror(srcFd) == 0
+        return true
     }
 
     private static func fileSize(_ url: URL) -> Int64 {
@@ -409,12 +413,28 @@ class MemoryCardBackupService: ObservableObject {
                 DispatchQueue.main.async {
                     self?.detectedVolumeURL = nil
                     self?.detectedVolumeName = ""
+                    self?.lastStartedVolume = nil  // 같은 마운트포인트에 새 카드 감지 허용
                     self?.waitingForNextCard = true
                     fputs("[CARD] 추출 완료 → 다음 카드 대기 중\n", stderr)
                 }
             }
         } else {
+            lastStartedVolume = nil
             waitingForNextCard = true
+        }
+    }
+
+    /// 카드 꺼내기 + 종료
+    func ejectAndFinish() {
+        if let vol = detectedVolumeURL {
+            ejectVolume(vol) { [weak self] in
+                DispatchQueue.main.async {
+                    fputs("[CARD] 꺼내기 완료: \(vol.lastPathComponent)\n", stderr)
+                    self?.finishBackup()
+                }
+            }
+        } else {
+            finishBackup()
         }
     }
 

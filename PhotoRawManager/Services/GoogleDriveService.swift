@@ -416,6 +416,40 @@ class GoogleDriveService {
         }.resume()
     }
 
+    // MARK: - 폴더 내 파일 목록 조회 (중복 체크용)
+
+    static func listFiles(
+        folderId: String,
+        accessToken: String,
+        completion: @escaping ([String], Error?) -> Void  // 파일명 배열
+    ) {
+        let query = "'\(folderId)' in parents and trashed = false"
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "https://www.googleapis.com/drive/v3/files?q=\(encoded)&fields=files(name)&pageSize=1000"
+        guard let url = URL(string: urlString) else {
+            completion([], APIError(message: "잘못된 API URL"))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error = error {
+                completion([], error)
+                return
+            }
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let files = json["files"] as? [[String: Any]] else {
+                completion([], nil)
+                return
+            }
+            let names = files.compactMap { $0["name"] as? String }
+            completion(names, nil)
+        }.resume()
+    }
+
     // MARK: - OAuth 2.0
 
     // OAuth credentials loaded lazily (avoids keychain popup at app launch)

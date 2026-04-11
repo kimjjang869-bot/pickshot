@@ -69,51 +69,24 @@ struct PaywallView: View {
                             let isYearly = subscriptionManager.isYearly(product)
                             let isPurchased = subscriptionManager.purchasedProductIDs.contains(product.id)
 
+                            let bgColor: Color = isPurchased ? Color.green.opacity(0.1) : (isYearly ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                            let borderColor: Color = isPurchased ? Color.green : (isYearly ? Color.blue : Color.gray.opacity(0.2))
+                            let borderWidth: CGFloat = isYearly ? 2 : 1
+
                             Button(action: {
                                 Task { await subscriptionManager.purchase(product) }
                             }) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(isYearly ? "연간" : "월간")
-                                                .font(.system(size: 14, weight: .bold))
-                                            if isYearly {
-                                                Text("2개월 무료")
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(Color.orange)
-                                                    .cornerRadius(4)
-                                            }
-                                        }
-                                        Text(isYearly ? "매월 ₩1,250 (34% 할인)" : "매월 결제")
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.secondary)
-                                    }
-
-                                    Spacer()
-
-                                    if isPurchased {
-                                        Label("구독 중", systemImage: "checkmark.circle.fill")
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundColor(.green)
-                                    } else {
-                                        VStack(alignment: .trailing) {
-                                            Text(product.displayPrice)
-                                                .font(.system(size: 16, weight: .bold))
-                                            Text(isYearly ? "/년" : "/월")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
+                                SubscriptionRowLabel(
+                                    isYearly: isYearly,
+                                    isPurchased: isPurchased,
+                                    displayPrice: product.displayPrice
+                                )
                                 .padding(14)
-                                .background(isPurchased ? Color.green.opacity(0.1) : isYearly ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                                .background(bgColor)
                                 .cornerRadius(10)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(isPurchased ? Color.green : isYearly ? Color.blue : Color.gray.opacity(0.2), lineWidth: isYearly ? 2 : 1)
+                                        .stroke(borderColor, lineWidth: borderWidth)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -175,6 +148,49 @@ struct PaywallView: View {
             Text(desc)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct SubscriptionRowLabel: View {
+    let isYearly: Bool
+    let isPurchased: Bool
+    let displayPrice: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(isYearly ? "연간" : "월간")
+                        .font(.system(size: 14, weight: .bold))
+                    if isYearly {
+                        Text("2개월 무료")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange)
+                            .cornerRadius(4)
+                    }
+                }
+                Text(isYearly ? "매월 ₩1,250 (34% 할인)" : "매월 결제")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if isPurchased {
+                Label("구독 중", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.green)
+            } else {
+                VStack(alignment: .trailing) {
+                    Text(displayPrice)
+                        .font(.system(size: 16, weight: .bold))
+                    Text(isYearly ? "/년" : "/월")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
 }

@@ -200,6 +200,14 @@ struct ContentView: View {
                                                 .foregroundColor(.yellow)
                                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
 
+                                            let spCount = store.photos.filter { $0.isSpacePicked }.count
+                                            if spCount > 0 {
+                                                Text("·").foregroundColor(AppTheme.textDim)
+                                                Text("SP: \(spCount)장")
+                                                    .foregroundColor(.red)
+                                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                            }
+
                                             Text("·").foregroundColor(AppTheme.textDim)
 
                                             Image(systemName: "internaldrive")
@@ -408,9 +416,19 @@ struct ContentView: View {
         } message: {
             Text("선택한 \(store.photosToRemove.count)장을 목록에서 제거하시겠습니까? (파일은 삭제되지 않습니다)")
         }
-        .alert("⚠️ 원본 파일 삭제", isPresented: $store.showDeleteOriginalConfirm) {
-            Button("삭제 (휴지통으로 이동)", role: .destructive) {
-                store.deleteOriginalFiles(ids: store.pendingDeleteIDs)
+        .alert("⚠️ 휴지통으로 이동", isPresented: $store.showDeleteOriginalConfirm) {
+            Button("휴지통으로 이동", role: .destructive) {
+                let ids = store.pendingDeleteIDs
+                let hasFolder = ids.contains { id in
+                    guard let idx = store._photoIndex[id], idx < store.photos.count else { return false }
+                    return store.photos[idx].isFolder
+                }
+                if hasFolder { store.deleteFolders(ids: ids) }
+                let fileIDs = ids.filter { id in
+                    guard let idx = store._photoIndex[id], idx < store.photos.count else { return false }
+                    return !store.photos[idx].isFolder && !store.photos[idx].isParentFolder
+                }
+                if !fileIDs.isEmpty { store.deleteOriginalFiles(ids: Set(fileIDs)) }
                 store.pendingDeleteIDs = []
             }
             .keyboardShortcut(.defaultAction)

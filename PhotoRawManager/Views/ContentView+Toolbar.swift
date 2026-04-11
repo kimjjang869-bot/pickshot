@@ -259,6 +259,53 @@ extension ContentView {
                     // AI 분류 (품질 + 장면 통합)
                     qualityFilterMenu
 
+                    // 스마트 컬렉션
+                    Menu {
+                        if store.savedCollections.isEmpty {
+                            Text("저장된 컬렉션 없음")
+                        } else {
+                            ForEach(store.savedCollections) { col in
+                                Button(action: { store.applyCollection(col) }) {
+                                    Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
+                                }
+                            }
+                            Divider()
+                            Button("전체 삭제", role: .destructive) {
+                                store.savedCollections.removeAll()
+                            }
+                        }
+                        Divider()
+                        Button("현재 필터 저장...") {
+                            let alert = NSAlert()
+                            alert.messageText = "스마트 컬렉션 이름"
+                            alert.informativeText = "현재 필터 설정을 저장합니다."
+                            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+                            textField.stringValue = "내 컬렉션"
+                            alert.accessoryView = textField
+                            alert.addButton(withTitle: "저장")
+                            alert.addButton(withTitle: "취소")
+                            if alert.runModal() == .alertFirstButtonReturn {
+                                let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
+                                if !name.isEmpty {
+                                    store.saveCurrentFilter(name: name)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 11))
+                            if !store.savedCollections.isEmpty {
+                                Text("\(store.savedCollections.count)")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 35)
+                    .help("스마트 컬렉션")
+
                     Spacer(minLength: 0)
 
                     // 뷰 전환 그룹
