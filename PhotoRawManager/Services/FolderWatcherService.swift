@@ -104,17 +104,26 @@ class FolderWatcherService {
         // 폴더 구조 변경 감지 (새 폴더 생성/삭제)
         let currentFolders = currentSubfolderNames(in: folder)
         if currentFolders != knownSubfolders {
-            knownSubfolders = currentFolders
-            DispatchQueue.main.async { [weak self] in
-                self?.onFolderStructureChanged?()
+            let added = currentFolders.subtracting(knownSubfolders)
+            let removed = knownSubfolders.subtracting(currentFolders)
+            // 실제 폴더 추가/삭제가 있을 때만 (빈 차이 무시)
+            if !added.isEmpty || !removed.isEmpty {
+                knownSubfolders = currentFolders
+                DispatchQueue.main.async { [weak self] in
+                    self?.onFolderStructureChanged?()
+                }
             }
         }
 
         let currentFiles = currentFileNames(in: folder)
-        let newFileNames = currentFiles.subtracting(knownFiles)
 
-        // 파일 삭제 감지도 처리
+        // 파일 수가 같으면 무시 (메타데이터 변경은 리로드 불필요)
+        guard currentFiles.count != knownFiles.count || currentFiles != knownFiles else { return }
+
+        let newFileNames = currentFiles.subtracting(knownFiles)
         let deletedFiles = knownFiles.subtracting(currentFiles)
+
+        // 실제 추가/삭제가 있을 때만 처리
         if !deletedFiles.isEmpty {
             knownFiles = currentFiles
             DispatchQueue.main.async { [weak self] in

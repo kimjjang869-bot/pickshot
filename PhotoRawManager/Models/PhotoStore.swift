@@ -330,7 +330,7 @@ class PhotoStore: ObservableObject {
     @Published var showFolderBrowser: Bool = true
     /// 하위 폴더 포함 모드 활성화 여부
     @Published var isRecursiveMode: Bool = false
-    @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? false {
+    @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
     @Published var showFolderPreview: Bool = UserDefaults.standard.object(forKey: "showFolderPreview") as? Bool ?? true {
