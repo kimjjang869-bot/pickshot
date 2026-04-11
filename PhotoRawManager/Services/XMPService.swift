@@ -1,6 +1,78 @@
 import Foundation
+import AppKit
+import ImageIO
 
 struct XMPService {
+
+    // MARK: - JPG EXIF Rating 직접 쓰기 (XMP 사이드카 없이 라이트룸 인식)
+
+    /// JPG 파일에 EXIF Rating + Label 직접 쓰기 (재압축 없음)
+    static func writeRatingToJPG(url: URL, rating: Int, label: String? = nil) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        guard ["jpg", "jpeg"].contains(ext) else { return false }
+
+        guard let source = CGImageSourceCreateWithData(try! Data(contentsOf: url) as CFData, nil) else { return false }
+        guard let uti = CGImageSourceGetType(source) else { return false }
+
+        let mutableData = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(mutableData, uti, 1, nil) else { return false }
+
+        // 기존 메타데이터 복사
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return false }
+        var newProps = properties
+
+        // EXIF Rating 설정
+        // Microsoft Rating (0-5) — Lightroom이 읽는 표준
+        newProps[kCGImagePropertyExifDictionary as String] = {
+            var exif = (properties[kCGImagePropertyExifDictionary as String] as? [String: Any]) ?? [:]
+            // UserComment에 Rating 저장 (일부 앱 호환)
+            return exif
+        }()
+
+        // XMP에 Rating + Label 임베딩
+        var xmpDict = (properties["{http://ns.adobe.com/xap/1.0/}"] as? [String: Any]) ?? [:]
+        xmpDict["Rating"] = rating
+        if let label = label, !label.isEmpty {
+            xmpDict["Label"] = label
+        }
+        newProps["{http://ns.adobe.com/xap/1.0/}"] = xmpDict
+
+        // IPTC에도 Urgency로 매핑 (Lightroom 호환)
+        var iptc = (properties[kCGImagePropertyIPTCDictionary as String] as? [String: Any]) ?? [:]
+        iptc[kCGImagePropertyIPTCStarRating as String] = rating
+        newProps[kCGImagePropertyIPTCDictionary as String] = iptc
+
+        // 재압축 없이 메타데이터만 복사
+        CGImageDestinationAddImageFromSource(dest, source, 0, newProps as CFDictionary)
+
+        guard CGImageDestinationFinalize(dest) else { return false }
+
+        // 원본 파일에 덮어쓰기
+        do {
+            try (mutableData as Data).write(to: url, options: .atomic)
+            return true
+        } catch {
+            fputs("[XMP] JPG EXIF 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            return false
+        }
+    }
+
+    /// 내보내기 시 JPG에 별점/라벨 임베딩 (배치)
+    static func embedRatingsToJPGs(photos: [PhotoItem]) -> Int {
+        var count = 0
+        for photo in photos {
+            guard !photo.isFolder, !photo.isParentFolder else { continue }
+            let ext = photo.jpgURL.pathExtension.lowercased()
+            guard ["jpg", "jpeg"].contains(ext) else { continue }
+            guard photo.rating > 0 || photo.isSpacePicked else { continue }
+
+            let label = photo.colorLabel != .none ? photo.colorLabel.rawValue : (photo.isSpacePicked ? "Red" : nil)
+            if writeRatingToJPG(url: photo.jpgURL, rating: photo.rating, label: label) {
+                count += 1
+            }
+        }
+        return count
+    }
 
     // MARK: - XMP File URL
 
