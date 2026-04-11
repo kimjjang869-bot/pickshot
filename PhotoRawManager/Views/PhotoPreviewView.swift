@@ -413,7 +413,8 @@ struct PhotoPreviewView: View {
     @State private var isCorrecting = false
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
-    @State private var showZebraWarning: Bool = false  // 과노출/저노출 얼룩말
+    @State private var showZebraWarning: Bool = false
+    @State private var showFocusPeaking: Bool = false
     @State private var hexInput: String = "333333"
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var rotatedImage: NSImage?  // Actual rotated pixel data
@@ -437,6 +438,7 @@ struct PhotoPreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Image area
+            ZStack(alignment: .topTrailing) {
             GeometryReader { geo in
                 let vSize = geo.size
 
@@ -579,26 +581,21 @@ struct PhotoPreviewView: View {
                             ZebraWarningOverlay(image: img)
                                 .allowsHitTesting(false)
                         }
+                        // 포커스 피킹 오버레이
+                        if showFocusPeaking, let img = self.image {
+                            FocusPeakingOverlay(image: img)
+                                .allowsHitTesting(false)
+                        }
 
                         // Overlays (fixed to view size, not image size)
                         VStack {
-                            // Top-right: Histogram + Zebra toggle
+                            // Top-right: Histogram
                             HStack {
                                 Spacer()
                                 VStack(spacing: 4) {
                                     if showHistogram {
                                         HistogramOverlay(photo: photo)
                                     }
-                                    // 얼룩말 토글 버튼
-                                    Button(action: { showZebraWarning.toggle() }) {
-                                        Image(systemName: showZebraWarning ? "sun.max.trianglebadge.exclamationmark.fill" : "sun.max.trianglebadge.exclamationmark")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(showZebraWarning ? .yellow : .white.opacity(0.6))
-                                            .padding(6)
-                                            .background(Color.black.opacity(0.5))
-                                            .cornerRadius(6)
-                                    }
-                                    .buttonStyle(.plain)
                                 }
                                 .padding(8)
                             }
@@ -669,6 +666,8 @@ struct PhotoPreviewView: View {
                     viewState.viewSize = newSize
                 }
             }
+
+            } // ZStack 닫기
 
             Divider()
 

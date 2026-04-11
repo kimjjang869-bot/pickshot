@@ -501,7 +501,7 @@ extension ContentView {
                                         .font(.system(size: 20))
                                         .foregroundColor(.orange)
                                 }
-                                Text("인물 \(gid + 1)")
+                                Text(store.faceGroupName(for: gid))
                                     .font(.system(size: 12, weight: .medium))
                                 Text("\(count)장")
                                     .font(.system(size: 10))
@@ -512,6 +512,26 @@ extension ContentView {
                                         .foregroundColor(.blue)
                                 }
                             }
+                        }
+                    }
+                    Divider()
+                    // 이름 변경
+                    ForEach(groups, id: \.self) { gid in
+                        Button(action: {
+                            let alert = NSAlert()
+                            alert.messageText = "인물 이름 변경"
+                            alert.informativeText = "'\(store.faceGroupName(for: gid))' 의 이름을 입력하세요"
+                            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+                            tf.stringValue = store.faceGroupNames[gid] ?? ""
+                            tf.placeholderString = "이름 입력"
+                            alert.accessoryView = tf
+                            alert.addButton(withTitle: "저장")
+                            alert.addButton(withTitle: "취소")
+                            if alert.runModal() == .alertFirstButtonReturn {
+                                store.setFaceGroupName(gid, name: tf.stringValue)
+                            }
+                        }) {
+                            Label("'\(store.faceGroupName(for: gid))' 이름 변경", systemImage: "pencil")
                         }
                     }
                 } else {
@@ -527,7 +547,7 @@ extension ContentView {
             } label: {
                 toolbarButton(
                     icon: "person.2.fill",
-                    text: store.faceGroupFilter != nil ? "인물 \((store.faceGroupFilter ?? 0) + 1)" : "인물",
+                    text: store.faceGroupFilter != nil ? store.faceGroupName(for: store.faceGroupFilter!) : "인물",
                     color: .orange,
                     active: store.faceGroupFilter != nil
                 )

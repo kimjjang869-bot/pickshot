@@ -353,7 +353,7 @@ struct BatchProcessView: View {
             }
             .padding()
         }
-        .frame(width: 480, height: 680)
+        .frame(width: 700, height: 750)
         .onAppear {
             // Default source: if there's a selection, use it; otherwise filtered
             if store.selectedPhotoIDs.count > 1 {

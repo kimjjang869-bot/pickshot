@@ -307,6 +307,7 @@ class PhotoStore: ObservableObject {
     @Published var showDeleteOriginalConfirm: Bool = false
     var pendingDeleteIDs: Set<UUID> = []
     @Published var faceGroups: [Int: [UUID]] = [:]
+    @Published var faceGroupNames: [Int: String] = [:]  // 그룹ID → 인물 이름
     @Published var faceThumbnails: [Int: NSImage] = [:]
     @Published var faceGroupFilter: Int? = nil { didSet { invalidateFilterCache() } }
     @Published var isGroupingFaces: Bool = false
@@ -578,6 +579,7 @@ class PhotoStore: ObservableObject {
             }
         }
         loadCollections()
+        loadFaceGroupNames()
     }
 
     /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화
@@ -1634,6 +1636,33 @@ class PhotoStore: ObservableObject {
                 guard let i = self._photoIndex[photoID], i < self.photos.count else { return }
                 self.photos[i].exifData?.placeName = result
             }
+        }
+    }
+
+    // MARK: - 얼굴 이름 태깅
+
+    func setFaceGroupName(_ groupID: Int, name: String) {
+        faceGroupNames[groupID] = name.isEmpty ? nil : name
+        saveFaceGroupNames()
+    }
+
+    func faceGroupName(for groupID: Int) -> String {
+        faceGroupNames[groupID] ?? "인물 \(groupID)"
+    }
+
+    private func saveFaceGroupNames() {
+        guard let folderPath = folderURL?.path else { return }
+        var all = UserDefaults.standard.dictionary(forKey: "faceGroupNames") as? [String: [String: String]] ?? [:]
+        all[folderPath] = faceGroupNames.reduce(into: [:]) { $0["\($1.key)"] = $1.value }
+        UserDefaults.standard.set(all, forKey: "faceGroupNames")
+    }
+
+    func loadFaceGroupNames() {
+        guard let folderPath = folderURL?.path else { return }
+        let all = UserDefaults.standard.dictionary(forKey: "faceGroupNames") as? [String: [String: String]] ?? [:]
+        guard let saved = all[folderPath] else { return }
+        faceGroupNames = saved.reduce(into: [:]) { dict, pair in
+            if let key = Int(pair.key) { dict[key] = pair.value }
         }
     }
 

@@ -102,6 +102,7 @@
 		STL10001 /* StyleLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = STL10002 /* StyleLearner.swift */; };
 		ZEB10001 /* ZebraWarningOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = ZEB10002 /* ZebraWarningOverlay.swift */; };
 		WMP10001 /* WatermarkPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WMP10002 /* WatermarkPreviewView.swift */; };
+		FPK10001 /* FocusPeakingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPK10002 /* FocusPeakingOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -199,6 +200,7 @@
 		STL10002 /* StyleLearner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
 		ZEB10002 /* ZebraWarningOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZebraWarningOverlay.swift; sourceTree = "<group>"; };
 		WMP10002 /* WatermarkPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkPreviewView.swift; sourceTree = "<group>"; };
+		FPK10002 /* FocusPeakingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPeakingOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -290,6 +292,7 @@
 				SMC10004 /* SmartCullView.swift */,
 				ZEB10002 /* ZebraWarningOverlay.swift */,
 				WMP10002 /* WatermarkPreviewView.swift */,
+				FPK10002 /* FocusPeakingOverlay.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -493,6 +496,7 @@
 				STL10001 /* StyleLearner.swift in Sources */,
 				ZEB10001 /* ZebraWarningOverlay.swift in Sources */,
 				WMP10001 /* WatermarkPreviewView.swift in Sources */,
+				FPK10001 /* FocusPeakingOverlay.swift in Sources */,
 				CS10001 /* ClientSelectService.swift in Sources */,
 				CS10002 /* ClientSelectSetupView.swift in Sources */,
 			);
