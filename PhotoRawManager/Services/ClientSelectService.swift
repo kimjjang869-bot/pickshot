@@ -140,6 +140,7 @@ class ClientSelectService: ObservableObject {
     // MARK: - 업로드 워크플로우
 
     private func executeUploadWorkflow(token: String, photos: [PhotoItem]) {
+        fputs("[CLIENT] executeUploadWorkflow: \(photos.count)장, token=\(token.prefix(10))...\n", stderr)
         // 1. Google Drive 폴더 생성
         let folderSemaphore = DispatchSemaphore(value: 0)
         var folderId: String?
@@ -187,8 +188,10 @@ class ClientSelectService: ObservableObject {
         let uploadGroup = DispatchGroup()
         let uploadSemaphore = DispatchSemaphore(value: concurrency)
 
+        fputs("[CLIENT] 사진 업로드 시작: \(photos.count)장\n", stderr)
         for (index, photo) in photos.enumerated() {
             guard !cancelled else { break }
+            fputs("[CLIENT] 업로드 \(index+1)/\(photos.count): \(photo.jpgURL.lastPathComponent)\n", stderr)
 
             uploadSemaphore.wait()  // 동시 4개 제한
             uploadGroup.enter()
@@ -349,8 +352,11 @@ class ClientSelectService: ObservableObject {
     private func resizePhoto(photo: PhotoItem, index: Int, tempDir: URL) -> URL? {
         let sourceURL = photo.jpgURL
 
-        // CGImageSource로 빠른 리사이즈 (전체 RAW 디코딩 불필요)
-        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else { return nil }
+        // CGImageSource로 빠른 리사이즈
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
+            fputs("[CLIENT] ❌ CGImageSource 실패: \(sourceURL.lastPathComponent)\n", stderr)
+            return nil
+        }
 
         let options: [CFString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: 1200,
@@ -358,7 +364,30 @@ class ClientSelectService: ObservableObject {
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
 
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else { return nil }
+        var thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
+
+        // RAW fallback: CGImageSource 실패 시 NSImage로
+        if thumbnail == nil {
+            fputs("[CLIENT] CGImageSource 썸네일 실패 → NSImage fallback: \(sourceURL.lastPathComponent)\n", stderr)
+            if let nsImage = NSImage(contentsOf: sourceURL),
+               let tiff = nsImage.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiff) {
+                let scale = min(1200.0 / CGFloat(bitmap.pixelsWide), 1200.0 / CGFloat(bitmap.pixelsHigh), 1.0)
+                let newW = Int(CGFloat(bitmap.pixelsWide) * scale)
+                let newH = Int(CGFloat(bitmap.pixelsHigh) * scale)
+                if let ctx = CGContext(data: nil, width: newW, height: newH, bitsPerComponent: 8, bytesPerRow: 0,
+                                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+                   let cgImg = bitmap.cgImage {
+                    ctx.draw(cgImg, in: CGRect(x: 0, y: 0, width: newW, height: newH))
+                    thumbnail = ctx.makeImage()
+                }
+            }
+        }
+
+        guard let finalThumb = thumbnail else {
+            fputs("[CLIENT] ❌ 리사이즈 완전 실패: \(sourceURL.lastPathComponent)\n", stderr)
+            return nil
+        }
 
         // 파일명: 접두어 있으면 "접두어_0001.jpg", 없으면 "0001_원본이름.jpg"
         let fileName: String
@@ -374,7 +403,7 @@ class ClientSelectService: ObservableObject {
         let jpegOptions: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: 0.8
         ]
-        CGImageDestinationAddImage(dest, thumbnail, jpegOptions as CFDictionary)
+        CGImageDestinationAddImage(dest, finalThumb, jpegOptions as CFDictionary)
 
         guard CGImageDestinationFinalize(dest) else { return nil }
 
