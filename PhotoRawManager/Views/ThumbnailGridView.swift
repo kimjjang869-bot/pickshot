@@ -1600,8 +1600,8 @@ class ThumbnailLoader {
         switch type {
         case .localSSD:
             isNetworkMode = false
-            // RAW decode is CPU-heavy; too many concurrent = resource contention
-            let c = min(ProcessInfo.processInfo.activeProcessorCount, 12)
+            // CPU 코어의 절반만 사용 (나머지는 UI + 미리보기에 양보)
+            let c = max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 6))
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
@@ -1609,8 +1609,8 @@ class ThumbnailLoader {
             // HDD: seek time is bottleneck, moderate concurrency helps
             // Too many concurrent = HDD head thrashing, too few = slow
             isNetworkMode = false
-            queue.maxConcurrentOperationCount = 8
-            AppLogger.log(.performance, "External HDD: concurrency=8, thumbSize=160 for \(path)")
+            queue.maxConcurrentOperationCount = 4
+            AppLogger.log(.performance, "External HDD: concurrency=4, thumbSize=160 for \(path)")
         case .network:
             // NAS: network I/O bound, high concurrency
             isNetworkMode = true

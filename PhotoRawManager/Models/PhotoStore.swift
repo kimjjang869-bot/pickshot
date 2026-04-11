@@ -445,6 +445,7 @@ class PhotoStore: ObservableObject {
     private let lastFolderKey = "lastFolderPath"
     private let ratingsKey = "photoRatings"
     private let folderWatcher = FolderWatcherService()
+    private var folderReloadWork: DispatchWorkItem?
 
     private func pushUndo(action: String, photoIDs: Set<UUID>) {
         var oldRatings: [UUID: Int] = [:]
@@ -608,11 +609,15 @@ class PhotoStore: ObservableObject {
         }
         folderWatcher.onFolderStructureChanged = { [weak self] in
             guard let self = self, self.isFolderWatchingEnabled else { return }
-            // 폴더 구조 변경 → 현재 폴더 리로드 (새 폴더/파일 삭제 반영)
-            if let url = self.folderURL {
+            // 디바운스: 2초 내 중복 리로드 방지
+            self.folderReloadWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let url = self.folderURL else { return }
                 fputs("[WATCH] 폴더 구조 변경 감지 → 리로드\n", stderr)
                 self.loadFolder(url, restoreRatings: true)
             }
+            self.folderReloadWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
         }
     }
 
