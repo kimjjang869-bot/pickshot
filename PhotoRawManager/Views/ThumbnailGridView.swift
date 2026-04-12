@@ -735,6 +735,7 @@ struct LazyThumbnailWrapper: View {
                 isFocused: isFocused,
                 size: size
             )
+            .equatable()
             .contentShape(Rectangle())
             .overlay(
                 MultiFileDragView(photo: photo, store: store)
@@ -1158,7 +1159,7 @@ struct PhotoContextMenu: View {
 
 // MARK: - Thumbnail Cell (Grid)
 
-struct ThumbnailCell: View {
+struct ThumbnailCell: View, Equatable {
     @EnvironmentObject var store: PhotoStore
     let photo: PhotoItem
     let isSelected: Bool
@@ -1166,6 +1167,16 @@ struct ThumbnailCell: View {
     let size: CGFloat
 
     @State private var isHovered = false
+
+    static func == (lhs: ThumbnailCell, rhs: ThumbnailCell) -> Bool {
+        lhs.photo.id == rhs.photo.id &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.isFocused == rhs.isFocused &&
+        lhs.size == rhs.size &&
+        lhs.photo.rating == rhs.photo.rating &&
+        lhs.photo.colorLabel == rhs.photo.colorLabel &&
+        lhs.photo.isSpacePicked == rhs.photo.isSpacePicked
+    }
 
     private var badgeFont: Font { .system(size: max(8, size * 0.065), weight: .bold) }
     private var imgH: CGFloat { size * 0.75 }
@@ -1542,9 +1553,14 @@ class ThumbnailCache {
         source.setEventHandler { [weak self] in
             let event = source.data
             if event.contains(.critical) {
-                // 크리티컬: 전체 비움 → 디스크 캐시에서 복원
-                self?.cache.removeAllObjects()
-                fputs("⚠️ [CACHE] CRITICAL memory pressure — 썸네일 캐시 전체 해제\n", stderr)
+                // 크리티컬: 50% 축소 (전체 삭제 대신 LRU 부분 제거)
+                let currentLimit = self?.cache.countLimit ?? 0
+                self?.cache.countLimit = max(200, currentLimit / 4)
+                // 1초 후 원래 limit 복원 → NSCache가 초과분 자연 evict
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
+                }
+                fputs("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(currentLimit/4) (부분 해제)\n", stderr)
             } else {
                 // 경고: countLimit 50% 축소 → NSCache가 오래된 것 evict
                 let currentLimit = self?.cache.countLimit ?? 0
@@ -1579,19 +1595,20 @@ class ThumbnailCache {
             cache.countLimit = count
             baseCountLimit = count
         } else {
-            // 기본: RAM 기반 자동 설정
+            // 기본: RAM 기반 자동 설정 (cost 단위 = KB, totalCostLimit 단위 = KB)
+            // 300MB = 300 * 1024 KB 기본 상한
             if ramGB >= 64 {
                 cache.countLimit = 20000
-                cache.totalCostLimit = 2 * 1024 * 1024
+                cache.totalCostLimit = 500 * 1024  // 500MB
             } else if ramGB >= 32 {
                 cache.countLimit = 10000
-                cache.totalCostLimit = 1 * 1024 * 1024
+                cache.totalCostLimit = 300 * 1024  // 300MB
             } else if ramGB >= 16 {
                 cache.countLimit = 5000
-                cache.totalCostLimit = 512 * 1024
+                cache.totalCostLimit = 200 * 1024  // 200MB
             } else {
                 cache.countLimit = 2000
-                cache.totalCostLimit = 256 * 1024
+                cache.totalCostLimit = 100 * 1024  // 100MB
             }
             baseCountLimit = cache.countLimit
         }

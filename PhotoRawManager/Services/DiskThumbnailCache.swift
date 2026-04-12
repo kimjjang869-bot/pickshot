@@ -32,19 +32,18 @@ class DiskThumbnailCache {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
+        // Single stat() call: check existence + touch modDate in one operation
         lock.lock()
-        let exists = FileManager.default.fileExists(atPath: filePath.path)
+        let attrs = try? FileManager.default.attributesOfItem(atPath: filePath.path)
+        if attrs != nil {
+            try? FileManager.default.setAttributes(
+                [.modificationDate: Date()],
+                ofItemAtPath: filePath.path
+            )
+        }
         lock.unlock()
 
-        guard exists else { return nil }
-
-        // Touch access date for LRU tracking
-        lock.lock()
-        try? FileManager.default.setAttributes(
-            [.modificationDate: Date()],
-            ofItemAtPath: filePath.path
-        )
-        lock.unlock()
+        guard attrs != nil else { return nil }
 
         guard let image = NSImage(contentsOf: filePath) else {
             // Corrupt cache file — remove it

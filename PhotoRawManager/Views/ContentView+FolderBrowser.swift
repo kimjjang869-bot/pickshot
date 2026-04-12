@@ -21,28 +21,30 @@ struct FolderItem: Identifiable {
     static func loadChildren(of url: URL) -> [FolderItem] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
-        // isDirectoryKey was prefetched above — resourceValues uses cached value, no extra stat()
+        // 1회 스캔으로 디렉토리 필터 + 하위폴더 존재 여부까지 판별
         var dirs: [URL] = []
+        var childDirSet: Set<String> = []  // 각 폴더의 하위폴더 존재 여부 판별용
         dirs.reserveCapacity(contents.count / 4)
         for item in contents {
             if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 dirs.append(item)
+                childDirSet.insert(item.deletingLastPathComponent().path)
             }
         }
         dirs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         return dirs.map { dirURL in
-            // 하위 폴더 존재 여부 미리 체크 (빠른 디렉토리 스캔)
-            let hasSub = Self.checkHasSubfolders(dirURL)
-            return FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: hasSub)
+            // hasSubfolders = true 기본값 (실제 펼칠 때 확인 — 이중 스캔 방지)
+            FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: true)
         }
     }
 
+    /// 하위 폴더 존재 여부 — enumerator early exit (전체 목록 안 읽음)
     static func checkHasSubfolders(_ url: URL) -> Bool {
         let fm = FileManager.default
-        guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return false }
-        for item in items {
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { return false }
+        while let item = enumerator.nextObject() as? URL {
             if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                return true
+                return true  // 하나라도 찾으면 즉시 반환
             }
         }
         return false
@@ -73,6 +75,7 @@ struct FolderBrowserView: View {
     @State private var favoritesHeight: CGFloat = 550
     @State private var currentIconFolder: URL?
     @State private var iconFolderContents: [FolderItem] = []
+    @State private var refreshWork: DispatchWorkItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,14 +99,11 @@ struct FolderBrowserView: View {
                 }
             }
 
-            // Watch for volume mount/unmount (자동 백업 설정 시만)
+            // Watch for volume mount/unmount
             let ws = NSWorkspace.shared.notificationCenter
             ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { notification in
-                guard UserDefaults.standard.bool(forKey: "autoBackupEnabled") else {
-                    refreshRootItems()
-                    return
-                }
-                if let volumePath = notification.userInfo?["NSDevicePath"] as? String {
+                if UserDefaults.standard.bool(forKey: "autoBackupEnabled"),
+                   let volumePath = notification.userInfo?["NSDevicePath"] as? String {
                     let volumeURL = URL(fileURLWithPath: volumePath)
                     MemoryCardBackupService.shared.checkAndPromptIfMemoryCard(volumeURL)
                 }
@@ -182,8 +182,10 @@ struct FolderBrowserView: View {
         }
     }
 
+    /// Debounced tree refresh — 빠른 연속 호출 (마운트/언마운트 등) 병합
     private func refreshRootItems() {
-        DispatchQueue.global(qos: .userInitiated).async {
+        refreshWork?.cancel()
+        let work = DispatchWorkItem {
             let items = buildRootItems()
             let favs = store.loadFavoriteFolders()
             let recents = store.loadRecentFolders()
@@ -197,6 +199,8 @@ struct FolderBrowserView: View {
                 }
             }
         }
+        refreshWork = work
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     /// Auto-expand tree to show the currently loaded folder (async to avoid blocking main thread)
@@ -347,7 +351,7 @@ struct FolderBrowserView: View {
             // Folder tree (scrollable, auto-scroll to current folder)
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         folderTreeSection
                     }
                     .padding(.horizontal, 6)
@@ -356,12 +360,7 @@ struct FolderBrowserView: View {
                 .onChange(of: store.folderURL) { newURL in
                     guard let url = newURL else { return }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        proxy.scrollTo(url.path, anchor: .center)
-                    }
-                }
-                .onAppear {
-                    if let url = store.folderURL {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        withAnimation(.easeInOut(duration: 0.15)) {
                             proxy.scrollTo(url.path, anchor: .center)
                         }
                     }
@@ -450,7 +449,7 @@ struct FolderBrowserView: View {
     // MARK: - Folder Tree Section
 
     private var folderTreeSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             sectionHeader(icon: "folder.fill", title: "로컬 폴더", color: .blue)
 
             ForEach(rootItems.indices, id: \.self) { i in
@@ -1196,26 +1195,27 @@ struct FolderRowView: View {
 
             // Children — 안전한 인덱스 바인딩
             if item.isExpanded, let children = item.children, !children.isEmpty {
-                let safeChildren = children  // 캡처하여 반복 중 변경 방지
-                ForEach(Array(safeChildren.enumerated()), id: \.element.id) { i, child in
-                    FolderRowView(
-                        item: Binding(
-                            get: {
-                                guard let ch = item.children, i < ch.count else {
-                                    return FolderItem(url: URL(fileURLWithPath: "/tmp"), name: "")
+                ForEach(children.indices, id: \.self) { i in
+                    if i < (item.children?.count ?? 0) {
+                        FolderRowView(
+                            item: Binding(
+                                get: {
+                                    guard let ch = item.children, i < ch.count else {
+                                        return FolderItem(url: URL(fileURLWithPath: "/tmp"), name: "")
+                                    }
+                                    return ch[i]
+                                },
+                                set: { newValue in
+                                    guard var ch = item.children, i < ch.count else { return }
+                                    ch[i] = newValue
+                                    item.children = ch
                                 }
-                                return ch[i]
-                            },
-                            set: { newValue in
-                                guard var ch = item.children, i < ch.count else { return }
-                                ch[i] = newValue
-                                item.children = ch
-                            }
-                        ),
-                        store: store,
-                        level: level + 1,
-                        onAddFavorite: onAddFavorite
-                    )
+                            ),
+                            store: store,
+                            level: level + 1,
+                            onAddFavorite: onAddFavorite
+                        )
+                    }
                 }
             }
         }
@@ -1224,6 +1224,8 @@ struct FolderRowView: View {
     private func toggleExpand() {
         if item.isExpanded {
             item.isExpanded = false
+            // 접힌 폴더의 children 해제 → 메모리 절약 (재펼침 시 다시 로드)
+            item.children = nil
         } else if item.children != nil {
             // children이 이미 로드됨 → 즉시 펼치기
             item.isExpanded = true
@@ -1285,28 +1287,51 @@ struct FolderRowView: View {
 // MARK: - Folder Browser Helpers
 
 enum FolderBrowserHelpers {
-    /// Count image files in a folder (non-recursive)
+    /// Count image files in a folder (non-recursive, single-pass)
     static func countImages(in url: URL) -> Int {
         let fm = FileManager.default
         let imageExts = FileMatchingService.jpgExtensions
             .union(FileMatchingService.rawExtensions)
             .union(FileMatchingService.imageExtensions)
         guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) else { return 0 }
-        return contents.filter { imageExts.contains($0.pathExtension.lowercased()) }.count
+        var count = 0
+        for item in contents {
+            if imageExts.contains(item.pathExtension.lowercased()) { count += 1 }
+        }
+        return count
     }
 
-    /// Get disk capacity string (e.g. "2.53/4.00 TB")
+    /// Disk capacity cache (10초 유효)
+    private static var capacityCache: [String: (value: String, time: Date)] = [:]
+    private static let capacityLock = NSLock()
+
+    /// Get disk capacity string (e.g. "2.53/4.00 TB") — 10초 캐싱
     static func getDiskCapacity(url: URL) -> String {
+        let key = url.path
+        capacityLock.lock()
+        if let cached = capacityCache[key], Date().timeIntervalSince(cached.time) < 10 {
+            capacityLock.unlock()
+            return cached.value
+        }
+        capacityLock.unlock()
+
         guard let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey]) else { return "" }
         let total = values.volumeTotalCapacity ?? 0
         let available = values.volumeAvailableCapacity ?? 0
         let used = total - available
         let totalGB = Double(total) / 1_000_000_000
         let usedGB = Double(used) / 1_000_000_000
+        let result: String
         if totalGB >= 1000 {
-            return String(format: "%.2f/%.2f TB", usedGB / 1000, totalGB / 1000)
+            result = String(format: "%.2f/%.2f TB", usedGB / 1000, totalGB / 1000)
+        } else {
+            result = String(format: "%.1f/%.1f GB", usedGB, totalGB)
         }
-        return String(format: "%.1f/%.1f GB", usedGB, totalGB)
+
+        capacityLock.lock()
+        capacityCache[key] = (value: result, time: Date())
+        capacityLock.unlock()
+        return result
     }
 }
 

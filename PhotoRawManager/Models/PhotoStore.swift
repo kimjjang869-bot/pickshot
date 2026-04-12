@@ -3,6 +3,7 @@ import SwiftUI
 import ImageIO
 import Vision
 import CoreLocation
+import Combine
 
 
 // MARK: - Analysis Options
@@ -444,8 +445,9 @@ class PhotoStore: ObservableObject {
         savedCollections = cols
     }
 
-    // Search
-    @Published var searchText: String = "" { didSet { invalidateFilterCache() } }
+    // Search (debounced 300ms — 글자마다 필터 재계산 방지)
+    @Published var searchText: String = ""
+    private var searchDebounce: AnyCancellable?
 
     // MARK: - Undo Stack
     struct FileMove { let sourceURL: URL; let destURL: URL }
@@ -609,6 +611,13 @@ class PhotoStore: ObservableObject {
             sortMode = mode
         }
         setupFolderWatcher()
+
+        // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화
+        searchDebounce = $searchText
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.invalidateFilterCache()
+            }
 
         // 메모리카드 자동 백업 모니터링
         if UserDefaults.standard.bool(forKey: "autoBackupEnabled") {

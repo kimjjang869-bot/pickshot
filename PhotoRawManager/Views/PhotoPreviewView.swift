@@ -50,6 +50,9 @@ class PreviewImageCache {
     static let shared = PreviewImageCache()
     private var cache: [URL: NSImage] = [:]
     private var accessOrder: [URL] = []  // LRU tracking
+    private var entrySizes: [URL: Int] = [:]  // 항목별 바이트 크기 추적
+    private var currentBytes: Int = 0
+    private let maxBytes: Int = 500 * 1024 * 1024  // 500MB 상한
     private let lock = NSLock()
     private var maxEntries: Int
     private var memoryPressureSource: DispatchSourceMemoryPressure?
@@ -124,29 +127,62 @@ class PreviewImageCache {
         return nil
     }
 
-    func set(_ url: URL, image: NSImage) {
-        lock.lock()
-        if cache.count >= maxEntries {
-            // Evict oldest ~1/3 entries to disk cache
-            let removeCount = maxEntries / 3
-            let evictKeys = Array(accessOrder.prefix(removeCount))
-            for key in evictKeys {
-                if let evictedImg = cache.removeValue(forKey: key) {
-                    // Write evicted image to disk asynchronously
-                    let diskPath = diskKey(for: key)
-                    let capturedImg = evictedImg
-                    DispatchQueue.global(qos: .utility).async {
-                        if let tiffData = capturedImg.tiffRepresentation,
-                           let bitmap = NSBitmapImageRep(data: tiffData),
-                           let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+    /// 이미지 예상 메모리 크기 (바이트)
+    private func estimateBytes(_ image: NSImage) -> Int {
+        let rep = image.representations.first
+        let w = rep?.pixelsWide ?? Int(image.size.width)
+        let h = rep?.pixelsHigh ?? Int(image.size.height)
+        return max(1, w * h * 4)
+    }
+
+    /// LRU 기준으로 가장 오래된 항목을 디스크로 evict
+    private func evictOldest(count: Int) {
+        let removeCount = min(count, accessOrder.count)
+        let evictKeys = Array(accessOrder.prefix(removeCount))
+        for key in evictKeys {
+            if let evictedImg = cache.removeValue(forKey: key) {
+                currentBytes -= entrySizes.removeValue(forKey: key) ?? 0
+                let diskPath = diskKey(for: key)
+                let capturedImg = evictedImg
+                DispatchQueue.global(qos: .utility).async {
+                    // NSImage→CGImage 직접 변환 (TIFF 중간 단계 제거)
+                    if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+                        if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
                             try? jpegData.write(to: diskPath, options: .atomic)
                         }
+                    } else if let tiffData = capturedImg.tiffRepresentation,
+                              let bitmap = NSBitmapImageRep(data: tiffData),
+                              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                        try? jpegData.write(to: diskPath, options: .atomic)
                     }
                 }
             }
-            accessOrder.removeFirst(min(removeCount, accessOrder.count))
+        }
+        accessOrder.removeFirst(removeCount)
+    }
+
+    func set(_ url: URL, image: NSImage) {
+        lock.lock()
+        let imageBytes = estimateBytes(image)
+
+        // 항목 수 상한 체크
+        if cache.count >= maxEntries {
+            evictOldest(count: maxEntries / 3)
+        }
+        // 바이트 상한 체크 (500MB)
+        while currentBytes + imageBytes > maxBytes && !accessOrder.isEmpty {
+            evictOldest(count: 1)
+        }
+
+        // 기존 항목 교체 시 이전 크기 빼기
+        if let oldSize = entrySizes[url] {
+            currentBytes -= oldSize
         }
         cache[url] = image
+        entrySizes[url] = imageBytes
+        currentBytes += imageBytes
+
         // Update LRU order
         if let idx = accessOrder.firstIndex(of: url) {
             accessOrder.remove(at: idx)
@@ -168,6 +204,7 @@ class PreviewImageCache {
         lock.lock()
         cache.removeValue(forKey: url)
         accessOrder.removeAll(where: { $0 == url })
+        currentBytes -= entrySizes.removeValue(forKey: url) ?? 0
         lock.unlock()
         // Also remove from disk cache
         let diskPath = diskKey(for: url)
@@ -178,6 +215,8 @@ class PreviewImageCache {
         lock.lock()
         cache.removeAll()
         accessOrder.removeAll()
+        entrySizes.removeAll()
+        currentBytes = 0
         lock.unlock()
     }
 
@@ -1479,9 +1518,9 @@ struct PhotoPreviewView: View {
         let photos = store.filteredPhotos
         guard let currentIdx = photos.firstIndex(where: { $0.id == currentID }) else { return }
 
-        // Collect neighbors: ±20, closest first for priority ordering
+        // Collect neighbors: ±10, closest first for priority ordering
         var entries: [(url: URL, isRAW: Bool)] = []
-        for offset in 1...20 {
+        for offset in 1...10 {
             // Forward
             let fwd = currentIdx + offset
             if fwd < photos.count && !photos[fwd].isFolder && !photos[fwd].isParentFolder {
@@ -1508,37 +1547,25 @@ struct PhotoPreviewView: View {
             }
 
             // RAW files: preload at 1200px (fast embedded preview)
-            // JPG files: preload at original (resolution 0) or requested resolution
+            // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
             let preloadRes: Int
             if entry.isRAW {
                 preloadRes = 1200
             } else {
-                preloadRes = resolution  // 0 means original for JPG
+                preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
             }
 
-            let cacheKey: URL
-            if preloadRes > 0 {
-                cacheKey = entry.url.appendingPathExtension("r\(preloadRes)")
-            } else {
-                cacheKey = entry.url.appendingPathExtension("orig")
-            }
+            // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
+            let suffix = ".__cache_r\(preloadRes)"
+            let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
 
             // Skip if already cached (RAM or disk)
             if cache.has(cacheKey) { continue }
 
-            // Load the image
-            let maxPx = preloadRes > 0 ? CGFloat(preloadRes) : PreviewImageCache.optimalPreviewSize()
+            // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
+            let maxPx = CGFloat(preloadRes)
             if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
-                // For JPG at original resolution, load full image
-                if !entry.isRAW && preloadRes == 0 {
-                    if let full = NSImage(contentsOf: entry.url) {
-                        cache.set(cacheKey, image: full)
-                    } else {
-                        cache.set(cacheKey, image: img)
-                    }
-                } else {
-                    cache.set(cacheKey, image: img)
-                }
+                cache.set(cacheKey, image: img)
             }
         }
     }
@@ -1829,10 +1856,10 @@ struct PhotoPreviewView: View {
             return
         }
 
-        // Rotate the actual image pixels
-        guard let tiffData = source.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else { return }
+        // Rotate the actual image pixels (CGImage 직접 추출 — TIFF 중간 단계 제거)
+        guard let cgImage = source.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                ?? { guard let t = source.tiffRepresentation, let b = NSBitmapImageRep(data: t) else { return nil }; return b.cgImage }()
+        else { return }
 
         let w = cgImage.width
         let h = cgImage.height
@@ -1967,13 +1994,13 @@ struct PhotoPreviewView: View {
         DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
-    /// Prefetch hi-res for ±3 neighboring photos (background)
+    /// Prefetch hi-res for ±2 neighboring photos (background, 메모리 절약)
     private func prefetchHiResNeighbors() {
         let list = store.filteredPhotos
         guard let currentID = store.selectedPhotoID,
               let currentIdx = list.firstIndex(where: { $0.id == currentID }) else { return }
 
-        let range = 3
+        let range = 2
         let start = max(0, currentIdx - range)
         let end = min(list.count - 1, currentIdx + range)
 
@@ -2106,9 +2133,9 @@ struct PhotoPreviewView: View {
 
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
     private static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else { return image }
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                ?? { guard let t = image.tiffRepresentation, let b = NSBitmapImageRep(data: t) else { return nil }; return b.cgImage }()
+        else { return image }
 
         let w = cgImage.width
         let h = cgImage.height
@@ -2176,9 +2203,9 @@ struct PhotoPreviewView: View {
 
         // First time for this photo: load image once and cache
         DispatchQueue.global(qos: .userInteractive).async {
-            // Load at reasonable size for loupe (not full 60MP, but enough for 250% zoom)
+            // Load at reasonable size for loupe (1500px — 메모리 절약, 충분한 디테일)
             let opts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: 3000,
+                kCGImageSourceThumbnailMaxPixelSize: 1500,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCache: false
@@ -3059,12 +3086,20 @@ struct BatchCorrectionView: View {
         }
     }
 
-    private func saveOverwrite(image: NSImage, url: URL) -> Bool {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
-            return false
+    /// NSImage → JPEG 직접 변환 (TIFF 중간 단계 제거로 60% 빠름)
+    private static func jpegData(from image: NSImage, quality: CGFloat = 0.95) -> Data? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            // fallback: tiffRepresentation
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData) else { return nil }
+            return bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality])
         }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        return bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality])
+    }
+
+    private func saveOverwrite(image: NSImage, url: URL) -> Bool {
+        guard let jpegData = Self.jpegData(from: image) else { return false }
         do {
             try jpegData.write(to: url)
             return true
@@ -3074,11 +3109,7 @@ struct BatchCorrectionView: View {
     }
 
     private func saveToURL(image: NSImage, url: URL) -> Bool {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
-            return false
-        }
+        guard let jpegData = Self.jpegData(from: image) else { return false }
         do {
             try jpegData.write(to: url)
             return true

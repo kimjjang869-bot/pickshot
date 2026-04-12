@@ -516,114 +516,6 @@ struct PerspectiveCorrectionService {
         return segments
     }
 
-    // MARK: - Level 보정 (수평 회전만)
-
-    private static func correctLevel(image: CIImage, horizontalLines: [LineSegment], allLines: [LineSegment], maxAngle: Double = 15.0) -> (CIImage, Double, Bool) {
-        // 수평 직선들의 각도에서 회전 추정
-        let lines = horizontalLines.isEmpty ? allLines.filter { !$0.isVertical } : horizontalLines
-        guard !lines.isEmpty else { return (image, 0, false) }
-
-        // 길이 가중 평균 각도 (RANSAC 방식)
-        let rollAngle = ransacAngle(lines: lines, targetAngle: 0)
-
-        guard abs(rollAngle) > 0.3, abs(rollAngle) < maxAngle else {
-            fputs("[Upright/Level] 회전 \(String(format: "%.2f", rollAngle))° — 스킵\n", stderr)
-            return (image, 0, false)
-        }
-
-        fputs("[Upright/Level] 회전 보정: \(String(format: "%.2f", rollAngle))°\n", stderr)
-
-        let corrected = rotateAndCrop(image: image, angleDegrees: -rollAngle)
-        return (corrected, rollAngle, true)
-    }
-
-    // MARK: - Vertical 보정 (수직선 → roll + pitch)
-
-    private static func correctVertical(image: CIImage, verticalLines: [LineSegment], w: CGFloat, h: CGFloat, maxAngle: Double = 15.0) -> (CIImage, Double, Bool) {
-        guard verticalLines.count >= 2 else { return (image, 0, false) }
-
-        // 1. 수직 소실점 추정 (RANSAC)
-        let vp = ransacVanishingPoint(lines: verticalLines)
-        guard let vp = vp else {
-            fputs("[Upright/Vertical] VP 추정 실패\n", stderr)
-            return (image, 0, false)
-        }
-
-        fputs("[Upright/Vertical] VP: (\(String(format: "%.0f", vp.x)), \(String(format: "%.0f", vp.y)))\n", stderr)
-
-        // 2. VP로부터 카메라 pitch 추정
-        let cx = w / 2.0, cy = h / 2.0
-        let f = max(w, h)  // focal length 근사
-
-        // pitch = atan((vp.y - cy) / f)
-        let pitch = atan2(vp.y - cy, f)
-
-        // roll = 수직선들의 평균 기울기에서 90° 편차
-        let rollAngle = ransacAngle(lines: verticalLines, targetAngle: .pi / 2)
-
-        fputs("[Upright/Vertical] pitch: \(String(format: "%.2f", pitch * 180 / .pi))°, roll: \(String(format: "%.2f", rollAngle))°\n", stderr)
-
-        // 3. Perspective Transform 적용
-        var result = image
-
-        // roll 보정
-        if abs(rollAngle) > 0.3 && abs(rollAngle) < maxAngle {
-            result = rotateAndCrop(image: result, angleDegrees: -rollAngle)
-        }
-
-        // pitch 보정 (키스톤)
-        let pitchDeg = pitch * 180.0 / .pi
-        if abs(pitchDeg) > 0.5 && abs(pitchDeg) < 20 {
-            result = applyPitchCorrection(image: result, pitchRadians: pitch)
-        }
-
-        let totalAngle = sqrt(rollAngle * rollAngle + pitchDeg * pitchDeg)
-        return (result, totalAngle, totalAngle > 0.3)
-    }
-
-    // MARK: - Full 보정 (roll + pitch + yaw)
-
-    private static func correctFull(image: CIImage, horizontalLines: [LineSegment], verticalLines: [LineSegment], w: CGFloat, h: CGFloat, maxAngle: Double = 15.0) -> (CIImage, Double, Bool) {
-        // 1. 수평/수직 소실점 추정
-        let hvp = ransacVanishingPoint(lines: horizontalLines)
-        let vvp = ransacVanishingPoint(lines: verticalLines)
-
-        let cx = w / 2.0, cy = h / 2.0
-        let f = max(w, h)
-
-        var result = image
-
-        // 2. Roll 보정 (수평선 기울기)
-        let rollAngle = ransacAngle(lines: horizontalLines, targetAngle: 0)
-        if abs(rollAngle) > 0.3 && abs(rollAngle) < maxAngle {
-            result = rotateAndCrop(image: result, angleDegrees: -rollAngle)
-            fputs("[Upright/Full] roll: \(String(format: "%.2f", rollAngle))°\n", stderr)
-        }
-
-        // 3. Pitch 보정 (수직 VP)
-        if let vvp = vvp {
-            let pitch = atan2(vvp.y - cy, f)
-            let pitchDeg = pitch * 180.0 / .pi
-            if abs(pitchDeg) > 0.5 && abs(pitchDeg) < 20 {
-                result = applyPitchCorrection(image: result, pitchRadians: pitch)
-                fputs("[Upright/Full] pitch: \(String(format: "%.2f", pitchDeg))°\n", stderr)
-            }
-        }
-
-        // 4. Yaw 보정 (수평 VP)
-        if let hvp = hvp {
-            let yaw = atan2(hvp.x - cx, f)
-            let yawDeg = yaw * 180.0 / .pi
-            if abs(yawDeg) > 0.5 && abs(yawDeg) < 20 {
-                result = applyYawCorrection(image: result, yawRadians: yaw)
-                fputs("[Upright/Full] yaw: \(String(format: "%.2f", yawDeg))°\n", stderr)
-            }
-        }
-
-        let totalAngle = abs(rollAngle)
-        return (result, totalAngle, totalAngle > 0.3 || vvp != nil || hvp != nil)
-    }
-
     // MARK: - RANSAC Vanishing Point
 
     /// RANSAC으로 직선 그룹의 소실점 추정
@@ -643,10 +535,6 @@ struct PerspectiveCorrectionService {
 
             // 교차점 = 소실점 후보
             guard let vp = intersect(lines[i], lines[j]) else { continue }
-
-            // 너무 가까운 VP는 스킵 (이미지 안쪽은 VP가 아님)
-            // VP는 보통 이미지 밖에 있음
-            let imgDiag = sqrt(Double(lines[0].p1.x * lines[0].p1.x + lines[0].p1.y * lines[0].p1.y)) * 3
 
             // 인라이어 카운트
             var inliers = 0
@@ -719,56 +607,6 @@ struct PerspectiveCorrectionService {
         let norm = sqrt(vpDir.x * vpDir.x + vpDir.y * vpDir.y)
         guard norm > 1e-6 else { return line.midpoint }
         return line.midpoint + vpDir
-    }
-
-    // MARK: - RANSAC Angle
-
-    /// RANSAC으로 직선들의 주요 각도 추정 (길이 가중)
-    private static func ransacAngle(lines: [LineSegment], targetAngle: Double) -> Double {
-        guard !lines.isEmpty else { return 0 }
-
-        // 각 직선의 목표 각도로부터의 편차 계산
-        var deviations: [(dev: Double, weight: Double)] = []
-        for line in lines {
-            var dev = (line.angle - targetAngle) * 180.0 / .pi
-            // -90~90 범위로 정규화
-            while dev > 90 { dev -= 180 }
-            while dev < -90 { dev += 180 }
-            deviations.append((dev, line.length))
-        }
-
-        // RANSAC: 가장 많은 인라이어를 가진 각도 선택
-        var bestAngle: Double = 0
-        var bestScore: Double = 0
-        let inlierThreshold: Double = 3.0  // 3도 이내
-
-        for i in 0..<min(deviations.count, 50) {
-            let candidate = deviations[i].dev
-            var score: Double = 0
-
-            for d in deviations {
-                if abs(d.dev - candidate) < inlierThreshold {
-                    score += d.weight
-                }
-            }
-
-            if score > bestScore {
-                bestScore = score
-                bestAngle = candidate
-
-                // 인라이어의 가중 평균으로 정제
-                var wSum: Double = 0, wTotal: Double = 0
-                for d in deviations {
-                    if abs(d.dev - candidate) < inlierThreshold {
-                        wSum += d.dev * d.weight
-                        wTotal += d.weight
-                    }
-                }
-                if wTotal > 0 { bestAngle = wSum / wTotal }
-            }
-        }
-
-        return bestAngle
     }
 
     // MARK: - Transform 적용

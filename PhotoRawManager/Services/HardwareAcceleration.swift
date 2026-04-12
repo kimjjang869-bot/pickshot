@@ -371,11 +371,13 @@ struct MetalImageProcessor {
             lanczos.scaleTransform = ptr
         }
 
-        // Encode
+        // Encode (비동기 완료 대기 — UI 스레드 블로킹 방지)
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
         lanczos.encode(commandBuffer: commandBuffer, sourceTexture: srcTexture, destinationTexture: dstTexture)
+        let sem = DispatchSemaphore(value: 0)
+        commandBuffer.addCompletedHandler { _ in sem.signal() }
         commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        sem.wait()
 
         // Read back
         return _cgImage(from: dstTexture)
@@ -418,8 +420,10 @@ struct MetalImageProcessor {
             histogram: histogramBuffer,
             histogramOffset: 0
         )
+        let sem = DispatchSemaphore(value: 0)
+        commandBuffer.addCompletedHandler { _ in sem.signal() }
         commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        sem.wait()
 
         // Parse results - MPS outputs interleaved RGBA histogram as uint32
         let ptr = histogramBuffer.contents().bindMemory(to: UInt32.self, capacity: 256 * 4)

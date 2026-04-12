@@ -261,10 +261,16 @@ struct ExportView: View {
                 }
             }
 
-            // Summary
+            // Summary — 단일 루프로 통계 계산
             let photos = photosToExport
-            let withRAW = photos.filter { $0.hasRAW }.count
-            let ratedCount = photos.filter { $0.rating > 0 }.count
+            let (withRAW, ratedCount): (Int, Int) = {
+                var raw = 0, rated = 0
+                for p in photos {
+                    if p.hasRAW { raw += 1 }
+                    if p.rating > 0 { rated += 1 }
+                }
+                return (raw, rated)
+            }()
 
             VStack(alignment: .leading, spacing: 4) {
                 if exportTarget == .lightroom {

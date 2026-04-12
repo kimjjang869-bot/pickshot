@@ -347,9 +347,9 @@ struct MatchingView: View {
         let filenames = FilenameMatchingService.parseFilenames(from: filenameText)
         let result = FilenameMatchingService.match(filenames: filenames, photos: store.photos)
 
-        // Apply selections
+        // Apply selections — idx was computed from a snapshot, re-validate bounds
         for (_, idx) in result.matched {
-            guard idx < store.photos.count else { continue }
+            guard store.photos.indices.contains(idx) else { continue }
             store.photos[idx].rating = max(store.photos[idx].rating, 1)
         }
 
@@ -377,7 +377,7 @@ struct MatchingView: View {
 
             DispatchQueue.main.async {
                 for (_, idx, _) in result.matched {
-                    guard idx < store.photos.count else { continue }
+                    guard store.photos.indices.contains(idx) else { continue }
                     store.photos[idx].rating = max(store.photos[idx].rating, 1)
                 }
 
@@ -385,9 +385,16 @@ struct MatchingView: View {
                 unmatchedCount = result.unmatched.count
                 unmatchedList = result.unmatched.map { $0.lastPathComponent }
 
-                let exactCount = result.matched.filter { $0.matchType == .exact }.count
-                let fuzzyCount = result.matched.filter { $0.matchType == .fuzzy }.count
-                let numberCount = result.matched.filter { $0.matchType == .numberPattern }.count
+                var exactCount = 0
+                var fuzzyCount = 0
+                var numberCount = 0
+                for m in result.matched {
+                    switch m.matchType {
+                    case .exact: exactCount += 1
+                    case .fuzzy: fuzzyCount += 1
+                    case .numberPattern: numberCount += 1
+                    }
+                }
                 resultMessage = "정확:\(exactCount) 유사:\(fuzzyCount) 번호:\(numberCount) — ★1 별점 적용됨"
                 showResult = true
                 isProcessing = false
@@ -430,9 +437,12 @@ struct MatchingView: View {
             DispatchQueue.main.async {
                 var matched = 0
                 var unmatched: [String] = []
+                var matchedBaseNames = Set<String>()
+                matchedBaseNames.reserveCapacity(store.photos.count)
 
-                for i in 0..<store.photos.count {
+                for i in store.photos.indices {
                     let baseName = store.photos[i].jpgURL.deletingPathExtension().lastPathComponent
+                    matchedBaseNames.insert(baseName)
 
                     guard let external = externalFiles[baseName] else {
                         continue
@@ -451,8 +461,7 @@ struct MatchingView: View {
                     }
                 }
 
-                // 매칭 안 된 외부 파일
-                let matchedBaseNames = Set(store.photos.map { $0.jpgURL.deletingPathExtension().lastPathComponent })
+                // 매칭 안 된 외부 파일 — matchedBaseNames는 위 루프에서 이미 생성됨
                 for (baseName, _) in externalFiles {
                     if !matchedBaseNames.contains(baseName) {
                         unmatched.append(baseName)
@@ -489,7 +498,7 @@ struct MatchingView: View {
 
             DispatchQueue.main.async {
                 for match in result.matched {
-                    guard match.matchedPhotoIndex < store.photos.count else { continue }
+                    guard store.photos.indices.contains(match.matchedPhotoIndex) else { continue }
                     store.photos[match.matchedPhotoIndex].rating = max(store.photos[match.matchedPhotoIndex].rating, 1)
                 }
 
