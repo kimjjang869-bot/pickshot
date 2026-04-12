@@ -12,6 +12,7 @@ class FolderWatcherService {
     private var debounceWorkItem: DispatchWorkItem?
     private var watchedURL: URL?
     private var knownFiles: Set<String> = []
+    private let stateLock = NSLock()  // knownFiles/knownSubfolders 스레드 안전
 
     /// Debounce interval in seconds. File system events within this window
     /// are coalesced into a single callback.
@@ -29,8 +30,10 @@ class FolderWatcherService {
         stopWatching()
 
         watchedURL = folder
+        stateLock.lock()
         knownFiles = currentFileNames(in: folder)
         knownSubfolders = currentSubfolderNames(in: folder)
+        stateLock.unlock()
 
         let fd = open(folder.path, O_EVTONLY)
         guard fd >= 0 else {
@@ -103,22 +106,29 @@ class FolderWatcherService {
 
         // 폴더 구조 변경 감지 (새 폴더 생성/삭제)
         let currentFolders = currentSubfolderNames(in: folder)
-        if currentFolders != knownSubfolders {
+        stateLock.lock()
+        let folderChanged = currentFolders != knownSubfolders
+        if folderChanged {
             let added = currentFolders.subtracting(knownSubfolders)
             let removed = knownSubfolders.subtracting(currentFolders)
-            // 실제 폴더 추가/삭제가 있을 때만 (빈 차이 무시)
             if !added.isEmpty || !removed.isEmpty {
                 knownSubfolders = currentFolders
+                stateLock.unlock()
                 DispatchQueue.main.async { [weak self] in
                     self?.onFolderStructureChanged?()
                 }
+            } else {
+                stateLock.unlock()
             }
+        } else {
+            stateLock.unlock()
         }
 
         let currentFiles = currentFileNames(in: folder)
 
+        stateLock.lock()
         // 파일 수가 같으면 무시 (메타데이터 변경은 리로드 불필요)
-        guard currentFiles.count != knownFiles.count || currentFiles != knownFiles else { return }
+        guard currentFiles.count != knownFiles.count || currentFiles != knownFiles else { stateLock.unlock(); return }
 
         let newFileNames = currentFiles.subtracting(knownFiles)
         let deletedFiles = knownFiles.subtracting(currentFiles)
@@ -126,10 +136,13 @@ class FolderWatcherService {
         // 실제 추가/삭제가 있을 때만 처리
         if !deletedFiles.isEmpty {
             knownFiles = currentFiles
+            stateLock.unlock()
             DispatchQueue.main.async { [weak self] in
                 self?.onFolderStructureChanged?()
             }
             if newFileNames.isEmpty { return }
+        } else {
+            stateLock.unlock()
         }
 
         guard !newFileNames.isEmpty else { return }
@@ -166,7 +179,9 @@ class FolderWatcherService {
         }
 
         // Update known files
+        stateLock.lock()
         knownFiles = currentFiles
+        stateLock.unlock()
 
         guard !newURLs.isEmpty else { return }
 
