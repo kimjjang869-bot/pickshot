@@ -896,6 +896,19 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    /// 미리보기용: 최대 N장만 반환 (대량 선택 시 성능 보호)
+    func multiSelectedPhotosLimited(_ limit: Int) -> [PhotoItem] {
+        var result: [PhotoItem] = []
+        result.reserveCapacity(limit)
+        for id in selectedPhotoIDs {
+            if let idx = _photoIndex[id], idx < photos.count, photos[idx].id == id {
+                result.append(photos[idx])
+                if result.count >= limit { break }
+            }
+        }
+        return result
+    }
+
     var selectionCount: Int {
         selectedPhotoIDs.count
     }

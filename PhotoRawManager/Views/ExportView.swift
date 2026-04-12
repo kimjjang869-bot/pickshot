@@ -13,6 +13,7 @@ struct ExportView: View {
     @State private var rawFolderName: String = "RAW"
     @State private var exportJPG: Bool = true
     @State private var exportRAW: Bool = true
+    @State private var singleFolder: Bool = false  // 한 폴더에 내보내기
 
     // 중복 처리 상태
     @State private var showDuplicateAlert = false
@@ -220,31 +221,41 @@ struct ExportView: View {
                             .font(.system(size: 12))
                     }
                     .toggleStyle(.checkbox)
+
+                    if exportJPG && exportRAW {
+                        Toggle(isOn: $singleFolder) {
+                            Text("한 폴더에 내보내기")
+                                .font(.system(size: 12))
+                        }
+                        .toggleStyle(.checkbox)
+                    }
                 }
 
-                HStack(spacing: 12) {
-                    if exportJPG {
-                        HStack(spacing: 4) {
-                            Text("JPG 폴더명")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 65, alignment: .trailing)
-                            TextField("JPG", text: $jpgFolderName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12, design: .monospaced))
-                                .frame(width: 120)
+                if !singleFolder {
+                    HStack(spacing: 12) {
+                        if exportJPG {
+                            HStack(spacing: 4) {
+                                Text("JPG 폴더명")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 65, alignment: .trailing)
+                                TextField("JPG", text: $jpgFolderName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .frame(width: 120)
+                            }
                         }
-                    }
-                    if exportRAW {
-                        HStack(spacing: 4) {
-                            Text("RAW 폴더명")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 65, alignment: .trailing)
-                            TextField("RAW", text: $rawFolderName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12, design: .monospaced))
-                                .frame(width: 120)
+                        if exportRAW {
+                            HStack(spacing: 4) {
+                                Text("RAW 폴더명")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 65, alignment: .trailing)
+                                TextField("RAW", text: $rawFolderName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .frame(width: 120)
+                            }
                         }
                     }
                 }
@@ -515,7 +526,7 @@ struct ExportView: View {
         if target == .lightroom {
             duplicates = FileCopyService.findDuplicatesForLightroom(photos: photos, destinationURL: destURL)
         } else {
-            duplicates = FileCopyService.findDuplicates(photos: photos, destinationURL: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName)
+            duplicates = FileCopyService.findDuplicates(photos: photos, destinationURL: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName, singleFolder: singleFolder)
         }
 
         if !duplicates.isEmpty {
@@ -558,6 +569,7 @@ struct ExportView: View {
         let doJPG = exportJPG
         let doRAW = exportRAW
         let rawName = rawFolderName
+        let isSingleFolder = singleFolder
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result: CopyResult
@@ -582,7 +594,8 @@ struct ExportView: View {
                     rawFolderName: rawName,
                     duplicateHandling: duplicateHandling,
                     exportJPG: doJPG,
-                    exportRAW: doRAW
+                    exportRAW: doRAW,
+                    singleFolder: isSingleFolder
                 ) { done, total in
                     DispatchQueue.main.async {
                         guard !store.bgExportCancelled else { return }

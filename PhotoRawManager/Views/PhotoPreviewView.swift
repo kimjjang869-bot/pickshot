@@ -1056,74 +1056,9 @@ struct PhotoPreviewView: View {
 
     private var correctionBar: some View {
         HStack(spacing: 8) {
-            // Correction menu (local + AI)
-            Menu {
-                Button(action: { showCorrectionPanel = true }) {
-                    Label("자동 보정", systemImage: "wand.and.rays")
-                }
-                .disabled(isCorrecting)
-
-                Button(action: {
-                    if isCorrecting {
-                        DisabledGuide.showCorrectionInProgress()
-                    } else if !ClaudeVisionService.hasAPIKey {
-                        DisabledGuide.showAIDisabled()
-                    } else {
-                        applyAICorrection()
-                    }
-                }) {
-                    Label("AI 보정 (Pro)", systemImage: "sparkles")
-                }
-                .disabled(isCorrecting || !ClaudeVisionService.hasAPIKey)
-
-                Divider()
-
-                Button(action: { showUprightGuide = true }) {
-                    Label("가이드 보정", systemImage: "perspective")
-                }
-                .disabled(isCorrecting)
-
-                Divider()
-
-                // NPU 고급 보정
-                Button(action: { applyNPUCorrection(mode: .aiEnhance) }) {
-                    Label("AI 보정 (NPU)", systemImage: "brain")
-                }
-                .disabled(isCorrecting)
-
-                Button(action: { applyNPUCorrection(mode: .denoise) }) {
-                    Label("디노이즈", systemImage: "dot.radiowaves.right")
-                }
-                .disabled(isCorrecting)
-
-                Button(action: { applyNPUCorrection(mode: .personAware) }) {
-                    Label("인물 인식 보정", systemImage: "person.crop.rectangle")
-                }
-                .disabled(isCorrecting)
-            } label: {
-                Label(isCorrecting ? "보정 중..." : "보정", systemImage: "wand.and.rays")
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
-            }
-            .menuStyle(.borderlessButton)
-            .padding(.horizontal, 8)
-            .frame(height: AppTheme.buttonHeight)
-            .foregroundColor(.white)
-            .background(Color.green.opacity(isCorrecting ? 0.3 : 0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .help("자동 보정 / AI 보정 선택")
-
-            // Crop button
-            Button(action: { showCropView = true }) {
-                Label("크롭", systemImage: "crop")
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .frame(height: AppTheme.buttonHeight)
-            .background(Color.orange.opacity(0.7))
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .help("사진 크롭")
+            // 보정/크롭 기능 — 추후 구현 예정 (비활성화)
+            // Menu { ... } label: { Label("보정", ...) }
+            // Button("크롭") { showCropView = true }
 
             // Original / Corrected toggle
             if correctionResult != nil {

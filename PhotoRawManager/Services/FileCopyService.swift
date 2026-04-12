@@ -27,26 +27,27 @@ struct FileCopyService {
         photos: [PhotoItem],
         destinationURL: URL,
         jpgFolderName: String = "JPG",
-        rawFolderName: String = "RAW"
+        rawFolderName: String = "RAW",
+        singleFolder: Bool = false
     ) -> [String] {
         let fm = FileManager.default
         let jpgName = jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "JPG" : jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawName = rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "RAW" : rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let jpgFolder = destinationURL.appendingPathComponent(jpgName)
-        let rawFolder = destinationURL.appendingPathComponent(rawName)
+        let jpgFolder = singleFolder ? destinationURL : destinationURL.appendingPathComponent(jpgName)
+        let rawFolder = singleFolder ? destinationURL : destinationURL.appendingPathComponent(rawName)
 
         var duplicates: [String] = []
         for photo in photos {
             if !photo.isRawOnly {
                 let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
                 if fm.fileExists(atPath: jpgDest.path) {
-                    duplicates.append(jpgName + "/" + photo.jpgURL.lastPathComponent)
+                    duplicates.append(photo.jpgURL.lastPathComponent)
                 }
             }
             if let rawURL = photo.rawURL {
                 let rawDest = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
                 if fm.fileExists(atPath: rawDest.path) {
-                    duplicates.append(rawName + "/" + rawURL.lastPathComponent)
+                    duplicates.append(rawURL.lastPathComponent)
                 }
             }
         }
@@ -152,6 +153,7 @@ struct FileCopyService {
         duplicateHandling: DuplicateHandling = .overwrite,
         exportJPG: Bool = true,
         exportRAW: Bool = true,
+        singleFolder: Bool = false,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
         let fileManager = FileManager.default
@@ -159,12 +161,14 @@ struct FileCopyService {
 
         let jpgName = jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "JPG" : jpgFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawName = rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "RAW" : rawFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let jpgFolder = destinationURL.appendingPathComponent(jpgName)
-        let rawFolder = destinationURL.appendingPathComponent(rawName)
+        let jpgFolder = singleFolder ? destinationURL : destinationURL.appendingPathComponent(jpgName)
+        let rawFolder = singleFolder ? destinationURL : destinationURL.appendingPathComponent(rawName)
 
         do {
-            try fileManager.createDirectory(at: jpgFolder, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: rawFolder, withIntermediateDirectories: true)
+            if !singleFolder {
+                try fileManager.createDirectory(at: jpgFolder, withIntermediateDirectories: true)
+                try fileManager.createDirectory(at: rawFolder, withIntermediateDirectories: true)
+            }
         } catch {
             result.failedFiles.append("폴더 생성 실패: \(error.localizedDescription)")
             return result

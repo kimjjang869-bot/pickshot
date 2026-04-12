@@ -16,6 +16,7 @@ struct MatchingView: View {
     enum MatchMode: String, CaseIterable {
         case filename = "파일명 매칭"
         case jpgReturn = "JPG 반환 매칭"
+        case jpgRawMatch = "JPG+RAW 매칭"
         case aiSimilarity = "AI 사진 매칭"
     }
 
@@ -55,6 +56,8 @@ struct MatchingView: View {
                         filenameMatchView
                     case .jpgReturn:
                         jpgReturnMatchView
+                    case .jpgRawMatch:
+                        jpgRawMatchView
                     case .aiSimilarity:
                         aiSimilarityMatchView
                     }
@@ -167,7 +170,68 @@ struct MatchingView: View {
         }
     }
 
-    // MARK: - 3. AI 사진 유사도 매칭
+    // MARK: - 3. JPG+RAW 매칭
+
+    private var jpgRawMatchView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("다른 폴더의 RAW/JPG 파일을 현재 목록과 매칭합니다", systemImage: "doc.on.doc")
+                .font(.system(size: 13, weight: .medium))
+
+            Text("현재 열린 폴더의 파일과 선택한 폴더의 파일을 파일명(baseName)으로 비교하여\nJPG↔RAW를 자동 연결합니다.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle().fill(.green).frame(width: 6, height: 6)
+                    Text("확장자 제거 후 파일명(baseName) 비교")
+                        .font(.system(size: 11))
+                }
+                HStack(spacing: 6) {
+                    Circle().fill(.blue).frame(width: 6, height: 6)
+                    Text("현재 JPG만 있으면 → RAW 폴더에서 같은 이름 RAW 연결")
+                        .font(.system(size: 11))
+                }
+                HStack(spacing: 6) {
+                    Circle().fill(.orange).frame(width: 6, height: 6)
+                    Text("현재 RAW만 있으면 → JPG 폴더에서 같은 이름 JPG 연결")
+                        .font(.system(size: 11))
+                }
+            }
+            .padding(8)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(6)
+
+            if let url = store.folderURL {
+                Text("현재 폴더: \(url.lastPathComponent)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            Button(action: runJPGRawMatch) {
+                HStack {
+                    Image(systemName: "folder.badge.plus")
+                    if isProcessing {
+                        ProgressView().scaleEffect(0.7)
+                    }
+                    Text("매칭할 폴더 선택")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .disabled(isProcessing || store.photos.isEmpty)
+
+            if store.photos.isEmpty {
+                Text("먼저 폴더를 열어주세요")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+
+    // MARK: - 4. AI 사진 유사도 매칭
 
     private var aiSimilarityMatchView: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -325,6 +389,80 @@ struct MatchingView: View {
                 let fuzzyCount = result.matched.filter { $0.matchType == .fuzzy }.count
                 let numberCount = result.matched.filter { $0.matchType == .numberPattern }.count
                 resultMessage = "정확:\(exactCount) 유사:\(fuzzyCount) 번호:\(numberCount) — ★1 별점 적용됨"
+                showResult = true
+                isProcessing = false
+                store.photosVersion += 1
+            }
+        }
+    }
+
+    private func runJPGRawMatch() {
+        let panel = NSOpenPanel()
+        panel.title = "매칭할 RAW/JPG 폴더 선택"
+        panel.message = "현재 목록의 파일과 매칭할 RAW 또는 JPG 파일이 있는 폴더를 선택하세요"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        guard panel.runModal() == .OK, let selectedURL = panel.url else { return }
+
+        isProcessing = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 선택한 폴더의 파일 스캔
+            let fm = FileManager.default
+            let allExts = FileMatchingService.jpgExtensions
+                .union(FileMatchingService.rawExtensions)
+                .union(FileMatchingService.imageExtensions)
+            var externalFiles: [String: (url: URL, size: Int64, isRAW: Bool)] = [:]  // baseName → info
+
+            if let enumerator = fm.enumerator(at: selectedURL,
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) {
+                for case let fileURL as URL in enumerator {
+                    let ext = fileURL.pathExtension.lowercased()
+                    guard allExts.contains(ext) else { continue }
+                    let baseName = fileURL.deletingPathExtension().lastPathComponent
+                    let isRAW = FileMatchingService.rawExtensions.contains(ext)
+                    let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
+                    externalFiles[baseName] = (url: fileURL, size: size, isRAW: isRAW)
+                }
+            }
+
+            DispatchQueue.main.async {
+                var matched = 0
+                var unmatched: [String] = []
+
+                for i in 0..<store.photos.count {
+                    let baseName = store.photos[i].jpgURL.deletingPathExtension().lastPathComponent
+
+                    guard let external = externalFiles[baseName] else {
+                        continue
+                    }
+
+                    if external.isRAW {
+                        // 외부가 RAW → 현재 사진에 RAW 연결
+                        if store.photos[i].rawURL == nil || store.photos[i].rawURL == store.photos[i].jpgURL {
+                            store.photos[i].rawURL = external.url
+                            store.photos[i].rawFileSize = external.size
+                            matched += 1
+                        }
+                    } else {
+                        // 외부가 JPG → RAW만 있는 사진의 경우 JPG를 rawURL 대신 연결 불가 (jpgURL은 let)
+                        // JPG 매칭은 지원하지 않음 — 현재 목록에 RAW가 없는 경우만 RAW 폴더 매칭 용도
+                    }
+                }
+
+                // 매칭 안 된 외부 파일
+                let matchedBaseNames = Set(store.photos.map { $0.jpgURL.deletingPathExtension().lastPathComponent })
+                for (baseName, _) in externalFiles {
+                    if !matchedBaseNames.contains(baseName) {
+                        unmatched.append(baseName)
+                    }
+                }
+
+                matchedCount = matched
+                unmatchedCount = unmatched.count
+                unmatchedList = unmatched.sorted()
+                resultMessage = "매칭 완료: \(matched)개 연결됨 (폴더: \(selectedURL.lastPathComponent), 총 \(externalFiles.count)개 파일)"
                 showResult = true
                 isProcessing = false
                 store.photosVersion += 1

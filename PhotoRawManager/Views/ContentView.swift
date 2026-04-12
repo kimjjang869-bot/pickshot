@@ -515,40 +515,65 @@ struct ContentView: View {
 
 struct MultiPreviewGrid: View {
     @ObservedObject var store: PhotoStore
+    private let maxDisplay = 9
 
     var body: some View {
-        let photos = store.multiSelectedPhotos
-        let count = photos.count
+        let totalCount = store.selectionCount
+        // 최대 9장만 실제 로딩 (2000장 전체를 배열로 안 만듬)
+        let allPhotos = store.multiSelectedPhotosLimited(maxDisplay)
+        let overflow = totalCount > maxDisplay
+        let displayPhotos = overflow ? Array(allPhotos.prefix(maxDisplay - 1)) : allPhotos
+        let remainCount = totalCount - displayPhotos.count
+        let displayCount = displayPhotos.count + (overflow ? 1 : 0)
 
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            // 최적 열/행 계산 — 미리보기 창 비율에 맞춤
-            let cols = optimalCols(count: count, width: w, height: h)
-            let rows = (count + cols - 1) / cols
+            let cols = optimalCols(count: displayCount, width: w, height: h)
+            let rows = (displayCount + cols - 1) / cols
             let spacing: CGFloat = 3
             let cellW = (w - spacing * CGFloat(cols - 1)) / CGFloat(cols)
             let cellH = (h - spacing * CGFloat(rows - 1)) / CGFloat(rows)
 
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(cellW), spacing: spacing), count: cols), spacing: spacing) {
-                ForEach(photos) { photo in
+                ForEach(displayPhotos) { photo in
                     MultiPreviewCell(photo: photo, store: store, cellW: cellW, cellH: cellH)
                         .frame(width: cellW, height: cellH)
+                }
+                // 초과 시 마지막 칸에 "+N장" 표시
+                if overflow {
+                    ZStack {
+                        store.previewBackgroundColor
+                        // 마지막 사진 블러 배경
+                        if let lastPhoto = allPhotos.last,
+                           let thumb = ThumbnailCache.shared.get(lastPhoto.jpgURL) {
+                            Image(nsImage: thumb)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .blur(radius: 8)
+                                .clipped()
+                        }
+                        Color.black.opacity(0.6)
+                        Text("+\(remainCount)장")
+                            .font(.system(size: min(cellW, cellH) * 0.2, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(width: cellW, height: cellH)
+                    .clipped()
                 }
             }
         }
     }
 
     private func optimalCols(count: Int, width: CGFloat, height: CGFloat) -> Int {
-        // 이미지 가로세로 비율 3:2 기준으로 최적 배치
         let aspect: CGFloat = 3.0 / 2.0
-        for cols in 1...8 {
+        for cols in 1...3 {
             let rows = (count + cols - 1) / cols
             let cellW = width / CGFloat(cols)
             let cellH = height / CGFloat(rows)
             if cellW / cellH <= aspect * 1.5 { return cols }
         }
-        return min(count, 4)
+        return 3
     }
 }
 
