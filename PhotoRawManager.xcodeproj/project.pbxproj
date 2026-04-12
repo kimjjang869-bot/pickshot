@@ -90,6 +90,8 @@
 		6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */; };
 		89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */; };
 		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
+		AF10001 /* AdaFaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF10002 /* AdaFaceService.swift */; };
+		AF10003 /* AdaFaceR18.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = AF10004 /* AdaFaceR18.mlpackage */; };
 		SR10001 /* SuperResolutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SR10002 /* SuperResolutionService.swift */; };
 		901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */; };
 		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
@@ -190,6 +192,8 @@
 		C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupService.swift; sourceTree = "<group>"; };
 		915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupView.swift; sourceTree = "<group>"; };
 		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
+		AF10002 /* AdaFaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaFaceService.swift; sourceTree = "<group>"; };
+		AF10004 /* AdaFaceR18.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = AdaFaceR18.mlpackage; sourceTree = "<group>"; };
 		SR10002 /* SuperResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperResolutionService.swift; sourceTree = "<group>"; };
 		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
 		81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = NIMAAesthetic.mlpackage; sourceTree = "<group>"; };
@@ -250,6 +254,7 @@
 				B10003,
 				B10004,
 				81F5C27DF3F5D27545AA8F87,
+				AF10004 /* AdaFaceR18.mlpackage */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -334,6 +339,7 @@
 				DB0149CC8D993C1D6A7E1943,
 				C74A91831108ED991CD31ADE,
 				18B9AD88F78788103034A9CD,
+				AF10002 /* AdaFaceService.swift */,
 				1F28915B9DB29857371992AB,
 				XMP10002,
 				KWT10002 /* KeywordTaggingService.swift */,
@@ -418,6 +424,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10013,				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
+				AF10003 /* AdaFaceR18.mlpackage in Resources */,
 
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -436,6 +443,7 @@
 				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
 				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
 				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
+				AF10001 /* AdaFaceService.swift in Sources */,
 				SR10001 /* SuperResolutionService.swift in Sources */,
 				89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */,
 				6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */,
@@ -637,7 +645,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -648,7 +656,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.1.5;
+				MARKETING_VERSION = 7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -665,7 +673,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -676,7 +684,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.1.5;
+				MARKETING_VERSION = 7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

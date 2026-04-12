@@ -317,85 +317,110 @@ class SmartCullService: ObservableObject {
     // MARK: - FeaturePrint 추출
 
     private func extractFeatureVectors(photos: [PhotoItem]) -> [FeatureVector] {
-        var vectors: [FeatureVector] = []
-        let lock = NSLock()
         let total = photos.count
-        var failCount = 0
+        // 고정 배열로 인덱스별 직접 기록 (lock 경합 최소화)
+        var slots = [FeatureVector?](repeating: nil, count: total)
+        let lock = NSLock()
+        var doneCount = 0
 
-        fputs("[CULL] 특징 벡터 추출 시작: \(total)장\n", stderr)
+        fputs("[CULL] 특징 벡터 추출 시작: \(total)장 (Phase 1: FeaturePrint만)\n", stderr)
+        let startTime = CFAbsoluteTimeGetCurrent()
 
+        // Phase 1: FeaturePrint만 빠르게 추출 (320px, 품질평가 없음)
         DispatchQueue.concurrentPerform(iterations: total) { index in
             guard !cancelled else { return }
-            let photo = photos[index]
+            autoreleasepool {
+                let photo = photos[index]
 
-            // CGImage 로딩 (JPG → RAW 순서 시도)
-            let cgImage: CGImage? = Self.loadCGImage(from: photo, maxSize: 800)
+                // 320px 썸네일 — FeaturePrint에 충분, 로딩 3배 빠름
+                guard let image = Self.loadCGImage(from: photo, maxSize: 320) else { return }
 
-            guard let image = cgImage else {
+                let request = VNGenerateImageFeaturePrintRequest()
+                let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                do {
+                    try handler.perform([request])
+                } catch { return }
+
+                guard let result = request.results?.first as? VNFeaturePrintObservation else { return }
+
+                let vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
+                slots[index] = vector
+
                 lock.lock()
-                failCount += 1
+                doneCount += 1
+                let done = doneCount
                 lock.unlock()
-                if failCount <= 3 {
-                    fputs("[CULL] 이미지 로딩 실패: \(photo.jpgURL.lastPathComponent)\n", stderr)
+
+                if done % 50 == 0 || done == 1 || done == total {
+                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                    let rate = elapsed > 0 ? Double(done) / elapsed : 0
+                    let eta = rate > 0 ? Double(total - done) / rate : 0
+                    let etaStr = eta < 60 ? "\(Int(eta))초" : "\(Int(eta/60))분 \(Int(eta) % 60)초"
+                    self.updateProgress(Double(done) / Double(total) * 0.4)
+                    self.updateStatus("특징 벡터 추출 중... (\(done)/\(total)) · \(String(format: "%.1f", rate))장/초 · 약 \(etaStr) 남음")
                 }
-                return
-            }
-
-            let request = VNGenerateImageFeaturePrintRequest()
-            let handler = VNImageRequestHandler(cgImage: image, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                fputs("[CULL] FeaturePrint 추출 실패: \(error.localizedDescription)\n", stderr)
-                return
-            }
-
-            guard let result = request.results?.first as? VNFeaturePrintObservation else {
-                fputs("[CULL] FeaturePrint 결과 없음: \(photo.jpgURL.lastPathComponent)\n", stderr)
-                return
-            }
-
-            // 룩북: 인물 세그멘테이션으로 사람+옷만 추출
-            var finalFP = result
-            if self.genre == .lookbook {
-                if let personOnly = Self.extractPersonRegion(cgImage: image) {
-                    let req2 = VNGenerateImageFeaturePrintRequest()
-                    let h2 = VNImageRequestHandler(cgImage: personOnly, options: [:])
-                    try? h2.perform([req2])
-                    if let fp2 = req2.results?.first as? VNFeaturePrintObservation {
-                        finalFP = fp2
-                    }
-                }
-            }
-
-            var vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: finalFP)
-            let sharpness = Self.quickQualityScore(cgImage: image)
-            vector.sharpness = sharpness
-            vector.qualityScore = sharpness * self.genre.sharpnessWeight
-
-            vector.isBlurry = sharpness < 8  // 10 이하만 진짜 블러
-
-            if self.genre == .lookbook || self.genre == .portrait || self.genre == .wedding {
-                vector.hasClosedEyes = Self.detectClosedEyes(cgImage: image)
-            }
-
-            // 룩북: 상의/하의 컬러 시그니처 추출
-            if self.genre == .lookbook {
-                vector.colorSignature = Self.extractClothingColorSignature(cgImage: image)
-            }
-
-            lock.lock()
-            vectors.append(vector)
-            lock.unlock()
-
-            let done = vectors.count
-            if done % 10 == 0 || done == 1 {
-                self.updateProgress(Double(done) / Double(total) * 0.5)
-                self.updateStatus("특징 벡터 추출 중... (\(done)/\(total))")
             }
         }
 
-        fputs("[CULL] 특징 벡터 추출 완료: \(vectors.count)/\(total)장 성공, \(failCount)장 실패\n", stderr)
+        var vectors = slots.compactMap { $0 }
+        let phase1Time = CFAbsoluteTimeGetCurrent() - startTime
+        fputs("[CULL] Phase 1 완료: \(vectors.count)/\(total)장 (\(String(format: "%.1f", phase1Time))초, \(String(format: "%.1f", Double(vectors.count)/phase1Time))장/초)\n", stderr)
+
+        // Phase 2: 품질 평가 (선명도, 눈감김 등) — 480px
+        let isLookbook = self.genre == .lookbook
+        let needEyeCheck = self.genre == .lookbook || self.genre == .portrait || self.genre == .wedding
+        let sharpWeight = self.genre.sharpnessWeight
+        let phase2Total = vectors.count
+        var phase2Done = 0
+
+        // URL 빠른 조회용 맵
+        let photoMap: [UUID: PhotoItem] = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
+
+        self.updateStatus("품질 분석 중... (0/\(phase2Total))")
+
+        DispatchQueue.concurrentPerform(iterations: phase2Total) { index in
+            guard !cancelled else { return }
+            autoreleasepool {
+                guard let p = photoMap[vectors[index].photoID],
+                      let image = Self.loadCGImage(from: p, maxSize: 480) else { return }
+
+                let sharpness = Self.quickQualityScore(cgImage: image)
+                vectors[index].sharpness = sharpness
+                vectors[index].qualityScore = sharpness * sharpWeight
+                vectors[index].isBlurry = sharpness < 8
+
+                if needEyeCheck {
+                    vectors[index].hasClosedEyes = Self.detectClosedEyes(cgImage: image)
+                }
+
+                if isLookbook {
+                    vectors[index].colorSignature = Self.extractClothingColorSignature(cgImage: image)
+
+                    // 룩북: 인물 세그멘테이션 FeaturePrint
+                    if let personOnly = Self.extractPersonRegion(cgImage: image) {
+                        let req2 = VNGenerateImageFeaturePrintRequest()
+                        let h2 = VNImageRequestHandler(cgImage: personOnly, options: [:])
+                        try? h2.perform([req2])
+                        if let fp2 = req2.results?.first as? VNFeaturePrintObservation {
+                            vectors[index].featurePrint = fp2
+                        }
+                    }
+                }
+
+                lock.lock()
+                phase2Done += 1
+                let done = phase2Done
+                lock.unlock()
+
+                if done % 50 == 0 || done == phase2Total {
+                    self.updateProgress(0.4 + Double(done) / Double(phase2Total) * 0.1)
+                    self.updateStatus("품질 분석 중... (\(done)/\(phase2Total))")
+                }
+            }
+        }
+
+        let totalTime = CFAbsoluteTimeGetCurrent() - startTime
+        fputs("[CULL] 전체 추출 완료: \(vectors.count)장 (\(String(format: "%.1f", totalTime))초)\n", stderr)
         return vectors
     }
 

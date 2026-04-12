@@ -449,7 +449,9 @@ class PhotoStore: ObservableObject {
 
     // MARK: - Undo Stack
     struct FileMove { let sourceURL: URL; let destURL: URL }
-    private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove])] = []
+    /// 삭제 되돌리기용: 삭제된 PhotoItem + 원래 인덱스
+    struct RemovedPhoto { let photo: PhotoItem; let originalIndex: Int }
+    private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove], removedPhotos: [RemovedPhoto])] = []
     private let maxUndoSteps = 20
 
     private let defaults = UserDefaults.standard
@@ -470,7 +472,7 @@ class PhotoStore: ObservableObject {
                 oldGSelect[id] = photos[i].isGSelected
             }
         }
-        undoStack.append((action: action, photoIDs: photoIDs, oldRatings: oldRatings, oldSP: oldSP, oldGSelect: oldGSelect, fileMoves: []))
+        undoStack.append((action: action, photoIDs: photoIDs, oldRatings: oldRatings, oldSP: oldSP, oldGSelect: oldGSelect, fileMoves: [], removedPhotos: []))
         if undoStack.count > maxUndoSteps {
             undoStack.removeFirst(undoStack.count - maxUndoSteps)
         }
@@ -482,7 +484,45 @@ class PhotoStore: ObservableObject {
             return
         }
 
-        // 파일 이동 되돌리기
+        // 1) 삭제 되돌리기 (목록 복원 + 파일 휴지통 복원)
+        if !last.removedPhotos.isEmpty {
+            // 파일 휴지통에서 복원
+            if !last.fileMoves.isEmpty {
+                var restored = 0
+                for move in last.fileMoves.reversed() {
+                    do {
+                        try FileManager.default.moveItem(at: move.destURL, to: move.sourceURL)
+                        restored += 1
+                    } catch {
+                        AppLogger.log(.general, "Undo trash failed: \(move.destURL.lastPathComponent) → \(error)")
+                    }
+                }
+                fputs("[UNDO] 휴지통 복원: \(restored)/\(last.fileMoves.count)개 파일\n", stderr)
+            }
+
+            // 목록에 사진 복원 (원래 위치에 삽입)
+            _suppressDidSet = true
+            let sorted = last.removedPhotos.sorted { $0.originalIndex < $1.originalIndex }
+            for item in sorted {
+                let insertIdx = min(item.originalIndex, photos.count)
+                photos.insert(item.photo, at: insertIdx)
+            }
+            rebuildIndex()
+            _suppressDidSet = false
+            photosVersion += 1
+            invalidateFilterCache()
+
+            // 복원된 사진 선택
+            let restoredIDs = Set(last.removedPhotos.map { $0.photo.id })
+            selectedPhotoIDs = restoredIDs
+            selectedPhotoID = last.removedPhotos.first?.photo.id
+
+            scrollTrigger &+= 1
+            showToastMessage("\(last.removedPhotos.count)장 삭제 되돌리기 완료")
+            return
+        }
+
+        // 2) 파일 이동 되돌리기
         if !last.fileMoves.isEmpty {
             var undone = 0
             for move in last.fileMoves.reversed() {
@@ -493,7 +533,6 @@ class PhotoStore: ObservableObject {
                     AppLogger.log(.general, "Undo move failed: \(move.destURL.lastPathComponent) → \(error)")
                 }
             }
-            // 폴더 다시 로딩
             if let folderURL = folderURL {
                 loadFolder(folderURL, restoreRatings: true)
             }
@@ -502,7 +541,7 @@ class PhotoStore: ObservableObject {
             return
         }
 
-        // 별점/SP/GSelect 되돌리기
+        // 3) 별점/SP/GSelect 되돌리기
         var copy = photos
         for id in last.photoIDs {
             guard let i = _photoIndex[id], i < copy.count else { continue }
@@ -961,22 +1000,22 @@ class PhotoStore: ObservableObject {
         let idsToRemove = photosToRemove
         guard !idsToRemove.isEmpty else { return }
 
+        // Step 1: 다음 선택 대상 미리 계산 — 앞(이전) 사진 우선
         let list = filteredPhotos
         ensureFilteredIndex()
-        // Find the index of the first selected photo to determine next selection
         var nextID: UUID? = nil
         if let currentID = selectedPhotoID, let currentFilteredIdx = _filteredIndex[currentID] {
-            // Try to select the next photo after the last removed one
-            for i in (currentFilteredIdx + 1)..<list.count {
-                if !idsToRemove.contains(list[i].id) {
+            // 앞(이전) 사진을 먼저 찾기 — 삭제하면서 뒤로 나가는 워크플로우
+            for i in stride(from: currentFilteredIdx - 1, through: 0, by: -1) {
+                if !idsToRemove.contains(list[i].id) && !list[i].isFolder && !list[i].isParentFolder {
                     nextID = list[i].id
                     break
                 }
             }
-            // If no next, try previous
+            // 앞에 없으면 뒤(다음) 사진
             if nextID == nil {
-                for i in stride(from: currentFilteredIdx - 1, through: 0, by: -1) {
-                    if !idsToRemove.contains(list[i].id) {
+                for i in (currentFilteredIdx + 1)..<list.count {
+                    if !idsToRemove.contains(list[i].id) && !list[i].isFolder && !list[i].isParentFolder {
                         nextID = list[i].id
                         break
                     }
@@ -984,15 +1023,44 @@ class PhotoStore: ObservableObject {
             }
         }
 
-        // Remove from photos array (NOT from disk)
-        photos = photos.filter { !idsToRemove.contains($0.id) }
+        // Step 2: 삭제 전 undo 정보 저장
+        var removedItems: [RemovedPhoto] = []
+        for (i, photo) in photos.enumerated() {
+            if idsToRemove.contains(photo.id) {
+                removedItems.append(RemovedPhoto(photo: photo, originalIndex: i))
+            }
+        }
+        undoStack.append((action: "목록 제거", photoIDs: idsToRemove, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: [], removedPhotos: removedItems))
+        if undoStack.count > maxUndoSteps { undoStack.removeFirst(undoStack.count - maxUndoSteps) }
 
-        // Update selection
+        // Step 3: didSet 억제하고 직접 배열 수정 (중복 재계산 방지)
+        _suppressDidSet = true
+
+        // in-place 제거 (배열 복사 없음)
+        photos.removeAll { idsToRemove.contains($0.id) }
+
+        // 인덱스 직접 재구축
+        rebuildIndex()
+
+        _suppressDidSet = false
+        photosVersion += 1
+
+        // 필터 캐시도 직접 업데이트 (전체 재계산 대신 제거만)
+        filterLock.lock()
+        if let cached = _cachedFiltered {
+            _cachedFiltered = cached.filter { !idsToRemove.contains($0.id) }
+            _cacheKey = "\(photosVersion)"
+        }
+        _filteredIndex.removeAll()
+        _filteredIndexVersion = ""
+        filterLock.unlock()
+
+        // Step 3: 선택 업데이트
         selectedPhotoIDs.subtract(idsToRemove)
         if let next = nextID {
             selectedPhotoID = next
             selectedPhotoIDs = [next]
-        } else if let first = filteredPhotos.first {
+        } else if let first = _cachedFiltered?.first(where: { !$0.isFolder && !$0.isParentFolder }) ?? photos.first {
             selectedPhotoID = first.id
             selectedPhotoIDs = [first.id]
         } else {
@@ -1002,6 +1070,32 @@ class PhotoStore: ObservableObject {
 
         photosToRemove = []
         scrollTrigger &+= 1
+
+        // 삭제 효과음 (Tink 0.56초, 연타 시 중복 방지)
+        if !idsToRemove.isEmpty {
+            Self._deleteSound?.stop()
+            Self._deleteSound?.play()
+        }
+
+        // 폴더 사이즈는 비동기로 (렉 방지)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let totalBytes = self.photos.reduce(Int64(0)) { sum, photo in
+                guard !photo.isFolder && !photo.isParentFolder else { return sum }
+                return sum + photo.jpgFileSize + photo.rawFileSize
+            }
+            let text: String
+            if totalBytes <= 0 {
+                text = "\(self.photos.filter { !$0.isFolder }.count)장"
+            } else if totalBytes > 1_073_741_824 {
+                text = String(format: "%.1f GB", Double(totalBytes) / 1_073_741_824)
+            } else if totalBytes > 1_048_576 {
+                text = String(format: "%.0f MB", Double(totalBytes) / 1_048_576)
+            } else {
+                text = String(format: "%.0f KB", Double(totalBytes) / 1024)
+            }
+            DispatchQueue.main.async { self.cachedFolderSizeText = text }
+        }
     }
 
     /// Remove photos from list without file deletion (backspace default)
@@ -1015,24 +1109,33 @@ class PhotoStore: ObservableObject {
         let fm = FileManager.default
         var deleted = 0
         var failed = 0
+        var trashMoves: [FileMove] = []   // 휴지통 복원용
 
         for id in ids {
             guard let idx = _photoIndex[id], idx < photos.count else { continue }
             let photo = photos[idx]
             guard !photo.isFolder && !photo.isParentFolder else { continue }
 
-            // Delete JPG
+            // Delete JPG → 휴지통 (복원 경로 기록)
             do {
                 if fm.fileExists(atPath: photo.jpgURL.path) {
-                    try fm.trashItem(at: photo.jpgURL, resultingItemURL: nil)
+                    var trashURL: NSURL?
+                    try fm.trashItem(at: photo.jpgURL, resultingItemURL: &trashURL)
+                    if let t = trashURL as URL? {
+                        trashMoves.append(FileMove(sourceURL: photo.jpgURL, destURL: t))
+                    }
                 }
             } catch { failed += 1 }
 
-            // Delete RAW
+            // Delete RAW → 휴지통
             if let rawURL = photo.rawURL {
                 do {
                     if fm.fileExists(atPath: rawURL.path) {
-                        try fm.trashItem(at: rawURL, resultingItemURL: nil)
+                        var trashURL: NSURL?
+                        try fm.trashItem(at: rawURL, resultingItemURL: &trashURL)
+                        if let t = trashURL as URL? {
+                            trashMoves.append(FileMove(sourceURL: rawURL, destURL: t))
+                        }
                     }
                 } catch { failed += 1 }
             }
@@ -1046,8 +1149,15 @@ class PhotoStore: ObservableObject {
             NSSound(contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif", byReference: true)?.play()
         }
 
-        // Remove from list
+        // Remove from list (undo 스택에 목록 제거 정보 저장됨)
         removePhotosFromList(ids: ids)
+
+        // undo 스택 마지막 항목에 파일 이동 정보 추가 (휴지통 복원용)
+        if !trashMoves.isEmpty, var lastUndo = undoStack.popLast() {
+            lastUndo.action = "파일 삭제"
+            lastUndo.fileMoves = trashMoves
+            undoStack.append(lastUndo)
+        }
     }
 
     /// 폴더를 휴지통으로 이동
@@ -1153,7 +1263,7 @@ class PhotoStore: ObservableObject {
                 self.fileMoveActive = false
                 // Undo 기록
                 if !fileMoveRecords.isEmpty {
-                    self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords))
+                    self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords, removedPhotos: []))
                 }
                 // 이동된 사진 목록에서 제거
                 if !movedIDs.isEmpty {
@@ -2346,6 +2456,9 @@ class PhotoStore: ObservableObject {
         PreviewImageCache.shared.prefetch(urls: urls)
     }
 
+    /// 삭제 효과음 (Tink, 0.56초 — 캐시해서 재사용)
+    private static let _deleteSound: NSSound? = NSSound(named: .init("Tink"))
+
     /// RAW 임베디드 썸네일 프리페치 (이동 방향으로 미리 채움, 병렬 추출)
     private static let thumbPrefetchQueue: OperationQueue = {
         let q = OperationQueue()
@@ -2714,8 +2827,10 @@ class PhotoStore: ObservableObject {
         faceGroupProgress = 0
         faceGroupStartTime = CFAbsoluteTimeGetCurrent()
 
+        // 선택 여부 무관하게 폴더 내 전체 사진 대상
         let photoSnapshots = photos
         let total = photoSnapshots.count
+        fputs("[FACE] 전체 사진 \(total)장 대상 얼굴 그룹핑 시작\n", stderr)
         faceGroupTotalCount = total
         faceGroupDoneCount = 0
         faceGroupStatusMessage = "얼굴 감지 준비 중..."
