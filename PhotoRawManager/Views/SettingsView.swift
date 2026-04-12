@@ -224,9 +224,11 @@ struct PreviewSettingsTab: View {
 
                         Divider()
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("썸네일 기본 크기: \(Int(defaultThumbnailSize))px")
-                            Slider(value: $defaultThumbnailSize, in: 50...300, step: 10)
+                        // 썸네일 크기 — 자동 설정 (스토리지 타입에 따라 최적화)
+                        HStack {
+                            Text("썸네일 크기: 자동 (SSD 140 / HDD 100 / SD 90)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
                         }
                     }
                     .padding(4)

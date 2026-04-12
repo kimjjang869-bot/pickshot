@@ -1883,11 +1883,15 @@ class ThumbnailLoader {
             guard !op.isCancelled else { return }
 
             let thumbStart = CFAbsoluteTimeGetCurrent()
-            let image: NSImage?
+            var image: NSImage?
 
             if isHDD || isNAS {
-                // HDD/NAS 최적화: EXIF 임베디드 썸네일 우선 (파일 전체 안 읽음)
-                image = Self.extractThumbnailFast(url: url) ?? Self.extractThumbnail(url: url)
+                // HDD/NAS 최적화: EXIF 임베디드 썸네일만 (전체 RAW 디코딩 금지)
+                image = Self.extractThumbnailFast(url: url)
+                // Fast 실패 시에만 일반 추출 (JPG는 빠르므로 OK, RAW는 스킵)
+                if image == nil && !FileMatchingService.rawExtensions.contains(url.pathExtension.lowercased()) {
+                    image = Self.extractThumbnail(url: url)
+                }
             } else {
                 image = Self.extractThumbnail(url: url)
             }
@@ -1937,32 +1941,33 @@ class ThumbnailLoader {
 
     private static func flushDiskCacheIfNeeded() {
         diskCacheWriteLock.lock()
-        // 10개 모이거나, 이미 예약된 타이머가 있으면 대기
         let count = pendingDiskCacheWrites.count
         if count >= 10 {
-            let batch = pendingDiskCacheWrites
+            let batch = Array(pendingDiskCacheWrites)  // 강한 참조 복사
             pendingDiskCacheWrites.removeAll(keepingCapacity: true)
             diskCacheWriteLock.unlock()
-            // SSD 디스크 캐시에 배치 저장 (HDD가 아닌 내장 SSD 캐시 디렉토리)
             DispatchQueue.global(qos: .background).async {
-                for (url, img) in batch {
-                    let mod = fileModDate(url)
-                    DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                autoreleasepool {
+                    for (url, img) in batch {
+                        let mod = fileModDate(url)
+                        DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                    }
                 }
             }
         } else if !diskCacheFlushScheduled {
             diskCacheFlushScheduled = true
             diskCacheWriteLock.unlock()
-            // 2초 후 남은 것 플러시
             DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) {
                 diskCacheWriteLock.lock()
-                let batch = pendingDiskCacheWrites
+                let batch = Array(pendingDiskCacheWrites)
                 pendingDiskCacheWrites.removeAll(keepingCapacity: true)
                 diskCacheFlushScheduled = false
                 diskCacheWriteLock.unlock()
-                for (url, img) in batch {
-                    let mod = fileModDate(url)
-                    DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                autoreleasepool {
+                    for (url, img) in batch {
+                        let mod = fileModDate(url)
+                        DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                    }
                 }
             }
         } else {
@@ -1980,6 +1985,8 @@ class ThumbnailLoader {
         guard allKnownExtensions.contains(ext),
               !FileMatchingService.videoExtensions.contains(ext) else { return nil }
 
+        let isRAW = FileMatchingService.rawExtensions.contains(ext)
+
         // CGImageSource로 EXIF 임베디드 썸네일만 추출 (CreateThumbnailFromImageAlways = false)
         let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
@@ -1993,9 +2000,10 @@ class ThumbnailLoader {
             kCGImageSourceShouldCache: false
         ]
 
-        // 첫 번째 이미지 + 서브이미지 확인
+        // 모든 서브이미지 확인 (RAW는 최대 5개까지 — 임베디드 JPEG이 뒤에 있을 수 있음)
         let count = CGImageSourceGetCount(source)
-        for idx in 0..<min(count, 3) {
+        let maxIdx = isRAW ? min(count, 5) : min(count, 3)
+        for idx in 0..<maxIdx {
             if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                 if cg.width >= 80 && cg.height >= 80 {
                     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
@@ -2003,15 +2011,22 @@ class ThumbnailLoader {
             }
         }
 
+        // RAW: 파일 헤더에서 임베디드 JPEG 직접 추출 (전체 디코딩 회피)
+        if isRAW {
+            if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                return img
+            }
+        }
+
         return nil  // 임베디드 없음 → 풀 디코딩으로 폴백
     }
 
     private static var thumbSize: Int {
-        // Smaller thumbnails for slow storage = faster loading
+        // Smaller thumbnails = faster I/O + less memory
         let loader = ThumbnailLoader.shared
-        if loader.queue.maxConcurrentOperationCount == 1 { return 120 }  // SD카드: 최소
-        if loader.isSlowDisk { return 160 }  // HDD/NAS
-        return 200
+        if loader.queue.maxConcurrentOperationCount == 1 { return 90 }   // SD카드
+        if loader.isSlowDisk { return 100 }  // HDD/NAS
+        return 140                            // SSD
     }
 
     private static let allKnownExtensions: Set<String> = {

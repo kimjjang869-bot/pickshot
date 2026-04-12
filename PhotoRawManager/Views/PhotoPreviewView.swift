@@ -1056,12 +1056,45 @@ struct PhotoPreviewView: View {
 
     private var correctionBar: some View {
         HStack(spacing: 8) {
-            // 보정/크롭 기능 — 추후 구현 예정 (비활성화)
-            // Menu { ... } label: { Label("보정", ...) }
-            // Button("크롭") { showCropView = true }
+            // 자동 수평/수직 보정
+            Menu {
+                Button(action: { applyAutoUpright(mode: .auto) }) {
+                    Label("자동 보정", systemImage: "level")
+                }
+                Button(action: { applyAutoUpright(mode: .level) }) {
+                    Label("수평 보정", systemImage: "arrow.left.and.right")
+                }
+                Button(action: { applyAutoUpright(mode: .vertical) }) {
+                    Label("수직 보정", systemImage: "arrow.up.and.down")
+                }
+                Button(action: { applyAutoUpright(mode: .full) }) {
+                    Label("전체 보정", systemImage: "aspectratio")
+                }
+            } label: {
+                Label(isCorrecting ? "보정 중..." : "수평/수직", systemImage: "level")
+                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
+            }
+            .menuStyle(.borderlessButton)
+            .padding(.horizontal, 8)
+            .frame(height: AppTheme.buttonHeight)
+            .foregroundColor(.white)
+            .background(Color.green.opacity(isCorrecting ? 0.3 : 0.7))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .disabled(isCorrecting)
+            .help("수평/수직 자동 보정 (라이트룸 Upright 방식)")
 
-            // Original / Corrected toggle
+            // 보정 전후 비교 + 저장
             if correctionResult != nil {
+                Divider().frame(height: 20)
+
+                // 보정 정보 표시
+                if let angle = correctionResult?.horizonAngle, angle != 0 {
+                    Text("\(String(format: "%.1f", angle))°")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.orange)
+                }
+
+                // 원본/보정 토글
                 Button(action: {
                     if isOriginal {
                         if let img = correctionResult?.correctedImage {
@@ -1073,36 +1106,54 @@ struct PhotoPreviewView: View {
                         isOriginal = true
                     }
                 }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: isOriginal ? "photo" : "photo.fill")
-                            .font(.system(size: 10))
-                        Text(isOriginal ? "원본" : "보정됨")
+                    HStack(spacing: 4) {
+                        Image(systemName: isOriginal ? "eye" : "eye.fill")
+                            .font(.system(size: 11))
+                        Text(isOriginal ? "원본 보는 중" : "보정 보는 중")
                             .font(.system(size: AppTheme.fontBody, weight: .medium))
                     }
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(isOriginal ? .primary : .white)
-                .background(isOriginal ? AppTheme.toolbarButtonBg : Color.accentColor)
+                .foregroundColor(.white)
+                .background(isOriginal ? Color.gray.opacity(0.6) : Color.blue.opacity(0.8))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("원본/보정 전환")
+                .help("클릭하여 원본/보정 전환")
 
-                // Save corrected
+                // 저장 버튼
                 Button(action: { saveCorrectedImage() }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10))
-                        Text("저장")
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.system(size: 11))
+                        Text("JPG 저장")
                             .font(.system(size: AppTheme.fontBody, weight: .medium))
                     }
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .frame(height: AppTheme.buttonHeight)
-                .background(AppTheme.toolbarButtonBg)
+                .foregroundColor(.white)
+                .background(Color.orange.opacity(0.8))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("보정된 사진 저장")
+                .help("보정된 사진을 JPG로 저장 (원본 옆에 _corrected 파일 생성)")
+
+                // 되돌리기
+                Button(action: {
+                    correctionResult = nil
+                    loadImage(for: photo.jpgURL)
+                    isOriginal = true
+                }) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+                .frame(height: AppTheme.buttonHeight)
+                .foregroundColor(.white)
+                .background(Color.red.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help("보정 취소")
             }
 
             if isCorrecting {
@@ -1490,6 +1541,94 @@ struct PhotoPreviewView: View {
                 }
             }
         }
+    }
+
+    private func applyAutoUpright(mode: UprightMode) {
+        isCorrecting = true
+        let url = photo.jpgURL
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // CIImage로 각도 감지
+            guard let ciImage = CIImage(contentsOf: url) else {
+                DispatchQueue.main.async { isCorrecting = false }
+                return
+            }
+
+            let (_, angle, applied) = PerspectiveCorrectionService.autoUpright(image: ciImage, mode: mode)
+
+            guard applied, angle > 0.2 else {
+                DispatchQueue.main.async {
+                    isCorrecting = false
+                    fputs("[Upright] 보정 불필요 — 스킵\n", stderr)
+                }
+                return
+            }
+
+            // NSImage 직접 회전 — 색공간 변환 없이 원본 색감 100% 유지
+            guard let originalNSImage = NSImage(contentsOf: url) else {
+                DispatchQueue.main.async { isCorrecting = false }
+                return
+            }
+
+            let rotatedImg = Self.rotateNSImage(originalNSImage, degrees: -angle)
+
+            DispatchQueue.main.async {
+                isCorrecting = false
+                correctionResult = CorrectionResult(correctedImage: rotatedImg, horizonAngle: angle, applied: ["수평/수직 보정 (\(String(format: "%.1f", angle))°)"])
+                image = rotatedImg
+                isOriginal = false
+            }
+        }
+    }
+
+    /// NSImage 직접 회전 + 자동 크롭 (색공간 변환 없음)
+    private static func rotateNSImage(_ img: NSImage, degrees: Double) -> NSImage {
+        let rads = CGFloat(degrees * .pi / 180.0)
+        let origSize = img.size
+
+        // 회전 후 바운딩 박스
+        let cosA = abs(cos(rads))
+        let sinA = abs(sin(rads))
+        let rotatedW = origSize.width * cosA + origSize.height * sinA
+        let rotatedH = origSize.height * cosA + origSize.width * sinA
+
+        // 검은 영역 없는 최대 크롭 사각형 (원본 종횡비 유지)
+        let aspect = origSize.width / origSize.height
+        let cropW: CGFloat
+        let cropH: CGFloat
+        let innerW = origSize.width * cosA - origSize.height * sinA
+        let innerH = origSize.height * cosA - origSize.width * sinA
+        if innerW > 0 && innerH > 0 {
+            if innerW / innerH > aspect {
+                cropH = innerH; cropW = cropH * aspect
+            } else {
+                cropW = innerW; cropH = cropW / aspect
+            }
+        } else {
+            let margin = abs(tan(rads)) * min(origSize.width, origSize.height) * 0.5
+            cropW = origSize.width - margin * 2
+            cropH = origSize.height - margin * 2
+        }
+
+        let result = NSImage(size: NSSize(width: cropW, height: cropH))
+        result.lockFocus()
+
+        let ctx = NSGraphicsContext.current!
+        ctx.imageInterpolation = .high
+
+        // 중앙으로 이동 → 회전 → 다시 이동
+        let transform = NSAffineTransform()
+        transform.translateX(by: cropW / 2, yBy: cropH / 2)
+        transform.rotate(byRadians: rads)
+        transform.translateX(by: -origSize.width / 2, yBy: -origSize.height / 2)
+        transform.concat()
+
+        img.draw(in: NSRect(origin: .zero, size: origSize),
+                 from: NSRect(origin: .zero, size: origSize),
+                 operation: .copy, fraction: 1.0)
+
+        result.unlockFocus()
+        return result
     }
 
     private func applyAICorrection() {
