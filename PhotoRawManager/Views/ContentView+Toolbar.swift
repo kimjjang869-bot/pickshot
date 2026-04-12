@@ -109,6 +109,16 @@ extension ContentView {
                         Button(action: { store.showBatchProcess = true }) {
                             Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
                         }
+                        Divider()
+                        Button(action: { store.showContactSheet = true }) {
+                            Label("컨택트시트 PDF", systemImage: "tablecells")
+                        }
+                        Button(action: {
+                            store.metadataEditorMode = store.selectedPhotoIDs.count > 1 ? .batch : .single
+                            store.showMetadataEditor = true
+                        }) {
+                            Label("메타데이터 편집", systemImage: "doc.badge.gearshape")
+                        }
                     } label: {
                         actionLabel("square.and.arrow.up", "내보내기", .orange)
                     }
@@ -129,6 +139,9 @@ extension ContentView {
                     }
                     .buttonStyle(.plain)
                     .help("유사 그룹핑 + A컷 자동 추천")
+
+                    // 인물 그룹 필터
+                    faceGroupFilterMenu
 
                     // G Select
                     gSelectButton

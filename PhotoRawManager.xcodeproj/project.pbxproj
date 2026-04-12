@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1AFAF8F0102C4E9CB0A41550 /* MetadataEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */; };
+		2812FB343C1A4B86BA87ADCF /* ContactSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */; };
+		069D174038784E019EFEA489 /* ContactSheetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */; };
+		82BD916A16474BDFB1437B22 /* AdvancedClassificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */; };
 		814650812303154191132241 /* TileGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813185334110140544752309 /* TileGridView.swift */; };
 		380455486888778309501142 /* StringDistance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427320353463566941753404 /* StringDistance.swift */; };
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
@@ -106,6 +110,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataEditorView.swift; sourceTree = "<group>"; };
+		A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSheetView.swift; sourceTree = "<group>"; };
+		4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSheetService.swift; sourceTree = "<group>"; };
+		0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedClassificationService.swift; sourceTree = "<group>"; };
 		813185334110140544752309 /* TileGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TileGridView.swift; path = PhotoRawManager/Views/TileGridView.swift; sourceTree = SOURCE_ROOT; };
 		427320353463566941753404 /* StringDistance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringDistance.swift; sourceTree = "<group>"; };
 		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
@@ -293,6 +301,8 @@
 				ZEB10002 /* ZebraWarningOverlay.swift */,
 				WMP10002 /* WatermarkPreviewView.swift */,
 				FPK10002 /* FocusPeakingOverlay.swift */,
+				62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */,
+				A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -334,6 +344,8 @@
 				PS10002 /* PictureStyleService.swift */,
 				SMC10002 /* SmartCullService.swift */,
 				STL10002 /* StyleLearner.swift */,
+				4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */,
+				0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -417,6 +429,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1AFAF8F0102C4E9CB0A41550 /* MetadataEditorView.swift in Sources */,
+				2812FB343C1A4B86BA87ADCF /* ContactSheetView.swift in Sources */,
+				069D174038784E019EFEA489 /* ContactSheetService.swift in Sources */,
+				82BD916A16474BDFB1437B22 /* AdvancedClassificationService.swift in Sources */,
 				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
 				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
 				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
@@ -621,7 +637,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -632,7 +648,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.1;
+				MARKETING_VERSION = 7.1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -649,7 +665,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -660,7 +676,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.1;
+				MARKETING_VERSION = 7.1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

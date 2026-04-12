@@ -286,6 +286,10 @@ class PhotoStore: ObservableObject {
     @Published var keywordFilter: String? = nil { didSet { invalidateFilterCache() } }
     @Published var isClassifyingScenes: Bool = false
     @Published var classifyProgress: Double = 0
+    @Published var classifyStatusMessage: String = ""
+    @Published var classifyDoneCount: Int = 0
+    @Published var classifyTotalCount: Int = 0
+    @Published var classifyStartTime: CFAbsoluteTime = 0
     @Published var layoutMode: LayoutMode = .gridPreview
     var shouldOpenFolderBrowser: Bool = false
     @Published var showBatchRename: Bool = false
@@ -312,10 +316,18 @@ class PhotoStore: ObservableObject {
     @Published var faceGroupFilter: Int? = nil { didSet { invalidateFilterCache() } }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
+    @Published var faceGroupStatusMessage: String = ""
+    @Published var faceGroupDoneCount: Int = 0
+    @Published var faceGroupTotalCount: Int = 0
+    @Published var faceGroupStartTime: CFAbsoluteTime = 0
     @Published var showAbout: Bool = false
     @Published var showDeleteConfirm: Bool = false
     @Published var showSmartSelect: Bool = false
     @Published var showSmartCull: Bool = false
+    @Published var showMetadataEditor: Bool = false
+    @Published var metadataEditorMode: MetadataEditorMode = .single
+    enum MetadataEditorMode { case single, batch }
+    @Published var showContactSheet: Bool = false
     // 드래그 드롭 상태 (DragDropState로 분리 — PhotoStore 리드로우 방지)
     // dropTargetID/dropLeading 삭제 → DragDropState 사용
     var lastRenameMap: [(oldURL: URL, newURL: URL)] = []  // Undo용 이름 변경 기록
@@ -2207,9 +2219,17 @@ class PhotoStore: ObservableObject {
         return max(1, actualColumnsPerRow)
     }
 
-    /// 그리드 열 수 재계산 — 윈도우 실제 폭 기반
+    /// 그리드 열 수 재계산 — 윈도우 실제 폭 기반 (보조 모니터 대응)
     func recalcColumnsFromRatio() {
-        let windowW = NSApp.keyWindow?.frame.width ?? (NSScreen.main?.frame.width ?? 1440)
+        // keyWindow가 있으면 해당 윈도우 기준, 없으면 모든 윈도우 중 가장 큰 것
+        let windowW: CGFloat
+        if let kw = NSApp.keyWindow {
+            windowW = kw.frame.width
+        } else if let mainW = NSApp.windows.first(where: { $0.isVisible && !$0.isMiniaturized })?.frame.width {
+            windowW = mainW
+        } else {
+            windowW = NSScreen.main?.frame.width ?? 1440
+        }
         let leftW = windowW * hSplitRatio
         let size = thumbnailSize
         let spacing: CGFloat = 12
@@ -2565,87 +2585,118 @@ class PhotoStore: ObservableObject {
         guard !photos.isEmpty, !isClassifyingScenes else { return }
         isClassifyingScenes = true
         classifyProgress = 0
+        classifyStartTime = CFAbsoluteTimeGetCurrent()
 
         let photoSnapshots = photos.filter { !$0.isFolder && !$0.isParentFolder }
         let total = photoSnapshots.count
-        let startTime = CFAbsoluteTimeGetCurrent()
+        classifyTotalCount = total
+        classifyDoneCount = 0
+        classifyStatusMessage = "장면 분류 준비 중..."
+        let startTime = classifyStartTime
         print("🏷 [SCENE] Start: \(total) photos")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var results: [UUID: SceneClassResult] = [:]
-            let resultsLock = NSLock()
-            var completed = 0
-
-            DispatchQueue.concurrentPerform(iterations: total) { idx in
-                autoreleasepool {
-                let photo = photoSnapshots[idx]
-
-                // Use 480px — sufficient for Vision classification, much faster than 800px
-                let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
-                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, sourceOptions as CFDictionary) else {
-                    resultsLock.lock()
-                    completed += 1
-                    resultsLock.unlock()
-                    return
-                }
-                let thumbOptions: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: 480,
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceShouldCache: false
-                ]
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
-                    resultsLock.lock()
-                    completed += 1
-                    resultsLock.unlock()
-                    return
-                }
-
-                // Single-pass scene + face classification + keyword generation
-                if let result = Self.classifySceneTag(cgImage: cgImage) {
-                    resultsLock.lock()
-                    results[photo.id] = result
-                    resultsLock.unlock()
-                }
-
-                var shouldReport = false
-                var c = 0
-                resultsLock.lock()
-                completed += 1
-                c = completed
-                shouldReport = (c % 50 == 0 || c == total)
-                resultsLock.unlock()
-
-                if shouldReport {
+            DispatchQueue.main.async { [weak self] in
+                self?.classifyStatusMessage = "장면 + 얼굴 + 색상 + 구도 분석 중..."
+            }
+            // 고급 분류 서비스 사용 (장면+얼굴+텍스트+동물+색상+구도 통합)
+            let results = AdvancedClassificationService.classifyBatch(
+                photos: photoSnapshots,
+                cancelCheck: { false },
+                progress: { done in
+                    let c = done
                     let elapsed = CFAbsoluteTimeGetCurrent() - startTime
                     let rate = elapsed > 0 ? Double(c) / elapsed : 0
-                    if c == total {
-                        print("🏷 [SCENE] DONE: \(total) photos in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
-                    } else {
-                        print("🏷 [SCENE] Progress: \(c)/\(total) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
+                    if c % 50 == 0 || c == total {
+                        if c == total {
+                            print("🏷 [SCENE] DONE: \(total) photos in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
+                        } else {
+                            print("🏷 [SCENE] Progress: \(c)/\(total) in \(String(format: "%.1f", elapsed))s (\(String(format: "%.1f", rate)) photos/s)")
+                        }
                     }
-                    DispatchQueue.main.async { [weak self] in self?.classifyProgress = Double(c) / Double(total) }
+                    // 더 빈번한 UI 업데이트 (10장마다 또는 전체 200장 이하면 매장)
+                    if c % (total < 200 ? 1 : 10) == 0 || c == total {
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self = self else { return }
+                            self.classifyProgress = Double(c) / Double(total)
+                            self.classifyDoneCount = c
+                            if c < total {
+                                let eta = rate > 0 ? Double(total - c) / rate : 0
+                                let etaStr = eta < 60 ? "\(Int(eta))초" : "\(Int(eta/60))분 \(Int(eta) % 60)초"
+                                self.classifyStatusMessage = "분석 중 (\(String(format: "%.1f", rate))장/초) · 약 \(etaStr) 남음"
+                            } else {
+                                self.classifyStatusMessage = "결과 적용 중..."
+                            }
+                        }
+                    }
                 }
-                } // autoreleasepool
-            }
+            )
 
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if !results.isEmpty {
                     let selectedID = self.selectedPhotoID
-                    var updated = self.photos
-                    for i in 0..<updated.count {
-                        if let result = results[updated[i].id] {
-                            updated[i].sceneTag = result.tag
-                            updated[i].keywords = result.keywords
+                    for i in 0..<self.photos.count {
+                        if let result = results[self.photos[i].id] {
+                            self.photos[i].sceneTag = result.sceneTag
+                            self.photos[i].keywords = result.keywords
+                            self.photos[i].colorMood = result.colorMood.rawValue
+                            self.photos[i].compositionType = result.compositionType.rawValue
+                            self.photos[i].timeOfDay = result.timeOfDay.rawValue
+                            self.photos[i].dominantColors = result.dominantColors
+                            self.photos[i].hasText = result.hasText
+                            self.photos[i].personCoverage = result.personCoverage
                         }
                     }
-                    self.photos = updated
                     self.selectedPhotoID = selectedID
+                    self.photosVersion += 1
                 }
                 self.isClassifyingScenes = false
                 self.classifyProgress = 1.0
+                let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                self.classifyStatusMessage = "완료! \(String(format: "%.1f", elapsed))초"
+
+                // === 분류 결과 통계 로그 (stderr) ===
+                let classified = self.photos.filter { $0.sceneTag != nil && !$0.isFolder && !$0.isParentFolder }
+                let unclassified = self.photos.filter { $0.sceneTag == nil && !$0.isFolder && !$0.isParentFolder }
+                var tagCounts: [String: Int] = [:]
+                var moodCounts: [String: Int] = [:]
+                var compCounts: [String: Int] = [:]
+                var todCounts: [String: Int] = [:]
+                var totalFaces = 0
+                var personPhotos = 0
+                var textPhotos = 0
+                for p in classified {
+                    tagCounts[p.sceneTag ?? "nil", default: 0] += 1
+                    if let m = p.colorMood, !m.isEmpty { moodCounts[m, default: 0] += 1 }
+                    if let c = p.compositionType, !c.isEmpty { compCounts[c, default: 0] += 1 }
+                    if let t = p.timeOfDay, !t.isEmpty { todCounts[t, default: 0] += 1 }
+                    if p.personCoverage > 0.03 { personPhotos += 1 }
+                    if p.hasText { textPhotos += 1 }
+                }
+                // stderr + 파일 동시 출력
+                var log = "\n[CLASSIFY] ━━━ 장면분류 결과 ━━━\n"
+                log += "[CLASSIFY] 총 \(photoSnapshots.count)장 → 분류됨: \(classified.count)장, 미분류: \(unclassified.count)장\n"
+                log += "[CLASSIFY] 장면태그:\n"
+                for (tag, cnt) in tagCounts.sorted(by: { $0.value > $1.value }) {
+                    log += "[CLASSIFY]   \(tag): \(cnt)장\n"
+                }
+                log += "[CLASSIFY] 색상분위기:\n"
+                for (m, cnt) in moodCounts.sorted(by: { $0.value > $1.value }) {
+                    log += "[CLASSIFY]   \(m): \(cnt)장\n"
+                }
+                log += "[CLASSIFY] 구도:\n"
+                for (c, cnt) in compCounts.sorted(by: { $0.value > $1.value }) {
+                    log += "[CLASSIFY]   \(c): \(cnt)장\n"
+                }
+                log += "[CLASSIFY] 시간대:\n"
+                for (t, cnt) in todCounts.sorted(by: { $0.value > $1.value }) {
+                    log += "[CLASSIFY]   \(t): \(cnt)장\n"
+                }
+                log += "[CLASSIFY] 인물감지: \(personPhotos)장, 텍스트감지: \(textPhotos)장\n"
+                log += "[CLASSIFY] ━━━━━━━━━━━━━━━\n\n"
+                fputs(log, stderr)
+                try? log.write(toFile: "/tmp/pickshot_classify.log", atomically: true, encoding: .utf8)
             }
         }
     }
@@ -2661,16 +2712,37 @@ class PhotoStore: ObservableObject {
         guard !photos.isEmpty, !isGroupingFaces else { return }
         isGroupingFaces = true
         faceGroupProgress = 0
+        faceGroupStartTime = CFAbsoluteTimeGetCurrent()
 
         let photoSnapshots = photos
         let total = photoSnapshots.count
+        faceGroupTotalCount = total
+        faceGroupDoneCount = 0
+        faceGroupStatusMessage = "얼굴 감지 준비 중..."
+        let startTime = faceGroupStartTime
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                self?.faceGroupStatusMessage = "얼굴 감지 + 특징 추출 중..."
+            }
             let results = FaceGroupingService.groupFaces(
                 photos: photoSnapshots,
                 progress: { [weak self] done in
                     let p = Double(done) / Double(total)
-                    DispatchQueue.main.async { [weak self] in self?.faceGroupProgress = p }
+                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                    let rate = elapsed > 0 ? Double(done) / elapsed : 0
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.faceGroupProgress = p
+                        self.faceGroupDoneCount = done
+                        if done < total {
+                            let eta = rate > 0 ? Double(total - done) / rate : 0
+                            let etaStr = eta < 60 ? "\(Int(eta))초" : "\(Int(eta/60))분 \(Int(eta) % 60)초"
+                            self.faceGroupStatusMessage = "얼굴 분석 중 (\(String(format: "%.1f", rate))장/초) · 약 \(etaStr) 남음"
+                        } else {
+                            self.faceGroupStatusMessage = "얼굴 그룹 매칭 중..."
+                        }
+                    }
                 }
             )
 
@@ -2699,6 +2771,10 @@ class PhotoStore: ObservableObject {
                         }
                     }
                 }
+                let groupCount = results.groups.count
+                let faceCount = results.assignments.count
+                let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                self.faceGroupStatusMessage = "완료! \(groupCount)명, \(faceCount)장 · \(String(format: "%.1f", elapsed))초"
                 self.isGroupingFaces = false
                 self.faceGroupProgress = 1.0
             }

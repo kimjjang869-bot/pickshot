@@ -36,10 +36,10 @@ class SmartCullService: ObservableObject {
         /// 유사도 임계값 (VNFeaturePrint 거리 0~1, 낮을수록 엄격)
         var similarityThreshold: Float {
             switch self {
-            case .general: return 0.45
+            case .general: return 0.38      // 메가 클러스터 방지
             case .wedding: return 0.55     // 비슷한 포즈 많으므로 넓게
             case .sports: return 0.30      // 순간 차이 중요 → 엄격
-            case .event: return 0.50
+            case .event: return 0.40       // 부스/공간 구분 위해 엄격하게
             case .portrait: return 0.40    // 표정 차이 중요
             case .landscape: return 0.60   // 구도 유사 많음
             case .lookbook: return 0.55    // 같은 옷끼리 묶기 (포즈/앵글 차이 허용)
@@ -170,6 +170,34 @@ class SmartCullService: ObservableObject {
                 if self.genre == .lookbook {
                     clusters = self.mergeSimilarClusters(clusters: clusters, vectors: groupVectors, mergeThreshold: autoThreshold * 1.3)
                 }
+
+                // 메가 클러스터 재분할: 30장 이상 클러스터를 더 엄격한 threshold로 분할
+                let maxClusterSize = 30
+                var finalClusters: [PhotoCluster] = []
+                for cluster in clusters {
+                    if cluster.photoIDs.count > maxClusterSize {
+                        let subVectors = groupVectors.filter { cluster.photoIDs.contains($0.photoID) }
+                        let tighterThreshold = autoThreshold * 0.6  // 40% 더 엄격
+                        fputs("[CULL] 메가 클러스터 재분할: \(cluster.photoIDs.count)장 → threshold \(String(format: "%.4f", tighterThreshold))\n", stderr)
+                        var subClusters = self.clusterBySimilarity(vectors: subVectors, threshold: tighterThreshold)
+                        // 여전히 큰 경우 한번 더 분할
+                        var splitAgain: [PhotoCluster] = []
+                        for sc in subClusters {
+                            if sc.photoIDs.count > maxClusterSize {
+                                let sv = subVectors.filter { sc.photoIDs.contains($0.photoID) }
+                                let tighter2 = tighterThreshold * 0.7
+                                fputs("[CULL]   2차 재분할: \(sc.photoIDs.count)장 → threshold \(String(format: "%.4f", tighter2))\n", stderr)
+                                splitAgain.append(contentsOf: self.clusterBySimilarity(vectors: sv, threshold: tighter2))
+                            } else {
+                                splitAgain.append(sc)
+                            }
+                        }
+                        finalClusters.append(contentsOf: splitAgain)
+                    } else {
+                        finalClusters.append(cluster)
+                    }
+                }
+                clusters = finalClusters
 
                 let timeRange = group.compactMap({ $0.fileModDate }).sorted()
                 resultGroups.append(PhotoGroup(
@@ -584,43 +612,50 @@ class SmartCullService: ObservableObject {
         var assigned = Set<UUID>()
         var clusters: [PhotoCluster] = []
 
-        // 디버그: 처음 몇 쌍의 거리 출력
-        if vectors.count >= 2, let fp1 = vectors[0].featurePrint, let fp2 = vectors[1].featurePrint {
-            var sampleDist: Float = 0
-            try? fp1.computeDistance(&sampleDist, to: fp2)
-            fputs("[CULL] 샘플 거리(0↔1): \(sampleDist), threshold: \(threshold)\n", stderr)
-        }
+        // 시간순 정렬 (인접한 사진끼리 묶이도록)
+        let sorted = vectors.sorted { $0.url.lastPathComponent < $1.url.lastPathComponent }
 
-        for vector in vectors {
+        for vector in sorted {
             guard !assigned.contains(vector.photoID) else { continue }
             guard let fp = vector.featurePrint else { continue }
 
             var clusterIDs = [vector.photoID]
+            var clusterFPs = [fp]  // centroid 비교용
             assigned.insert(vector.photoID)
             var totalSimilarity: Float = 0
             var comparisons = 0
 
-            for other in vectors {
+            for other in sorted {
                 guard !assigned.contains(other.photoID) else { continue }
                 guard let otherFP = other.featurePrint else { continue }
 
-                var fpDistance: Float = 0
-                try? fp.computeDistance(&fpDistance, to: otherFP)
+                // Centroid 비교: 클러스터 내 모든 FP와의 평균 거리
+                var avgDist: Float = 0
+                for cfp in clusterFPs {
+                    var d: Float = 0
+                    try? cfp.computeDistance(&d, to: otherFP)
+                    avgDist += d
+                }
+                avgDist /= Float(clusterFPs.count)
 
-                // 컬러 거리 합산 (룩북: 컬러 비중 높게)
-                var distance = fpDistance
+                // 컬러 거리 합산 (룩북)
+                var distance = avgDist
                 if !vector.colorSignature.isEmpty && !other.colorSignature.isEmpty {
                     let colorDist = Self.colorDistance(vector.colorSignature, other.colorSignature)
-                    // 컬러 거리를 FeaturePrint 스케일로 정규화 후 합산
-                    // colorDist 범위: 0~1.7 (6차원 유클리드), 0.3 이상이면 다른 옷
-                    distance = fpDistance * 0.4 + colorDist * 0.6  // 컬러 60% 비중
+                    distance = avgDist * 0.4 + colorDist * 0.6
                 }
 
                 if distance < threshold {
                     clusterIDs.append(other.photoID)
+                    clusterFPs.append(otherFP)
                     assigned.insert(other.photoID)
                     totalSimilarity += (1.0 - distance / threshold)
                     comparisons += 1
+
+                    // centroid 비교 비용 제한: FP 최대 10개만 유지
+                    if clusterFPs.count > 10 {
+                        clusterFPs.removeFirst()
+                    }
                 }
             }
 

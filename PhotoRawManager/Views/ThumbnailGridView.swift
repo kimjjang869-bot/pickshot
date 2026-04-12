@@ -86,9 +86,8 @@ struct ThumbnailGridView: View {
         let cellWidth = size + spacing
         let cols = max(1, Int((width + spacing) / cellWidth))
         if store.actualColumnsPerRow != cols {
-            DispatchQueue.main.async {
-                store.actualColumnsPerRow = cols
-            }
+            // 동기 업데이트: async 지연 시 열 수 불일치 → 대각선 이동 버그
+            store.actualColumnsPerRow = cols
         }
     }
 
@@ -147,7 +146,9 @@ struct ThumbnailGridView: View {
 
     private var gridView: some View {
         let size = store.thumbnailSize
-        let columns = [GridItem(.adaptive(minimum: size, maximum: size + 40), spacing: 12)]
+        // Fixed 열 수 사용: adaptive 대신 actualColumnsPerRow 기반 → 키보드 행이동과 정확히 일치
+        let columns = Array(repeating: GridItem(.flexible(minimum: size, maximum: size + 60), spacing: 12),
+                            count: max(1, store.actualColumnsPerRow))
 
         let photos = store.filteredPhotos  // Compute once, not per-cell
         return LazyVGrid(columns: columns, spacing: 10, pinnedViews: []) {
@@ -906,6 +907,30 @@ struct PhotoContextMenu: View {
     }
 
     var body: some View {
+        // 새 폴더로 이동 (최상단)
+        Button(action: {
+            let alert = NSAlert()
+            alert.messageText = "새 폴더로 이동"
+            alert.informativeText = "폴더 이름을 입력하세요"
+            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            tf.placeholderString = "새 폴더"
+            alert.accessoryView = tf
+            alert.addButton(withTitle: "이동")
+            alert.addButton(withTitle: "취소")
+            if alert.runModal() == .alertFirstButtonReturn {
+                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty, let folderURL = store.folderURL else { return }
+                let newDir = folderURL.appendingPathComponent(name)
+                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+                let urls = collectFileURLs()
+                store.movePhotosToFolder(fileURLs: urls, destination: newDir)
+            }
+        }) {
+            Label("새 폴더로 이동", systemImage: "folder.fill.badge.plus")
+        }
+
+        Divider()
+
         // Rating submenu
         Menu {
             ForEach(0...5, id: \.self) { rating in
@@ -925,8 +950,6 @@ struct PhotoContextMenu: View {
             Label("별점", systemImage: "star.fill")
         }
 
-        Divider()
-
         // SP Select
         Button(action: {
             for id in targetIDs {
@@ -944,8 +967,6 @@ struct PhotoContextMenu: View {
         }) {
             Label(photo.isGSelected ? "G셀렉 해제" : "G셀렉", systemImage: "cloud")
         }
-
-        Divider()
 
         // Color label submenu
         Menu {
@@ -982,22 +1003,21 @@ struct PhotoContextMenu: View {
             Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
         }
 
-        // Copy to Finder (with recent folders)
-        Menu {
-            // Recent 5 folders
-            ForEach(recentCopyFolders.prefix(5), id: \.self) { folder in
-                Button(action: { copyFilesToFolder(folder) }) {
-                    Label(folder.lastPathComponent, systemImage: "folder")
-                }
-            }
+        Divider()
 
-            if !recentCopyFolders.isEmpty { Divider() }
+        // Metadata Edit
+        Button(action: {
+            store.metadataEditorMode = targetCount > 1 ? .batch : .single
+            store.showMetadataEditor = true
+        }) {
+            Label("메타데이터 편집 (\(targetCount)장)", systemImage: "doc.badge.gearshape")
+        }
 
-            Button(action: { copyFilesToNewFolder() }) {
-                Label("폴더 선택...", systemImage: "folder.badge.plus")
-            }
-        } label: {
-            Label("Finder로 복사 (\(targetCount)장)", systemImage: "doc.on.doc.fill")
+        // Rename
+        Button(action: {
+            store.showBatchRename = true
+        }) {
+            Label("이름 변경 (\(targetCount)장)", systemImage: "pencil")
         }
 
         Divider()
@@ -1069,36 +1089,23 @@ struct PhotoContextMenu: View {
             Label("연결 프로그램으로 열기", systemImage: "arrow.up.forward.app")
         }
 
-        Divider()
-
-        // Rename
-        Button(action: {
-            store.showBatchRename = true
-        }) {
-            Label("이름 변경 (\(targetCount)장)", systemImage: "pencil")
-        }
-
-        // 새 폴더로 이동
-        Button(action: {
-            let alert = NSAlert()
-            alert.messageText = "새 폴더로 이동"
-            alert.informativeText = "폴더 이름을 입력하세요"
-            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            tf.placeholderString = "새 폴더"
-            alert.accessoryView = tf
-            alert.addButton(withTitle: "이동")
-            alert.addButton(withTitle: "취소")
-            if alert.runModal() == .alertFirstButtonReturn {
-                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty, let folderURL = store.folderURL else { return }
-                let newDir = folderURL.appendingPathComponent(name)
-                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
-                let urls = collectFileURLs()
-                store.movePhotosToFolder(fileURLs: urls, destination: newDir)
+        // 이 사람만 보기 (얼굴 그룹 필터)
+        if let fgID = photo.faceGroupID {
+            Button(action: {
+                store.faceGroupFilter = fgID
+                store.showToastMessage("👤 \(store.faceGroupName(for: fgID)) 필터 적용")
+            }) {
+                Label("이 사람만 보기", systemImage: "person.crop.circle")
             }
-        }) {
-            Label("새 폴더로 이동", systemImage: "folder.fill.badge.plus")
+        } else if !store.faceGroups.isEmpty {
+            // 얼굴 그룹핑은 됐지만 이 사진에 얼굴이 없는 경우
+            Button(action: {}) {
+                Label("얼굴 미감지", systemImage: "person.crop.circle.badge.questionmark")
+            }
+            .disabled(true)
         }
+
+        Divider()
 
         // Remove from list
         Button(action: {
@@ -1638,38 +1645,53 @@ class ThumbnailLoader {
         queue.maxConcurrentOperationCount = normalConcurrency
     }
 
-    /// Auto-detect NAS/network volume and increase concurrency
-    enum StorageType { case localSSD, externalHDD, network }
+    /// Auto-detect storage type for I/O optimization
+    enum StorageType { case localSSD, externalSSD, externalHDD, sdCard, network }
 
     func optimizeForPath(_ path: String) {
         let type = detectStorageType(path)
         switch type {
         case .localSSD:
             isNetworkMode = false
-            // CPU 코어의 절반만 사용 (나머지는 UI + 미리보기에 양보)
+            isExternalHDD = false
             let c = max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 6))
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
-        case .externalHDD:
-            // HDD: seek time is bottleneck, moderate concurrency helps
-            // Too many concurrent = HDD head thrashing, too few = slow
+        case .externalSSD:
             isNetworkMode = false
-            queue.maxConcurrentOperationCount = 4
-            AppLogger.log(.performance, "External HDD: concurrency=4, thumbSize=160 for \(path)")
+            isExternalHDD = false
+            let c = max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 4))
+            queue.maxConcurrentOperationCount = c
+            normalConcurrency = c
+            AppLogger.log(.performance, "External SSD: concurrency=\(c)")
+        case .externalHDD:
+            isNetworkMode = false
+            isExternalHDD = true
+            queue.maxConcurrentOperationCount = 2
+            normalConcurrency = 2
+            AppLogger.log(.performance, "External HDD: concurrency=2, thumbSize=160 for \(path)")
+        case .sdCard:
+            // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
+            isNetworkMode = false
+            isExternalHDD = true  // slow disk 취급
+            queue.maxConcurrentOperationCount = 1  // 직렬: 동시 읽기 시 속도 급락
+            normalConcurrency = 1
+            AppLogger.log(.performance, "SD Card: concurrency=1, thumbSize=120 for \(path)")
         case .network:
-            // NAS: network I/O bound, high concurrency
             isNetworkMode = true
+            isExternalHDD = false
             queue.maxConcurrentOperationCount = 64
             AppLogger.log(.performance, "NAS/Network: concurrency=64, thumbSize=160 for \(path)")
         }
     }
 
     var isNetworkMode: Bool = false
+    var isExternalHDD: Bool = false
 
-    /// Check if path is on external HDD (not SSD)
+    /// Check if path is on slow storage (HDD or NAS)
     var isSlowDisk: Bool {
-        isNetworkMode || queue.maxConcurrentOperationCount == 8
+        isNetworkMode || isExternalHDD
     }
 
     private func detectStorageType(_ path: String) -> StorageType {
@@ -1681,46 +1703,110 @@ class ThumbnailLoader {
             return .network
         }
 
-        // External volume detection
-        if path.hasPrefix("/Volumes/") {
-            // Check if SSD using IOKit / volume properties
-            if let isSSD = checkIfSSD(path: path) {
-                return isSSD ? .localSSD : .externalHDD
-            }
-            // Fallback: assume external SSD (modern external drives are mostly SSD)
-            // Better to be fast and wrong than slow and safe
-            return .externalHDD
+        // Internal disk = SSD on modern Macs
+        if !path.hasPrefix("/Volumes/") {
+            return .localSSD
         }
 
-        return .localSSD
-    }
-
-    private func checkIfSSD(path: String) -> Bool? {
-        let url = URL(fileURLWithPath: path)
-
-        // Check volume properties
-        if let values = try? url.resourceValues(forKeys: [.volumeIsInternalKey]),
-           let isInternal = values.volumeIsInternal {
-            if isInternal { return true }  // Internal = SSD on modern Macs
-        }
-
-        // Check volume name hints for known SSD brands
+        // External volume: SD카드 / HDD / SSD 판별
         let volumeName = url.pathComponents.count >= 3 ? url.pathComponents[2].lowercased() : ""
-        let ssdHints = ["ssd", "extreme", "samsung t", "sandisk", "nvme", "thunderbolt"]
-        if ssdHints.contains(where: { volumeName.contains($0) }) {
-            return true
+
+        // 1. SD카드 감지: diskutil info에서 프로토콜 확인
+        if let sdType = checkIfSDCard(volumeName: volumeName) {
+            return sdType
         }
 
-        // Check if the volume supports TRIM (SSD indicator) via diskutil
+        // 2. SSD 힌트 (브랜드명)
+        let ssdHints = ["ssd", "extreme", "samsung t", "sandisk extreme", "nvme", "thunderbolt", "portable ssd"]
+        if ssdHints.contains(where: { volumeName.contains($0) }) {
+            return .externalSSD
+        }
+
+        // 3. 용량 기반 추정: 작은 볼륨(≤256GB)은 SD카드 가능성 높음
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
-            // Volumes < 100GB with no Spotlight are likely SD cards or small external media
-            // Volumes > 100GB without Spotlight are likely unindexed external drives (not NAS)
-            _ = totalSize  // Keep for future heuristics
+            let sizeGB = totalSize / (1024 * 1024 * 1024)
+            if sizeGB <= 256 {
+                // 소용량 외장: SD카드 또는 USB 메모리
+                return .sdCard
+            }
         }
 
-        return nil  // Unknown
+        // 4. 대용량 외장: HDD로 가정 (SSD면 이름에 힌트 있는 경우가 많음)
+        return .externalHDD
+    }
+
+    /// SD카드 / USB 메모리 감지 — diskutil info로 프로토콜 확인
+    private func checkIfSDCard(volumeName: String) -> StorageType? {
+        // 이름 기반 빠른 판별
+        let sdHints = ["sd card", "micro sd", "sdxc", "sdhc", "sduc", "memory card",
+                        "untitled", "no name", "eos_digital", "nikon", "canon",
+                        "dcim", "sony"]  // 카메라 메모리카드 기본 이름들
+        if sdHints.contains(where: { volumeName.contains($0) }) {
+            return .sdCard
+        }
+
+        // diskutil info 로 프로토콜 타입 확인 (비동기 아님, 빠름 ~10ms)
+        let mountPoint = "/Volumes/" + volumeName
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+        process.arguments = ["info", mountPoint]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+
+            // Protocol Type: USB, Secure Digital, Apple Fabric
+            // Device / Media Name: hints
+            let outputLower = output.lowercased()
+
+            // SD카드 프로토콜
+            if outputLower.contains("secure digital") ||
+               outputLower.contains("sd card") ||
+               outputLower.contains("protocol type:") && outputLower.contains("mmc") {
+                fputs("[STORAGE] SD Card detected via diskutil: \(volumeName)\n", stderr)
+                return .sdCard
+            }
+
+            // USB 메모리 (작은 용량)
+            if outputLower.contains("protocol type:") && outputLower.contains("usb") {
+                // USB SSD vs USB 메모리 판별: Solid State 여부
+                if outputLower.contains("solid state: yes") || outputLower.contains("is ssd: yes") {
+                    fputs("[STORAGE] USB SSD detected via diskutil: \(volumeName)\n", stderr)
+                    return .externalSSD
+                }
+                // USB 연결인데 SSD 아님
+                // 작은 용량이면 USB 메모리(SD 취급), 큰 용량이면 HDD
+                if let sizeRange = output.range(of: "Disk Size:", options: .caseInsensitive) {
+                    let sizeLine = output[sizeRange.upperBound...].prefix(100)
+                    if sizeLine.contains("GB") {
+                        if let numStr = sizeLine.split(separator: " ").first(where: { Double($0) != nil }),
+                           let gb = Double(numStr), gb <= 256 {
+                            fputs("[STORAGE] USB flash/SD via diskutil: \(volumeName) (\(gb)GB)\n", stderr)
+                            return .sdCard
+                        }
+                    }
+                }
+                fputs("[STORAGE] USB HDD via diskutil: \(volumeName)\n", stderr)
+                return .externalHDD
+            }
+
+            // Thunderbolt/Apple Fabric = fast external
+            if outputLower.contains("thunderbolt") || outputLower.contains("apple fabric") {
+                fputs("[STORAGE] Thunderbolt SSD via diskutil: \(volumeName)\n", stderr)
+                return .externalSSD
+            }
+        } catch {
+            // diskutil 실패 → nil 반환, 다른 방법으로 판별
+        }
+
+        return nil
     }
 
     /// Cancel all pending operations (call when scrolling fast to prioritize new visible cells)
@@ -1764,21 +1850,19 @@ class ThumbnailLoader {
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
             guard let op = op, !op.isCancelled else { return }
-            // For NAS: skip expensive stat on cache miss path — use file path hash only
-            // Disk cache uses modDate for invalidation, but for NAS the stat() is ~50-100ms per file
             let isNAS = ThumbnailLoader.shared.isNetworkMode
+            let isHDD = ThumbnailLoader.shared.isExternalHDD
+
+            // For NAS/HDD: skip expensive stat() — use path-only lookup
             let modDate: Date
-            if isNAS {
-                // Defer expensive stat: check disk cache with a sentinel date first
-                // If disk cache has ANY entry for this URL hash, use it (modDate mismatch = stale but fast)
-                modDate = Date.distantPast  // Will be updated on cache save
+            if isNAS || isHDD {
+                modDate = Date.distantPast
             } else {
                 modDate = Self.fileModDate(url)
             }
 
             // 2. Disk cache hit → load from disk, populate memory cache
-            // For NAS: try path-only lookup first (skip modDate check)
-            let diskCached = isNAS
+            let diskCached = (isNAS || isHDD)
                 ? DiskThumbnailCache.shared.getByPath(url: url)
                 : DiskThumbnailCache.shared.get(url: url, modDate: modDate)
             if let diskCached = diskCached {
@@ -1797,8 +1881,17 @@ class ThumbnailLoader {
 
             // 3. Extract from file — check cancel before expensive I/O
             guard !op.isCancelled else { return }
+
             let thumbStart = CFAbsoluteTimeGetCurrent()
-            var image = Self.extractThumbnail(url: url)
+            let image: NSImage?
+
+            if isHDD || isNAS {
+                // HDD/NAS 최적화: EXIF 임베디드 썸네일 우선 (파일 전체 안 읽음)
+                image = Self.extractThumbnailFast(url: url) ?? Self.extractThumbnail(url: url)
+            } else {
+                image = Self.extractThumbnail(url: url)
+            }
+
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
             if extractElapsed > 5 {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
@@ -1807,10 +1900,14 @@ class ThumbnailLoader {
             if let image = image {
                 // Memory cache: immediate (needed for UI)
                 ThumbnailCache.shared.set(url, image: image)
-                // Disk cache: deferred to background (was 289ms avg, now non-blocking)
-                DispatchQueue.global(qos: .utility).async {
-                    let realModDate = isNAS ? Self.fileModDate(url) : modDate
-                    DiskThumbnailCache.shared.set(url: url, modDate: realModDate, image: image)
+                // Disk cache: HDD/NAS에서는 읽기 완료 후 배치로 저장 (I/O 경합 방지)
+                if isHDD || isNAS {
+                    Self.pendingDiskCacheWrites.append((url, image))
+                    Self.flushDiskCacheIfNeeded()
+                } else {
+                    DispatchQueue.global(qos: .utility).async {
+                        DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: image)
+                    }
                 }
             }
 
@@ -1833,9 +1930,88 @@ class ThumbnailLoader {
         lock.unlock()
     }
 
+    // MARK: - HDD 배치 디스크 캐시 저장 (I/O 경합 방지)
+    private static var pendingDiskCacheWrites: [(URL, NSImage)] = []
+    private static let diskCacheWriteLock = NSLock()
+    private static var diskCacheFlushScheduled = false
+
+    private static func flushDiskCacheIfNeeded() {
+        diskCacheWriteLock.lock()
+        // 10개 모이거나, 이미 예약된 타이머가 있으면 대기
+        let count = pendingDiskCacheWrites.count
+        if count >= 10 {
+            let batch = pendingDiskCacheWrites
+            pendingDiskCacheWrites.removeAll(keepingCapacity: true)
+            diskCacheWriteLock.unlock()
+            // SSD 디스크 캐시에 배치 저장 (HDD가 아닌 내장 SSD 캐시 디렉토리)
+            DispatchQueue.global(qos: .background).async {
+                for (url, img) in batch {
+                    let mod = fileModDate(url)
+                    DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                }
+            }
+        } else if !diskCacheFlushScheduled {
+            diskCacheFlushScheduled = true
+            diskCacheWriteLock.unlock()
+            // 2초 후 남은 것 플러시
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) {
+                diskCacheWriteLock.lock()
+                let batch = pendingDiskCacheWrites
+                pendingDiskCacheWrites.removeAll(keepingCapacity: true)
+                diskCacheFlushScheduled = false
+                diskCacheWriteLock.unlock()
+                for (url, img) in batch {
+                    let mod = fileModDate(url)
+                    DiskThumbnailCache.shared.set(url: url, modDate: mod, image: img)
+                }
+            }
+        } else {
+            diskCacheWriteLock.unlock()
+        }
+    }
+
+    // MARK: - HDD 고속 EXIF 썸네일 추출
+
+    /// EXIF 임베디드 썸네일 우선 추출 — 파일 헤더만 읽어서 빠름 (HDD에서 10~50ms vs 전체 디코딩 200~500ms)
+    private static func extractThumbnailFast(url: URL) -> NSImage? {
+        let ext = url.pathExtension.lowercased()
+
+        // 이미지 파일만 처리
+        guard allKnownExtensions.contains(ext),
+              !FileMatchingService.videoExtensions.contains(ext) else { return nil }
+
+        // CGImageSource로 EXIF 임베디드 썸네일만 추출 (CreateThumbnailFromImageAlways = false)
+        let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
+
+        // 임베디드 썸네일만 시도 (파일 전체 디코딩 안 함)
+        let embedOpts: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: thumbSize,
+            kCGImageSourceCreateThumbnailFromImageAlways: false,    // 임베디드만
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,  // 없으면 생성 안 함
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
+        ]
+
+        // 첫 번째 이미지 + 서브이미지 확인
+        let count = CGImageSourceGetCount(source)
+        for idx in 0..<min(count, 3) {
+            if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
+                if cg.width >= 80 && cg.height >= 80 {
+                    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                }
+            }
+        }
+
+        return nil  // 임베디드 없음 → 풀 디코딩으로 폴백
+    }
+
     private static var thumbSize: Int {
         // Smaller thumbnails for slow storage = faster loading
-        ThumbnailLoader.shared.isSlowDisk ? 160 : 200
+        let loader = ThumbnailLoader.shared
+        if loader.queue.maxConcurrentOperationCount == 1 { return 120 }  // SD카드: 최소
+        if loader.isSlowDisk { return 160 }  // HDD/NAS
+        return 200
     }
 
     private static let allKnownExtensions: Set<String> = {

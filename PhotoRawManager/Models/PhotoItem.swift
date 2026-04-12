@@ -220,8 +220,27 @@ struct PhotoItem: Identifiable, Hashable {
     var keywords: [String] = []       // IPTC 호환 키워드 (장면분류 + 얼굴 + 실내외 등)
     var faceGroupID: Int? = nil       // 얼굴 그룹 ID (같은 ID = 같은 인물)
 
+    // Advanced Classification (고급 분류 결과)
+    var colorMood: String? = nil       // 색상 분위기 (따뜻한/차가운/비비드/차분한/어두운/밝은)
+    var compositionType: String? = nil // 구도 유형 (삼등분/중앙/대칭/대각선)
+    var timeOfDay: String? = nil       // 촬영 시간대 (골든아워/블루아워/야간)
+    var dominantColors: [String] = []  // 주요 색상
+    var hasText: Bool = false          // 문서/텍스트 포함
+    var personCoverage: Double = 0     // 인물 비율 (0~1)
+
     // Client Comments
     var comments: [String] = []        // 코멘트 (pickshot 파일에서 가져옴)
+
+    // IPTC/XMP Metadata (user-editable)
+    var iptcTitle: String = ""           // IPTC Object Name / XMP dc:title
+    var iptcDescription: String = ""     // IPTC Caption / XMP dc:description
+    var iptcCreator: String = ""         // IPTC By-line / XMP dc:creator
+    var iptcCopyright: String = ""       // IPTC Copyright / XMP dc:rights
+    var iptcUsageTerms: String = ""      // XMP xmpRights:UsageTerms
+    var iptcInstructions: String = ""    // IPTC Special Instructions
+    var iptcCity: String = ""            // IPTC City
+    var iptcCountry: String = ""         // IPTC Country
+    var iptcEvent: String = ""           // IPTC Event (사건/이벤트명)
 
     // AI Smart Classification
     var aiCategory: String? = nil      // 클린샷/인물/군중/무대/분위기/디테일/비하인드/기념

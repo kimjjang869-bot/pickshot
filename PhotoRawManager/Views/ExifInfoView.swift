@@ -8,6 +8,7 @@ struct ExifInfoView: View {
     @State private var jpgSize: Int64 = 0
     @State private var rawSize: Int64 = 0
     @State private var colorProfile: String?
+    @State private var loadedIPTC: XMPService.IPTCMetadata?
 
     var body: some View {
         ScrollView {
@@ -32,6 +33,22 @@ struct ExifInfoView: View {
                 if photo.aiCategory != nil {
                     sectionDivider
                     aiClassificationSection
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
+
+                // === IPTC/XMP Metadata ===
+                if hasIPTCData {
+                    sectionDivider
+                    iptcSection
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
+
+                // === Advanced Classification ===
+                if photo.colorMood != nil || photo.compositionType != nil || !photo.dominantColors.isEmpty {
+                    sectionDivider
+                    advancedClassSection
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                 }
@@ -113,13 +130,190 @@ struct ExifInfoView: View {
 
             let jSize = (try? FileManager.default.attributesOfItem(atPath: jpgURL.path)[.size] as? Int64) ?? 0
 
+            // IPTC metadata
+            let iptc = XMPService.readIPTCMetadata(from: jpgURL)
+
             DispatchQueue.main.async {
                 self.loadedExif = exif
                 self.loadedRawExif = rawExif
+                self.loadedIPTC = iptc
                 self.jpgSize = jSize
                 self.rawSize = rSize
                 self.colorProfile = cp
             }
+        }
+    }
+
+    // MARK: - Advanced Classification Section
+
+    private var advancedClassSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "wand.and.stars")
+                    .foregroundColor(.cyan)
+                    .font(.system(size: 11))
+                Text("AI 분석")
+                    .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                Spacer()
+            }
+
+            // 분위기 + 시간대 + 구도
+            HStack(spacing: 8) {
+                if let mood = photo.colorMood, mood != "중립", mood != "미분류" {
+                    classTagView(mood, color: moodColor(mood))
+                }
+                if let time = photo.timeOfDay, time != "미분류" {
+                    classTagView(time, color: .orange)
+                }
+                if let comp = photo.compositionType, comp != "기타" {
+                    classTagView(comp, color: .purple)
+                }
+            }
+
+            // 주요 색상
+            if !photo.dominantColors.isEmpty {
+                HStack(spacing: 4) {
+                    Text("색상")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                    ForEach(photo.dominantColors.prefix(3), id: \.self) { color in
+                        HStack(spacing: 2) {
+                            Circle()
+                                .fill(colorForName(color))
+                                .frame(width: 8, height: 8)
+                            Text(color)
+                                .font(.system(size: 9))
+                        }
+                    }
+                }
+            }
+
+            // 인물 비율
+            if photo.personCoverage > 0.05 {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.blue)
+                    Text("인물 \(Int(photo.personCoverage * 100))%")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func classTagView(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.12))
+            .cornerRadius(3)
+    }
+
+    private func moodColor(_ mood: String) -> Color {
+        switch mood {
+        case "따뜻한": return .orange
+        case "차가운": return .blue
+        case "비비드": return .pink
+        case "차분한": return .gray
+        case "어두운": return .indigo
+        case "밝은": return .yellow
+        case "흑백": return .gray
+        default: return .secondary
+        }
+    }
+
+    private func colorForName(_ name: String) -> Color {
+        switch name {
+        case "빨강": return .red
+        case "주황": return .orange
+        case "노랑": return .yellow
+        case "초록": return .green
+        case "시안": return .cyan
+        case "파랑": return .blue
+        case "보라": return .purple
+        case "핑크": return .pink
+        case "검정": return .black
+        case "흰색": return .white
+        case "회색": return .gray
+        default: return .secondary
+        }
+    }
+
+    // MARK: - IPTC Section
+
+    private var hasIPTCData: Bool {
+        if let m = loadedIPTC {
+            return !m.title.isEmpty || !m.description.isEmpty ||
+                   !m.creator.isEmpty || !m.copyright.isEmpty
+        }
+        return !photo.iptcTitle.isEmpty || !photo.iptcDescription.isEmpty ||
+               !photo.iptcCreator.isEmpty || !photo.iptcCopyright.isEmpty
+    }
+
+    private var iptcSection: some View {
+        let m = loadedIPTC ?? XMPService.IPTCMetadata()
+        let title = m.title.isEmpty ? photo.iptcTitle : m.title
+        let desc = m.description.isEmpty ? photo.iptcDescription : m.description
+        let creator = m.creator.isEmpty ? photo.iptcCreator : m.creator
+        let copyright = m.copyright.isEmpty ? photo.iptcCopyright : m.copyright
+        let city = m.city.isEmpty ? photo.iptcCity : m.city
+        let country = m.country.isEmpty ? photo.iptcCountry : m.country
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "doc.badge.gearshape")
+                    .foregroundColor(.indigo)
+                    .font(.system(size: 11))
+                Text("메타데이터")
+                    .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                Spacer()
+                Button(action: {
+                    store.metadataEditorMode = .single
+                    store.showMetadataEditor = true
+                }) {
+                    Image(systemName: "pencil.circle")
+                        .font(.system(size: 12))
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help("메타데이터 편집")
+            }
+
+            if !title.isEmpty {
+                iptcRow(label: "제목", value: title, icon: "textformat")
+            }
+            if !desc.isEmpty {
+                iptcRow(label: "설명", value: desc, icon: "text.alignleft")
+            }
+            if !creator.isEmpty {
+                iptcRow(label: "작가", value: creator, icon: "person")
+            }
+            if !copyright.isEmpty {
+                iptcRow(label: "저작권", value: copyright, icon: "c.circle")
+            }
+            if !city.isEmpty || !country.isEmpty {
+                let loc = [city, country].filter { !$0.isEmpty }.joined(separator: ", ")
+                iptcRow(label: "위치", value: loc, icon: "location")
+            }
+        }
+    }
+
+    private func iptcRow(label: String, value: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+                .foregroundColor(.secondary)
+                .frame(width: 12)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 35, alignment: .trailing)
+            Text(value)
+                .font(.system(size: 10))
+                .lineLimit(2)
         }
     }
 
