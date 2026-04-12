@@ -181,95 +181,171 @@ class GoogleDriveService {
         var errorDescription: String? { message }
     }
 
-    /// Upload a single file to Google Drive via REST API (multipart upload)
-    /// - Parameters:
-    ///   - fileURL: local file to upload
-    ///   - folderId: optional Google Drive folder ID to upload into
-    ///   - accessToken: OAuth2 Bearer token
-    ///   - completion: (UploadResult?, Error?)
+    /// 대용량 파일 업로드용 전용 URLSession (타임아웃 연장, 연결 복구 대기)
+    private static let uploadSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120     // 요청 타임아웃 2분
+        config.timeoutIntervalForResource = 600    // 리소스 타임아웃 10분
+        config.waitsForConnectivity = true          // 연결 복구 대기
+        return URLSession(configuration: config)
+    }()
+
+    /// 5MB 이상 → resumable upload, 미만 → multipart (기존 방식)
+    private static let resumableThreshold = 5 * 1024 * 1024
+
+    /// Upload a single file to Google Drive via REST API
+    /// 5MB 미만: multipart, 5MB 이상: resumable upload (청크 전송, 메모리 효율)
     static func uploadFile(
         fileURL: URL,
         folderId: String?,
         accessToken: String,
         completion: @escaping (UploadResult?, Error?) -> Void
     ) {
-        guard let fileData = try? Data(contentsOf: fileURL) else {
-            completion(nil, APIError(message: "파일을 읽을 수 없습니다: \(fileURL.lastPathComponent)"))
-            return
-        }
-
         let fileName = fileURL.lastPathComponent
         let mimeType = mimeTypeForExtension(fileURL.pathExtension)
 
-        // Build metadata JSON
+        // 파일 크기 확인
+        let fileSize: Int
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            fileSize = (attrs[.size] as? Int) ?? 0
+        } catch {
+            completion(nil, APIError(message: "파일을 읽을 수 없습니다: \(fileName)"))
+            return
+        }
+
+        fputs("[GDRIVE] upload \(fileName) (\(fileSize / 1024)KB) → folder=\(folderId ?? "ROOT")\n", stderr)
+
+        if fileSize >= resumableThreshold {
+            // 대용량: resumable upload (스트리밍, 메모리 절약)
+            uploadResumable(fileURL: fileURL, fileName: fileName, mimeType: mimeType,
+                           fileSize: fileSize, folderId: folderId, accessToken: accessToken, completion: completion)
+        } else {
+            // 소용량: 기존 multipart
+            uploadMultipart(fileURL: fileURL, fileName: fileName, mimeType: mimeType,
+                           folderId: folderId, accessToken: accessToken, completion: completion)
+        }
+    }
+
+    // MARK: - Multipart Upload (< 5MB)
+
+    private static func uploadMultipart(
+        fileURL: URL, fileName: String, mimeType: String,
+        folderId: String?, accessToken: String,
+        completion: @escaping (UploadResult?, Error?) -> Void
+    ) {
+        guard let fileData = try? Data(contentsOf: fileURL) else {
+            completion(nil, APIError(message: "파일을 읽을 수 없습니다: \(fileName)"))
+            return
+        }
+
         var metadata: [String: Any] = ["name": fileName]
         if let folderId = folderId, !folderId.isEmpty {
             metadata["parents"] = [folderId]
         }
-        fputs("[GDRIVE] upload \(fileName) → folder=\(folderId ?? "ROOT")\n", stderr)
-
         guard let metadataJSON = try? JSONSerialization.data(withJSONObject: metadata) else {
             completion(nil, APIError(message: "메타데이터 생성 실패"))
             return
         }
 
-        // Build multipart/related body
-        let boundary = "fastSelector_\(UUID().uuidString)"
+        let boundary = "pickshot_\(UUID().uuidString)"
         var body = Data()
-
-        // Force unwraps are safe here: these ASCII-only strings always produce valid UTF-8
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/json; charset=UTF-8\r\n\r\n".data(using: .utf8)!)
         body.append(metadataJSON)
-        body.append("\r\n".data(using: .utf8)!)
-
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("\r\n--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
 
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        // Build request
-        let urlString = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name"
-        guard let url = URL(string: urlString) else {
-            completion(nil, APIError(message: "잘못된 API URL"))
-            return
-        }
-
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/related; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(nil, error)
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                completion(nil, APIError(message: "잘못된 응답"))
-                return
-            }
-
-            guard httpResponse.statusCode == 200 else {
-                let responseBody = data.flatMap { String(data: $0, encoding: .utf8) } ?? "No body"
-                completion(nil, APIError(message: "API 오류 (\(httpResponse.statusCode)): \(responseBody)"))
-                return
-            }
-
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let fileId = json["id"] as? String else {
-                completion(nil, APIError(message: "응답 파싱 실패"))
-                return
-            }
-
-            let name = json["name"] as? String ?? fileName
-            completion(UploadResult(fileId: fileId, fileName: name), nil)
+        uploadSession.dataTask(with: request) { data, response, error in
+            if let error = error { completion(nil, error); return }
+            parseUploadResponse(data: data, response: response, fileName: fileName, completion: completion)
         }.resume()
+    }
+
+    // MARK: - Resumable Upload (≥ 5MB) — 스트리밍, 메모리 절약
+
+    private static func uploadResumable(
+        fileURL: URL, fileName: String, mimeType: String,
+        fileSize: Int, folderId: String?, accessToken: String,
+        completion: @escaping (UploadResult?, Error?) -> Void
+    ) {
+        var metadata: [String: Any] = ["name": fileName]
+        if let folderId = folderId, !folderId.isEmpty {
+            metadata["parents"] = [folderId]
+        }
+        guard let metadataJSON = try? JSONSerialization.data(withJSONObject: metadata) else {
+            completion(nil, APIError(message: "메타데이터 생성 실패"))
+            return
+        }
+
+        // Step 1: resumable 세션 시작 요청
+        var initRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name")!)
+        initRequest.httpMethod = "POST"
+        initRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        initRequest.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        initRequest.setValue("\(fileSize)", forHTTPHeaderField: "X-Upload-Content-Length")
+        initRequest.setValue(mimeType, forHTTPHeaderField: "X-Upload-Content-Type")
+        initRequest.httpBody = metadataJSON
+
+        uploadSession.dataTask(with: initRequest) { _, response, error in
+            if let error = error { completion(nil, error); return }
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let uploadURL = httpResponse.value(forHTTPHeaderField: "Location") else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                completion(nil, APIError(message: "Resumable 세션 시작 실패 (HTTP \(code))"))
+                return
+            }
+
+            fputs("[GDRIVE] resumable session started: \(fileName)\n", stderr)
+
+            // Step 2: 파일 데이터 PUT (uploadTask로 스트리밍 — 메모리에 전체 로드 안 함)
+            var putRequest = URLRequest(url: URL(string: uploadURL)!)
+            putRequest.httpMethod = "PUT"
+            putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            putRequest.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+            putRequest.setValue("\(fileSize)", forHTTPHeaderField: "Content-Length")
+
+            // uploadTask(with:fromFile:)는 파일을 스트리밍하므로 메모리에 전체 로드하지 않음
+            uploadSession.uploadTask(with: putRequest, fromFile: fileURL) { data, response, error in
+                if let error = error { completion(nil, error); return }
+                parseUploadResponse(data: data, response: response, fileName: fileName, completion: completion)
+            }.resume()
+        }.resume()
+    }
+
+    // MARK: - 응답 파싱 (공통)
+
+    private static func parseUploadResponse(
+        data: Data?, response: URLResponse?, fileName: String,
+        completion: @escaping (UploadResult?, Error?) -> Void
+    ) {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            completion(nil, APIError(message: "잘못된 응답"))
+            return
+        }
+        guard httpResponse.statusCode == 200 else {
+            let responseBody = data.flatMap { String(data: $0, encoding: .utf8) } ?? "No body"
+            completion(nil, APIError(message: "API 오류 (\(httpResponse.statusCode)): \(responseBody)"))
+            return
+        }
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fileId = json["id"] as? String else {
+            completion(nil, APIError(message: "응답 파싱 실패"))
+            return
+        }
+        let name = json["name"] as? String ?? fileName
+        completion(UploadResult(fileId: fileId, fileName: name), nil)
     }
 
     /// Create a public share link for a file on Google Drive

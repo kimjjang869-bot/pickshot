@@ -6,6 +6,7 @@ struct MatchingView: View {
     @Binding var isPresented: Bool
     @State private var selectedMode: MatchMode = .filename
     @State private var filenameText: String = ""
+    @State private var parsedFilenameCount: Int = 0
     @State private var isProcessing = false
     @State private var resultMessage: String?
     @State private var matchedCount = 0
@@ -24,9 +25,12 @@ struct MatchingView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
+                Spacer()
                 Text("셀렉 매칭")
                     .font(.system(size: 18, weight: .bold))
                 Spacer()
+            }
+            .overlay(alignment: .trailing) {
                 Button(action: { isPresented = false }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
@@ -92,6 +96,10 @@ struct MatchingView: View {
                 .frame(height: 150)
                 .border(Color.gray.opacity(0.3))
                 .cornerRadius(4)
+                .onChange(of: filenameText) { text in
+                    // 파싱 결과 캐시 (body에서 매 렌더마다 파싱 방지)
+                    parsedFilenameCount = FilenameMatchingService.parseFilenames(from: text).count
+                }
 
             HStack {
                 Button("클립보드에서 붙여넣기") {
@@ -114,9 +122,8 @@ struct MatchingView: View {
 
                 Spacer()
 
-                let parsedCount = FilenameMatchingService.parseFilenames(from: filenameText).count
-                if parsedCount > 0 {
-                    Text("\(parsedCount)개 감지됨")
+                if parsedFilenameCount > 0 {
+                    Text("\(parsedFilenameCount)개 감지됨")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.green)
                 }

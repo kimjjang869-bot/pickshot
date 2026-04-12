@@ -111,8 +111,14 @@ struct BatchRenameView: View {
         return parts.joined(separator: separator.rawValue)
     }
 
+    @State private var _cachedPreview: [(original: String, renamed: String)] = []
+    @State private var _previewKey: String = ""
+
     private var previewItems: [(original: String, renamed: String)] {
-        Array(targetPhotos.prefix(5)).enumerated().map { (index, photo) in
+        let key = "\(builtPattern)_\(seqStart)_\(seqDigits)_\(dateFormat)_\(target)"
+        if key == _previewKey { return _cachedPreview }
+        // @State는 body에서 직접 쓸 수 없으므로 async로 갱신
+        let items = Array(targetPhotos.prefix(5)).enumerated().map { (index, photo) in
             let newName = PhotoStore.previewRename(
                 photo: photo, pattern: builtPattern, index: index,
                 dateFormat: dateFormat.dateFormat, seqDigits: seqDigits, seqStart: seqStart
@@ -120,6 +126,11 @@ struct BatchRenameView: View {
             let ext = photo.jpgURL.pathExtension
             return (photo.fileNameWithExtension, newName + "." + ext)
         }
+        DispatchQueue.main.async {
+            _cachedPreview = items
+            _previewKey = key
+        }
+        return items
     }
 
     var body: some View {

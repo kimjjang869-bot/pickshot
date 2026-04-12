@@ -137,11 +137,10 @@ struct FaceGroupingService {
 
         fputs("[FACE] 감지된 얼굴: \(detectedFaces.count)개 (\(faceCountMap.count)장 사진)\n", stderr)
 
-        // Step 2: AdaFace 임베딩 추출 (직렬)
+        // Step 2: AdaFace 임베딩 추출 (직렬 — lock 불필요)
         for face in detectedFaces {
             autoreleasepool {
                 if let emb = AdaFaceService.embedding(from: face.crop) {
-                    lock.lock()
                     allFaces.append(FaceEntry(
                         photoID: face.photoID,
                         embedding: emb,
@@ -149,7 +148,6 @@ struct FaceGroupingService {
                         faceIndex: face.faceIndex,
                         faceCrop: face.crop
                     ))
-                    lock.unlock()
                 }
             }
         }

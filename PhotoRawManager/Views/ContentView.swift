@@ -148,8 +148,6 @@ struct ContentView: View {
                         GeometryReader { geo in
                             let leftW = max(150, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
-                            let _ = updateGridColumns(width: leftW)
-
                             HStack(spacing: 0) {
                                 // Left panel
                                 VStack(spacing: 0) {
@@ -196,11 +194,11 @@ struct ContentView: View {
                                                 Text("/")
                                                     .foregroundColor(AppTheme.textDim)
                                             }
-                                            Text("전체: \(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)장")
+                                            Text("전체: \(store.photoCount)장")
                                                 .foregroundColor(.yellow)
                                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
 
-                                            let spCount = store.photos.filter { $0.isSpacePicked }.count
+                                            let spCount = store.spacePickCount
                                             if spCount > 0 {
                                                 Text("·").foregroundColor(AppTheme.textDim)
                                                 Text("SP: \(spCount)장")
@@ -285,6 +283,9 @@ struct ContentView: View {
                                     }
                                 }
                             }
+                            .onAppear { updateGridColumns(width: leftW) }
+                            .onChange(of: leftW) { newW in updateGridColumns(width: newW) }
+                            .onChange(of: store.thumbnailSize) { _ in updateGridColumns(width: leftW) }
                         }
                     }
                 }

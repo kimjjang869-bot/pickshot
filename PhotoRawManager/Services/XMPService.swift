@@ -11,7 +11,8 @@ struct XMPService {
         let ext = url.pathExtension.lowercased()
         guard ["jpg", "jpeg"].contains(ext) else { return false }
 
-        guard let source = CGImageSourceCreateWithData(try! Data(contentsOf: url) as CFData, nil) else { return false }
+        guard let fileData = try? Data(contentsOf: url),
+              let source = CGImageSourceCreateWithData(fileData as CFData, nil) else { return false }
         guard let uti = CGImageSourceGetType(source) else { return false }
 
         let mutableData = NSMutableData()

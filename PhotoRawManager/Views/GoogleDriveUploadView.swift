@@ -176,12 +176,12 @@ struct GoogleDriveUploadView: View {
                 Text("선택된 사진 \(store.selectionCount)장을 업로드합니다")
                     .font(.caption)
                     .foregroundColor(.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
             } else {
                 Text("현재 필터 기준 전체 사진을 업로드합니다")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }

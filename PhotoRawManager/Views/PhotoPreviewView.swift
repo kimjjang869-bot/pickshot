@@ -49,7 +49,8 @@ enum ZoomPreset: String, CaseIterable, Identifiable {
 class PreviewImageCache {
     static let shared = PreviewImageCache()
     private var cache: [URL: NSImage] = [:]
-    private var accessOrder: [URL] = []  // LRU tracking
+    private var accessTime: [URL: Int] = [:]  // LRU tracking (O(1) 업데이트)
+    private var accessCounter: Int = 0
     private var entrySizes: [URL: Int] = [:]  // 항목별 바이트 크기 추적
     private var currentBytes: Int = 0
     private let maxBytes: Int = 500 * 1024 * 1024  // 500MB 상한
@@ -107,11 +108,8 @@ class PreviewImageCache {
         lock.lock()
         // RAM hit
         if let img = cache[url] {
-            // Move to end of access order (most recently used)
-            if let idx = accessOrder.firstIndex(of: url) {
-                accessOrder.remove(at: idx)
-            }
-            accessOrder.append(url)
+            accessCounter += 1
+            accessTime[url] = accessCounter
             lock.unlock()
             return img
         }
@@ -135,17 +133,20 @@ class PreviewImageCache {
         return max(1, w * h * 4)
     }
 
-    /// LRU 기준으로 가장 오래된 항목을 디스크로 evict
+    /// LRU 기준으로 가장 오래된 항목을 디스크로 evict (O(n log n) 정렬, accessOrder 배열 제거)
     private func evictOldest(count: Int) {
-        let removeCount = min(count, accessOrder.count)
-        let evictKeys = Array(accessOrder.prefix(removeCount))
+        let removeCount = min(count, cache.count)
+        guard removeCount > 0 else { return }
+        // accessTime 기준 오름차순 정렬 → 가장 오래된 것부터 제거
+        let sorted = accessTime.sorted { $0.value < $1.value }
+        let evictKeys = sorted.prefix(removeCount).map(\.key)
         for key in evictKeys {
             if let evictedImg = cache.removeValue(forKey: key) {
                 currentBytes -= entrySizes.removeValue(forKey: key) ?? 0
+                accessTime.removeValue(forKey: key)
                 let diskPath = diskKey(for: key)
                 let capturedImg = evictedImg
                 DispatchQueue.global(qos: .utility).async {
-                    // NSImage→CGImage 직접 변환 (TIFF 중간 단계 제거)
                     if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                         let bitmap = NSBitmapImageRep(cgImage: cgImage)
                         if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
@@ -159,7 +160,6 @@ class PreviewImageCache {
                 }
             }
         }
-        accessOrder.removeFirst(removeCount)
     }
 
     func set(_ url: URL, image: NSImage) {
@@ -171,7 +171,7 @@ class PreviewImageCache {
             evictOldest(count: maxEntries / 3)
         }
         // 바이트 상한 체크 (500MB)
-        while currentBytes + imageBytes > maxBytes && !accessOrder.isEmpty {
+        while currentBytes + imageBytes > maxBytes && !cache.isEmpty {
             evictOldest(count: 1)
         }
 
@@ -183,11 +183,9 @@ class PreviewImageCache {
         entrySizes[url] = imageBytes
         currentBytes += imageBytes
 
-        // Update LRU order
-        if let idx = accessOrder.firstIndex(of: url) {
-            accessOrder.remove(at: idx)
-        }
-        accessOrder.append(url)
+        // LRU 업데이트 O(1)
+        accessCounter += 1
+        accessTime[url] = accessCounter
         lock.unlock()
     }
 
@@ -203,7 +201,7 @@ class PreviewImageCache {
     func remove(url: URL) {
         lock.lock()
         cache.removeValue(forKey: url)
-        accessOrder.removeAll(where: { $0 == url })
+        accessTime.removeValue(forKey: url)
         currentBytes -= entrySizes.removeValue(forKey: url) ?? 0
         lock.unlock()
         // Also remove from disk cache
@@ -214,7 +212,7 @@ class PreviewImageCache {
     func clearCache() {
         lock.lock()
         cache.removeAll()
-        accessOrder.removeAll()
+        accessTime.removeAll()
         entrySizes.removeAll()
         currentBytes = 0
         lock.unlock()
@@ -223,8 +221,8 @@ class PreviewImageCache {
     /// Prefetch previews at given resolution
     private static let prefetchQueue: OperationQueue = {
         let q = OperationQueue()
-        q.maxConcurrentOperationCount = 4
-        q.qualityOfService = .userInitiated
+        q.maxConcurrentOperationCount = 3
+        q.qualityOfService = .utility  // 실제 로드(.userInitiated)와 경합 방지
         return q
     }()
 
@@ -591,7 +589,7 @@ struct PhotoPreviewView: View {
                                         generateLoupeNormalized(normalX: capturedNX, normalY: capturedNY)
                                     }
                                     viewState.loupeWorkItem = work
-                                    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05, execute: work)
+                                    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.1, execute: work)
                                 case .ended:
                                     viewState.isMouseOverPreview = false
                                     break
@@ -962,6 +960,7 @@ struct PhotoPreviewView: View {
             rotatedImage = nil
             hiResImage = nil
             lowResImage = nil  // Release previous hi-res memory
+            image = nil        // Release previous image immediately (메모리 스파이크 방지)
             isHiResLoaded = false
             hiResLoadWork?.cancel()
             viewState.loupeActive = false

@@ -25,13 +25,17 @@ struct ImageAnalysisService {
 
         analyzeImage(photo: photo, intent: intent, options: options, analysis: &analysis)
 
-        if options.checkClosedEyes {
-            detectClosedEyes(url: photo.jpgURL, analysis: &analysis)
-            detectSmile(url: photo.jpgURL, analysis: &analysis)
-        }
-
-        if options.checkFaceFocus {
-            detectFaceFocus(url: photo.jpgURL, analysis: &analysis)
+        // 얼굴 관련 분석: 이미지 1회 로드 + 랜드마크 1회 실행으로 통합
+        if options.checkClosedEyes || options.checkFaceFocus {
+            if let (faceCGImage, faces) = loadFaceLandmarks(url: photo.jpgURL) {
+                if options.checkClosedEyes {
+                    detectClosedEyes(faces: faces, analysis: &analysis)
+                    detectSmile(faces: faces, analysis: &analysis)
+                }
+                if options.checkFaceFocus {
+                    detectFaceFocus(cgImage: faceCGImage, faces: faces, analysis: &analysis)
+                }
+            }
         }
 
         if options.checkExifInfo {
@@ -305,32 +309,33 @@ struct ImageAnalysisService {
         return ratio > 4.0
     }
 
-    // MARK: - Closed Eyes Detection (Vision Framework)
+    // MARK: - Shared Face Landmarks Loader (1회 로드 + 1회 Vision 실행)
 
-    private static func detectClosedEyes(url: URL, analysis: inout QualityAnalysis) {
-        guard let cgImage = loadCGImage(url: url, maxSize: 1280) else { return }
+    private static func loadFaceLandmarks(url: URL) -> (CGImage, [VNFaceObservation])? {
+        guard let cgImage = loadCGImage(url: url, maxSize: 1280) else { return nil }
 
         let request = VNDetectFaceLandmarksRequest()
         if #available(macOS 13.0, *) {
             request.revision = VNDetectFaceLandmarksRequestRevision3
         }
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-
         do {
             try handler.perform([request])
-        } catch {
-            return
-        }
+        } catch { return nil }
 
-        guard let results = request.results?.filter({ $0.confidence > 0.5 }), !results.isEmpty else { return }
+        guard let faces = request.results?.filter({ $0.confidence > 0.5 }), !faces.isEmpty else { return nil }
+        return (cgImage, faces)
+    }
 
+    // MARK: - Closed Eyes Detection (Vision Framework)
+
+    private static func detectClosedEyes(faces: [VNFaceObservation], analysis: inout QualityAnalysis) {
         var closedCount = 0
-        let totalFaces = results.count
+        let totalFaces = faces.count
 
-        for face in results {
+        for face in faces {
             guard let landmarks = face.landmarks else { continue }
 
-            // Check eye openness by analyzing the height of eye contours
             var leftClosed = false
             var rightClosed = false
 
@@ -341,7 +346,6 @@ struct ImageAnalysisService {
                 rightClosed = isEyeClosed(eye: rightEye)
             }
 
-            // Both eyes closed = person has eyes closed
             if leftClosed && rightClosed {
                 closedCount += 1
             }
@@ -385,27 +389,11 @@ struct ImageAnalysisService {
 
     // MARK: - Smile / Expression Detection
 
-    private static func detectSmile(url: URL, analysis: inout QualityAnalysis) {
-        guard let cgImage = loadCGImage(url: url, maxSize: 1280) else { return }
-
-        let request = VNDetectFaceLandmarksRequest()
-        if #available(macOS 13.0, *) {
-            request.revision = VNDetectFaceLandmarksRequestRevision3
-        }
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-
-        do {
-            try handler.perform([request])
-        } catch {
-            return
-        }
-
-        guard let results = request.results?.filter({ $0.confidence > 0.5 }), !results.isEmpty else { return }
-
+    private static func detectSmile(faces: [VNFaceObservation], analysis: inout QualityAnalysis) {
         var totalSmile: Double = 0
         var faceCount = 0
 
-        for face in results {
+        for face in faces {
             guard let landmarks = face.landmarks,
                   let outerLips = landmarks.outerLips else { continue }
 
@@ -686,21 +674,7 @@ struct ImageAnalysisService {
     }
     // MARK: - Face Focus Detection
 
-    private static func detectFaceFocus(url: URL, analysis: inout QualityAnalysis) {
-        guard let cgImage = loadCGImage(url: url, maxSize: 1280) else { return }
-
-        // Use landmarks request: gives face rects + eye positions for precise focus check
-        let request = VNDetectFaceLandmarksRequest()
-        if #available(macOS 13.0, *) {
-            request.revision = VNDetectFaceLandmarksRequestRevision3
-        }
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        do {
-            try handler.perform([request])
-        } catch { return }
-
-        guard let faces = request.results?.filter({ $0.confidence > 0.5 }), !faces.isEmpty else { return }
-
+    private static func detectFaceFocus(cgImage: CGImage, faces: [VNFaceObservation], analysis: inout QualityAnalysis) {
         let width = cgImage.width
         let height = cgImage.height
         let imgSize = CGSize(width: width, height: height)

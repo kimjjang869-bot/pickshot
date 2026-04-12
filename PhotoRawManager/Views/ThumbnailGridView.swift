@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreImage
 
 // MARK: - 드래그 드롭 상태 (PhotoStore와 분리 — 성능 최적화)
 class DragDropState: ObservableObject {
@@ -1539,6 +1540,7 @@ class ThumbnailCache {
     private let cache = NSCache<NSURL, NSImage>()
     private var memoryPressureSource: DispatchSourceMemoryPressure?
     private var baseCountLimit: Int = 10000
+    private var recoveryWork: DispatchWorkItem?  // 복원 작업 중첩 방지
 
     init() {
         applyCacheLimits()
@@ -1551,25 +1553,31 @@ class ThumbnailCache {
         // macOS 메모리 압박 감지 → 캐시 자동 축소 (전체 삭제 아닌 NSCache 자연 evict 유도)
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in
+            guard let self = self else { return }
             let event = source.data
+            // 기존 복원 작업 취소 (중첩 방지)
+            self.recoveryWork?.cancel()
+
             if event.contains(.critical) {
-                // 크리티컬: 50% 축소 (전체 삭제 대신 LRU 부분 제거)
-                let currentLimit = self?.cache.countLimit ?? 0
-                self?.cache.countLimit = max(200, currentLimit / 4)
-                // 1초 후 원래 limit 복원 → NSCache가 초과분 자연 evict
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let currentLimit = self.cache.countLimit
+                self.cache.countLimit = max(200, currentLimit / 4)
+                fputs("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(max(200, currentLimit/4)) (부분 해제)\n", stderr)
+                // 5초 후 복원 (기존 1초 → OS가 안정될 시간 확보)
+                let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
                 }
-                fputs("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(currentLimit/4) (부분 해제)\n", stderr)
+                self.recoveryWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
             } else {
-                // 경고: countLimit 50% 축소 → NSCache가 오래된 것 evict
-                let currentLimit = self?.cache.countLimit ?? 0
-                self?.cache.countLimit = max(500, currentLimit / 2)
-                fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(currentLimit/2)\n", stderr)
-                // 5초 후 복원
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                let currentLimit = self.cache.countLimit
+                self.cache.countLimit = max(500, currentLimit / 2)
+                fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(max(500, currentLimit/2))\n", stderr)
+                // 8초 후 복원
+                let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
                 }
+                self.recoveryWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
             }
         }
         source.resume()
@@ -1619,9 +1627,15 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
-        let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
-        let cost = max(1, (pixelW * pixelH * 4) / 1024)
+        // CGImage 기반 실제 메모리 크기 계산 (KB 단위)
+        let cost: Int
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            cost = max(1, (cg.bytesPerRow * cg.height) / 1024)
+        } else {
+            let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
+            let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
+            cost = max(1, (pixelW * pixelH * 4) / 1024)
+        }
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
@@ -1854,9 +1868,13 @@ class ThumbnailLoader {
         }
 
         // 3. Need to extract from file — queue it
-        // Hold lock until operation is added to queue to prevent race condition
-        // where two threads both see pendingCallbacks[url] == nil
         lock.lock()
+        // Double-check: 다른 스레드가 lock 대기 중 캐시에 저장했을 수 있음
+        if let cached = ThumbnailCache.shared.get(url) {
+            lock.unlock()
+            completion(cached)
+            return
+        }
         if pendingCallbacks[url] != nil {
             pendingCallbacks[url]?.append(completion)
             lock.unlock()
@@ -1932,19 +1950,15 @@ class ThumbnailLoader {
                 }
             }
 
-            // Always clean up callbacks (even on failure) to prevent leaks
+            // 콜백 정리 + 실행
             self?.lock.lock()
             let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
             self?.lock.unlock()
 
-            guard !op.isCancelled else { return }
+            // 취소된 경우 콜백 호출 안함 (placeholder 생성도 방지)
+            guard !op.isCancelled, let image = image else { return }
             DispatchQueue.main.async {
-                if let image = image {
-                    for cb in callbacks { cb(image) }
-                } else {
-                    let placeholder = NSImage(size: NSSize(width: 1, height: 1))
-                    for cb in callbacks { cb(placeholder) }
-                }
+                for cb in callbacks { cb(image) }
             }
         }
         queue.addOperation(op)
@@ -2008,6 +2022,15 @@ class ThumbnailLoader {
         let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
 
+        // 메인 이미지 EXIF orientation 읽기 (RAW 썸네일에 orientation이 없을 수 있음)
+        let mainOrientation: Int
+        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+           let orient = props[kCGImagePropertyOrientation as String] as? Int {
+            mainOrientation = orient
+        } else {
+            mainOrientation = 1  // normal
+        }
+
         // 임베디드 썸네일만 시도 (파일 전체 디코딩 안 함)
         let embedOpts: [NSString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: thumbSize,
@@ -2031,11 +2054,36 @@ class ThumbnailLoader {
         // RAW: 파일 헤더에서 임베디드 JPEG 직접 추출 (전체 디코딩 회피)
         if isRAW {
             if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                // 임베디드 JPEG에 orientation이 없을 수 있으므로 메인 EXIF orientation 적용
+                if mainOrientation > 1, let oriented = applyOrientation(img, orientation: mainOrientation) {
+                    return oriented
+                }
                 return img
             }
         }
 
         return nil  // 임베디드 없음 → 풀 디코딩으로 폴백
+    }
+
+    /// EXIF orientation 값을 NSImage에 적용 (CIImage 기반 — 모든 orientation 정확 처리)
+    private static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        // CGImagePropertyOrientation → CIImage orientation 매핑
+        let ciOrientation: CGImagePropertyOrientation
+        switch orientation {
+        case 2: ciOrientation = .upMirrored
+        case 3: ciOrientation = .down
+        case 4: ciOrientation = .downMirrored
+        case 5: ciOrientation = .leftMirrored
+        case 6: ciOrientation = .right
+        case 7: ciOrientation = .rightMirrored
+        case 8: ciOrientation = .left
+        default: return nil
+        }
+        let ci = CIImage(cgImage: cgImage).oriented(ciOrientation)
+        let ctx = CIContext(options: [.useSoftwareRenderer: false])
+        guard let outCG = ctx.createCGImage(ci, from: ci.extent) else { return nil }
+        return NSImage(cgImage: outCG, size: NSSize(width: outCG.width, height: outCG.height))
     }
 
     private static var thumbSize: Int {

@@ -8,9 +8,15 @@ struct TimelineView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("타임라인").font(.system(size: 18, weight: .bold)); Spacer()
-                if !groups.isEmpty { Text("\(groups.count)개 시간대 · \(groups.reduce(0) { $0 + $1.photos.count })장").font(.system(size: 12)).foregroundColor(.secondary) }
-                Button("닫기") { dismiss() }.keyboardShortcut(.escape)
+                Spacer()
+                Text("타임라인").font(.system(size: 18, weight: .bold))
+                Spacer()
+            }
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 8) {
+                    if !groups.isEmpty { Text("\(groups.count)개 시간대 · \(groups.reduce(0) { $0 + $1.photos.count })장").font(.system(size: 12)).foregroundColor(.secondary) }
+                    Button("닫기") { dismiss() }.keyboardShortcut(.escape)
+                }
             }.padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
             if groups.isEmpty { emptyView } else { timelineMiniBar; Divider().opacity(0.3); ScrollView { LazyVStack(spacing: 16) { ForEach(groups) { groupRow($0) } }.padding(16) } }

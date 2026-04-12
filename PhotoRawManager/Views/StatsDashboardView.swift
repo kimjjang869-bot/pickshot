@@ -7,7 +7,8 @@ struct StatsDashboardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            HStack { Text("셀렉 통계").font(.system(size: 18, weight: .bold)); Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.escape) }
+            HStack { Spacer(); Text("셀렉 통계").font(.system(size: 18, weight: .bold)); Spacer() }
+                .overlay(alignment: .trailing) { Button("닫기") { dismiss() }.keyboardShortcut(.escape) }
             Divider()
             ScrollView {
                 VStack(spacing: 16) {

@@ -65,7 +65,7 @@ struct FilmstripView: View {
                                 isSelected: store.selectedPhotoID == photo.id,
                                 cellHeight: filmstripHeight - 20
                             )
-                            .id("\(photo.id)-\(photo.rating)-\(photo.isSpacePicked)-\(photo.isGSelected)")
+                            .id(photo.id)
                             .onTapGesture(count: 2) {
                                 // Double-click: enter folder
                                 if photo.isFolder || photo.isParentFolder {

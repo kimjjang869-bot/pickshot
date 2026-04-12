@@ -11,11 +11,22 @@ class DiskThumbnailCache {
     private let maxCacheBytes: Int64 = 2_000_000_000 // 2GB
     private let jpegQuality: CGFloat = 0.82
 
-    /// Current total cache size in bytes
+    /// 점진적 사이즈 추적 (매번 디렉토리 전체 스캔 방지)
+    private var _trackedSize: Int64 = -1  // -1 = 미초기화
+    private var _evictionInProgress = false
+    /// 메모리 기반 LRU 추적 (디스크 setAttributes 제거)
+    private var accessTime: [String: Int] = [:]  // cacheKey → accessCounter
+    private var accessCounter: Int = 0
+
+    /// Current total cache size in bytes (점진적 추적, O(1))
     var cacheSize: Int64 {
         lock.lock()
-        defer { lock.unlock() }
-        return computeCacheSize()
+        if _trackedSize < 0 {
+            _trackedSize = computeCacheSize()
+        }
+        let size = _trackedSize
+        lock.unlock()
+        return size
     }
 
     private init() {
@@ -32,18 +43,14 @@ class DiskThumbnailCache {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
-        // Single stat() call: check existence + touch modDate in one operation
-        lock.lock()
-        let attrs = try? FileManager.default.attributesOfItem(atPath: filePath.path)
-        if attrs != nil {
-            try? FileManager.default.setAttributes(
-                [.modificationDate: Date()],
-                ofItemAtPath: filePath.path
-            )
-        }
-        lock.unlock()
+        // 파일 존재 확인만 (setAttributes LRU touch 제거 — 메모리 기반 LRU 사용)
+        guard FileManager.default.fileExists(atPath: filePath.path) else { return nil }
 
-        guard attrs != nil else { return nil }
+        // LRU 추적: 메모리에서 O(1) 업데이트
+        lock.lock()
+        accessCounter += 1
+        accessTime[key] = accessCounter
+        lock.unlock()
 
         guard let image = NSImage(contentsOf: filePath) else {
             // Corrupt cache file — remove it
@@ -62,16 +69,25 @@ class DiskThumbnailCache {
 
         guard let jpegData = jpegData(from: image) else { return }
 
+        let dataSize = Int64(jpegData.count)
         lock.lock()
-        try? jpegData.write(to: filePath, options: .atomic)
+        let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
+        // 쓰기 성공 시에만 사이즈 추적
+        if writeSuccess, _trackedSize >= 0 { _trackedSize += dataSize }
         // 인덱스 업데이트
-        let pathHash = pathOnlyKey(url: url)
-        fileIndex[pathHash] = filePath
+        if writeSuccess {
+            let pathHash = pathOnlyKey(url: url)
+            fileIndex[pathHash] = filePath
+        }
+        let needsEviction = writeSuccess && _trackedSize > maxCacheBytes && !_evictionInProgress
+        if needsEviction { _evictionInProgress = true }
         lock.unlock()
 
-        // Evict if over size limit (async to not block caller)
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.evictIfNeeded()
+        // Evict if over size limit (async, 중복 실행 방지)
+        if needsEviction {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.evictIfNeeded()
+            }
         }
     }
 
@@ -144,8 +160,13 @@ class DiskThumbnailCache {
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 
-    /// Convert NSImage to JPEG data
+    /// Convert NSImage to JPEG data (CGImage 직접 — TIFF 중간 단계 제거)
     private func jpegData(from image: NSImage) -> Data? {
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            return rep.representation(using: .jpeg, properties: [.compressionFactor: jpegQuality])
+        }
+        // fallback
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
         return rep.representation(using: .jpeg, properties: [.compressionFactor: jpegQuality])
@@ -170,43 +191,54 @@ class DiskThumbnailCache {
     }
 
     /// LRU eviction: remove oldest files until under maxCacheBytes
+    /// 메모리 기반 accessTime을 참조하여 최근 사용 파일은 보존
     private func evictIfNeeded() {
         lock.lock()
-        defer { lock.unlock() }
+        defer {
+            _evictionInProgress = false
+            lock.unlock()
+        }
 
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: cacheDir,
-            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
+            includingPropertiesForKeys: [.fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else { return }
 
         struct CacheEntry {
             let url: URL
             let size: Int64
-            let modDate: Date
+            let key: String      // 파일명에서 추출한 캐시 키
+            let lastAccess: Int  // 메모리 LRU 카운터 (0 = 미접근)
         }
 
         var entries: [CacheEntry] = []
         var totalSize: Int64 = 0
 
         for case let fileURL as URL in enumerator {
-            let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-            let size = Int64(values?.fileSize ?? 0)
-            let mod = values?.contentModificationDate ?? Date.distantPast
-            entries.append(CacheEntry(url: fileURL, size: size, modDate: mod))
+            let size = Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            let name = (fileURL.lastPathComponent as NSString).deletingPathExtension
+            let lastAccess = accessTime[name] ?? 0
+            entries.append(CacheEntry(url: fileURL, size: size, key: name, lastAccess: lastAccess))
             totalSize += size
         }
 
         guard totalSize > maxCacheBytes else { return }
 
-        // Sort by modification date ascending (oldest first = least recently used)
-        entries.sort { $0.modDate < $1.modDate }
+        // 메모리 LRU 카운터 오름차순 (0=미접근이 가장 먼저 삭제)
+        entries.sort { $0.lastAccess < $1.lastAccess }
 
+        var evicted: Int64 = 0
         for entry in entries {
             guard totalSize > maxCacheBytes else { break }
             try? fm.removeItem(at: entry.url)
             totalSize -= entry.size
+            evicted += entry.size
+            accessTime.removeValue(forKey: entry.key)
+        }
+        if evicted > 0 {
+            _trackedSize = totalSize
         }
     }
 }

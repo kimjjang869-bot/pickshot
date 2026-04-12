@@ -83,21 +83,28 @@ struct PictureStyleService {
             // 먼저 서브이미지 개수 확인 (RAW 파일은 보통 2개: RAW + 임베디드 JPEG)
             let imageCount = CGImageSourceGetCount(source)
 
-            // 임베디드 JPEG 찾기: index 0 이후의 이미지 중 JPEG인 것
+            // 임베디드 JPEG 찾기: 가장 큰 것을 선택 (역순 탐색 — 큰 것이 뒤에 있는 경우가 많음)
             if imageCount > 1 {
-                for idx in 0..<imageCount {
-                    if CGImageSourceCopyPropertiesAtIndex(source, idx, nil) != nil {
-                        // 가장 큰 임베디드 이미지 사용
-                        if let cgImage = CGImageSourceCreateImageAtIndex(source, idx, options as CFDictionary) {
-                            let w = cgImage.width
-                            let h = cgImage.height
-                            // RAW 원본보다 작은 임베디드 JPEG (보통 6000x4000 → 160x120 ~ 1620x1080)
-                            // 가장 큰 것 선택 (보통 마지막 인덱스)
-                            if w > 640 && h > 480 {
+                var bestImage: CGImage?
+                var bestSize = 0
+                for idx in stride(from: imageCount - 1, through: 0, by: -1) {
+                    if let cgImage = CGImageSourceCreateImageAtIndex(source, idx, options as CFDictionary) {
+                        let w = cgImage.width
+                        let h = cgImage.height
+                        let size = w * h
+                        if w > 640 && h > 480 {
+                            if size > 1_000_000 { // 1MP 이상이면 즉시 반환 (충분한 크기)
                                 return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+                            }
+                            if size > bestSize {
+                                bestImage = cgImage
+                                bestSize = size
                             }
                         }
                     }
+                }
+                if let best = bestImage {
+                    return NSImage(cgImage: best, size: NSSize(width: best.width, height: best.height))
                 }
             }
 

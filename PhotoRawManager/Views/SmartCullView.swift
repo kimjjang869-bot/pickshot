@@ -593,30 +593,32 @@ struct SmartCullView: View {
         styleApplied = false
 
         styleLearner.batchStyleScores(photos: photos) { scores in
-            self.styleScores = scores
-            self.styleProcessing = false
-            self.styleApplied = true
+            DispatchQueue.main.async {
+                self.styleScores = scores
+                self.styleProcessing = false
+                self.styleApplied = true
 
-            let threshold = self.styleThreshold
-            var selectedCount = 0
-            for (photoID, score) in scores {
-                if score >= threshold {
-                    if let idx = store._photoIndex[photoID], idx < store.photos.count {
-                        if store.photos[idx].rating == 0 {
-                            let rating: Int
-                            if score >= 85 { rating = 5 }
-                            else if score >= 75 { rating = 4 }
-                            else { rating = 3 }
-                            store.photos[idx].rating = rating
-                            selectedCount += 1
+                let threshold = self.styleThreshold
+                var selectedCount = 0
+                for (photoID, score) in scores {
+                    if score >= threshold {
+                        if let idx = store._photoIndex[photoID], idx < store.photos.count {
+                            if store.photos[idx].rating == 0 {
+                                let rating: Int
+                                if score >= 85 { rating = 5 }
+                                else if score >= 75 { rating = 4 }
+                                else { rating = 3 }
+                                store.photos[idx].rating = rating
+                                selectedCount += 1
+                            }
                         }
                     }
                 }
-            }
 
-            store.invalidateFilterCache()
-            store.objectWillChange.send()
-            fputs("[STYLE] 추천 적용: \(scores.count)장 분석, \(selectedCount)장 셀렉 (기준 \(Int(threshold))점)\n", stderr)
+                store.invalidateFilterCache()
+                store.objectWillChange.send()
+                fputs("[STYLE] 추천 적용: \(scores.count)장 분석, \(selectedCount)장 셀렉 (기준 \(Int(threshold))점)\n", stderr)
+            }
         }
     }
 

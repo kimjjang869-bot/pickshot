@@ -6,6 +6,7 @@ struct ExifService {
 
     private static let cacheLock = NSLock()
     private static var exifCache: [URL: ExifData] = [:]
+    private static let maxCacheSize = 10_000  // 메모리 무한 증가 방지
 
     /// Shared DateFormatter (expensive to create, reuse)
     private static let exifDateFormatter: DateFormatter = {
@@ -49,6 +50,10 @@ struct ExifService {
         if let existing = exifCache[url] {
             cacheLock.unlock()
             return existing
+        }
+        // 캐시 오버플로 방지
+        if exifCache.count >= maxCacheSize {
+            exifCache.removeAll(keepingCapacity: true)
         }
         exifCache[url] = data
         cacheLock.unlock()

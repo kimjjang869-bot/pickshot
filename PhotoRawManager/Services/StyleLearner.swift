@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import AppKit
+import Accelerate
 
 // MARK: - 사용자 스타일 학습 서비스
 
@@ -13,6 +14,8 @@ class StyleLearner: ObservableObject {
     // 선호/비선호 벡터 프로필
     private var selectedVectors: [[Float]] = []
     private var rejectedVectors: [[Float]] = []
+    // 벡터 캐시 (동일 사진 재추출 방지)
+    private var vectorCache: [URL: [Float]] = [:]
 
     private let profileURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pickshot")
@@ -55,10 +58,13 @@ class StyleLearner: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
-            // 1. 모든 사진의 벡터 추출
+            // 1. 모든 사진의 벡터 추출 (캐시 활용)
             var photoVectors: [(UUID, [Float])] = []
             for photo in photos {
-                if let vector = Self.extractFeatureVector(url: photo.jpgURL) {
+                if let cached = self.vectorCache[photo.jpgURL] {
+                    photoVectors.append((photo.id, cached))
+                } else if let vector = Self.extractFeatureVector(url: photo.jpgURL) {
+                    self.vectorCache[photo.jpgURL] = vector
                     photoVectors.append((photo.id, vector))
                 }
             }
@@ -198,11 +204,9 @@ class StyleLearner: ObservableObject {
         var dotProduct: Float = 0
         var normA: Float = 0
         var normB: Float = 0
-        for i in 0..<a.count {
-            dotProduct += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
-        }
+        vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
+        vDSP_dotpr(a, 1, a, 1, &normA, vDSP_Length(a.count))
+        vDSP_dotpr(b, 1, b, 1, &normB, vDSP_Length(a.count))
         let denom = sqrt(normA) * sqrt(normB)
         return denom > 0 ? Double(dotProduct / denom) : 0
     }

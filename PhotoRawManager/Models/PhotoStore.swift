@@ -137,8 +137,7 @@ class PhotoStore: ObservableObject {
     @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
-            filterLock.lock(); _cachedFiltered = nil; _cacheKey = ""
-            _filteredIndex.removeAll(); _filteredIndexVersion = ""; filterLock.unlock()
+            invalidateFilterCache()  // 중복 캐시 클리어 제거 — invalidateFilterCache가 이미 처리
             UserDefaults.standard.set(sortMode.rawValue, forKey: "savedSortMode")
             scrollTrigger += 1
         }
@@ -180,8 +179,9 @@ class PhotoStore: ObservableObject {
         }
         return 0.35
     }() {
-        didSet { UserDefaults.standard.set(Double(hSplitRatio), forKey: "savedHSplitRatio") }
+        didSet { splitSaveWork?.cancel(); let v = hSplitRatio; let w = DispatchWorkItem { UserDefaults.standard.set(Double(v), forKey: "savedHSplitRatio") }; splitSaveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w) }
     }
+    private var splitSaveWork: DispatchWorkItem?
     @Published var vSplitRatio: CGFloat = {
         let saved = UserDefaults.standard.double(forKey: "savedVSplitRatio")
         if saved > 0.05 && saved < 0.95 { return CGFloat(saved) }
@@ -194,7 +194,7 @@ class PhotoStore: ObservableObject {
         }
         return 0.70
     }() {
-        didSet { UserDefaults.standard.set(Double(vSplitRatio), forKey: "savedVSplitRatio") }
+        didSet { splitSaveWork?.cancel(); let v = vSplitRatio; let w = DispatchWorkItem { UserDefaults.standard.set(Double(v), forKey: "savedVSplitRatio") }; splitSaveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w) }
     }
     // 하위 호환용 computed property (기존 코드에서 쓰는 곳 대비)
     var hSplitPosition: CGFloat {
@@ -1399,6 +1399,16 @@ class PhotoStore: ObservableObject {
         selectedPhotoIDs = savedMulti
     }
 
+    /// 사진 수 (폴더 제외) — O(1) 캐시 기반, 매 렌더마다 filter 방지
+    var photoCount: Int {
+        filteredPhotos.lazy.filter { !$0.isFolder && !$0.isParentFolder }.count
+    }
+
+    /// 스페이스 셀렉 수 — O(1) 캐시 기반
+    var spacePickCount: Int {
+        photos.lazy.filter { $0.isSpacePicked }.count
+    }
+
     var filteredPhotos: [PhotoItem] {
         let key = "\(photosVersion)"
         filterLock.lock()
@@ -2092,16 +2102,16 @@ class PhotoStore: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if !results.isEmpty {
-                    let updatedPhotos: [PhotoItem] = self.photos.map { photo in
-                        var updated = photo
-                        if let quality = results[photo.id] {
-                            updated.quality = quality
+                    // in-place 업데이트 — 전체 배열 복사 방지 (10K 사진 시 ~8MB 절약)
+                    self._suppressDidSet = true
+                    for i in self.photos.indices {
+                        if let quality = results[self.photos[i].id] {
+                            self.photos[i].quality = quality
                         }
-                        return updated
                     }
-                    let selectedID = self.selectedPhotoID
-                    self.photos = updatedPhotos
-                    self.selectedPhotoID = selectedID
+                    self._suppressDidSet = false
+                    self.photosVersion += 1
+                    self.invalidateFilterCache()
                 }
                 self.isAnalyzing = false
                 self.analysisCancel = false

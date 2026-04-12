@@ -226,16 +226,12 @@ struct FileCopyService {
         let totalOperations = ops.count
         result.totalFiles = totalOperations
 
-        // Parallel copy — SSD: 8동시, HDD: 4동시
-        let concurrency = min(ProcessInfo.processInfo.activeProcessorCount, 8)
+        // Parallel copy — 코어 수 기반 동시성 (concurrentPerform이 자동 분배)
         let lock = NSLock()
-        let semaphore = DispatchSemaphore(value: concurrency)
         var completed = 0
         let copyStart = CFAbsoluteTimeGetCurrent()
 
         DispatchQueue.concurrentPerform(iterations: ops.count) { index in
-            semaphore.wait()
-            defer { semaphore.signal() }
 
             let op = ops[index]
 
@@ -273,7 +269,7 @@ struct FileCopyService {
 
         let copyElapsed = CFAbsoluteTimeGetCurrent() - copyStart
         let totalCopied = result.copiedJPG + result.copiedRAW
-        fputs("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초 (동시 \(concurrency)개)\n", stderr)
+        fputs("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초\n", stderr)
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)
         return result

@@ -56,7 +56,11 @@ struct ClientView: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             Color(nsColor: .controlBackgroundColor)
-                                .overlay(Text("사진을 선택하세요").foregroundColor(.secondary))
+                                .overlay(
+                                    Text("사진을 선택하세요")
+                                        .font(.title3)
+                                        .foregroundColor(.secondary)
+                                )
                         }
 
                         // SP border on preview

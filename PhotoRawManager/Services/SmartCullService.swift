@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Vision
+import os
 
 // MARK: - AI 스마트 셀렉 서비스
 // 100% 로컬 (Apple Vision + NPU), 무료, 오프라인
@@ -14,10 +15,10 @@ class SmartCullService: ObservableObject {
     @Published var groups: [PhotoGroup] = []
 
     private var _cancelled = false
-    private let cancelLock = NSLock()
+    private var cancelLock = os_unfair_lock_s()
     var cancelled: Bool {
-        get { cancelLock.lock(); defer { cancelLock.unlock() }; return _cancelled }
-        set { cancelLock.lock(); _cancelled = newValue; cancelLock.unlock() }
+        get { os_unfair_lock_lock(&cancelLock); defer { os_unfair_lock_unlock(&cancelLock) }; return _cancelled }
+        set { os_unfair_lock_lock(&cancelLock); _cancelled = newValue; os_unfair_lock_unlock(&cancelLock) }
     }
     @Published var genre: CullGenre = .general
 
