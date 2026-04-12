@@ -484,18 +484,21 @@ struct ExportView: View {
         dismiss()
 
         DispatchQueue.global(qos: .userInitiated).async {
-            var cancelFlag = false
+            // UnsafeMutablePointer로 스레드 간 안전한 취소 플래그 전달
+            let cancelPtr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
+            cancelPtr.initialize(to: false)
+            defer { cancelPtr.deinitialize(count: 1); cancelPtr.deallocate() }
 
             let result = RAWConversionService.batchConvert(
                 photos: photos,
                 outputFolder: outputFolder,
                 options: convOptions,
-                cancelFlag: &cancelFlag
+                cancelFlag: cancelPtr
             ) { done, total in
                 DispatchQueue.main.async {
                     store.conversionDone = done
                     store.conversionProgress = Double(done) / Double(total)
-                    if store.conversionCancelled { cancelFlag = true }
+                    if store.conversionCancelled { cancelPtr.pointee = true }
                 }
             }
 

@@ -67,7 +67,17 @@ class TouchBarProvider: NSObject, NSTouchBarDelegate {
         imageView.imageScaling = .scaleProportionallyUpOrDown
 
         if let photo = store?.selectedPhoto {
-            let image = NSImage(contentsOf: photo.jpgURL)
+            // TouchBar용 소형 썸네일만 로딩 (풀사이즈 방지)
+            let image: NSImage? = {
+                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil) else { return nil }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 100,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return nil }
+                return NSImage(cgImage: thumb, size: NSSize(width: thumb.width, height: thumb.height))
+            }()
             imageView.image = image
             imageView.toolTip = photo.fileName
         } else {

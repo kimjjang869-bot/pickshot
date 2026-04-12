@@ -5,20 +5,19 @@ import UniformTypeIdentifiers
 struct PhotoRawManagerApp: App {
     @StateObject private var store = PhotoStore()
     @ObservedObject private var updateService = UpdateService.shared
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     init() {
         // 스크롤바 항상 표시 (시스템 설정 오버라이드)
-        UserDefaults.standard.set(false, forKey: "AppleShowScrollBars")
         UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
+        SubscriptionManager.shared.checkTrialStatus()
     }
 
     var body: some Scene {
         WindowGroup({
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "7.1"
-            let sub = SubscriptionManager.shared
-            sub.checkTrialStatus()
-            let trial = sub.currentTier == .free && sub.trialDaysRemaining < 999
-                ? " — 체험판 \(sub.trialDaysRemaining)일 남음" : ""
+            let trial = subscriptionManager.currentTier == .free && subscriptionManager.trialDaysRemaining < 999
+                ? " — 체험판 \(subscriptionManager.trialDaysRemaining)일 남음" : ""
             return "PickShot v\(ver)\(trial)"
         }()) {
             ContentView()

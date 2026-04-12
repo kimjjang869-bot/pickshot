@@ -8,6 +8,8 @@ struct GSelectQRView: View {
     var viewerLink: String? = nil
 
     @State private var showViewer = true  // Default: show viewer QR
+    @State private var cachedQRImage: NSImage?
+    @State private var cachedQRLink: String = ""
 
     var body: some View {
         VStack(spacing: 12) {
@@ -33,9 +35,9 @@ struct GSelectQRView: View {
                 .frame(width: 200)
             }
 
-            // QR Code
+            // QR Code — 캐시된 이미지 사용 (body 내 CIContext 생성 방지)
             let activeLink = (showViewer && viewerLink != nil) ? viewerLink! : link
-            if let qrImage = generateQR(from: activeLink) {
+            if let qrImage = cachedQRImage {
                 Image(nsImage: qrImage)
                     .interpolation(.none)
                     .resizable()
@@ -87,6 +89,15 @@ struct GSelectQRView: View {
         }
         .padding(20)
         .frame(width: 280)
+        .onAppear { updateQR() }
+        .onChange(of: showViewer) { _ in updateQR() }
+    }
+
+    private func updateQR() {
+        let activeLink = (showViewer && viewerLink != nil) ? viewerLink! : link
+        guard activeLink != cachedQRLink else { return }
+        cachedQRLink = activeLink
+        cachedQRImage = generateQR(from: activeLink)
     }
 
     private func generateQR(from string: String) -> NSImage? {

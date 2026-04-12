@@ -187,6 +187,10 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             self.store = store
         }
 
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
         private var lastScrollY: CGFloat = 0
         @objc func scrollViewDidScroll(_ notification: Notification) {
             guard let clipView = notification.object as? NSClipView else { return }

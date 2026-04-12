@@ -328,37 +328,40 @@ class SmartCullService: ObservableObject {
         let startTime = CFAbsoluteTimeGetCurrent()
 
         // Phase 1: FeaturePrint만 빠르게 추출 (320px, 품질평가 없음)
-        DispatchQueue.concurrentPerform(iterations: total) { index in
-            guard !cancelled else { return }
-            autoreleasepool {
-                let photo = photos[index]
+        // UnsafeMutableBufferPointer로 concurrent index 접근 안전하게 처리
+        slots.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: total) { index in
+                guard !self.cancelled else { return }
+                autoreleasepool {
+                    let photo = photos[index]
 
-                // 320px 썸네일 — FeaturePrint에 충분, 로딩 3배 빠름
-                guard let image = Self.loadCGImage(from: photo, maxSize: 320) else { return }
+                    // 320px 썸네일 — FeaturePrint에 충분, 로딩 3배 빠름
+                    guard let image = Self.loadCGImage(from: photo, maxSize: 320) else { return }
 
-                let request = VNGenerateImageFeaturePrintRequest()
-                let handler = VNImageRequestHandler(cgImage: image, options: [:])
-                do {
-                    try handler.perform([request])
-                } catch { return }
+                    let request = VNGenerateImageFeaturePrintRequest()
+                    let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                    do {
+                        try handler.perform([request])
+                    } catch { return }
 
-                guard let result = request.results?.first as? VNFeaturePrintObservation else { return }
+                    guard let result = request.results?.first as? VNFeaturePrintObservation else { return }
 
-                let vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
-                slots[index] = vector
+                    let vector = FeatureVector(photoID: photo.id, url: photo.jpgURL, featurePrint: result)
+                    buffer[index] = vector
 
-                lock.lock()
-                doneCount += 1
-                let done = doneCount
-                lock.unlock()
+                    lock.lock()
+                    doneCount += 1
+                    let done = doneCount
+                    lock.unlock()
 
-                if done % 50 == 0 || done == 1 || done == total {
-                    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-                    let rate = elapsed > 0 ? Double(done) / elapsed : 0
-                    let eta = rate > 0 ? Double(total - done) / rate : 0
-                    let etaStr = eta < 60 ? "\(Int(eta))초" : "\(Int(eta/60))분 \(Int(eta) % 60)초"
-                    self.updateProgress(Double(done) / Double(total) * 0.4)
-                    self.updateStatus("특징 벡터 추출 중... (\(done)/\(total)) · \(String(format: "%.1f", rate))장/초 · 약 \(etaStr) 남음")
+                    if done % 50 == 0 || done == 1 || done == total {
+                        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                        let rate = elapsed > 0 ? Double(done) / elapsed : 0
+                        let eta = rate > 0 ? Double(total - done) / rate : 0
+                        let etaStr = eta < 60 ? "\(Int(eta))초" : "\(Int(eta/60))분 \(Int(eta) % 60)초"
+                        self.updateProgress(Double(done) / Double(total) * 0.4)
+                        self.updateStatus("특징 벡터 추출 중... (\(done)/\(total)) · \(String(format: "%.1f", rate))장/초 · 약 \(etaStr) 남음")
+                    }
                 }
             }
         }
@@ -379,43 +382,46 @@ class SmartCullService: ObservableObject {
 
         self.updateStatus("품질 분석 중... (0/\(phase2Total))")
 
-        DispatchQueue.concurrentPerform(iterations: phase2Total) { index in
-            guard !cancelled else { return }
-            autoreleasepool {
-                guard let p = photoMap[vectors[index].photoID],
-                      let image = Self.loadCGImage(from: p, maxSize: 480) else { return }
+        // UnsafeMutableBufferPointer로 concurrent index 접근 안전하게 처리
+        vectors.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: phase2Total) { index in
+                guard !self.cancelled else { return }
+                autoreleasepool {
+                    guard let p = photoMap[buffer[index].photoID],
+                          let image = Self.loadCGImage(from: p, maxSize: 480) else { return }
 
-                let sharpness = Self.quickQualityScore(cgImage: image)
-                vectors[index].sharpness = sharpness
-                vectors[index].qualityScore = sharpness * sharpWeight
-                vectors[index].isBlurry = sharpness < 8
+                    let sharpness = Self.quickQualityScore(cgImage: image)
+                    buffer[index].sharpness = sharpness
+                    buffer[index].qualityScore = sharpness * sharpWeight
+                    buffer[index].isBlurry = sharpness < 8
 
-                if needEyeCheck {
-                    vectors[index].hasClosedEyes = Self.detectClosedEyes(cgImage: image)
-                }
+                    if needEyeCheck {
+                        buffer[index].hasClosedEyes = Self.detectClosedEyes(cgImage: image)
+                    }
 
-                if isLookbook {
-                    vectors[index].colorSignature = Self.extractClothingColorSignature(cgImage: image)
+                    if isLookbook {
+                        buffer[index].colorSignature = Self.extractClothingColorSignature(cgImage: image)
 
-                    // 룩북: 인물 세그멘테이션 FeaturePrint
-                    if let personOnly = Self.extractPersonRegion(cgImage: image) {
-                        let req2 = VNGenerateImageFeaturePrintRequest()
-                        let h2 = VNImageRequestHandler(cgImage: personOnly, options: [:])
-                        try? h2.perform([req2])
-                        if let fp2 = req2.results?.first as? VNFeaturePrintObservation {
-                            vectors[index].featurePrint = fp2
+                        // 룩북: 인물 세그멘테이션 FeaturePrint
+                        if let personOnly = Self.extractPersonRegion(cgImage: image) {
+                            let req2 = VNGenerateImageFeaturePrintRequest()
+                            let h2 = VNImageRequestHandler(cgImage: personOnly, options: [:])
+                            try? h2.perform([req2])
+                            if let fp2 = req2.results?.first as? VNFeaturePrintObservation {
+                                buffer[index].featurePrint = fp2
+                            }
                         }
                     }
-                }
 
-                lock.lock()
-                phase2Done += 1
-                let done = phase2Done
-                lock.unlock()
+                    lock.lock()
+                    phase2Done += 1
+                    let done = phase2Done
+                    lock.unlock()
 
-                if done % 50 == 0 || done == phase2Total {
-                    self.updateProgress(0.4 + Double(done) / Double(phase2Total) * 0.1)
-                    self.updateStatus("품질 분석 중... (\(done)/\(phase2Total))")
+                    if done % 50 == 0 || done == phase2Total {
+                        self.updateProgress(0.4 + Double(done) / Double(phase2Total) * 0.1)
+                        self.updateStatus("품질 분석 중... (\(done)/\(phase2Total))")
+                    }
                 }
             }
         }

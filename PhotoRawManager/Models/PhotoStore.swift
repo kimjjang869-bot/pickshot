@@ -1797,9 +1797,9 @@ class PhotoStore: ObservableObject {
                 .compactMap { $0 }
                 .joined(separator: " ")
             let result = name.isEmpty ? (pm.country ?? "Unknown") : name
-            if self.geocodeCache.count > 500 { self.geocodeCache.removeAll() }
-            self.geocodeCache[key] = result
             DispatchQueue.main.async {
+                if self.geocodeCache.count > 500 { self.geocodeCache.removeAll() }
+                self.geocodeCache[key] = result
                 guard let i = self._photoIndex[photoID], i < self.photos.count else { return }
                 self.photos[i].exifData?.placeName = result
             }
@@ -2158,24 +2158,25 @@ class PhotoStore: ObservableObject {
     }
 
     func findDuplicates() {
+        // 메인스레드에서 photos 스냅샷을 먼저 찍어서 백그라운드로 전달
+        let snapshot = self.photos
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
-            let groups = ImageAnalysisService.findDuplicateGroups(photos: self.photos)
+            let groups = ImageAnalysisService.findDuplicateGroups(photos: snapshot)
             guard !groups.isEmpty else { return }
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                var updated = self.photos
-                var dupCount = 0
-                for i in 0..<updated.count {
-                    if let group = groups[updated[i].id] {
-                        updated[i].duplicateGroupID = group.groupID
-                        updated[i].isBestInGroup = group.isBest
-                        if !group.isBest { dupCount += 1 }
+                let selectedID = self.selectedPhotoID
+                self._suppressDidSet = true
+                for i in 0..<self.photos.count {
+                    if let group = groups[self.photos[i].id] {
+                        self.photos[i].duplicateGroupID = group.groupID
+                        self.photos[i].isBestInGroup = group.isBest
                     }
                 }
-                let selectedID = self.selectedPhotoID
-                self.photos = updated
+                self._suppressDidSet = false
+                self.rebuildIndex(); self.invalidateFilterCache()
+                self.objectWillChange.send()
                 self.selectedPhotoID = selectedID
             }
         }
@@ -2781,6 +2782,7 @@ class PhotoStore: ObservableObject {
                 guard let self = self else { return }
                 if !results.isEmpty {
                     let selectedID = self.selectedPhotoID
+                    self._suppressDidSet = true
                     for i in 0..<self.photos.count {
                         if let result = results[self.photos[i].id] {
                             self.photos[i].sceneTag = result.sceneTag
@@ -2793,6 +2795,8 @@ class PhotoStore: ObservableObject {
                             self.photos[i].personCoverage = result.personCoverage
                         }
                     }
+                    self._suppressDidSet = false
+                    self.rebuildIndex(); self.invalidateFilterCache()
                     self.selectedPhotoID = selectedID
                     self.photosVersion += 1
                 }
@@ -2897,13 +2901,15 @@ class PhotoStore: ObservableObject {
                 guard let self = self else { return }
                 if !results.assignments.isEmpty {
                     let selectedID = self.selectedPhotoID
-                    self.objectWillChange.send()
+                    self._suppressDidSet = true
                     for (photoID, groupID) in results.assignments {
                         if let idx = self._photoIndex[photoID], idx < self.photos.count {
                             self.photos[idx].faceGroupID = groupID
                         }
                     }
-                    self._cachedFiltered = nil
+                    self._suppressDidSet = false
+                    self.rebuildIndex(); self.invalidateFilterCache()
+                    self.objectWillChange.send()
                     self.selectedPhotoID = selectedID
                     self.faceGroups = results.groups
                     self.faceThumbnails = results.faceThumbnails

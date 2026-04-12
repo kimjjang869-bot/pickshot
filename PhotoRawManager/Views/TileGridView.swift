@@ -118,6 +118,10 @@ class TileDocumentView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: - 레이아웃
 
     func recalcLayout() {

@@ -103,23 +103,28 @@ class ClientSelectService: ObservableObject {
                                   photos: [PhotoItem], accessMode: AccessMode) {
         fputs("[CLIENT] continueSession with token\n", stderr)
 
-        // 상태 초기화
-        sessionName = name
-        clientName = client
-        clientEmail = email
-        self.accessMode = accessMode
-        uploadDone = 0
-        uploadTotal = photos.count
-        isUploading = true
-        isActive = true
-        cancelled = false
-        shareLink = nil
-        viewerLink = nil
-        qrCodeImage = nil
-        driveFolderID = nil
-        errorMessage = nil
-        uploadStartTime = Date()
-        showSetup = false
+        // 상태 초기화 — 반드시 메인스레드에서 @Published 변경
+        let ensureMain = { [weak self] in
+            guard let self = self else { return }
+            self.sessionName = name
+            self.clientName = client
+            self.clientEmail = email
+            self.accessMode = accessMode
+            self.uploadDone = 0
+            self.uploadTotal = photos.count
+            self.isUploading = true
+            self.isActive = true
+            self.cancelled = false
+            self.shareLink = nil
+            self.viewerLink = nil
+            self.qrCodeImage = nil
+            self.driveFolderID = nil
+            self.errorMessage = nil
+            self.uploadStartTime = Date()
+            self.showSetup = false
+        }
+        if Thread.isMainThread { ensureMain() }
+        else { DispatchQueue.main.sync { ensureMain() } }
 
         // 백그라운드에서 전체 워크플로우 실행
         uploadQueue.async { [weak self] in

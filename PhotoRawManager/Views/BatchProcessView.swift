@@ -435,8 +435,10 @@ struct BatchProcessView: View {
                 options: opts,
                 destination: dest,
                 progress: { done, total in
-                    self.processDone = done
-                    self.processTotal = total
+                    DispatchQueue.main.async {
+                        self.processDone = done
+                        self.processTotal = total
+                    }
                 },
                 cancelled: { self.cancelled }
             )

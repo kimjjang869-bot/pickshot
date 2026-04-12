@@ -46,12 +46,12 @@ struct ZebraWarningOverlay: View {
             let ptr = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
 
             // 과노출/저노출 마스크 생성
-            let overlayCtx = CGContext(
+            guard let overlayCtx = CGContext(
                 data: nil, width: w, height: h,
                 bitsPerComponent: 8, bytesPerRow: w * 4,
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            )!
+            ) else { return }
 
             guard let overlayData = overlayCtx.data else { return }
             let overlayPtr = overlayData.bindMemory(to: UInt8.self, capacity: w * h * 4)

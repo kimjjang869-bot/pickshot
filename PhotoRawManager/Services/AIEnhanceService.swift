@@ -16,6 +16,30 @@ struct AIEnhanceService {
         return CIContext(options: options)
     }()
 
+    // MARK: - CoreML 모델 캐시 (매번 로딩 방지)
+
+    private static var _enhancerModel: MLModel?
+    private static var _denoiserModel: MLModel?
+    private static let modelLock = NSLock()
+
+    private static func cachedEnhancerModel() -> MLModel? {
+        modelLock.lock(); defer { modelLock.unlock() }
+        if let m = _enhancerModel { return m }
+        guard let url = Bundle.main.url(forResource: "PhotoEnhancer", withExtension: "mlmodelc") else { return nil }
+        let config = MLModelConfiguration(); config.computeUnits = .all
+        _enhancerModel = try? MLModel(contentsOf: url, configuration: config)
+        return _enhancerModel
+    }
+
+    private static func cachedDenoiserModel() -> MLModel? {
+        modelLock.lock(); defer { modelLock.unlock() }
+        if let m = _denoiserModel { return m }
+        guard let url = Bundle.main.url(forResource: "Denoiser", withExtension: "mlmodelc") else { return nil }
+        let config = MLModelConfiguration(); config.computeUnits = .all
+        _denoiserModel = try? MLModel(contentsOf: url, configuration: config)
+        return _denoiserModel
+    }
+
     // MARK: - CoreML 모델 가용성
 
     /// PhotoEnhancer CoreML 모델이 번들에 존재하는지 확인
@@ -43,15 +67,9 @@ struct AIEnhanceService {
 
     /// CoreML NPU 추론으로 보정
     private static func enhanceWithCoreML(image: CIImage) -> CIImage? {
-        guard let modelURL = Bundle.main.url(forResource: "PhotoEnhancer", withExtension: "mlmodelc") else {
-            return nil
-        }
+        guard let model = cachedEnhancerModel() else { return nil }
 
         do {
-            // Neural Engine 우선 사용 설정
-            let config = MLModelConfiguration()
-            config.computeUnits = .all  // NPU > GPU > CPU 자동 선택
-            let model = try MLModel(contentsOf: modelURL, configuration: config)
 
             // 입력 이미지 리사이즈 (모델 입력 크기에 맞춤)
             let targetSize = CGSize(width: 512, height: 512)
@@ -207,14 +225,9 @@ struct AIEnhanceService {
 
     /// CoreML NPU 추론 디노이즈
     private static func denoiseWithCoreML(image: CIImage, strength: Float) -> CIImage? {
-        guard let modelURL = Bundle.main.url(forResource: "Denoiser", withExtension: "mlmodelc") else {
-            return nil
-        }
+        guard let model = cachedDenoiserModel() else { return nil }
 
         do {
-            let config = MLModelConfiguration()
-            config.computeUnits = .all  // NPU 우선
-            let model = try MLModel(contentsOf: modelURL, configuration: config)
 
             let targetSize = CGSize(width: 512, height: 512)
             let scaleX = targetSize.width / image.extent.width

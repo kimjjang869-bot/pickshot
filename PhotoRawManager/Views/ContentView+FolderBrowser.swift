@@ -76,6 +76,7 @@ struct FolderBrowserView: View {
     @State private var currentIconFolder: URL?
     @State private var iconFolderContents: [FolderItem] = []
     @State private var refreshWork: DispatchWorkItem?
+    @State private var volumeObservers: [NSObjectProtocol] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -99,9 +100,10 @@ struct FolderBrowserView: View {
                 }
             }
 
-            // Watch for volume mount/unmount
+            // Watch for volume mount/unmount — observer 토큰 저장 (누수 방지)
+            guard volumeObservers.isEmpty else { return }  // 중복 등록 방지
             let ws = NSWorkspace.shared.notificationCenter
-            ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { notification in
+            let mountObs = ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { notification in
                 if UserDefaults.standard.bool(forKey: "autoBackupEnabled"),
                    let volumePath = notification.userInfo?["NSDevicePath"] as? String {
                     let volumeURL = URL(fileURLWithPath: volumePath)
@@ -109,12 +111,13 @@ struct FolderBrowserView: View {
                 }
                 refreshRootItems()
             }
-            ws.addObserver(forName: NSWorkspace.didUnmountNotification, object: nil, queue: .main) { notification in
+            let unmountObs = ws.addObserver(forName: NSWorkspace.didUnmountNotification, object: nil, queue: .main) { notification in
                 if let volumePath = notification.userInfo?["NSDevicePath"] as? String {
                     AppLogger.log(.folder, "Volume unmounted: \(volumePath)")
                 }
                 refreshRootItems()
             }
+            volumeObservers = [mountObs, unmountObs]
         }
         .onChange(of: store.folderURL) { newURL in
             guard let url = newURL else { return }
@@ -123,6 +126,11 @@ struct FolderBrowserView: View {
         // 폴더 생성/삭제/이동 시 트리 자동 새로고침
         .onReceive(NotificationCenter.default.publisher(for: .init("FolderTreeNeedsRefresh"))) { _ in
             refreshRootItems()
+        }
+        .onDisappear {
+            let ws = NSWorkspace.shared.notificationCenter
+            for obs in volumeObservers { ws.removeObserver(obs) }
+            volumeObservers.removeAll()
         }
     }
 

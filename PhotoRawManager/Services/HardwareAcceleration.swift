@@ -367,17 +367,16 @@ struct MetalImageProcessor {
         let translateY: Double = 0
         var transform = MPSScaleTransform(scaleX: scaleX, scaleY: scaleY, translateX: translateX, translateY: translateY)
 
+        // Encode — withUnsafePointer 내부에서 encode해야 포인터가 유효함
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
         withUnsafePointer(to: &transform) { ptr in
             lanczos.scaleTransform = ptr
+            lanczos.encode(commandBuffer: commandBuffer, sourceTexture: srcTexture, destinationTexture: dstTexture)
         }
-
-        // Encode (비동기 완료 대기 — UI 스레드 블로킹 방지)
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
-        lanczos.encode(commandBuffer: commandBuffer, sourceTexture: srcTexture, destinationTexture: dstTexture)
         let sem = DispatchSemaphore(value: 0)
         commandBuffer.addCompletedHandler { _ in sem.signal() }
         commandBuffer.commit()
-        sem.wait()
+        _ = sem.wait(timeout: .now() + 5)  // 5초 타임아웃 (GPU 행 방지)
 
         // Read back
         return _cgImage(from: dstTexture)
@@ -792,7 +791,14 @@ class AggressiveImageCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        let cost = Int(image.size.width * image.size.height * 4)  // ~bytes
+        // 실제 픽셀 크기 기반 비용 계산 (points가 아닌 pixels — Retina 대응)
+        var pixelW = image.size.width
+        var pixelH = image.size.height
+        if let rep = image.representations.first {
+            pixelW = CGFloat(rep.pixelsWide > 0 ? rep.pixelsWide : Int(image.size.width))
+            pixelH = CGFloat(rep.pixelsHigh > 0 ? rep.pixelsHigh : Int(image.size.height))
+        }
+        let cost = Int(pixelW * pixelH * 4)  // ~bytes (RGBA)
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
