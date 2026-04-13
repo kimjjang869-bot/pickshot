@@ -20,6 +20,9 @@ struct PhotoRawManagerApp: App {
 
         // 스크롤바 항상 표시 (시스템 설정 오버라이드)
         UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
+
+        // 툴팁 표시 속도 단축 (기본 ~2초 → 0.5초)
+        UserDefaults.standard.set(500, forKey: "NSInitialToolTipDelay")
         SubscriptionManager.shared.checkTrialStatus()
     }
 

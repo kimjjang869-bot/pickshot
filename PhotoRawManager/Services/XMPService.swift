@@ -65,9 +65,9 @@ struct XMPService {
             guard !photo.isFolder, !photo.isParentFolder else { continue }
             let ext = photo.jpgURL.pathExtension.lowercased()
             guard ["jpg", "jpeg"].contains(ext) else { continue }
-            guard photo.rating > 0 || photo.isSpacePicked else { continue }
+            guard photo.rating > 0 || photo.colorLabel != .none else { continue }
 
-            let label = photo.colorLabel != .none ? photo.colorLabel.rawValue : (photo.isSpacePicked ? "Red" : nil)
+            let label = photo.colorLabel != .none ? photo.colorLabel.xmpName : nil
             if writeRatingToJPG(url: photo.jpgURL, rating: photo.rating, label: label) {
                 count += 1
             }
@@ -148,25 +148,31 @@ struct XMPService {
 
     // MARK: - Label Mapping
 
-    /// Map ColorLabel to XMP label string
+    /// Map ColorLabel to XMP label string (Lightroom 호환)
     static func xmpLabel(from colorLabel: String) -> String? {
         switch colorLabel.lowercased() {
-        case "주황", "orange": return "Orange"
+        case "빨강", "red": return "Red"
         case "노랑", "yellow": return "Yellow"
         case "초록", "green": return "Green"
         case "파랑", "blue": return "Blue"
+        case "보라", "purple": return "Purple"
+        // 하위 호환: 기존 "주황" → "Red"로 매핑
+        case "주황", "orange": return "Red"
         default: return nil
         }
     }
 
-    /// Map XMP label string to internal ColorLabel raw value
+    /// Map XMP label string to internal ColorLabel raw value (Lightroom → PickShot)
     static func colorLabelKey(from xmpLabel: String) -> String? {
         switch xmpLabel.lowercased() {
-        case "orange": return "주황"
+        case "red": return "빨강"
         case "yellow": return "노랑"
         case "green": return "초록"
         case "blue": return "파랑"
-        case "select": return nil  // spacePicked marker, not a color label
+        case "purple": return "보라"
+        // 하위 호환
+        case "orange": return "빨강"
+        case "select": return nil
         default: return nil
         }
     }

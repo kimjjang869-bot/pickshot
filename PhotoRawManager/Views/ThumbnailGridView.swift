@@ -323,22 +323,28 @@ struct NativeListView: View {
                             .background(badgeColor(badge.color).opacity(0.8))
                             .cornerRadius(2)
                     }
-                    if livePhoto.isSpacePicked {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.red)
+                    if let labelColor = livePhoto.colorLabel.color {
+                        Circle().fill(labelColor).frame(width: 10, height: 10)
                     }
                 }
                 .frame(height: 32)
                 .background(
                     GeometryReader { geo in
-                        if livePhoto.isSpacePicked {
-                            // 행 전체 폭으로 확장 (2000px — 모든 컬럼 커버)
+                        if let labelColor = livePhoto.colorLabel.color {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.red.opacity(0.08))
+                                .fill(labelColor.opacity(0.08))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .stroke(Color.red.opacity(0.5), lineWidth: 2)
+                                        .stroke(labelColor.opacity(0.5), lineWidth: 2)
+                                )
+                                .frame(width: 2000, height: geo.size.height + 4)
+                                .offset(x: -8, y: -2)
+                        } else if livePhoto.rating == 5 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(AppTheme.starGold.opacity(0.08))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(AppTheme.starGold.opacity(0.5), lineWidth: 2)
                                 )
                                 .frame(width: 2000, height: geo.size.height + 4)
                                 .offset(x: -8, y: -2)
@@ -482,12 +488,14 @@ struct NativeListView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: SP 셀렉
+        // 스페이스바: 별점 5점 토글 (이미 5점이면 0점)
         if chars == " " {
-            if store.selectedPhotoIDs.count > 1 {
-                store.toggleSpacePickForSelected()
-            } else if let id = store.selectedPhotoID {
-                store.toggleSpacePick(for: id)
+            let ids = store.selectedPhotoIDs.count > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
+            for id in ids {
+                if let i = store.photos.firstIndex(where: { $0.id == id }) {
+                    let newRating = store.photos[i].rating == 5 ? 0 : 5
+                    store.setRating(newRating, for: id)
+                }
             }
             return .handled
         }
@@ -500,6 +508,18 @@ struct NativeListView: View {
                 }
             } else if let id = store.selectedPhotoID {
                 store.setRating(rating, for: id)
+            }
+            return .handled
+        }
+
+        // 6~9: 컬러 라벨 (6=빨강, 7=노랑, 8=초록, 9=파랑)
+        if let ch = chars.first, let num = Int(String(ch)), num >= 6 && num <= 9 {
+            let labelMap: [Int: ColorLabel] = [6: .red, 7: .yellow, 8: .green, 9: .blue]
+            if let label = labelMap[num] {
+                let ids = store.selectedPhotoIDs.count > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
+                for id in ids {
+                    store.setColorLabel(label, for: id)
+                }
             }
             return .handled
         }
@@ -952,13 +972,24 @@ struct PhotoContextMenu: View {
             Label("별점", systemImage: "star.fill")
         }
 
-        // SP Select
-        Button(action: {
-            for id in targetIDs {
-                if let idx = store._photoIndex[id] { store.photos[idx].isSpacePicked.toggle() }
+        // 컬러 라벨
+        Menu {
+            ForEach(ColorLabel.allCases, id: \.self) { label in
+                Button(action: {
+                    for id in targetIDs { store.setColorLabel(label == .none ? photo.colorLabel : label, for: id) }
+                }) {
+                    HStack {
+                        if label == .none {
+                            Label("라벨 해제", systemImage: "xmark.circle")
+                        } else {
+                            Label(label.rawValue + (label.key.isEmpty ? "" : " (\(label.key))"), systemImage: "circle.fill")
+                        }
+                        if photo.colorLabel == label && label != .none { Image(systemName: "checkmark") }
+                    }
+                }
             }
-        }) {
-            Label(photo.isSpacePicked ? "SP 셀렉 해제" : "SP 셀렉", systemImage: photo.isSpacePicked ? "checkmark.circle" : "circle")
+        } label: {
+            Label("컬러 라벨", systemImage: "tag.fill")
         }
 
         // G Select
@@ -1251,18 +1282,11 @@ struct ThumbnailCell: View, Equatable {
                 .cornerRadius(3)
                 .padding(3)
             }
-            if photo.isSpacePicked {
-                HStack(spacing: 2) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: max(8, size * 0.07)))
-                    Text("SP")
-                        .font(.system(size: AppTheme.fontMicro, weight: .bold))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(AppTheme.error)
-                .clipShape(Capsule())
+            if let labelColor = photo.colorLabel.color {
+                Circle()
+                    .fill(labelColor)
+                    .frame(width: max(8, size * 0.07), height: max(8, size * 0.07))
+                    .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 1))
             }
             if !photo.comments.isEmpty {
                 HStack(spacing: 2) {
@@ -1400,16 +1424,17 @@ struct ThumbnailCell: View, Equatable {
     }
 
     private var cellBorder: some View {
-        RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
-            .stroke(
-                photo.isSpacePicked ? AppTheme.spPickBorder :
-                isFocused ? AppTheme.focusBorder :
-                isSelected ? AppTheme.selectionBorder.opacity(0.5) :
-                Color.clear,
-                lineWidth: photo.isSpacePicked ? AppTheme.focusBorderWidth :
-                           isFocused ? AppTheme.focusBorderWidth :
-                           AppTheme.cellBorderWidth
-            )
+        let borderColor: Color = {
+            if let labelColor = photo.colorLabel.color { return labelColor }
+            if photo.rating == 5 { return AppTheme.starGold }
+            if isFocused { return AppTheme.focusBorder }
+            if isSelected { return AppTheme.selectionBorder.opacity(0.5) }
+            return Color.clear
+        }()
+        let borderWidth: CGFloat = (photo.colorLabel != .none || photo.rating == 5 || isFocused)
+            ? AppTheme.focusBorderWidth : AppTheme.cellBorderWidth
+        return RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
+            .stroke(borderColor, lineWidth: borderWidth)
     }
 
 }
@@ -2837,10 +2862,22 @@ class TileDocumentView: NSView {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        // SP
-        let sp = NSMenuItem(title: "SP 토글", action: #selector(toggleSP), keyEquivalent: "")
-        sp.target = self
-        menu.addItem(sp)
+        // 컬러 라벨
+        let labelMenu = NSMenu()
+        let labels: [(String, ColorLabel)] = [("빨강 (6)", .red), ("노랑 (7)", .yellow), ("초록 (8)", .green), ("파랑 (9)", .blue), ("보라", .purple)]
+        for (title, label) in labels {
+            let item = NSMenuItem(title: title, action: #selector(setColorLabel(_:)), keyEquivalent: "")
+            item.tag = ColorLabel.allCases.firstIndex(of: label) ?? 0
+            item.target = self
+            labelMenu.addItem(item)
+        }
+        labelMenu.addItem(.separator())
+        let clearLabel = NSMenuItem(title: "라벨 해제", action: #selector(clearColorLabel), keyEquivalent: "")
+        clearLabel.target = self
+        labelMenu.addItem(clearLabel)
+        let labelMenuItem = NSMenuItem(title: "컬러 라벨", action: nil, keyEquivalent: "")
+        labelMenuItem.submenu = labelMenu
+        menu.addItem(labelMenuItem)
         menu.addItem(.separator())
         // Finder에서 열기
         let finder = NSMenuItem(title: "Finder에서 열기", action: #selector(openInFinder), keyEquivalent: "")
@@ -2857,9 +2894,23 @@ class TileDocumentView: NSView {
         }
     }
 
-    @objc private func toggleSP() {
-        guard let store = store, let id = store.selectedPhotoID else { return }
-        store.toggleSpacePick(for: id)
+    @objc private func setColorLabel(_ sender: NSMenuItem) {
+        guard let store = store else { return }
+        let allLabels = ColorLabel.allCases
+        guard sender.tag >= 0, sender.tag < allLabels.count else { return }
+        let label = allLabels[sender.tag]
+        for id in store.selectedPhotoIDs {
+            store.setColorLabel(label, for: id)
+        }
+    }
+
+    @objc private func clearColorLabel() {
+        guard let store = store else { return }
+        for id in store.selectedPhotoIDs {
+            if let i = store._photoIndex[id], i < store.photos.count {
+                store.photos[i].colorLabel = .none
+            }
+        }
     }
 
     @objc private func openInFinder() {
@@ -3078,6 +3129,14 @@ class FolderPreviewCache {
         lock.lock(); defer { lock.unlock() }
         cache[url] = (images, count, subfolders)
     }
+    func invalidate(_ url: URL) {
+        lock.lock(); defer { lock.unlock() }
+        cache.removeValue(forKey: url)
+    }
+    func invalidateAll() {
+        lock.lock(); defer { lock.unlock() }
+        cache.removeAll()
+    }
 }
 
 struct FolderPreviewGrid: View {
@@ -3192,14 +3251,24 @@ struct FolderPreviewGrid: View {
         let url = folderURL
         DispatchQueue.global(qos: .utility).async {
             let fm = FileManager.default
-            guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            let items: [URL]
+            do {
+                items = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            } catch {
+                fputs("[FolderPreview] contentsOfDirectory 실패: \(url.path) — \(error.localizedDescription)\n", stderr)
                 DispatchQueue.main.async { loaded = true }
                 return
             }
 
-            let imageExts = FileMatchingService.allImageExtensions
-            let imageFiles = items.filter { imageExts.contains($0.pathExtension.lowercased()) }
+            let mediaExts = FileMatchingService.allMediaExtensions
+            let imageFiles = items.filter { mediaExts.contains($0.pathExtension.lowercased()) }
             let count = imageFiles.count
+            if count == 0 {
+                fputs("[FolderPreview] 미디어 파일 0개: \(url.path) (전체 \(items.count)개 항목)\n", stderr)
+                for item in items.prefix(5) {
+                    fputs("[FolderPreview]   - \(item.lastPathComponent) (ext: \(item.pathExtension))\n", stderr)
+                }
+            }
 
             // 하위 폴더 수 카운트
             let folders = items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
@@ -3210,7 +3279,7 @@ struct FolderPreviewGrid: View {
             if allImageFiles.isEmpty && !folders.isEmpty {
                 for subFolder in folders.prefix(4) {
                     if let subItems = try? fm.contentsOfDirectory(at: subFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                        let subImages = subItems.filter { imageExts.contains($0.pathExtension.lowercased()) }
+                        let subImages = subItems.filter { mediaExts.contains($0.pathExtension.lowercased()) }
                         if let first = subImages.first {
                             allImageFiles.append(first)
                         }

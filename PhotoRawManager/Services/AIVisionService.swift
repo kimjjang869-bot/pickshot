@@ -88,9 +88,9 @@ struct ClaudeVisionService {
     static var model: String {
         let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
         switch engine {
-        case "claudeSonnet": return "claude-sonnet-4-20250514"
-        case "claudeHaiku": return "claude-3-5-haiku-20241022"
-        default: return "claude-3-5-haiku-20241022"
+        case "claudeSonnet": return "claude-sonnet-4-6"
+        case "claudeHaiku": return "claude-haiku-4-5-20251001"
+        default: return "claude-haiku-4-5-20251001"
         }
     }
     private static let maxImageDimension: CGFloat = 768  // 분류용 — 작을수록 빠르고 토큰 절약
@@ -181,6 +181,8 @@ struct ClaudeVisionService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            let responseStr = String(data: data, encoding: .utf8) ?? "(no body)"
+            FileHandle.standardError.write(Data("[AI-API] HTTP \(http.statusCode) response: \(responseStr)\n".utf8))
             if let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let err = body["error"] as? [String: Any],
                let msg = err["message"] as? String {

@@ -622,10 +622,10 @@ class KeyCaptureView: NSView {
             }
         }
 
-        // Color labels: 6=주황, 7=노랑, 8=초록, 9=파랑
+        // Color labels: 6=빨강, 7=노랑, 8=초록, 9=파랑
         if charOrCode("6", 22) {
-            if store.selectionCount > 1 { store.setColorLabelForSelected(.orange) }
-            else if let id = store.selectedPhotoID { store.setColorLabel(.orange, for: id) }
+            if store.selectionCount > 1 { store.setColorLabelForSelected(.red) }
+            else if let id = store.selectedPhotoID { store.setColorLabel(.red, for: id) }
             return
         } else if charOrCode("7", 26) {
             if store.selectionCount > 1 { store.setColorLabelForSelected(.yellow) }
@@ -682,17 +682,19 @@ class KeyCaptureView: NSView {
         let isVideo = videoPreviewVisible && store.selectedPhoto?.isVideoFile == true
         let videoMgr = VideoPlayerManager.shared
 
-        // Spacebar: 비디오면 재생/일시정지, 아니면 Space Pick
+        // Spacebar: 비디오면 재생/일시정지, 아니면 별점 5점 토글
         if chars == " " || keyCode == 49 {
             if isVideo && videoMgr.isReady {
                 videoMgr.togglePlayPause()
                 return
             }
             guard !selectedIsFolder else { return }
-            if store.selectionCount > 1 {
-                store.toggleSpacePickForSelected()
-            } else if let id = store.selectedPhotoID {
-                store.toggleSpacePick(for: id)
+            let ids = store.selectionCount > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
+            for id in ids {
+                if let i = store.photos.firstIndex(where: { $0.id == id }) {
+                    let newRating = store.photos[i].rating == 5 ? 0 : 5
+                    store.setRating(newRating, for: id)
+                }
             }
             return
         }

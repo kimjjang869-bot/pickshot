@@ -148,7 +148,7 @@ extension ContentView {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 3)
 
             // === Row 2: Filters ===
             if !store.photos.isEmpty {
@@ -172,8 +172,8 @@ extension ContentView {
 
                     Divider().frame(height: 16).opacity(0.2)
 
-                    // Star filter - pill-shaped buttons
-                    HStack(spacing: 2) {
+                    // Star filter — 별점 필터
+                    HStack(spacing: 3) {
                         ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
                             Button(action: { store.minimumRatingFilter = rating }) {
                                 Group {
@@ -203,28 +203,40 @@ extension ContentView {
                         }
                     }
 
-                    // SP (Space Pick) filter button - pill-shaped
-                    Button(action: {
-                        store.qualityFilter = store.qualityFilter == .spacePick ? .all : .spacePick
-                    }) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 9))
-                            Text("SP")
-                                .font(.system(size: AppTheme.fontMicro, weight: .black))
+                    Divider().frame(height: 16).opacity(0.2)
+
+                    // Color label filter — 라벨 필터 (다중 선택)
+                    HStack(spacing: 5) {
+                        ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
+                            let isActive = store.colorLabelFilters.contains(label)
+                            Button(action: {
+                                if isActive { store.colorLabelFilters.remove(label) }
+                                else { store.colorLabelFilters.insert(label) }
+                            }) {
+                                Circle()
+                                    .fill(label.color ?? .clear)
+                                    .frame(width: 13, height: 13)
+                                    .overlay(
+                                        isActive
+                                            ? Circle().stroke(Color.white, lineWidth: 2.5)
+                                            : Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                                    )
+                                    .shadow(color: isActive ? (label.color ?? .clear).opacity(0.7) : .clear, radius: 4)
+                                    .opacity(isActive ? 1.0 : 0.5)
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(label.rawValue) 라벨 필터 (\(label.key.isEmpty ? "" : "키: \(label.key)"))")
                         }
-                        .frame(height: AppTheme.pillSize)
+                        if !store.colorLabelFilters.isEmpty {
+                            Button(action: { store.colorLabelFilters.removeAll() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("라벨 필터 해제")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .foregroundColor(store.qualityFilter == .spacePick ? .white : AppTheme.error)
-                    .background(
-                        store.qualityFilter == .spacePick
-                            ? AppTheme.error
-                            : AppTheme.mutedRed
-                    )
-                    .clipShape(Capsule())
-                    .help("스페이스 셀렉 필터 (Space키로 선택, \(store.spacePickedCount)장)")
 
                     Divider().frame(height: 16).opacity(0.2)
 
@@ -236,7 +248,7 @@ extension ContentView {
                         TextField("검색", text: $store.searchText)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11))
-                            .frame(width: 80)
+                            .frame(minWidth: 100, maxWidth: 160)
                             .onExitCommand {
                                 // ESC → 포커스 해제
                                 store.restoreKeyFocus()
@@ -328,6 +340,12 @@ extension ContentView {
                     }
                     .help("레이아웃 전환")
 
+                    // 전체화면 (⌘F)
+                    iconButton("arrow.up.left.and.arrow.down.right", active: false) {
+                        store.showFullscreenPreview.toggle()
+                    }
+                    .help("전체화면 (⌘F)")
+
                     iconButton("display.2", active: store.showDualViewer) {
                         store.showDualViewer.toggle()
                     }
@@ -378,8 +396,8 @@ extension ContentView {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // end Row 2
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
             }
         }
     }

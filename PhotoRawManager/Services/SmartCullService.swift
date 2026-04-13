@@ -869,7 +869,7 @@ class SmartCullService: ObservableObject {
                     if let vec = vectors.first(where: { $0.photoID == photoID }) {
                         if vec.isBlurry || vec.hasClosedEyes {
                             store.photos[idx].rating = 1  // 탈락
-                            store.photos[idx].colorLabel = .orange
+                            store.photos[idx].colorLabel = .red
                             rejectCount += 1
                             continue
                         }

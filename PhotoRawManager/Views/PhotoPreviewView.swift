@@ -359,6 +359,13 @@ class PreviewImageCache {
                 let subData = data.subdata(in: i..<end)
                 if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                    CGImageSourceGetCount(imgSource) > 0 {
+                    // 썸네일 스트립 제외 (비정상 비율 4:1 초과)
+                    let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
+                    let pw = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+                    let ph = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+                    let ar = pw > ph ? Double(pw) / max(Double(ph), 1) : Double(ph) / max(Double(pw), 1)
+                    if ar > 4.0 { continue }
+
                     let opts: [NSString: Any] = [
                         kCGImageSourceThumbnailMaxPixelSize: maxPixel,
                         kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -720,16 +727,23 @@ struct PhotoPreviewView: View {
                     store.setRating(newRating, for: photo.id)
                 }
 
-                Button(action: { store.toggleSpacePick(for: photo.id) }) {
-                    Text("SP")
-                        .font(.system(size: AppTheme.fontCaption, weight: .black))
+                // 컬러 라벨 선택
+                HStack(spacing: 3) {
+                    ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
+                        Button(action: { store.setColorLabel(label, for: photo.id) }) {
+                            Circle()
+                                .fill(label.color ?? .clear)
+                                .frame(width: 14, height: 14)
+                                .overlay(
+                                    photo.colorLabel == label
+                                        ? Circle().stroke(Color.white, lineWidth: 2)
+                                        : nil
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("\(label.rawValue) (키: \(label.key.isEmpty ? "없음" : label.key))")
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 6)
-                .frame(height: AppTheme.buttonHeight)
-                .foregroundColor(photo.isSpacePicked ? .white : AppTheme.error)
-                .background(photo.isSpacePicked ? AppTheme.error : AppTheme.mutedRed)
-                .clipShape(Capsule())
                 .help("스페이스 셀렉 토글 (Space)")
 
                 Divider().frame(height: 20).opacity(0.2)
@@ -758,25 +772,6 @@ struct PhotoPreviewView: View {
                 .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help("오른쪽 90° 회전")
-
-                Divider().frame(height: 20).opacity(0.2)
-
-                // 얼룩말 + 포커스피킹
-                Button { showZebraWarning.toggle() } label: {
-                    Image(systemName: "sun.max.trianglebadge.exclamationmark")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(showZebraWarning ? .yellow : .secondary)
-                .help("과노출/저노출 경고")
-
-                Button { showFocusPeaking.toggle() } label: {
-                    Image(systemName: "scope")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(showFocusPeaking ? .red : .secondary)
-                .help("포커스 피킹")
 
                 Divider().frame(height: 20).opacity(0.2)
 
@@ -2049,6 +2044,11 @@ struct PhotoPreviewView: View {
 
             // Only decode if this is larger than what we already have
             guard pixels > bestPixels else { continue }
+
+            // DJI DNG 등에서 썸네일 스트립(가로로 이어붙인 이미지) 제외
+            // 정상 사진은 가로:세로 비율이 5:1을 초과하지 않음
+            let aspectRatio = w > h ? Double(w) / max(Double(h), 1) : Double(h) / max(Double(w), 1)
+            if aspectRatio > 4.0 { continue }
 
             // Limit to screen resolution to save memory (50MP = 200MB, 3600px = 50MB)
             let opts: [NSString: Any] = [

@@ -279,7 +279,7 @@ class PhotoStore: ObservableObject {
     @Published var showCompare = false
     @Published var showDualViewer = false
     @Published var showSlideshow = false
-    @Published var colorLabelFilter: ColorLabel = .none { didSet { invalidateFilterCache() } }
+    @Published var colorLabelFilters: Set<ColorLabel> = [] { didSet { invalidateFilterCache() } }
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
@@ -299,6 +299,7 @@ class PhotoStore: ObservableObject {
     @Published var showPickshotImportSheet: Bool = false
     @Published var clientComments: [UUID: String] = [:]  // photoID -> 클라이언트 코멘트 (첫 번째)
     @Published var showMap: Bool = false
+    @Published var showFullscreenPreview: Bool = false
     @Published var toastMessage: String = ""
     @Published var showToast: Bool = false
 
@@ -411,7 +412,7 @@ class PhotoStore: ObservableObject {
         let col = SmartCollection(
             name: name,
             minRating: minimumRatingFilter,
-            colorLabel: colorLabelFilter.rawValue,
+            colorLabel: colorLabelFilters.first?.rawValue ?? "없음",
             qualityFilter: qualityFilter.rawValue,
             sceneTag: sceneTagFilter,
             keyword: keywordFilter,
@@ -422,7 +423,11 @@ class PhotoStore: ObservableObject {
 
     func applyCollection(_ col: SmartCollection) {
         minimumRatingFilter = col.minRating
-        colorLabelFilter = ColorLabel(rawValue: col.colorLabel) ?? .none
+        if let label = ColorLabel(rawValue: col.colorLabel), label != .none {
+            colorLabelFilters = [label]
+        } else {
+            colorLabelFilters = []
+        }
         qualityFilter = QualityFilter(rawValue: col.qualityFilter) ?? .all
         sceneTagFilter = col.sceneTag
         keywordFilter = col.keyword
@@ -535,6 +540,8 @@ class PhotoStore: ObservableObject {
                     AppLogger.log(.general, "Undo move failed: \(move.destURL.lastPathComponent) → \(error)")
                 }
             }
+            // 폴더 프리뷰 캐시 무효화
+            FolderPreviewCache.shared.invalidateAll()
             if let folderURL = folderURL {
                 loadFolder(folderURL, restoreRatings: true)
             }
@@ -804,11 +811,11 @@ class PhotoStore: ObservableObject {
         defaults.set(allColors, forKey: "folderColorLabels")
 
         // Write XMP sidecar files in background
-        let snapshot = photos.map { (url: $0.jpgURL, rating: $0.rating, label: $0.colorLabel, spacePicked: $0.isSpacePicked) }
+        let snapshot = photos.map { (url: $0.jpgURL, rating: $0.rating, label: $0.colorLabel) }
         DispatchQueue.global(qos: .utility).async {
-            for item in snapshot where item.rating > 0 {
-                let xmpLabel = XMPService.xmpLabel(from: item.label.rawValue)
-                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.spacePicked)
+            for item in snapshot where item.rating > 0 || item.label != .none {
+                let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
+                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: false)
             }
         }
     }
@@ -838,10 +845,13 @@ class PhotoStore: ObservableObject {
                 photos[i].isSpacePicked = true
                 restoredSP += 1
             }
-            // 저장된 컬러라벨
-            if let colorStr = savedColors?[fileName],
-               let color = ColorLabel(rawValue: colorStr) {
-                photos[i].colorLabel = color
+            // 저장된 컬러라벨 (하위 호환: "주황" → .red)
+            if let colorStr = savedColors?[fileName] {
+                if let color = ColorLabel(rawValue: colorStr) {
+                    photos[i].colorLabel = color
+                } else if colorStr == "주황" {
+                    photos[i].colorLabel = .red
+                }
             }
         }
         fputs("[RESTORE] 적용: rating \(restoredRating)장, SP \(restoredSP)장\n", stderr)
@@ -1294,6 +1304,11 @@ class PhotoStore: ObservableObject {
                 let msg = "\(moved)장 이동 완료 (Cmd+Z 되돌리기)" + (failed > 0 ? " (\(failed)장 실패)" : "")
                 self.showToastMessage(msg)
                 AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
+                // 폴더 프리뷰 캐시 무효화 (이동 원본 + 대상 폴더)
+                FolderPreviewCache.shared.invalidate(destination)
+                if let srcParent = fileURLs.first?.deletingLastPathComponent() {
+                    FolderPreviewCache.shared.invalidate(srcParent)
+                }
                 // 폴더 트리 새로고침 알림
                 NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
             }
@@ -1308,12 +1323,18 @@ class PhotoStore: ObservableObject {
     func setColorLabel(_ label: ColorLabel, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         photos[i].colorLabel = (photos[i].colorLabel == label) ? .none : label
+        invalidateFilterCache()
+        photosVersion += 1
+        saveRatings()
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }
         }
+        invalidateFilterCache()
+        photosVersion += 1
+        saveRatings()
     }
 
     func toggleSpacePick(for photoID: UUID) {
@@ -1420,7 +1441,7 @@ class PhotoStore: ObservableObject {
 
         // Capture filter values once to avoid repeated property access
         let minRating = minimumRatingFilter
-        let colorFilter = colorLabelFilter
+        let colorFilters = colorLabelFilters
         let qFilter = qualityFilter
         let sceneTag = sceneTagFilter
         let kwFilter = keywordFilter
@@ -1460,8 +1481,8 @@ class PhotoStore: ObservableObject {
 
             // Rating filter
             if minRating > 0 && photo.rating < minRating { continue }
-            // Color label filter
-            if colorFilter != .none && photo.colorLabel != colorFilter { continue }
+            // Color label filter (다중 선택 지원)
+            if !colorFilters.isEmpty && !colorFilters.contains(photo.colorLabel) { continue }
             // Quality filter
             switch qFilter {
             case .all:

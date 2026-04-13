@@ -168,28 +168,44 @@ struct QualityAnalysis {
 
 enum ColorLabel: String, CaseIterable {
     case none = "없음"
-    case orange = "주황"
+    case red = "빨강"
     case yellow = "노랑"
     case green = "초록"
     case blue = "파랑"
+    case purple = "보라"
 
     var color: Color? {
         switch self {
         case .none: return nil
-        case .orange: return .orange
+        case .red: return .red
         case .yellow: return .yellow
         case .green: return .green
         case .blue: return .blue
+        case .purple: return .purple
         }
     }
 
+    /// 키보드 단축키 (6~9, 0으로 해제) — 5개 라벨 중 4개만 단축키 배정
     var key: String {
         switch self {
         case .none: return ""
-        case .orange: return "6"
+        case .red: return "6"
         case .yellow: return "7"
         case .green: return "8"
         case .blue: return "9"
+        case .purple: return ""  // 단축키 없음 (메뉴에서 선택)
+        }
+    }
+
+    /// XMP/Lightroom 호환 라벨명
+    var xmpName: String {
+        switch self {
+        case .none: return ""
+        case .red: return "Red"
+        case .yellow: return "Yellow"
+        case .green: return "Green"
+        case .blue: return "Blue"
+        case .purple: return "Purple"
         }
     }
 }

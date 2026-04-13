@@ -33,8 +33,9 @@ struct FolderItem: Identifiable {
         }
         dirs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         return dirs.map { dirURL in
-            // hasSubfolders = true 기본값 (실제 펼칠 때 확인 — 이중 스캔 방지)
-            FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: true)
+            // 실제 하위 폴더 존재 여부를 빠르게 확인 (enumerator early exit)
+            let hasChild = checkHasSubfolders(dirURL)
+            return FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: hasChild)
         }
     }
 
