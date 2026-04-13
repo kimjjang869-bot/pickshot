@@ -714,12 +714,16 @@ class GoogleDriveService {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let body = "code=\(code)"
+        // PKCE 사용 시 client_secret이 없어도 됨 (Desktop App)
+        // 빈 문자열로 보내면 Google이 invalid_request 에러 → 빈 값이면 파라미터 생략
+        var body = "code=\(code)"
             + "&client_id=\(oauthClientID)"
-            + "&client_secret=\(oauthClientSecret)"
             + "&redirect_uri=\(oauthRedirectURI)"
             + "&grant_type=authorization_code"
             + "&code_verifier=\(codeVerifier)"
+        if !oauthClientSecret.isEmpty {
+            body += "&client_secret=\(oauthClientSecret)"
+        }
         request.httpBody = body.data(using: .utf8)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
@@ -775,10 +779,12 @@ class GoogleDriveService {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let body = "refresh_token=\(refreshToken)"
+        var body = "refresh_token=\(refreshToken)"
             + "&client_id=\(oauthClientID)"
-            + "&client_secret=\(oauthClientSecret)"
             + "&grant_type=refresh_token"
+        if !oauthClientSecret.isEmpty {
+            body += "&client_secret=\(oauthClientSecret)"
+        }
         request.httpBody = body.data(using: .utf8)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
