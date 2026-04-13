@@ -543,14 +543,17 @@ class GoogleDriveService {
     // MARK: - OAuth 2.0
 
     // OAuth credentials loaded lazily (avoids keychain popup at app launch)
-    // 기본 OAuth Client ID (Secrets.xcconfig 없는 사용자도 사용 가능)
+    // 기본 OAuth 자격증명 (Secrets.xcconfig 없는 사용자도 사용 가능)
+    // Google Desktop App의 client_secret은 "not confidential" — Google 공식 문서 참조
     private static let defaultClientID = "661638823938-f9bk0a503pv0js0iskdqd196erkg40ua.apps.googleusercontent.com"
+    private static let defaultClientSecret = "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"
     static var oauthClientID: String {
         let saved = KeychainService.read(key: "gdrive_client_id") ?? ""
         return saved.isEmpty ? defaultClientID : saved
     }
     static var oauthClientSecret: String {
-        KeychainService.read(key: "gdrive_client_secret") ?? ""
+        let saved = KeychainService.read(key: "gdrive_client_secret") ?? ""
+        return saved.isEmpty ? defaultClientSecret : saved
     }
 
     static func setOAuthCredentials(clientID: String, clientSecret: String) {
