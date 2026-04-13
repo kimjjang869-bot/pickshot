@@ -49,6 +49,7 @@ enum AppTheme {
     static let textPrimary = Color.primary
     static let textSecondary = Color.secondary
     static let textDim = Color.secondary.opacity(0.5)
+    static let textMuted = Color.white.opacity(0.7)
 
     // MARK: - Thumbnail Grid
     static let selectionBorder = Color(red: 50/255, green: 140/255, blue: 255/255)  // vivid blue
@@ -63,9 +64,26 @@ enum AppTheme {
     static let starEmpty = Color.gray.opacity(0.25)
 
     // MARK: - Toolbar
-    static let toolbarDivider = Color.gray.opacity(0.2)
+    static let toolbarDivider = Color.gray.opacity(0.15)
     static let toolbarButtonBg = Color.gray.opacity(0.08)
     static let toolbarButtonActiveBg = accent
+    static let toolbarDividerHeight: CGFloat = 16
+
+    // MARK: - Selection & Hover
+    static let selectionBg = accent.opacity(0.15)
+    static let hoverBg = Color.gray.opacity(0.08)
+
+    // MARK: - Corner Radius System
+    static let radiusSmall: CGFloat = 4     // 배지, 태그
+    static let radiusMedium: CGFloat = 6    // 버튼, 입력 필드
+    static let radiusLarge: CGFloat = 10    // 카드, 큰 영역
+
+    // MARK: - Grid
+    static let gridSpacing: CGFloat = 12
+
+    // MARK: - Sidebar
+    static let sidebarCollapsed: CGFloat = 36
+    static let sidebarExpanded: CGFloat = 250
 
     // MARK: - 해상도 기반 스케일 팩터 (앱 시작 시 1회 계산 — 포커스 변경 시 안 바뀜)
     static let displayScale: CGFloat = {
@@ -91,4 +109,7 @@ enum AppTheme {
     static let fontBody: CGFloat = scaled(13)
     static let fontSubhead: CGFloat = scaled(14)
     static let fontHeading: CGFloat = scaled(15)
+
+    // MARK: - Min Touch Target
+    static let minTouchTarget: CGFloat = 24
 }

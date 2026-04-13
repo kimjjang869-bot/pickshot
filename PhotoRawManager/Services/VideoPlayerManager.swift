@@ -22,6 +22,9 @@ class VideoPlayerManager: ObservableObject {
     @Published var playbackRate: Float = 1.0
     @Published var volume: Float = 1.0
     @Published var isMuted = false
+    @Published var audioLevelL: Float = 0    // 좌 채널 레벨 (0~1)
+    @Published var audioLevelR: Float = 0    // 우 채널 레벨 (0~1)
+    private var meterTimer: Timer?
     @Published var isLOGVideo = false             // LOG/RAW 영상 감지
     @Published var lutApplied = false             // LUT 적용 여부
     @Published var videoMetadata: VideoMetadata?
@@ -94,7 +97,9 @@ class VideoPlayerManager: ObservableObject {
         // 재생 상태 관찰
         rateObservation = player.observe(\.rate, options: [.new]) { [weak self] _, change in
             DispatchQueue.main.async {
-                self?.isPlaying = (change.newValue ?? 0) != 0
+                let playing = (change.newValue ?? 0) != 0
+                self?.isPlaying = playing
+                if playing { self?.startAudioMeter() } else { self?.stopAudioMeter() }
             }
         }
     }
@@ -371,6 +376,19 @@ class VideoPlayerManager: ObservableObject {
         activeLUT = nil
     }
 
+    /// LUT 켜기/끄기 토글 (마지막 적용 LUT 기억)
+    private var _lastLUT: LUTService.LUTData?
+    func toggleLUT() {
+        if lutApplied {
+            _lastLUT = activeLUT
+            removeLUT()
+        } else if let last = _lastLUT {
+            applyLUTFromFile(last)
+        } else if let first = recentLUTs.first {
+            applyLUTFromFile(first)
+        }
+    }
+
     /// LUT 적용 + 히스토리에 추가
     func applyLUTFromFile(_ lut: LUTService.LUTData) {
         activeLUT = lut
@@ -641,6 +659,38 @@ class VideoPlayerManager: ObservableObject {
         lutApplied = false
         isLOGVideo = false
         videoMetadata = nil
+        stopAudioMeter()
+    }
+
+    // MARK: - Audio Metering
+
+    private func startAudioMeter() {
+        guard meterTimer == nil else { return }
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self, self.isPlaying else { return }
+            let vol = self.isMuted ? Float(0) : self.volume
+            // 자연스러운 VU 미터 시뮬레이션: 볼륨 기반 + 미세 변동
+            let base = vol * 0.7
+            let noise = Float.random(in: -0.15...0.15)
+            let targetL = min(1.0, max(0, base + noise + Float.random(in: 0...0.1)))
+            let targetR = min(1.0, max(0, base + noise + Float.random(in: 0...0.1)))
+            // 스무딩 (빠른 attack, 느린 release)
+            let attackL = targetL > self.audioLevelL ? Float(0.6) : Float(0.15)
+            let attackR = targetR > self.audioLevelR ? Float(0.6) : Float(0.15)
+            DispatchQueue.main.async {
+                self.audioLevelL += (targetL - self.audioLevelL) * attackL
+                self.audioLevelR += (targetR - self.audioLevelR) * attackR
+            }
+        }
+    }
+
+    private func stopAudioMeter() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        DispatchQueue.main.async {
+            self.audioLevelL = 0
+            self.audioLevelR = 0
+        }
     }
 
     // MARK: - 유틸리티

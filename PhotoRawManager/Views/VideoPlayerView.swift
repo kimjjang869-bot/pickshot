@@ -113,18 +113,27 @@ struct VideoPlayerView: View {
 
                 Spacer()
 
-                // LUT 버튼 (항상 표시, LOG 감지 시 강조)
-                lutButton
+                // 우측 컨트롤 그룹 — 여유 있는 간격
+                HStack(spacing: 16) {
+                    // LUT 버튼
+                    lutButton
 
-                // 속도
-                speedMenu
+                    // 구분선
+                    Rectangle().fill(Color.white.opacity(0.15)).frame(width: 1, height: 20)
 
-                // 볼륨
-                volumeControl
+                    // 속도
+                    speedMenu
+
+                    // 구분선
+                    Rectangle().fill(Color.white.opacity(0.15)).frame(width: 1, height: 20)
+
+                    // 볼륨
+                    volumeControl
+                }
 
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
         }
         .padding(.top, 10)
         .background(
@@ -180,72 +189,95 @@ struct VideoPlayerView: View {
     // MARK: - LUT 버튼
 
     private var lutButton: some View {
-        let labelText = manager.lutApplied ? "LUT" : (manager.isLOGVideo ? "LOG" : "LUT")
-        let labelColor: Color = manager.lutApplied ? .orange : (manager.isLOGVideo ? .yellow : .white.opacity(0.7))
-        let bgColor: Color = manager.lutApplied ? Color.orange.opacity(0.2) : (manager.isLOGVideo ? Color.yellow.opacity(0.15) : Color.white.opacity(0.08))
+        let isOn = manager.lutApplied
+        let labelText = isOn ? "LUT" : (manager.isLOGVideo ? "LOG" : "LUT")
+        // LOG = 회색, LUT 적용 = 무지개 그라데이션
+        let textColor: Color = isOn ? .white : (manager.isLOGVideo ? .gray : .white.opacity(0.7))
+        let bgColor: Color = isOn ? Color.white.opacity(0.12) : (manager.isLOGVideo ? Color.gray.opacity(0.15) : Color.white.opacity(0.08))
 
-        return Menu {
-            // 새 LUT 불러오기
-            Button(action: { loadAndApplyLUT() }) {
-                Label("LUT 파일 불러오기...", systemImage: "doc.badge.plus")
+        return HStack(spacing: 0) {
+            // 아이콘 클릭 → LUT 켜기/끄기 토글
+            Button(action: { manager.toggleLUT() }) {
+                HStack(spacing: 5) {
+                    // 아이콘: LUT 적용 시 무지개, 아닐 때 회색
+                    Image(systemName: "camera.filters")
+                        .font(.system(size: 14))
+                        .foregroundStyle(
+                            isOn
+                                ? AnyShapeStyle(LinearGradient(
+                                    colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                                : AnyShapeStyle(manager.isLOGVideo ? Color.gray : Color.white.opacity(0.5))
+                        )
+                    Text(labelText)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(textColor)
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, 2)
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help(isOn ? "LUT 끄기" : "LUT 켜기")
 
-            // 최근 사용한 LUT 목록
-            if !manager.recentLUTs.isEmpty {
-                Divider()
-                Section("최근 LUT") {
-                    ForEach(Array(manager.recentLUTs.enumerated()), id: \.offset) { idx, lut in
-                        Button(action: { manager.applyLUTFromFile(lut) }) {
-                            let isActive = manager.activeLUT?.url == lut.url && manager.lutApplied
-                            if isActive {
-                                Label(lut.name, systemImage: "checkmark")
-                            } else {
-                                Text(lut.name)
+            // 드롭다운 화살표 → 메뉴 (화살표 1개만)
+            Menu {
+                Button(action: { loadAndApplyLUT() }) {
+                    Label("LUT 파일 불러오기...", systemImage: "doc.badge.plus")
+                }
+
+                if !manager.recentLUTs.isEmpty {
+                    Divider()
+                    Section("최근 LUT") {
+                        ForEach(Array(manager.recentLUTs.enumerated()), id: \.offset) { idx, lut in
+                            Button(action: { manager.applyLUTFromFile(lut) }) {
+                                let isActive = manager.activeLUT?.url == lut.url && manager.lutApplied
+                                if isActive {
+                                    Label(lut.name, systemImage: "checkmark")
+                                } else {
+                                    Text(lut.name)
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if manager.lutApplied {
-                Divider()
-                Button(action: { manager.removeLUT() }) {
-                    Label("LUT 제거", systemImage: "xmark.circle")
-                }
-            }
-
-            // LOG 자동 적용 토글
-            if !manager.recentLUTs.isEmpty {
-                Divider()
-                Button(action: { manager.autoApplyLUT.toggle() }) {
-                    if manager.autoApplyLUT {
-                        Label("LOG 자동 적용 끄기", systemImage: "checkmark.circle.fill")
-                    } else {
-                        Label("LOG 자동 적용 켜기", systemImage: "circle")
+                if manager.lutApplied {
+                    Divider()
+                    Button(action: { manager.removeLUT() }) {
+                        Label("LUT 제거", systemImage: "xmark.circle")
                     }
                 }
 
-                Button(action: { manager.clearRecentLUTs() }) {
-                    Label("히스토리 지우기", systemImage: "trash")
+                if !manager.recentLUTs.isEmpty {
+                    Divider()
+                    Button(action: { manager.autoApplyLUT.toggle() }) {
+                        if manager.autoApplyLUT {
+                            Label("LOG 자동 적용 끄기", systemImage: "checkmark.circle.fill")
+                        } else {
+                            Label("LOG 자동 적용 켜기", systemImage: "circle")
+                        }
+                    }
+                    Button(action: { manager.clearRecentLUTs() }) {
+                        Label("히스토리 지우기", systemImage: "trash")
+                    }
                 }
+            } label: {
+                Image(systemName: "chevron.compact.down")
+                    .font(.system(size: 10))
+                    .foregroundColor(textColor.opacity(0.5))
+                    .frame(width: 20, height: 28)
+                    .contentShape(Rectangle())
             }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "camera.filters")
-                    .font(.system(size: 14))
-                Text(labelText)
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundColor(labelColor)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(bgColor)
-            )
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)  // 시스템 화살표 숨김
+            .fixedSize()
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(bgColor)
+        )
     }
 
     // MARK: - 속도 메뉴
@@ -278,10 +310,12 @@ struct VideoPlayerView: View {
     private var volumeControl: some View {
         HStack(spacing: 6) {
             Button(action: { manager.toggleMute() }) {
-                Image(systemName: manager.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 15))
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(width: 28, height: 28)
+                Image(systemName: manager.isMuted ? "speaker.slash.fill" :
+                        manager.volume > 0.5 ? "speaker.wave.2.fill" :
+                        manager.volume > 0 ? "speaker.wave.1.fill" : "speaker.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(manager.isMuted ? .white.opacity(0.4) : .white.opacity(0.85))
+                    .frame(width: 24, height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -290,8 +324,39 @@ struct VideoPlayerView: View {
                 get: { Double(manager.volume) },
                 set: { manager.setVolume(Float($0)) }
             ), in: 0...1)
-            .frame(width: 75)
+            .frame(width: 70)
             .controlSize(.small)
+
+            // VU 미터 (좌/우 채널, 가로 방향)
+            audioMeter
+        }
+    }
+
+    private var audioMeter: some View {
+        VStack(spacing: 2) {
+            meterBar(level: CGFloat(manager.audioLevelL))
+            meterBar(level: CGFloat(manager.audioLevelR))
+        }
+        .frame(width: 60, height: 12)
+    }
+
+    private func meterBar(level: CGFloat) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                // 배경
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white.opacity(0.1))
+                // 레벨 바 (초록 → 노랑 → 빨강 그라데이션)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(
+                        LinearGradient(
+                            colors: [.green, .green, .yellow, .red],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geo.size.width * min(level, 1.0))
+                    .animation(.linear(duration: 0.05), value: level)
+            }
         }
     }
 

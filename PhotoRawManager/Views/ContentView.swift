@@ -95,7 +95,12 @@ struct ContentView: View {
                         Divider()
                     }
 
-                    // Main content area
+                    // Main content area (Row 2 toolbar + content)
+                    VStack(spacing: 0) {
+                    toolbarRow2
+                    Divider()
+
+                    // Content area
                     if store.isLoading {
                         // Loading - show progress inside content area (folder browser stays visible)
                         VStack(spacing: 16) {
@@ -146,7 +151,7 @@ struct ContentView: View {
                     } else {
                         // Grid+Preview mode (default)
                         GeometryReader { geo in
-                            let leftW = max(150, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
+                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
                             HStack(spacing: 0) {
                                 // Left panel
@@ -288,6 +293,7 @@ struct ContentView: View {
                             .onChange(of: store.thumbnailSize) { _ in updateGridColumns(width: leftW) }
                         }
                     }
+                    } // end VStack (toolbarRow2 + content)
                 }
             }
 

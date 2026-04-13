@@ -1285,7 +1285,7 @@ struct ThumbnailCell: View, Equatable {
             if let labelColor = photo.colorLabel.color {
                 Circle()
                     .fill(labelColor)
-                    .frame(width: max(8, size * 0.07), height: max(8, size * 0.07))
+                    .frame(width: max(10, size * 0.07), height: max(10, size * 0.07))
                     .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 1))
             }
             if !photo.comments.isEmpty {
@@ -1411,6 +1411,7 @@ struct ThumbnailCell: View, Equatable {
             }
         }
         .frame(height: starSize + 4)
+        .frame(minHeight: 20)
     }
 
     private var cellBackground: some View {
@@ -1418,7 +1419,7 @@ struct ThumbnailCell: View, Equatable {
             .fill(
                 isFocused ? AppTheme.accent.opacity(0.12) :
                 isSelected ? AppTheme.accent.opacity(0.06) :
-                isHovered ? Color.gray.opacity(0.08) :
+                isHovered ? AppTheme.hoverBg :
                 Color.clear
             )
     }
@@ -1579,7 +1580,7 @@ struct ListRow: View {
     }
 
     private var colDiv: some View {
-        Divider().frame(height: 16).padding(.horizontal, 2).opacity(0.3)
+        Divider().frame(height: 16).padding(.horizontal, 2).opacity(0.15)
     }
 
     private func formatSize(_ bytes: Int64) -> String {

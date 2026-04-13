@@ -9,6 +9,12 @@ extension ContentView {
 
     var toolbar: some View {
         VStack(spacing: 0) {
+            toolbarRow1
+        }
+    }
+
+    var toolbarRow1: some View {
+        VStack(spacing: 0) {
             // === Row 1: 네비게이션 + 액션 ===
             HStack(spacing: 6) {
                 // 네비게이션 그룹
@@ -80,7 +86,7 @@ extension ContentView {
                 }
 
                 if !store.photos.isEmpty {
-                    Divider().frame(height: 18).opacity(0.3)
+                    Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
                     // 클라이언트 셀렉
                     Menu {
@@ -149,191 +155,200 @@ extension ContentView {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
+        }
+    }
 
+    var toolbarRow2: some View {
+        VStack(spacing: 0) {
             // === Row 2: Filters ===
             if !store.photos.isEmpty {
-                Divider()
-                HStack(spacing: 6) {
-                    // Sort menu
-                    Menu {
-                        ForEach(SortMode.allCases, id: \.self) { mode in
-                            Button(action: { store.sortMode = mode }) {
-                                HStack {
-                                    Image(systemName: mode.icon)
-                                    Text(mode.rawValue)
-                                    if store.sortMode == mode { Image(systemName: "checkmark") }
+                GeometryReader { geo in
+                let thumbWidth = geo.size.width * store.hSplitRatio
+                HStack(spacing: 0) {
+                    // 썸네일 영역에 맞춘 좌측 섹션 (별점 + 라벨 + 검색 + 정렬)
+                    HStack(spacing: 8) {
+                        // Star filter — 별점 필터
+                        HStack(spacing: 3) {
+                            ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
+                                Button(action: { store.minimumRatingFilter = rating }) {
+                                    Group {
+                                        if rating == 0 {
+                                            Text("All")
+                                                .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                        } else {
+                                            HStack(spacing: 1) {
+                                                Image(systemName: "star.fill")
+                                                    .font(.system(size: 8))
+                                                Text("\(rating)")
+                                                    .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                            }
+                                        }
+                                    }
+                                    .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
                                 }
+                                .buttonStyle(.plain)
+                                .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? .primary : AppTheme.starGold))
+                                .background(
+                                    store.minimumRatingFilter == rating
+                                        ? AppTheme.starGold.opacity(0.85)
+                                        : AppTheme.toolbarButtonBg
+                                )
+                                .clipShape(Capsule())
+                                .help(rating == 0 ? "모든 별점 표시" : "별점 \(rating) 이상 필터")
                             }
                         }
-                    } label: {
-                        toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
-                    }
-                    .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
-                    Divider().frame(height: 16).opacity(0.2)
+                        Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
-                    // Star filter — 별점 필터
-                    HStack(spacing: 3) {
-                        ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
-                            Button(action: { store.minimumRatingFilter = rating }) {
-                                Group {
-                                    if rating == 0 {
-                                        Text("All")
-                                            .font(.system(size: AppTheme.fontCaption, weight: .semibold))
-                                    } else {
-                                        HStack(spacing: 1) {
-                                            Image(systemName: "star.fill")
-                                                .font(.system(size: 8))
-                                            Text("\(rating)")
-                                                .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                        // Color label filter — 라벨 필터 (다중 선택)
+                        HStack(spacing: 5) {
+                            ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
+                                let isActive = store.colorLabelFilters.contains(label)
+                                Button(action: {
+                                    if isActive { store.colorLabelFilters.remove(label) }
+                                    else { store.colorLabelFilters.insert(label) }
+                                }) {
+                                    Circle()
+                                        .fill(label.color ?? .clear)
+                                        .frame(width: 12, height: 12)
+                                        .overlay(
+                                            isActive
+                                                ? Circle().stroke(Color.white, lineWidth: 2.5)
+                                                : Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                                        )
+                                        .shadow(color: isActive ? (label.color ?? .clear).opacity(0.7) : .clear, radius: 4)
+                                        .opacity(isActive ? 1.0 : 0.5)
+                                        .frame(width: AppTheme.minTouchTarget, height: AppTheme.minTouchTarget)
+                                }
+                                .buttonStyle(.plain)
+                                .help("\(label.rawValue) 라벨 필터 (\(label.key.isEmpty ? "" : "키: \(label.key)"))")
+                            }
+                            if !store.colorLabelFilters.isEmpty {
+                                Button(action: { store.colorLabelFilters.removeAll() }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("라벨 필터 해제")
+                            }
+                        }
+                        Spacer(minLength: 4)
+
+                        // Search bar (항상 표시)
+                        HStack(spacing: 4) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField("검색", text: $store.searchText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 11))
+                                .frame(minWidth: 60, maxWidth: 140)
+                                .onExitCommand {
+                                    store.restoreKeyFocus()
+                                }
+                                .onSubmit {
+                                    store.restoreKeyFocus()
+                                    DispatchQueue.main.async {
+                                        NSApp.keyWindow?.makeFirstResponder(nil)
+                                    }
+                                }
+                            if !store.searchText.isEmpty {
+                                Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.accentColor.opacity(0.8))
+                                    .clipShape(Capsule())
+                                Button(action: { store.searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(AppTheme.toolbarButtonBg)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                        // 정렬 + AI + 컬렉션 (넓을 때만 표시)
+                        if thumbWidth > 550 {
+                            // Sort menu
+                            Menu {
+                                ForEach(SortMode.allCases, id: \.self) { mode in
+                                    Button(action: { store.sortMode = mode }) {
+                                        HStack {
+                                            Image(systemName: mode.icon)
+                                            Text(mode.rawValue)
+                                            if store.sortMode == mode { Image(systemName: "checkmark") }
                                         }
                                     }
                                 }
-                                .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
+                            } label: {
+                                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
                             }
-                            .buttonStyle(.plain)
-                            .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? .primary : AppTheme.starGold))
-                            .background(
-                                store.minimumRatingFilter == rating
-                                    ? AppTheme.starGold.opacity(0.85)
-                                    : AppTheme.toolbarButtonBg
-                            )
-                            .clipShape(Capsule())
-                            .help(rating == 0 ? "모든 별점 표시" : "별점 \(rating) 이상 필터")
-                        }
-                    }
+                            .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
-                    Divider().frame(height: 16).opacity(0.2)
+                            // AI 분류
+                            qualityFilterMenu
 
-                    // Color label filter — 라벨 필터 (다중 선택)
-                    HStack(spacing: 5) {
-                        ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
-                            let isActive = store.colorLabelFilters.contains(label)
-                            Button(action: {
-                                if isActive { store.colorLabelFilters.remove(label) }
-                                else { store.colorLabelFilters.insert(label) }
-                            }) {
-                                Circle()
-                                    .fill(label.color ?? .clear)
-                                    .frame(width: 13, height: 13)
-                                    .overlay(
-                                        isActive
-                                            ? Circle().stroke(Color.white, lineWidth: 2.5)
-                                            : Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                                    )
-                                    .shadow(color: isActive ? (label.color ?? .clear).opacity(0.7) : .clear, radius: 4)
-                                    .opacity(isActive ? 1.0 : 0.5)
-                            }
-                            .buttonStyle(.plain)
-                            .help("\(label.rawValue) 라벨 필터 (\(label.key.isEmpty ? "" : "키: \(label.key)"))")
-                        }
-                        if !store.colorLabelFilters.isEmpty {
-                            Button(action: { store.colorLabelFilters.removeAll() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("라벨 필터 해제")
-                        }
-                    }
-
-                    Divider().frame(height: 16).opacity(0.2)
-
-                    // Search bar
-                    HStack(spacing: 4) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        TextField("검색", text: $store.searchText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11))
-                            .frame(minWidth: 100, maxWidth: 160)
-                            .onExitCommand {
-                                // ESC → 포커스 해제
-                                store.restoreKeyFocus()
-                            }
-                            .onSubmit {
-                                // Enter → 포커스 해제
-                                store.restoreKeyFocus()
-                                DispatchQueue.main.async {
-                                    NSApp.keyWindow?.makeFirstResponder(nil)
+                            // 스마트 컬렉션
+                            Menu {
+                                if store.savedCollections.isEmpty {
+                                    Text("저장된 컬렉션 없음")
+                                } else {
+                                    ForEach(store.savedCollections) { col in
+                                        Button(action: { store.applyCollection(col) }) {
+                                            Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
+                                        }
+                                    }
+                                    Divider()
+                                    Button("전체 삭제", role: .destructive) {
+                                        store.savedCollections.removeAll()
+                                    }
                                 }
+                                Divider()
+                                Button("현재 필터 저장...") {
+                                    let alert = NSAlert()
+                                    alert.messageText = "스마트 컬렉션 이름"
+                                    alert.informativeText = "현재 필터 설정을 저장합니다."
+                                    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+                                    textField.stringValue = "내 컬렉션"
+                                    alert.accessoryView = textField
+                                    alert.addButton(withTitle: "저장")
+                                    alert.addButton(withTitle: "취소")
+                                    if alert.runModal() == .alertFirstButtonReturn {
+                                        let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
+                                        if !name.isEmpty {
+                                            store.saveCurrentFilter(name: name)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "line.3.horizontal.decrease.circle")
+                                        .font(.system(size: 11))
+                                    if !store.savedCollections.isEmpty {
+                                        Text("\(store.savedCollections.count)")
+                                            .font(.system(size: 9, weight: .bold))
+                                    }
+                                }
+                                .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
                             }
-                        if !store.searchText.isEmpty {
-                            Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.accentColor.opacity(0.8))
-                                .clipShape(Capsule())
-                            Button(action: { store.searchText = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
+                            .menuStyle(.borderlessButton)
+                            .frame(width: 35)
+                            .help("스마트 컬렉션")
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(AppTheme.toolbarButtonBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(maxWidth: max(300, thumbWidth), alignment: .leading)
+                    .padding(.horizontal, 10)
 
-                    // AI 분류 (품질 + 장면 통합)
-                    qualityFilterMenu
+                    Spacer(minLength: 8)
 
-                    // 스마트 컬렉션
-                    Menu {
-                        if store.savedCollections.isEmpty {
-                            Text("저장된 컬렉션 없음")
-                        } else {
-                            ForEach(store.savedCollections) { col in
-                                Button(action: { store.applyCollection(col) }) {
-                                    Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
-                                }
-                            }
-                            Divider()
-                            Button("전체 삭제", role: .destructive) {
-                                store.savedCollections.removeAll()
-                            }
-                        }
-                        Divider()
-                        Button("현재 필터 저장...") {
-                            let alert = NSAlert()
-                            alert.messageText = "스마트 컬렉션 이름"
-                            alert.informativeText = "현재 필터 설정을 저장합니다."
-                            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-                            textField.stringValue = "내 컬렉션"
-                            alert.accessoryView = textField
-                            alert.addButton(withTitle: "저장")
-                            alert.addButton(withTitle: "취소")
-                            if alert.runModal() == .alertFirstButtonReturn {
-                                let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
-                                if !name.isEmpty {
-                                    store.saveCurrentFilter(name: name)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.system(size: 11))
-                            if !store.savedCollections.isEmpty {
-                                Text("\(store.savedCollections.count)")
-                                    .font(.system(size: 9, weight: .bold))
-                            }
-                        }
-                        .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 35)
-                    .help("스마트 컬렉션")
-
-                    Spacer(minLength: 0)
-
-                    // 뷰 전환 그룹
+                    // === 우측: 뷰 전환 그룹 ===
                     iconButton(store.layoutMode.icon, active: store.layoutMode == .filmstrip) {
                         let newMode: LayoutMode = store.layoutMode == .gridPreview ? .filmstrip : .gridPreview
                         store.setLayoutMode(newMode)
@@ -394,12 +409,127 @@ extension ContentView {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .help("더보기")
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                // end Row 2
-                .padding(.horizontal, 10)
+                .padding(.trailing, 10)
+                } // end GeometryReader
+                .frame(height: 36)
                 .padding(.vertical, 3)
             }
         }
+    }
+
+    // MARK: - 썸네일 패널 서브 툴바 (검색 + 정렬 + AI + 컬렉션)
+
+    var thumbnailSubToolbar: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+
+            // Search bar
+            HStack(spacing: 4) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField("검색", text: $store.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11))
+                    .frame(minWidth: 80, maxWidth: 140)
+                    .onExitCommand {
+                        store.restoreKeyFocus()
+                    }
+                    .onSubmit {
+                        store.restoreKeyFocus()
+                        DispatchQueue.main.async {
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                        }
+                    }
+                if !store.searchText.isEmpty {
+                    Text("\(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.8))
+                        .clipShape(Capsule())
+                    Button(action: { store.searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(AppTheme.toolbarButtonBg)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            // Sort menu
+            Menu {
+                ForEach(SortMode.allCases, id: \.self) { mode in
+                    Button(action: { store.sortMode = mode }) {
+                        HStack {
+                            Image(systemName: mode.icon)
+                            Text(mode.rawValue)
+                            if store.sortMode == mode { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
+            }
+            .help("정렬 순서 변경 (촬영시간/파일명/별점)")
+
+            // AI 분류 (품질 + 장면 통합)
+            qualityFilterMenu
+
+            // 스마트 컬렉션
+            Menu {
+                if store.savedCollections.isEmpty {
+                    Text("저장된 컬렉션 없음")
+                } else {
+                    ForEach(store.savedCollections) { col in
+                        Button(action: { store.applyCollection(col) }) {
+                            Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
+                        }
+                    }
+                    Divider()
+                    Button("전체 삭제", role: .destructive) {
+                        store.savedCollections.removeAll()
+                    }
+                }
+                Divider()
+                Button("현재 필터 저장...") {
+                    let alert = NSAlert()
+                    alert.messageText = "스마트 컬렉션 이름"
+                    alert.informativeText = "현재 필터 설정을 저장합니다."
+                    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+                    textField.stringValue = "내 컬렉션"
+                    alert.accessoryView = textField
+                    alert.addButton(withTitle: "저장")
+                    alert.addButton(withTitle: "취소")
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
+                        if !name.isEmpty {
+                            store.saveCurrentFilter(name: name)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 11))
+                    if !store.savedCollections.isEmpty {
+                        Text("\(store.savedCollections.count)")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                }
+                .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 35)
+            .help("스마트 컬렉션")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
     }
 
     // MARK: - Quality Filter Menu

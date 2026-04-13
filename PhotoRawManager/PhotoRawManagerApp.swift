@@ -28,10 +28,8 @@ struct PhotoRawManagerApp: App {
 
     var body: some Scene {
         WindowGroup({
-            let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "7.1"
-            let trial = subscriptionManager.currentTier == .free && subscriptionManager.trialDaysRemaining < 999
-                ? " — 체험판 \(subscriptionManager.trialDaysRemaining)일 남음" : ""
-            return "PickShot v\(ver)\(trial)"
+            let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "8.0"
+            return "PickShot v\(ver)-beta"
         }()) {
             ContentView()
                 .environmentObject(store)

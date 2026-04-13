@@ -723,28 +723,31 @@ struct PhotoPreviewView: View {
 
                 Divider().frame(height: 20).opacity(0.2)
 
-                StarRatingView(rating: photo.rating) { newRating in
-                    store.setRating(newRating, for: photo.id)
-                }
+                HStack(spacing: 8) {
+                    StarRatingView(rating: photo.rating) { newRating in
+                        store.setRating(newRating, for: photo.id)
+                    }
 
-                // 컬러 라벨 선택
-                HStack(spacing: 3) {
-                    ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
-                        Button(action: { store.setColorLabel(label, for: photo.id) }) {
-                            Circle()
-                                .fill(label.color ?? .clear)
-                                .frame(width: 14, height: 14)
-                                .overlay(
-                                    photo.colorLabel == label
-                                        ? Circle().stroke(Color.white, lineWidth: 2)
-                                        : nil
-                                )
+                    // 컬러 라벨 선택
+                    HStack(spacing: 3) {
+                        ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
+                            Button(action: { store.setColorLabel(label, for: photo.id) }) {
+                                Circle()
+                                    .fill(label.color ?? .clear)
+                                    .frame(width: 16, height: 16)
+                                    .overlay(
+                                        photo.colorLabel == label
+                                            ? Circle().stroke(Color.white, lineWidth: 2)
+                                            : nil
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Circle())
+                            .help("\(label.rawValue) (키: \(label.key.isEmpty ? "없음" : label.key))")
                         }
-                        .buttonStyle(.plain)
-                        .help("\(label.rawValue) (키: \(label.key.isEmpty ? "없음" : label.key))")
                     }
                 }
-                .help("스페이스 셀렉 토글 (Space)")
 
                 Divider().frame(height: 20).opacity(0.2)
 
