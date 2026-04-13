@@ -1192,6 +1192,7 @@ struct ThumbnailCell: View, Equatable {
                 .overlay(pickOverlay, alignment: .topLeading)
                 .overlay(gradeOverlay, alignment: .bottomLeading)
                 .overlay(sceneOverlay, alignment: .bottomTrailing)
+                .overlay(videoOverlay, alignment: .center)
 
             // File name
             Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
@@ -1294,6 +1295,45 @@ struct ThumbnailCell: View, Equatable {
             }
         }
         .padding(4)
+    }
+
+    @ViewBuilder
+    private var videoOverlay: some View {
+        if photo.isVideoFile {
+            ZStack {
+                // Play icon center
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: max(20, size * 0.2)))
+                    .foregroundColor(.white.opacity(0.8))
+                    .shadow(color: .black.opacity(0.5), radius: 3)
+
+                // Duration badge bottom-left
+                if let dur = photo.videoDuration, dur > 0 {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(formatDuration(dur))
+                                .font(.system(size: max(8, size * 0.065), weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.65))
+                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                .padding(4)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        if s >= 3600 {
+            return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+        }
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 
     @ViewBuilder

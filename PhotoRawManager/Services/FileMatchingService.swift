@@ -110,6 +110,17 @@ struct FileMatchingService {
         }
     }
 
+    /// Extract video duration in seconds (lightweight, no full decode)
+    static func videoDuration(url: URL) -> Double? {
+        let asset = AVURLAsset(url: url, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: false
+        ])
+        let dur = asset.duration
+        guard dur.isNumeric, dur != .zero else { return nil }
+        let seconds = CMTimeGetSeconds(dur)
+        return seconds > 0 ? seconds : nil
+    }
+
     /// Scans a folder and its subdirectories for JPG/RAW/image/video files and matches them by filename.
     /// Uses UTType for accurate file type detection with extension-based fallback.
     /// Supports structures like:
@@ -217,7 +228,7 @@ struct FileMatchingService {
             }
         result.append(contentsOf: imageOnlyItems)
 
-        // Video files
+        // Video files (duration extracted lightweight)
         let videoItems = videoFiles
             .sorted { $0.key < $1.key }
             .map { baseName, vidInfo in
@@ -226,6 +237,8 @@ struct FileMatchingService {
                     rawURL: nil
                 )
                 item.fileModDate = vidInfo.modDate
+                item.jpgFileSize = vidInfo.size
+                item.videoDuration = videoDuration(url: vidInfo.url)
                 return item
             }
         result.append(contentsOf: videoItems)

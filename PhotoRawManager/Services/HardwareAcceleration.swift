@@ -253,6 +253,7 @@ struct HWJPEGDecoder {
             // Skip segment
             if offset + 3 < data.count {
                 let segLen = Int(data[offset + 2]) << 8 | Int(data[offset + 3])
+                guard segLen >= 2 else { break }  // 보안: segLen 0이면 무한루프 방지
                 offset += 2 + segLen
             } else {
                 break
@@ -422,7 +423,11 @@ struct MetalImageProcessor {
         let sem = DispatchSemaphore(value: 0)
         commandBuffer.addCompletedHandler { _ in sem.signal() }
         commandBuffer.commit()
-        sem.wait()
+        let waitResult = sem.wait(timeout: .now() + 5)  // 보안: GPU 무응답 시 데드락 방지
+        guard waitResult == .success else {
+            fputs("[GPU] histogram 타임아웃\n", stderr)
+            return nil
+        }
 
         // Parse results - MPS outputs interleaved RGBA histogram as uint32
         let ptr = histogramBuffer.contents().bindMemory(to: UInt32.self, capacity: 256 * 4)
@@ -548,7 +553,7 @@ struct MetalImageProcessor {
         let height = surface.height
 
         // Create a CIImage from the IOSurface
-        let ciImage = CIImage(ioSurface: surface)
+        let ciImage = CIImage(ioSurface: unsafeBitCast(surface, to: IOSurfaceRef.self))
 
         guard let ciContext = _ciContext else {
             // Fallback without Metal CIContext

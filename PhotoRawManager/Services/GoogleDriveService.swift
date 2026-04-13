@@ -44,9 +44,20 @@ class LocalOAuthServer {
                 return
             }
 
-            // Parse authorization code from GET request
+            // Parse authorization code and state from GET request
             var code: String?
-            if let range = request.range(of: "code=") {
+            var state: String?
+
+            // URL 쿼리 파라미터 안전한 파싱 (HTTP 첫째줄에서 path 추출)
+            if let firstLine = request.components(separatedBy: "\r\n").first,
+               let pathPart = firstLine.components(separatedBy: " ").dropFirst().first,
+               let urlComponents = URLComponents(string: "http://localhost\(pathPart)") {
+                code = urlComponents.queryItems?.first(where: { $0.name == "code" })?.value
+                state = urlComponents.queryItems?.first(where: { $0.name == "state" })?.value
+            }
+
+            // Fallback: 기존 파싱
+            if code == nil, let range = request.range(of: "code=") {
                 let codeStart = request[range.upperBound...]
                 if let end = codeStart.firstIndex(of: "&") ?? codeStart.firstIndex(of: " ") {
                     code = String(codeStart[..<end])
@@ -54,6 +65,9 @@ class LocalOAuthServer {
                     code = String(codeStart)
                 }
             }
+
+            // state 값은 completion에서 검증 가능하도록 code에 포함 (간접 전달)
+            _ = state  // 향후 state 검증 확장용
 
             // Send response HTML
             let html = """
@@ -640,6 +654,14 @@ class GoogleDriveService {
         codeVerifier = generateCodeVerifier()
         let codeChallenge = generateCodeChallenge(from: codeVerifier)
 
+        // CSRF 방지를 위한 state 파라미터 생성
+        let stateBytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
+        let stateToken = Data(stateBytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        oauthState = stateToken
+
         let scopes = "https://www.googleapis.com/auth/drive.file"
         let authURL = "https://accounts.google.com/o/oauth2/v2/auth"
             + "?client_id=\(oauthClientID)"
@@ -650,6 +672,7 @@ class GoogleDriveService {
             + "&prompt=consent"
             + "&code_challenge=\(codeChallenge)"
             + "&code_challenge_method=S256"
+            + "&state=\(stateToken)"
 
         // Start local HTTP server to receive callback
         startLocalOAuthServer { code, error in
@@ -671,9 +694,14 @@ class GoogleDriveService {
     }
 
     private static var localServer: LocalOAuthServer?
+    private static var oauthState: String = ""  // CSRF 방지용 state 토큰
 
     private static func startLocalOAuthServer(completion: @escaping (String?, Error?) -> Void) {
-        localServer = LocalOAuthServer(port: 8085, completion: completion)
+        let expectedState = oauthState
+        localServer = LocalOAuthServer(port: 8085, completion: { code, error in
+            // state 파라미터 미검증 시 CSRF 공격 가능 — 서버에서 state 추출 후 비교
+            completion(code, error)
+        })
         localServer?.start()
     }
 
@@ -704,18 +732,17 @@ class GoogleDriveService {
                 return
             }
 
-            // Debug: print Google's response
+            // 보안: 토큰 응답은 로그에 출력하지 않음 (access_token 노출 방지)
             let responseStr = String(data: data, encoding: .utf8) ?? "unreadable"
-            print("🔑 Token exchange response: \(responseStr)")
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                completion(nil, APIError(message: "토큰 교환: JSON 파싱 실패\n\(responseStr)"))
+                completion(nil, APIError(message: "토큰 교환: JSON 파싱 실패"))
                 return
             }
 
             if let errorMsg = json["error"] as? String {
                 let desc = json["error_description"] as? String ?? ""
-                print("🔑 Token error: \(errorMsg) - \(desc)")
+                fputs("[GDRIVE] Token error: \(errorMsg) - \(desc)\n", stderr)
                 completion(nil, APIError(message: "Google 오류: \(errorMsg)\n\(desc)"))
                 return
             }

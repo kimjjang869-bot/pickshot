@@ -676,8 +676,18 @@ class KeyCaptureView: NSView {
             return
         }
 
-        // Spacebar: toggle space pick
+        // === 비디오 재생 단축키 ===
+        // 프리뷰가 보이는 레이아웃(gridPreview, filmstrip)에서만 비디오 단축키 활성화
+        let videoPreviewVisible = store.layoutMode == .gridPreview || store.layoutMode == .filmstrip
+        let isVideo = videoPreviewVisible && store.selectedPhoto?.isVideoFile == true
+        let videoMgr = VideoPlayerManager.shared
+
+        // Spacebar: 비디오면 재생/일시정지, 아니면 Space Pick
         if chars == " " || keyCode == 49 {
+            if isVideo && videoMgr.isReady {
+                videoMgr.togglePlayPause()
+                return
+            }
             guard !selectedIsFolder else { return }
             if store.selectionCount > 1 {
                 store.toggleSpacePickForSelected()
@@ -685,6 +695,15 @@ class KeyCaptureView: NSView {
                 store.toggleSpacePick(for: id)
             }
             return
+        }
+
+        // J/K/L: 비디오 스크러빙 (NLE 편집기 표준)
+        if isVideo && videoMgr.isReady {
+            if charOrCode("j", 38) && !hasCmd { videoMgr.jklScrub(key: "j"); return }
+            if charOrCode("k", 40) && !hasCmd { videoMgr.jklScrub(key: "k"); return }
+            if charOrCode("l", 37) && !hasCmd { videoMgr.jklScrub(key: "l"); return }
+            // S: 현재 프레임 스냅샷 저장
+            if charOrCode("s", 1) && !hasCmd { videoMgr.exportCurrentFrame(); return }
         }
 
         // G Select: instantly copy to Google Drive
@@ -749,6 +768,21 @@ class KeyCaptureView: NSView {
 
         // Arrow keys, Enter, Delete (keyCode-only)
         store.isKeyRepeat = event.isARepeat
+
+        // 비디오 재생 중: ←/→ = 프레임 스텝 또는 5초 이동
+        if isVideo && videoMgr.isReady && (keyCode == 123 || keyCode == 124) {
+            if videoMgr.isPlaying {
+                // 재생 중이면 5초 점프
+                if keyCode == 123 { videoMgr.seekRelative(seconds: -5) }
+                else { videoMgr.seekRelative(seconds: 5) }
+            } else {
+                // 일시정지 중이면 프레임 스텝
+                if keyCode == 123 { videoMgr.stepBackward() }
+                else { videoMgr.stepForward() }
+            }
+            return
+        }
+
         switch keyCode {
         case 123: store.selectLeft(shift: hasShift, cmd: hasCmd)    // <-
         case 124: store.selectRight(shift: hasShift, cmd: hasCmd)   // ->

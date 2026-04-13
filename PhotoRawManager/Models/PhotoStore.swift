@@ -3288,7 +3288,13 @@ class PhotoStore: ObservableObject {
         }
 
         for (index, photo) in targets.enumerated() {
-            let newBaseName = Self.previewRename(photo: photo, pattern: pattern, index: index, dateFormat: dateFormat, seqDigits: seqDigits, seqStart: seqStart)
+            var newBaseName = Self.previewRename(photo: photo, pattern: pattern, index: index, dateFormat: dateFormat, seqDigits: seqDigits, seqStart: seqStart)
+            // 보안: 경로 구분자, null 문자 제거 (경로 이탈 방지)
+            newBaseName = newBaseName
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "\0", with: "")
+                .replacingOccurrences(of: ":", with: "_")
+                .replacingOccurrences(of: "..", with: "_")
             let jpgExt = photo.jpgURL.pathExtension
             let parentDir = photo.jpgURL.deletingLastPathComponent()
             let newJPGURL = parentDir.appendingPathComponent("\(newBaseName).\(jpgExt)")

@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct ExifInfoView: View {
     let photo: PhotoItem
@@ -22,6 +23,14 @@ struct ExifInfoView: View {
                 }
 
                 fileLine
+
+                // === Video Metadata ===
+                if photo.isVideoFile {
+                    sectionDivider
+                    videoMetadataSection
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
 
                 if let quality = photo.quality, quality.isAnalyzed {
                     sectionDivider
@@ -461,26 +470,42 @@ struct ExifInfoView: View {
     private var headerLine: some View {
         let e = displayExif
         return HStack(spacing: 0) {
-            if let model = e?.cameraModel {
-                Text(model).font(.system(size: AppTheme.fontBody, weight: .bold))
-            }
-            if let lens = e?.lensModel {
-                cellDot
-                Text(lens).font(.system(size: AppTheme.fontCaption)).foregroundColor(.secondary).lineLimit(1)
-            }
-            if let exif = loadedRawExif ?? loadedExif {
-                if let iso = exif.iso {
-                    cellDot; settingItem(value: "\(iso)", label: "ISO", color: iso > 6400 ? .red : iso > 3200 ? .orange : .accentColor)
+            if photo.isVideoFile {
+                // 비디오: 파일명 표시
+                Image(systemName: "film")
+                    .font(.system(size: AppTheme.fontCaption))
+                    .foregroundColor(.purple)
+                Text("  \(photo.fileNameWithExtension)")
+                    .font(.system(size: AppTheme.fontBody, weight: .bold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                if let model = e?.cameraModel {
+                    Text(model).font(.system(size: AppTheme.fontBody, weight: .bold))
                 }
-                if let shutter = exif.shutterSpeed { cellDot; settingItem(value: shutter, label: "셔터", color: .accentColor) }
-                if let aperture = exif.aperture { cellDot; settingItem(value: String(format: "f/%.1f", aperture), label: "", color: .accentColor) }
-                if let focal = exif.focalLength { cellDot; settingItem(value: String(format: "%.0fmm", focal), label: "", color: .accentColor) }
+                if let lens = e?.lensModel {
+                    cellDot
+                    Text(lens).font(.system(size: AppTheme.fontCaption)).foregroundColor(.secondary).lineLimit(1)
+                }
+                if let exif = loadedRawExif ?? loadedExif {
+                    if let iso = exif.iso {
+                        cellDot; settingItem(value: "\(iso)", label: "ISO", color: iso > 6400 ? .red : iso > 3200 ? .orange : .accentColor)
+                    }
+                    if let shutter = exif.shutterSpeed { cellDot; settingItem(value: shutter, label: "셔터", color: .accentColor) }
+                    if let aperture = exif.aperture { cellDot; settingItem(value: String(format: "f/%.1f", aperture), label: "", color: .accentColor) }
+                    if let focal = exif.focalLength { cellDot; settingItem(value: String(format: "%.0fmm", focal), label: "", color: .accentColor) }
+                }
             }
 
             Spacer(minLength: 4)
 
             if let date = e?.dateTaken {
                 Text("\(formatDate(date)) \(formatTime(date))")
+                    .font(.system(size: AppTheme.fontCaption, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.6))
+            } else if photo.isVideoFile {
+                // 비디오는 파일 수정일 표시
+                Text("\(formatDate(photo.fileModDate)) \(formatTime(photo.fileModDate))")
                     .font(.system(size: AppTheme.fontCaption, design: .monospaced))
                     .foregroundColor(.secondary.opacity(0.6))
             }
@@ -499,8 +524,18 @@ struct ExifInfoView: View {
         let e = displayExif
 
         return HStack(spacing: 0) {
-            // RAW만 있으면 RAW만, 둘 다 있으면 둘 다
-            if photo.isRawOnly {
+            if photo.isVideoFile {
+                // Video file
+                let ext = photo.jpgURL.pathExtension.uppercased()
+                Text(ext).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(Color.purple.opacity(0.85)).clipShape(Capsule())
+                Text(" \(jpgFileSizeStr)").font(.system(size: AppTheme.fontCaption, design: .monospaced)).foregroundColor(.secondary)
+                if let dur = photo.videoDuration, dur > 0 {
+                    cellDot
+                    Text(VideoPlayerManager.formatTime(dur))
+                        .font(.system(size: AppTheme.fontCaption, weight: .medium, design: .monospaced)).foregroundColor(.purple)
+                }
+            } else if photo.isRawOnly {
                 // RAW only
                 let ext = photo.jpgURL.pathExtension.uppercased()
                 Text(ext).font(.system(size: AppTheme.fontCaption, weight: .bold)).foregroundColor(.white)
@@ -619,6 +654,136 @@ struct ExifInfoView: View {
     }()
     private func formatDate(_ date: Date) -> String { Self.dateFmt.string(from: date) }
     private func formatTime(_ date: Date) -> String { Self.timeFmt.string(from: date) }
+
+    // MARK: - Video Metadata Section
+
+    @State private var videoMeta: VideoPlayerManager.VideoMetadata?
+
+    private var videoMetadataSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "film")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.purple)
+                Text("비디오 정보")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.purple)
+            }
+
+            // SLO-MO 뱃지
+            if let meta = videoMeta, let sloMo = meta.slowMoText {
+                Text(sloMo)
+                    .font(.system(size: 10, weight: .black))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.8))
+                    .clipShape(Capsule())
+            }
+
+            if let meta = videoMeta {
+                // Resolution + FPS + Codec
+                HStack(spacing: 0) {
+                    Text(meta.resolutionText)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    infoDot
+                    Text(meta.fpsText)
+                        .font(.system(size: 10, design: .monospaced))
+                    infoDot
+                    Text(meta.codecBadge)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(meta.isRAWVideo ? Color.orange.opacity(0.85) : Color.purple.opacity(0.7))
+                        .clipShape(Capsule())
+                }
+
+                // Bitrate + Duration + File size
+                HStack(spacing: 0) {
+                    Text(meta.bitrateText)
+                        .font(.system(size: 10, design: .monospaced))
+                    if meta.duration > 0 {
+                        infoDot
+                        Text(VideoPlayerManager.formatTime(meta.duration))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    }
+                    if meta.fileSize > 0 {
+                        infoDot
+                        Text(formatSize(meta.fileSize))
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                }
+                .foregroundColor(.secondary)
+
+                // Audio
+                if meta.audioChannels > 0 {
+                    HStack(spacing: 0) {
+                        Image(systemName: "speaker.wave.2")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text(" \(meta.audioChannels)ch")
+                            .font(.system(size: 10, design: .monospaced))
+                        if meta.audioSampleRate > 0 {
+                            infoDot
+                            Text(String(format: "%.0fkHz", meta.audioSampleRate / 1000))
+                                .font(.system(size: 10, design: .monospaced))
+                        }
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                // LOG/RAW indicator
+                if meta.isLOG || meta.isRAWVideo {
+                    HStack(spacing: 4) {
+                        Text(meta.isRAWVideo ? "RAW Video" : "LOG")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(meta.isRAWVideo ? .orange : .yellow)
+                        if let gamma = meta.captureGamma {
+                            Text(gamma)
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundColor(.yellow)
+                        }
+                        if let tf = meta.transferFunction, tf != "ITU_R_709_2" {
+                            Text(tf)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        if let cp = meta.colorPrimaries, cp != "ITU_R_709_2" {
+                            Text(cp)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            } else {
+                Text("로딩 중...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .onAppear { loadVideoMetadata() }
+            }
+        }
+    }
+
+    private func loadVideoMetadata() {
+        guard photo.isVideoFile else { return }
+        let mgr = VideoPlayerManager.shared
+        // VideoPlayerManager가 같은 영상의 메타데이터를 이미 추출했으면 재사용
+        if let existing = mgr.videoMetadata, existing.fileSize > 0 {
+            self.videoMeta = existing
+            return
+        }
+        // 없으면 대기 후 재시도 (최대 3회)
+        Task {
+            for _ in 0..<3 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if let meta = mgr.videoMetadata, meta.fileSize > 0 {
+                    await MainActor.run { self.videoMeta = meta }
+                    return
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Quality Section

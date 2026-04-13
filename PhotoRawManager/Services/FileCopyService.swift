@@ -403,7 +403,7 @@ struct FileCopyService {
               xmp:Rating="\(ratingValue)"
               xmp:Label="\(label)"
               xmp:CreatorTool="PickShot v6.0"
-              crs:RawFileName="\(fileName)">
+              crs:RawFileName="\(fileName.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))">
             </rdf:Description>
           </rdf:RDF>
         </x:xmpmeta>

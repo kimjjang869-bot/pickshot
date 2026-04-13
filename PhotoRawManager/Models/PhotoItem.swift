@@ -228,6 +228,9 @@ struct PhotoItem: Identifiable, Hashable {
     var hasText: Bool = false          // 문서/텍스트 포함
     var personCoverage: Double = 0     // 인물 비율 (0~1)
 
+    // Video
+    var videoDuration: Double? = nil   // 비디오 재생 시간 (초)
+
     // Client Comments
     var comments: [String] = []        // 코멘트 (pickshot 파일에서 가져옴)
 

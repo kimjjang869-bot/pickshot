@@ -109,6 +109,9 @@
 		ZEB10001 /* ZebraWarningOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = ZEB10002 /* ZebraWarningOverlay.swift */; };
 		WMP10001 /* WatermarkPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WMP10002 /* WatermarkPreviewView.swift */; };
 		FPK10001 /* FocusPeakingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPK10002 /* FocusPeakingOverlay.swift */; };
+		VPM10001 /* VideoPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPM10002 /* VideoPlayerManager.swift */; };
+		LUT10001 /* LUTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = LUT10002 /* LUTService.swift */; };
+		VPV10001 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPV10002 /* VideoPlayerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -213,6 +216,9 @@
 		ZEB10002 /* ZebraWarningOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZebraWarningOverlay.swift; sourceTree = "<group>"; };
 		WMP10002 /* WatermarkPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkPreviewView.swift; sourceTree = "<group>"; };
 		FPK10002 /* FocusPeakingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPeakingOverlay.swift; sourceTree = "<group>"; };
+		VPM10002 /* VideoPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerManager.swift; sourceTree = "<group>"; };
+		LUT10002 /* LUTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LUTService.swift; sourceTree = "<group>"; };
+		VPV10002 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -308,6 +314,7 @@
 				FPK10002 /* FocusPeakingOverlay.swift */,
 				62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */,
 				A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */,
+				VPV10002 /* VideoPlayerView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -352,6 +359,8 @@
 				STL10002 /* StyleLearner.swift */,
 				4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */,
 				0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */,
+				VPM10002 /* VideoPlayerManager.swift */,
+				LUT10002 /* LUTService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -452,6 +461,9 @@
 				73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */,
 				49509F6E57E24C42A069B239 /* FilenameMatchingService.swift in Sources */,
 				XMP10001 /* XMPService.swift in Sources */,
+				VPM10001 /* VideoPlayerManager.swift in Sources */,
+				LUT10001 /* LUTService.swift in Sources */,
+				VPV10001 /* VideoPlayerView.swift in Sources */,
 				A10001,
 				A10002,
 				A10003,
@@ -656,7 +668,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.7;
+				MARKETING_VERSION = 8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -684,7 +696,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 7.7;
+				MARKETING_VERSION = 8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

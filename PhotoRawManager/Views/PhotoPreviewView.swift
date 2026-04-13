@@ -479,7 +479,11 @@ struct PhotoPreviewView: View {
                 let vSize = geo.size
 
                 Group {
-                if let image = image {
+                // 비디오 파일이면 비디오 플레이어 표시
+                if photo.isVideoFile {
+                    VideoPlayerView(url: photo.jpgURL)
+                        .frame(width: vSize.width, height: vSize.height)
+                } else if let image = image {
                     let imgW: CGFloat = image.size.width
                     let imgH: CGFloat = image.size.height
                     let imgSize = CGSize(width: imgW, height: imgH)
