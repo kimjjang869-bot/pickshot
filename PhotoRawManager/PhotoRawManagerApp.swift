@@ -8,6 +8,16 @@ struct PhotoRawManagerApp: App {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     init() {
+        // 중복 실행 방지
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        if runningApps.count > 1 {
+            // 이미 실행 중인 인스턴스를 앞으로 가져오고 현재 인스턴스 종료
+            if let existing = runningApps.first(where: { $0 != .current }) {
+                existing.activate()
+            }
+            NSApp.terminate(nil)
+        }
+
         // 스크롤바 항상 표시 (시스템 설정 오버라이드)
         UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
         SubscriptionManager.shared.checkTrialStatus()
