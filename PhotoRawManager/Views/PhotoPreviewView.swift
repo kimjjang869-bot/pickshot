@@ -1098,32 +1098,8 @@ struct PhotoPreviewView: View {
 
     private var correctionBar: some View {
         HStack(spacing: 8) {
-            // 자동 수평/수직 보정
-            Menu {
-                Button(action: { applyAutoUpright(mode: .auto) }) {
-                    Label("자동 보정", systemImage: "level")
-                }
-                Button(action: { applyAutoUpright(mode: .level) }) {
-                    Label("수평 보정", systemImage: "arrow.left.and.right")
-                }
-                Button(action: { applyAutoUpright(mode: .vertical) }) {
-                    Label("수직 보정", systemImage: "arrow.up.and.down")
-                }
-                Button(action: { applyAutoUpright(mode: .full) }) {
-                    Label("전체 보정", systemImage: "aspectratio")
-                }
-            } label: {
-                Label(isCorrecting ? "보정 중..." : "수평/수직", systemImage: "level")
-                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
-            }
-            .menuStyle(.borderlessButton)
-            .padding(.horizontal, 8)
-            .frame(height: AppTheme.buttonHeight)
-            .foregroundColor(.white)
-            .background(Color.green.opacity(isCorrecting ? 0.3 : 0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .disabled(isCorrecting)
-            .help("수평/수직 자동 보정 (라이트룸 Upright 방식)")
+            // 수평/수직 보정 — 추후 활성화 예정
+            // Menu { ... } label: { Label("수평/수직", systemImage: "level") }
 
             // 보정 전후 비교 + 저장
             if correctionResult != nil {
@@ -2495,41 +2471,9 @@ struct CorrectionOptionsView: View {
             ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 12) {
 
-            Toggle(isOn: $options.autoHorizon) {
-                HStack(spacing: 8) {
-                    Image(systemName: "level")
-                        .font(.system(size: 12))
-                        .frame(width: 20)
-                        .foregroundColor(.blue)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("수평/수직 보정")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("기울어진 수평선을 자동으로 맞춤")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .toggleStyle(.checkbox)
-            .help("수평선 자동 보정")
-
-            Toggle(isOn: $options.autoUpright) {
-                HStack(spacing: 8) {
-                    Image(systemName: "perspective")
-                        .font(.system(size: 12))
-                        .frame(width: 20)
-                        .foregroundColor(.cyan)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("원근 보정 (Upright)")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("건축물 수직선을 자동으로 세움")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .toggleStyle(.checkbox)
-            .help("건축 사진 수직선 원근 보정")
+            // 수평/수직 보정 + 원근 보정 — 추후 활성화 예정
+            // Toggle(isOn: $options.autoHorizon) { ... }
+            // Toggle(isOn: $options.autoUpright) { ... }
 
             Toggle(isOn: $options.faceBalance) {
                 HStack(spacing: 8) {
@@ -2835,16 +2779,9 @@ struct BatchCorrectionView: View {
 
             Divider()
 
-            // Correction options
-            Toggle(isOn: $options.autoHorizon) {
-                Label("수평/수직 보정", systemImage: "level").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("수평선 자동 보정")
-
-            Toggle(isOn: $options.autoUpright) {
-                Label("원근 보정 (Upright)", systemImage: "perspective").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("건축 사진 수직선 원근 보정")
+            // 수평/수직 + 원근 보정 — 추후 활성화 예정
+            // Toggle(isOn: $options.autoHorizon) { ... }
+            // Toggle(isOn: $options.autoUpright) { ... }
 
             Toggle(isOn: $options.faceBalance) {
                 Label("얼굴 기준 보정", systemImage: "face.smiling").font(.system(size: 12))

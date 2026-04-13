@@ -102,9 +102,8 @@ struct ExportView: View {
                         Picker("", selection: $convOptions.colorSpace) {
                             ForEach(RAWConversionService.OutputColorSpace.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.frame(width: 110)
-                        Toggle("수평", isOn: $convOptions.autoHorizon)
-                            .font(.system(size: 11))
-                            .toggleStyle(.checkbox)
+                        // 수평 보정 — 추후 활성화 예정
+                        // Toggle("수평", isOn: $convOptions.autoHorizon)
                         Spacer()
                     }
 
