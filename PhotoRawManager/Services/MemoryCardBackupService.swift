@@ -78,11 +78,7 @@ class MemoryCardBackupService: ObservableObject {
         stopMonitoring()
     }
 
-    private static let photoExtensions: Set<String> = [
-        "jpg", "jpeg", "arw", "cr2", "cr3", "nef", "nrw", "raf",
-        "dng", "orf", "rw2", "pef", "srw", "3fr", "nefx",
-        "heic", "heif", "tiff", "tif"
-    ]
+    private static let photoExtensions: Set<String> = FileMatchingService.allMediaExtensions
 
     // MARK: - Volume Monitoring
 

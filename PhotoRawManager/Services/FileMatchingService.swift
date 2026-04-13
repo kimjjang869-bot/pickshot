@@ -12,8 +12,29 @@ struct FileMatchingService {
         "tif", "tiff",              // TIFF
         "bmp",                      // BMP
         "gif",                      // GIF
-        "webp",                     // WebP
+        "webp",                     // WebP (macOS 14+)
+        "avif",                     // AVIF (AV1 기반 차세대 포맷)
+        "jxl",                      // JPEG XL (차세대 JPEG)
+        "jp2", "j2k", "jpx",       // JPEG 2000
+        "tga",                      // Truevision TGA
+        "exr",                      // OpenEXR (HDR)
+        "ico",                      // Windows Icon
+        "icns",                     // macOS Icon
+        "sgi",                      // Silicon Graphics
+        "pbm", "pgm", "ppm",       // Netpbm
+        "dds",                      // DirectDraw Surface
+        "ktx", "ktx2",             // Khronos Texture
+        "astc",                     // Adaptive Scalable Texture Compression
+        "hdr",                      // Radiance HDR
     ]
+
+    /// 모든 지원 이미지 확장자 (JPG + RAW + Image + Video)
+    static let allImageExtensions: Set<String> = jpgExtensions
+        .union(rawExtensions)
+        .union(imageExtensions)
+
+    static let allMediaExtensions: Set<String> = allImageExtensions
+        .union(videoExtensions)
     static let videoExtensions: Set<String> = [
         "mov", "mp4", "avi", "m4v"  // Video files
     ]

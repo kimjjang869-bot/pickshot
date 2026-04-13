@@ -3157,8 +3157,7 @@ struct FolderPreviewGrid: View {
                 return
             }
 
-            let imageExts = Set(["jpg", "jpeg", "png", "tif", "tiff", "heic",
-                                  "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng"])
+            let imageExts = FileMatchingService.allImageExtensions
             let imageFiles = items.filter { imageExts.contains($0.pathExtension.lowercased()) }
             let count = imageFiles.count
 

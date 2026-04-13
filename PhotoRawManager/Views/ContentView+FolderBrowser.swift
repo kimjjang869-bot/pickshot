@@ -51,10 +51,9 @@ struct FolderItem: Identifiable {
     }
 
     static func hasImages(in url: URL) -> Bool {
-        let imageExts: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tiff", "tif", "cr2", "cr3", "nef", "arw", "orf", "raf", "dng", "rw2"]
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return false }
-        return contents.contains { imageExts.contains($0.pathExtension.lowercased()) }
+        return contents.contains { FileMatchingService.allImageExtensions.contains($0.pathExtension.lowercased()) }
     }
 }
 
