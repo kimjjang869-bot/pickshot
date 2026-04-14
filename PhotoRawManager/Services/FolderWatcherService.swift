@@ -63,6 +63,21 @@ class FolderWatcherService {
         source.resume()
     }
 
+    /// 우리가 직접 파일을 추가/삭제한 경우 baseline(knownFiles)을 현재 상태로 재동기화해
+    /// 불필요한 reload 콜백 발생을 막는다. 대기 중인 debounce 작업도 취소한다.
+    /// → 삭제/이름변경 직후 깜빡임 방지.
+    func syncBaselineSilently() {
+        debounceWorkItem?.cancel()
+        debounceWorkItem = nil
+        guard let folder = watchedURL else { return }
+        let files = currentFileNames(in: folder)
+        let dirs = currentSubfolderNames(in: folder)
+        stateLock.lock()
+        knownFiles = files
+        knownSubfolders = dirs
+        stateLock.unlock()
+    }
+
     /// Stop watching the current folder.
     func stopWatching() {
         debounceWorkItem?.cancel()

@@ -530,14 +530,12 @@ struct NativeListView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: 별점 5점 토글 (이미 5점이면 0점)
+        // 스페이스바: SP(셀렉) 토글 — 빨간 테두리 표시
         if chars == " " {
-            let ids = store.selectedPhotoIDs.count > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
-            for id in ids {
-                if let i = store.photos.firstIndex(where: { $0.id == id }) {
-                    let newRating = store.photos[i].rating == 5 ? 0 : 5
-                    store.setRating(newRating, for: id)
-                }
+            if store.selectionCount > 1 {
+                store.toggleSpacePickForSelected()
+            } else if let id = store.selectedPhotoID {
+                store.toggleSpacePick(for: id)
             }
             return .handled
         }

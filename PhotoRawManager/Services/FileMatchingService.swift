@@ -96,6 +96,14 @@ struct FileMatchingService {
         case jpg, raw, image, video, other
     }
 
+    /// 외부(드래그앤드롭 등)에서 가져올 수 있는 파일인지 판별. 이미지/RAW/비디오만 true.
+    static func isImportableFile(_ url: URL) -> Bool {
+        switch classifyFile(url) {
+        case .jpg, .raw, .image, .video: return true
+        case .other: return false
+        }
+    }
+
     /// Generate a thumbnail from the first frame of a video file
     static func generateVideoThumbnail(url: URL) -> NSImage? {
         let asset = AVAsset(url: url)
