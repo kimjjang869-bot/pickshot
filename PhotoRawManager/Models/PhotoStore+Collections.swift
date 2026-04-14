@@ -50,38 +50,42 @@ extension PhotoStore {
         let key = "hasOptimized_v6"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
 
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        let isAppleSilicon = ProcessInfo.processInfo.processorCount >= 8
+        let spec = SystemSpec.shared
+        let ramGB = spec.ramGB
+        let isAppleSilicon = spec.isAppleSilicon
 
         // 썸네일 표시 크기는 100px 고정 (생성 픽셀 200px이면 Retina 충분)
         UserDefaults.standard.set(Double(100), forKey: "savedThumbnailSize")
         UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
         thumbnailSize = 100
 
-        if ramGB >= 64 && isAppleSilicon {
+        // SystemSpec tier 기반 자동 최적화 (중앙화)
+        let previewMax = spec.previewMaxPixel()
+        switch spec.effectiveTier {
+        case .extreme:
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(30.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(4.0, forKey: "thumbnailCacheMaxGB")
             previewResolution = 0
-        } else if ramGB >= 32 {
+        case .high:
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(25.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(3.0, forKey: "thumbnailCacheMaxGB")
             previewResolution = 0
-        } else if ramGB >= 16 {
+        case .standard:
             UserDefaults.standard.set("original", forKey: "previewMaxResolution")
             UserDefaults.standard.set(15.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(1.5, forKey: "thumbnailCacheMaxGB")
             previewResolution = 0
-        } else {
+        case .low:
             UserDefaults.standard.set("3000", forKey: "previewMaxResolution")
             UserDefaults.standard.set(10.0, forKey: "previewCacheSize")
             UserDefaults.standard.set(0.5, forKey: "thumbnailCacheMaxGB")
-            previewResolution = 3000
+            previewResolution = previewMax
         }
 
         UserDefaults.standard.set(true, forKey: key)
-        fputs("[OPT] 첫 실행 자동 최적화 완료 — RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n", stderr)
+        fputs("[OPT] 첫 실행 자동 최적화 완료 — tier: \(spec.effectiveTier.rawValue), RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n", stderr)
     }
 
     /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화

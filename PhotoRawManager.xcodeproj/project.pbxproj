@@ -119,6 +119,7 @@
 		VPM10001 /* VideoPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPM10002 /* VideoPlayerManager.swift */; };
 		LUT10001 /* LUTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = LUT10002 /* LUTService.swift */; };
 		VPV10001 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPV10002 /* VideoPlayerView.swift */; };
+		SSP10001 /* SystemSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = SSP10002 /* SystemSpec.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -233,6 +234,7 @@
 		VPM10002 /* VideoPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerManager.swift; sourceTree = "<group>"; };
 		LUT10002 /* LUTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LUTService.swift; sourceTree = "<group>"; };
 		VPV10002 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		SSP10002 /* SystemSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSpec.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -382,6 +384,7 @@
 				0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */,
 				VPM10002 /* VideoPlayerManager.swift */,
 				LUT10002 /* LUTService.swift */,
+				SSP10002 /* SystemSpec.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -563,6 +566,7 @@
 				FPK10001 /* FocusPeakingOverlay.swift in Sources */,
 				CS10001 /* ClientSelectService.swift in Sources */,
 				CS10002 /* ClientSelectSetupView.swift in Sources */,
+				SSP10001 /* SystemSpec.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -685,7 +689,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -696,7 +700,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 8.0.7;
+				MARKETING_VERSION = 8.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -713,7 +717,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -724,7 +728,7 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
-				MARKETING_VERSION = 8.0.7;
+				MARKETING_VERSION = 8.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				SWIFT_EMIT_LOC_STRINGS = YES;

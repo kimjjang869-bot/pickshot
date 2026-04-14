@@ -233,8 +233,8 @@ struct FileCopyService {
         var completed = 0
         let copyStart = CFAbsoluteTimeGetCurrent()
 
-        let cores = ProcessInfo.processInfo.activeProcessorCount
-        let limit = max(2, min(4, cores / 2))
+        // SystemSpec tier 기반 동시성 (standard = 3, high = 4, extreme = 6)
+        let limit = SystemSpec.shared.fileCopyConcurrency()
         let semaphore = DispatchSemaphore(value: limit)
         let group = DispatchGroup()
         let workQueue = DispatchQueue.global(qos: .userInitiated)

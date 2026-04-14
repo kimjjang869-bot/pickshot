@@ -39,10 +39,13 @@ class PerformanceMonitor {
         startTime = Date()
         setupLogFile()
         writeLog("=== PickShot Performance Monitor Started ===")
-        writeLog("App Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+        writeLog("App Version: \(AppLogger.appVersion)\(AppLogger.appBuildSuffix)")
         writeLog("macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)")
-        writeLog("RAM: \(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)GB")
-        writeLog("CPU Cores: \(ProcessInfo.processInfo.activeProcessorCount)")
+        writeLog("--- Hardware ---")
+        // Logger.swift와 동일한 상세 하드웨어 정보 공유
+        for line in AppLogger.hardwareInfoLines {
+            writeLog(line)
+        }
         writeLog("============================================\n")
 
         // Monitor every 3 seconds
@@ -117,8 +120,11 @@ class PerformanceMonitor {
         }
 
         // Periodic status (every 30 seconds)
+        // 테스터 로그에서 시간대별 리소스 추이 분석용 — uptime(초)/메모리/CPU/디스크 여유 포함
         if Date().timeIntervalSince(lastLogTime) > 30 {
-            writeLog("📊 Status: Mem=\(String(format: "%.0f", memMB))MB CPU=\(String(format: "%.1f", cpu))% Warnings=\(warningCount) Uptime=\(uptimeString)")
+            let uptimeSec = Int(Date().timeIntervalSince(startTime))
+            let freeGB = AppLogger.currentFreeDiskGB()
+            writeLog("[PERF] uptime=\(uptimeSec)s mem=\(String(format: "%.0f", memMB))MB cpu=\(String(format: "%.1f", cpu))% disk_free=\(String(format: "%.0f", freeGB))GB warnings=\(warningCount)")
             lastLogTime = Date()
         }
     }

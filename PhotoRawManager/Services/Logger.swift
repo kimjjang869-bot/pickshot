@@ -1,5 +1,7 @@
 import Foundation
 import AppKit
+import Metal
+import Darwin
 
 enum LogCategory: String {
     case preview = "📷"
@@ -73,8 +75,8 @@ class AppLogger {
 
         if fileHandle == nil {
             if !FileManager.default.fileExists(atPath: logFile.path) {
-                // Write header
-                let header = "=== PickShot Log ===\nVersion: \(appVersion)\nDevice: \(deviceName)\nDate: \(dateStr)\nOS: \(ProcessInfo.processInfo.operatingSystemVersionString)\n===\n"
+                // Write header (상세 하드웨어 정보 포함)
+                let header = buildLogHeader(dateStr: dateStr)
                 try? header.write(to: logFile, atomically: true, encoding: .utf8)
             }
             fileHandle = FileHandle(forWritingAtPath: logFile.path)
@@ -166,6 +168,168 @@ class AppLogger {
 
     static var deviceName: String {
         Host.current().localizedName?.replacingOccurrences(of: " ", with: "_") ?? "unknown"
+    }
+
+    // MARK: - Hardware Info (상세 PC 스펙)
+
+    /// 앱 시작 시각 (uptime 계산용). PerformanceMonitor.start()에서도 공유.
+    static let appStartDate: Date = Date()
+
+    /// 전체 로그 헤더 생성. 파일 작성 또는 PerformanceMonitor에서 공유.
+    static func buildLogHeader(dateStr: String) -> String {
+        var lines: [String] = []
+        lines.append("=== PickShot Log ===")
+        lines.append("Version: \(appVersion)\(appBuildSuffix)")
+        lines.append("Device: \(deviceName)")
+        lines.append("Date: \(dateStr)")
+        lines.append("OS: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        lines.append("--- Hardware ---")
+        lines.append(contentsOf: hardwareInfoLines)
+        lines.append("===\n")
+        return lines.joined(separator: "\n")
+    }
+
+    /// 공유 가능한 하드웨어 정보 라인 리스트. Logger/PerformanceMonitor에서 재사용.
+    static var hardwareInfoLines: [String] {
+        var out: [String] = []
+
+        let hwModelRaw = sysctlString("hw.model") ?? "Unknown"
+        let marketing = modelMarketingMap[hwModelRaw]
+        if let m = marketing {
+            out.append("Mac Model: \(m) [\(hwModelRaw)]")
+        } else {
+            out.append("Mac Model: \(hwModelRaw)")
+        }
+
+        let chip = sysctlString("machdep.cpu.brand_string") ?? "Unknown"
+        out.append("Chip: \(chip)")
+
+        let logical = sysctlInt("hw.logicalcpu") ?? ProcessInfo.processInfo.activeProcessorCount
+        let pCores = sysctlInt("hw.perflevel0.logicalcpu")
+        let eCores = sysctlInt("hw.perflevel1.logicalcpu")
+        if let p = pCores, let e = eCores {
+            out.append("CPU Cores: \(logical) (P: \(p), E: \(e))")
+        } else {
+            out.append("CPU Cores: \(logical)")
+        }
+
+        let ramGB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0
+        out.append("RAM: \(String(format: "%.0f", ramGB)) GB")
+
+        let gpuName = MTLCreateSystemDefaultDevice()?.name ?? "Unknown"
+        out.append("GPU: \(gpuName)")
+
+        // Storage: 시스템 볼륨
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: "/") {
+            let totalBytes = (attrs[.systemSize] as? NSNumber)?.doubleValue ?? 0
+            let freeBytes = (attrs[.systemFreeSize] as? NSNumber)?.doubleValue ?? 0
+            let totalGB = totalBytes / 1_073_741_824.0
+            let freeGB = freeBytes / 1_073_741_824.0
+            out.append("Storage: \(String(format: "%.0f", totalGB)) GB (free \(String(format: "%.0f", freeGB)) GB)")
+        } else {
+            out.append("Storage: Unknown")
+        }
+
+        // Display: 메인 스크린
+        if let screen = NSScreen.main {
+            let size = screen.frame.size
+            let scale = screen.backingScaleFactor
+            let pxW = Int(size.width * scale)
+            let pxH = Int(size.height * scale)
+            var hz = 60
+            if #available(macOS 12.0, *) {
+                hz = screen.maximumFramesPerSecond
+            }
+            out.append("Display: \(pxW) x \(pxH) @ \(hz)Hz, Scale \(String(format: "%.1f", scale))")
+        } else {
+            out.append("Display: Unknown")
+        }
+
+        let locale = Locale.current.identifier
+        out.append("Locale: \(locale)")
+
+        let tz = TimeZone.current.identifier
+        let abbr = TimeZone.current.abbreviation() ?? ""
+        out.append("Timezone: \(tz)\(abbr.isEmpty ? "" : " (\(abbr))")")
+
+        let uptime = Int(Date().timeIntervalSince(appStartDate))
+        out.append("App Uptime: \(uptime)s")
+
+        // 샌드박스 감지 (APP_SANDBOX_CONTAINER_ID 환경변수)
+        let sandbox = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        out.append("App Sandbox: \(sandbox ? "Yes" : "No")")
+
+        return out
+    }
+
+    /// build number 접미사 ("(build 20)") — 없으면 빈 문자열.
+    static var appBuildSuffix: String {
+        if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String, !build.isEmpty {
+            return " (build \(build))"
+        }
+        return ""
+    }
+
+    /// sysctl 문자열 값 조회. 실패 시 nil.
+    static func sysctlString(_ name: String) -> String? {
+        var size = 0
+        if sysctlbyname(name, nil, &size, nil, 0) != 0 || size == 0 { return nil }
+        var bytes = [CChar](repeating: 0, count: size)
+        if sysctlbyname(name, &bytes, &size, nil, 0) != 0 { return nil }
+        return String(cString: bytes)
+    }
+
+    /// sysctl Int 값 조회. 실패 시 nil.
+    static func sysctlInt(_ name: String) -> Int? {
+        var value: Int = 0
+        var size = MemoryLayout<Int>.size
+        if sysctlbyname(name, &value, &size, nil, 0) != 0 { return nil }
+        return value
+    }
+
+    /// 주요 Mac 모델 식별자 → 마케팅 네임. 없으면 hw.model 그대로.
+    private static let modelMarketingMap: [String: String] = [
+        "MacBookPro18,1": "MacBook Pro 16-inch (M1 Pro/Max, 2021)",
+        "MacBookPro18,2": "MacBook Pro 16-inch (M1 Pro/Max, 2021)",
+        "MacBookPro18,3": "MacBook Pro 14-inch (M1 Pro/Max, 2021)",
+        "MacBookPro18,4": "MacBook Pro 14-inch (M1 Pro/Max, 2021)",
+        "Mac14,5": "MacBook Pro 14-inch (M2 Pro/Max, 2023)",
+        "Mac14,6": "MacBook Pro 16-inch (M2 Pro/Max, 2023)",
+        "Mac14,7": "MacBook Pro 13-inch (M2, 2022)",
+        "Mac14,9": "MacBook Pro 14-inch (M2 Pro/Max, 2023)",
+        "Mac14,10": "MacBook Pro 16-inch (M2 Pro/Max, 2023)",
+        "Mac15,3": "MacBook Pro 14-inch (M3, 2023)",
+        "Mac15,6": "MacBook Pro 14-inch (M3 Pro/Max, 2023)",
+        "Mac15,7": "MacBook Pro 16-inch (M3 Pro/Max, 2023)",
+        "Mac15,8": "MacBook Pro 14-inch (M3 Max, 2023)",
+        "Mac15,9": "MacBook Pro 16-inch (M3 Max, 2023)",
+        "Mac16,1": "MacBook Pro 14-inch (M4, 2024)",
+        "Mac16,6": "MacBook Pro 14-inch (M4 Pro/Max, 2024)",
+        "Mac16,8": "MacBook Pro 16-inch (M4 Pro/Max, 2024)",
+        "Mac14,2": "MacBook Air 13-inch (M2, 2022)",
+        "Mac14,15": "MacBook Air 15-inch (M2, 2023)",
+        "Mac15,12": "MacBook Air 13-inch (M3, 2024)",
+        "Mac15,13": "MacBook Air 15-inch (M3, 2024)",
+        "Mac14,3": "Mac mini (M2, 2023)",
+        "Mac14,12": "Mac mini (M2 Pro, 2023)",
+        "Mac15,4": "Mac mini (M4, 2024)",
+        "Mac15,5": "Mac mini (M4 Pro, 2024)",
+        "Mac13,1": "Mac Studio (M1 Max, 2022)",
+        "Mac13,2": "Mac Studio (M1 Ultra, 2022)",
+        "Mac14,13": "Mac Studio (M2 Max, 2023)",
+        "Mac14,14": "Mac Studio (M2 Ultra, 2023)",
+        "Mac15,14": "Mac Studio (M4 Max, 2025)",
+        "iMac21,1": "iMac 24-inch (M1, 2021)",
+        "iMac21,2": "iMac 24-inch (M1, 2021)",
+    ]
+
+    /// 현재 시스템 볼륨 여유 공간 (GB). 주기적 샘플링에서 사용.
+    static func currentFreeDiskGB() -> Double {
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: "/"),
+           let freeBytes = (attrs[.systemFreeSize] as? NSNumber)?.doubleValue {
+            return freeBytes / 1_073_741_824.0
+        }
+        return 0
     }
 
     static var localIP: String {

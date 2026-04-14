@@ -23,6 +23,11 @@ struct PhotoRawManagerApp: App {
 
         // 툴팁 표시 속도 단축 (기본 ~2초 → 0.5초)
         UserDefaults.standard.set(500, forKey: "NSInitialToolTipDelay")
+
+        // SystemSpec warm-up (모든 캐시/동시성의 단일 소스)
+        _ = SystemSpec.shared
+        AppLogger.log(.general, SystemSpec.shared.debugSummary)
+
         SubscriptionManager.shared.checkTrialStatus()
     }
 

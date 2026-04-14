@@ -1930,32 +1930,19 @@ struct PhotoPreviewView: View {
     private static func initHiResCache() {
         guard !hiResCacheInitialized else { return }
 
-        // RAM 기반 캐시 사이징 (M1 Pro 16GB에서 스왑 방지)
-        let physicalRAM = ProcessInfo.processInfo.physicalMemory
-        let gb: UInt64 = 1024 * 1024 * 1024
-        let countLimit: Int
-        let totalCostLimit: Int
-        if physicalRAM <= 32 * gb {
-            // 16GB 및 16~32GB: 보수적 (M1 Pro 16GB 타겟)
-            countLimit = 2
-            totalCostLimit = 150 * 1024 * 1024  // 150MB
-        } else if physicalRAM <= 64 * gb {
-            // 32~64GB: 기존 값
-            countLimit = 3
-            totalCostLimit = 300 * 1024 * 1024  // 300MB
-        } else {
-            // 64GB 이상: 확장
-            countLimit = 5
-            totalCostLimit = 500 * 1024 * 1024  // 500MB
-        }
+        // SystemSpec tier 기반 캐시 사이징 (중앙화 — standard tier = M1 Pro 16GB 타겟)
+        let countLimit = SystemSpec.shared.hiResCacheCount()
+        let costMB = SystemSpec.shared.hiResCacheCostMB()
+        let totalCostLimit = costMB * 1024 * 1024
 
         hiResCache.countLimit = countLimit
         hiResCache.totalCostLimit = totalCostLimit
         hiResCacheCountLimit = countLimit
         hiResCacheInitialized = true
 
-        let ramGB = Double(physicalRAM) / Double(gb)
-        AppLogger.log(.general, "🧠 hiResCache 초기화: RAM=\(String(format: "%.1f", ramGB))GB, countLimit=\(countLimit), totalCostLimit=\(totalCostLimit / (1024*1024))MB")
+        let tier = SystemSpec.shared.effectiveTier.rawValue
+        let ramGB = SystemSpec.shared.ramGB
+        AppLogger.log(.general, "🧠 hiResCache 초기화: tier=\(tier), RAM=\(ramGB)GB, countLimit=\(countLimit), totalCostLimit=\(costMB)MB")
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler {

@@ -1701,10 +1701,9 @@ class ThumbnailCache {
         memoryPressureSource = source
     }
 
-    /// UserDefaults 또는 RAM 기반으로 캐시 크기 설정
+    /// UserDefaults 또는 SystemSpec tier 기반으로 캐시 크기 설정
     private func applyCacheLimits() {
-        let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-        // UserDefaults의 previewCacheSize를 썸네일 countLimit 힌트로 사용
+        // UserDefaults의 thumbnailCacheMaxGB를 썸네일 countLimit 힌트로 사용
         let savedCacheGB = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
 
         if savedCacheGB > 0 {
@@ -1720,22 +1719,18 @@ class ThumbnailCache {
             cache.countLimit = count
             baseCountLimit = count
         } else {
-            // 기본: RAM 기반 자동 설정 (cost 단위 = KB, totalCostLimit 단위 = KB)
-            // 300MB = 300 * 1024 KB 기본 상한
-            if ramGB >= 64 {
-                cache.countLimit = 20000
-                cache.totalCostLimit = 500 * 1024  // 500MB
-            } else if ramGB >= 32 {
-                cache.countLimit = 10000
-                cache.totalCostLimit = 300 * 1024  // 300MB
-            } else if ramGB >= 16 {
-                cache.countLimit = 5000
-                cache.totalCostLimit = 200 * 1024  // 200MB
-            } else {
-                cache.countLimit = 2000
-                cache.totalCostLimit = 100 * 1024  // 100MB
+            // 기본: SystemSpec tier 기반 자동 설정 (cost 단위 = KB, totalCostLimit 단위 = KB)
+            let mb = SystemSpec.shared.thumbnailCacheMB()
+            cache.totalCostLimit = mb * 1024  // MB → KB
+            let count: Int
+            switch SystemSpec.shared.effectiveTier {
+            case .extreme: count = 20000
+            case .high:    count = 10000
+            case .standard: count = 5000
+            case .low:     count = 2000
             }
-            baseCountLimit = cache.countLimit
+            cache.countLimit = count
+            baseCountLimit = count
         }
     }
 
@@ -1802,16 +1797,16 @@ class ThumbnailLoader {
         case .localSSD:
             isNetworkMode = false
             isExternalHDD = false
-            // M1 Pro(6 P-core) CPU 피크 억제: min(4, coreCount/2)
-            let c = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+            // SystemSpec tier 기반 (M1 Pro 16GB = standard → 3)
+            let c = SystemSpec.shared.ssdThumbnailConcurrency()
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
         case .externalSSD:
             isNetworkMode = false
             isExternalHDD = false
-            // 외장 SSD도 동일 캡 적용
-            let c = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+            // 외장 SSD도 동일 tier 기반 캡 적용
+            let c = SystemSpec.shared.ssdThumbnailConcurrency()
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "External SSD: concurrency=\(c)")

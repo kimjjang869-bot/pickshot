@@ -883,6 +883,7 @@ struct PerformanceOptimizeTab: View {
     @AppStorage("previewCacheSize") private var previewCacheSize = 20.0
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
     @AppStorage("thumbnailCacheMaxGB") private var thumbnailCacheMaxGB: Double = 2.0
+    @AppStorage("userPerformanceProfile") private var userPerformanceProfileRaw: String = "auto"
 
     var body: some View {
         ScrollView {
@@ -899,10 +900,32 @@ struct PerformanceOptimizeTab: View {
                 // 시스템 정보
                 GroupBox("시스템 정보") {
                     VStack(alignment: .leading, spacing: 8) {
-                        infoRow("CPU", ProcessInfo.processInfo.processorCount > 8 ? "고성능 (\(ProcessInfo.processInfo.activeProcessorCount)코어)" : "표준 (\(ProcessInfo.processInfo.activeProcessorCount)코어)")
-                        infoRow("RAM", "\(Int(ProcessInfo.processInfo.physicalMemory / (1024*1024*1024)))GB")
-                        infoRow("GPU", "Metal \(MTLCreateSystemDefaultDevice()?.name ?? "Unknown")")
-                        infoRow("macOS", ProcessInfo.processInfo.operatingSystemVersionString)
+                        infoRow("Mac", SystemSpec.shared.macModelMarketing)
+                        infoRow("CPU", "\(SystemSpec.shared.cpuBrand) (\(SystemSpec.shared.coreCount)코어)")
+                        infoRow("RAM", "\(SystemSpec.shared.ramGB)GB")
+                        infoRow("GPU", SystemSpec.shared.gpuName)
+                        infoRow("macOS", SystemSpec.shared.osVersion)
+                        infoRow("성능 티어", "\(tierDisplayName(SystemSpec.shared.effectiveTier)) (자동: \(tierDisplayName(SystemSpec.shared.autoTier)))")
+                    }.padding(4)
+                }
+
+                // 성능 프로필 선택 (SystemSpec 연동)
+                GroupBox("성능 프로필") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("성능 프로필", selection: $userPerformanceProfileRaw) {
+                            Text("자동").tag("auto")
+                            Text("속도 우선").tag("speed")
+                            Text("균형").tag("balanced")
+                            Text("화질 우선").tag("quality")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: userPerformanceProfileRaw) { newValue in
+                            if let p = UserPerformanceProfile(rawValue: newValue) {
+                                SystemSpec.shared.userProfile = p
+                            }
+                        }
+                        Text("자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
                     }.padding(4)
                 }
 
@@ -983,6 +1006,15 @@ struct PerformanceOptimizeTab: View {
         HStack {
             Text(label).font(.system(size: 12, weight: .medium)).frame(width: 60, alignment: .leading)
             Text(value).font(.system(size: 12)).foregroundColor(.secondary)
+        }
+    }
+
+    private func tierDisplayName(_ tier: PerformanceTier) -> String {
+        switch tier {
+        case .low: return "Low"
+        case .standard: return "Standard"
+        case .high: return "High"
+        case .extreme: return "Extreme"
         }
     }
 

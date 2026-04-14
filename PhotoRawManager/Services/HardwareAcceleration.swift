@@ -819,28 +819,17 @@ class AggressiveImageCache {
     private var pressureSource: DispatchSourceMemoryPressure?
 
     init() {
-        // RAM 크기별 적응형 cost limit (과거 40%/최대 8GB → 대폭 축소)
-        // 16GB M1 Pro에서 9GB peak 원인 제거
-        let totalRAM = ProcessInfo.processInfo.physicalMemory
-        let gb: UInt64 = 1024 * 1024 * 1024
-        let cacheLimit: Int
-        if totalRAM <= 16 * gb {
-            cacheLimit = 300 * 1024 * 1024       // 300MB (≤16GB)
-        } else if totalRAM <= 32 * gb {
-            cacheLimit = 500 * 1024 * 1024       // 500MB (16~32GB)
-        } else if totalRAM <= 64 * gb {
-            cacheLimit = 1024 * 1024 * 1024      // 1GB (32~64GB)
-        } else {
-            cacheLimit = 2 * 1024 * 1024 * 1024  // 2GB cap (>64GB)
-        }
-        cache.totalCostLimit = cacheLimit
+        // SystemSpec tier 기반 적응형 cost limit (과거 계단식 RAM 분기 → 중앙화)
+        // 16GB M1 Pro = standard tier → 200MB (기존 300MB에서 더 축소해 peak 방지)
+        let limitMB = SystemSpec.shared.aggressiveCacheLimitMB()
+        cache.totalCostLimit = limitMB * 1024 * 1024
 
         // 엔트리 수 제한: 5000 → 1000 (M1 Pro 4K 썸네일 기준 ~200MB/1000장)
         cache.countLimit = 1000
 
-        let ramMB = totalRAM / 1024 / 1024
-        let limitMB = cacheLimit / 1024 / 1024
-        AppLogger.log(.general, "🧠 AggressiveImageCache 초기화: \(limitMB)MB limit, countLimit=1000 (시스템 RAM \(ramMB)MB)")
+        let tier = SystemSpec.shared.effectiveTier.rawValue
+        let ramGB = SystemSpec.shared.ramGB
+        AppLogger.log(.general, "🧠 AggressiveImageCache 초기화: \(limitMB)MB limit, countLimit=1000 (tier=\(tier), RAM \(ramGB)GB)")
 
         // 메모리 압박 핸들러 등록
         setupMemoryPressureHandler()
