@@ -1032,21 +1032,22 @@ class PhotoStore: ObservableObject {
         let idsToRemove = photosToRemove
         guard !idsToRemove.isEmpty else { return }
 
-        // Step 1: 다음 선택 대상 미리 계산 — 앞(이전) 사진 우선
+        // Step 1: 다음 선택 대상 미리 계산 — 뒤(다음) 사진 우선
+        // 자연스러운 전방 탐색 워크플로우: 삭제 후 바로 다음 사진으로 이동
         let list = filteredPhotos
         ensureFilteredIndex()
         var nextID: UUID? = nil
         if let currentID = selectedPhotoID, let currentFilteredIdx = _filteredIndex[currentID] {
-            // 앞(이전) 사진을 먼저 찾기 — 삭제하면서 뒤로 나가는 워크플로우
-            for i in stride(from: currentFilteredIdx - 1, through: 0, by: -1) {
+            // 뒤(다음) 사진을 먼저 찾기
+            for i in (currentFilteredIdx + 1)..<list.count {
                 if !idsToRemove.contains(list[i].id) && !list[i].isFolder && !list[i].isParentFolder {
                     nextID = list[i].id
                     break
                 }
             }
-            // 앞에 없으면 뒤(다음) 사진
+            // 뒤에 없으면(마지막 사진이었으면) 앞(이전) 사진
             if nextID == nil {
-                for i in (currentFilteredIdx + 1)..<list.count {
+                for i in stride(from: currentFilteredIdx - 1, through: 0, by: -1) {
                     if !idsToRemove.contains(list[i].id) && !list[i].isFolder && !list[i].isParentFolder {
                         nextID = list[i].id
                         break
