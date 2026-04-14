@@ -58,8 +58,13 @@ struct ImageAnalysisService {
         let completed = AtomicCounter()
 
         let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = ProcessInfo.processInfo.activeProcessorCount
+        // CPU 과부하 방지: 각 분석이 1280px CGImage + landmarks + saliency를 메모리에 유지(~20MB/분석)
+        // M1 Pro(8코어) → 4, M1(8) → 4, M1 Ultra(20) → 4로 상한을 두어 피크 CPU를 억제
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let cappedConcurrency = max(2, min(4, cores / 2))
+        queue.maxConcurrentOperationCount = cappedConcurrency
         queue.qualityOfService = .userInitiated
+        AppLogger.log(.general, "🧠 ImageAnalysisService 배치 동시성 캡: \(cappedConcurrency) (cores=\(cores))")
 
         for photo in photos {
             queue.addOperation {

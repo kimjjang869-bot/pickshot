@@ -3,8 +3,8 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.dismiss) var dismiss
 
-    private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.0"
-    private let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "3"
+    private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "8.0"
+    private let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,34 +41,45 @@ struct AboutView: View {
 
                     Divider()
 
-                    // v6.0 Changelog
-                    changelogSection("v6.0 새로운 기능", items: [
-                        "NIMA AI 미적 품질 점수 (CoreML, 1~10점)",
-                        "표정 감지 — 웃는 얼굴 자동 인식 + 점수",
-                        "얼굴 비교 패널 — 연사 표정 나란히 비교",
+                    // v8.0 Changelog (최신)
+                    changelogSection("v8.0 새로운 기능", items: [
+                        "비디오 플레이어 — MP4/MOV 재생, 썸네일 미리보기",
+                        "LUT 관리 — .cube 파일 로딩 + 실시간 프리뷰",
+                        "컬러 라벨 전면 개편 — 빨강/노랑/초록/파랑/보라 (6~9키)",
+                        "AI 모델 업데이트 (NIMA + AdaFace R18)",
+                        "삭제 UX 개선 — 확인 건너뛰기 옵션 + 다음 사진 자동 이동",
+                        "썸네일/필름스트립 보더 체계 재정비 (별점/라벨/SP)",
+                        "외부 Finder 드롭 지원 (필름스트립/그리드)",
+                        "마우스 뒤로/앞으로 버튼 → 폴더 히스토리 이동",
+                        "PhotoStore 대규모 모듈화 (Selection/Folder/Rating/...)",
+                        "크래시/데이터레이스/메모리누수 수정 (v7.6~v7.7)",
+                        "보안 강화 — OAuth PKCE, Secrets.xcconfig 분리",
+                    ])
+
+                    changelogSection("v7.x", items: [
+                        "AdaFace 얼굴 인식 (R18 CoreML)",
+                        "JPG+RAW 매칭 + 내보내기 UI 개편",
+                        "수평/수직 보정 + 썸네일 최적화",
+                        "3주 트라이얼 시스템",
+                        "FolderWatcher 리로드/CPU 과부하 수정",
+                        "SmartCull + 인물 메뉴 + HDD/SD 최적화",
+                    ])
+
+                    changelogSection("v6.0", items: [
+                        "NIMA AI 미적 품질 점수 (CoreML)",
+                        "표정 감지 + 얼굴 비교 패널",
                         "컬링 강도 조절 (엄격/보통/느슨)",
-                        "XMP 사이드카 읽기/쓰기 (Lightroom/Bridge 호환)",
-                        "키워드 자동 태깅 (Vision 분류 → IPTC 키워드)",
-                        "Upright 가이드 모드 (수직선 드래그 → 원근 보정)",
-                        "듀얼 스크린 뷰어 (D키, 별도 윈도우)",
-                        "성능 최적화 탭 (벤치마크 + 원클릭 최적화)",
-                        "드래그 앤 드롭 파일 이동 (썸네일 → 폴더 트리)",
-                        "화면 크기 자동 대응 (14인치~32인치)",
-                        "EXIF Rating 자동 적용 (카메라 별점)",
+                        "XMP 사이드카 (Lightroom/Bridge 호환)",
+                        "Upright 가이드 + 듀얼 스크린 뷰어",
+                        "EXIF Rating 자동 적용",
                     ])
 
-                    changelogSection("v5.0", items: [
+                    changelogSection("v5.0 이전", items: [
                         "전체화면 컬링 모드 (Cmd+F) + 필름스트립",
-                        "메모리카드 자동 백업 (DCIM 감지 → 안전 복사)",
-                        "Before/After 보정 비교 슬라이더",
-                        "빠른 탐색 최적화 (썸네일 즉시 표시)",
-                        "마지막 폴더 자동 복원",
-                    ])
-
-                    changelogSection("v3.0 ~ v3.6", items: [
+                        "메모리카드 자동 백업",
+                        "Before/After 보정 비교",
                         "HW JPEG 디코더 + Metal GPU 가속",
                         "Vision 장면 분류 + 얼굴 그룹핑",
-                        "RAW → JPG 배치 변환",
                         "Google Drive 업로드 + G Select 웹 뷰어",
                     ])
 

@@ -531,16 +531,14 @@ struct NativeListView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: 별 5개 토글 (이미 5점이면 0점)
+        // 스페이스바: 별 5개 토글 (포커스 사진 기준, 다중 선택 시 일괄)
         if chars == " " {
-            let ids: [UUID] = store.selectedPhotoIDs.count > 1
-                ? Array(store.selectedPhotoIDs)
-                : (store.selectedPhotoID.map { [$0] } ?? [])
-            for id in ids {
-                if let i = store.idx(id) {
-                    let newRating = store.photos[i].rating == 5 ? 0 : 5
-                    store.setRating(newRating, for: id)
-                }
+            if store.selectedPhotoIDs.count > 1 {
+                // 포커스 사진의 현재 값 기준으로 토글 결정 → 전체 일괄
+                let focusRating = store.selectedPhotoID.flatMap { store.idx($0) }.map { store.photos[$0].rating } ?? 0
+                store.setRatingForSelected(focusRating == 5 ? 0 : 5)
+            } else if let id = store.selectedPhotoID, let i = store.idx(id) {
+                store.setRating(store.photos[i].rating == 5 ? 0 : 5, for: id)
             }
             return .handled
         }
@@ -548,9 +546,7 @@ struct NativeListView: View {
         // 0~5: 별점
         if let ch = chars.first, let rating = Int(String(ch)), rating >= 0 && rating <= 5 {
             if store.selectedPhotoIDs.count > 1 {
-                for id in store.selectedPhotoIDs {
-                    store.setRating(rating, for: id)
-                }
+                store.setRatingForSelected(rating)
             } else if let id = store.selectedPhotoID {
                 store.setRating(rating, for: id)
             }
@@ -561,8 +557,9 @@ struct NativeListView: View {
         if let ch = chars.first, let num = Int(String(ch)), num >= 6 && num <= 9 {
             let labelMap: [Int: ColorLabel] = [6: .red, 7: .yellow, 8: .green, 9: .blue]
             if let label = labelMap[num] {
-                let ids = store.selectedPhotoIDs.count > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
-                for id in ids {
+                if store.selectedPhotoIDs.count > 1 {
+                    store.setColorLabelForSelected(label)
+                } else if let id = store.selectedPhotoID {
                     store.setColorLabel(label, for: id)
                 }
             }
@@ -1248,7 +1245,8 @@ struct ThumbnailCell: View, Equatable {
         lhs.size == rhs.size &&
         lhs.photo.rating == rhs.photo.rating &&
         lhs.photo.colorLabel == rhs.photo.colorLabel &&
-        lhs.photo.isSpacePicked == rhs.photo.isSpacePicked
+        lhs.photo.isSpacePicked == rhs.photo.isSpacePicked &&
+        lhs.photo.isGSelected == rhs.photo.isGSelected
     }
 
     private var badgeFont: Font { .system(size: max(8, size * 0.065), weight: .bold) }
@@ -1281,6 +1279,7 @@ struct ThumbnailCell: View, Equatable {
         .padding(5)
         .background(cellBackground)
         .overlay(cellBorder)
+        .overlay(selectionRing)
         .onHover { isHovered = $0 }
     }
 
@@ -1452,11 +1451,15 @@ struct ThumbnailCell: View, Equatable {
     private var cellBackground: some View {
         RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
             .fill(
-                isFocused ? AppTheme.accent.opacity(0.12) :
-                isSelected ? AppTheme.accent.opacity(0.06) :
+                isFocused ? AppTheme.accent.opacity(0.35) :
+                isSelected ? AppTheme.accent.opacity(0.22) :
                 isHovered ? AppTheme.hoverBg :
                 Color.clear
             )
+    }
+
+    private var hasStateBorder: Bool {
+        photo.colorLabel != .none || photo.rating == 5
     }
 
     private var cellBorder: some View {
@@ -1464,13 +1467,26 @@ struct ThumbnailCell: View, Equatable {
             if let labelColor = photo.colorLabel.color { return labelColor }
             if photo.rating == 5 { return AppTheme.starGold }
             if isFocused { return AppTheme.focusBorder }
-            if isSelected { return AppTheme.selectionBorder.opacity(0.5) }
+            if isSelected { return AppTheme.selectionBorder.opacity(0.7) }
             return Color.clear
         }()
-        let borderWidth: CGFloat = (photo.colorLabel != .none || photo.rating == 5 || isFocused)
+        let borderWidth: CGFloat = hasStateBorder || isFocused
             ? AppTheme.focusBorderWidth : AppTheme.cellBorderWidth
         return RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
             .stroke(borderColor, lineWidth: borderWidth)
+    }
+
+    /// 별점/컬러라벨 보더가 이미 있는 경우, 그 안쪽에 선택/포커스 하이라이트 링을 추가 표시.
+    @ViewBuilder
+    private var selectionRing: some View {
+        if hasStateBorder && (isFocused || isSelected) {
+            RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius, style: .continuous)
+                .stroke(
+                    isFocused ? AppTheme.focusBorder : AppTheme.selectionBorder.opacity(0.9),
+                    lineWidth: isFocused ? 2.5 : 2
+                )
+                .padding(3.5)
+        }
     }
 
 }
@@ -1786,14 +1802,16 @@ class ThumbnailLoader {
         case .localSSD:
             isNetworkMode = false
             isExternalHDD = false
-            let c = max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 6))
+            // M1 Pro(6 P-core) CPU 피크 억제: min(4, coreCount/2)
+            let c = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
         case .externalSSD:
             isNetworkMode = false
             isExternalHDD = false
-            let c = max(2, min(ProcessInfo.processInfo.activeProcessorCount / 2, 4))
+            // 외장 SSD도 동일 캡 적용
+            let c = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
             queue.maxConcurrentOperationCount = c
             normalConcurrency = c
             AppLogger.log(.performance, "External SSD: concurrency=\(c)")
@@ -3156,27 +3174,65 @@ struct PhotoReorderDropDelegate: DropDelegate {
 
 // MARK: - 폴더 미리보기 그리드 (4장 썸네일)
 
+// 폴더 미리보기 캐시 엔트리 (NSCache는 class만 저장 가능하므로 tuple을 래핑)
+private final class FolderPreviewEntry {
+    let images: [NSImage]
+    let count: Int
+    let subfolders: Int
+    init(images: [NSImage], count: Int, subfolders: Int) {
+        self.images = images
+        self.count = count
+        self.subfolders = subfolders
+    }
+}
+
 // 폴더 미리보기 캐시 (폴더 재진입 시 리프레시 방지)
+// NSCache 기반 - countLimit=500, 메모리 압박 시 자동 해제로 GB 단위 누적 방지
 class FolderPreviewCache {
     static let shared = FolderPreviewCache()
-    private var cache: [URL: (images: [NSImage], count: Int, subfolders: Int)] = [:]
-    private let lock = NSLock()
+
+    private let cache: NSCache<NSURL, FolderPreviewEntry> = {
+        let c = NSCache<NSURL, FolderPreviewEntry>()
+        c.countLimit = 500
+        return c
+    }()
+
+    // 메모리 압박 감지 소스 (lazy 초기화)
+    private lazy var pressureSource: DispatchSourceMemoryPressure = {
+        let src = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .global(qos: .utility)
+        )
+        src.setEventHandler { [weak self] in
+            self?.cache.removeAllObjects()
+            AppLogger.log(.general, "🆘 FolderPreviewCache 메모리 압박 해제")
+        }
+        src.resume()
+        return src
+    }()
+
+    private init() {
+        // 메모리 압박 소스 가동
+        _ = pressureSource
+        AppLogger.log(.general, "📁 FolderPreviewCache 초기화 (NSCache countLimit=500)")
+    }
 
     func get(_ url: URL) -> (images: [NSImage], count: Int, subfolders: Int)? {
-        lock.lock(); defer { lock.unlock() }
-        return cache[url]
+        guard let e = cache.object(forKey: url as NSURL) else { return nil }
+        return (e.images, e.count, e.subfolders)
     }
+
     func set(_ url: URL, images: [NSImage], count: Int, subfolders: Int) {
-        lock.lock(); defer { lock.unlock() }
-        cache[url] = (images, count, subfolders)
+        let entry = FolderPreviewEntry(images: images, count: count, subfolders: subfolders)
+        cache.setObject(entry, forKey: url as NSURL)
     }
+
     func invalidate(_ url: URL) {
-        lock.lock(); defer { lock.unlock() }
-        cache.removeValue(forKey: url)
+        cache.removeObject(forKey: url as NSURL)
     }
+
     func invalidateAll() {
-        lock.lock(); defer { lock.unlock() }
-        cache.removeAll()
+        cache.removeAllObjects()
     }
 }
 

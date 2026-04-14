@@ -97,34 +97,61 @@ extension PhotoStore {
         showToastMessage("\(last.action) 되돌리기 완료")
     }
 
+    /// 별점/SP/컬러라벨 저장 — 400ms debounce로 연속 변경을 1회 쓰기로 축소.
+    /// UI 클릭 즉시 반응을 위해 동기 I/O를 제거.
     func saveRatings() {
-        // 폴더별 저장 (경로 해시 키)
+        saveRatingsWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveRatings()
+        }
+        saveRatingsWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
+    }
+
+    /// 즉시 저장 (폴더 변경·앱 종료 직전 등).
+    func saveRatingsNow() {
+        saveRatingsWorkItem?.cancel()
+        saveRatingsWorkItem = nil
+        performSaveRatings()
+    }
+
+    /// 실제 저장 로직 — 메인에서 스냅샷 후 백그라운드에서 UserDefaults + XMP 쓰기.
+    func performSaveRatings() {
         guard let folderPath = folderURL?.path else { return }
 
+        // 1) 메인 스레드에서 스냅샷 (photos는 @Published이므로 메인에서만 읽기)
         var ratings: [String: Int] = [:]
         var spPicks: [String: Bool] = [:]
         var colorLabels: [String: String] = [:]
+        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel)] = []
+        xmpSnapshot.reserveCapacity(photos.count)
         for photo in photos {
             if photo.rating > 0 { ratings[photo.fileName] = photo.rating }
             if photo.isSpacePicked { spPicks[photo.fileName] = true }
             if photo.colorLabel != .none { colorLabels[photo.fileName] = photo.colorLabel.rawValue }
+            if photo.rating > 0 || photo.colorLabel != .none {
+                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel))
+            }
         }
 
-        // 전역 (하위 호환)
-        defaults.set(ratings, forKey: ratingsKey)
+        // 2) UserDefaults + XMP 쓰기는 유틸 큐에서 (메인 스레드 블록 해제)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let d = self.defaults
 
-        // 폴더별 SP + 컬러라벨
-        var allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
-        var allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
-        allSP[folderPath] = spPicks
-        allColors[folderPath] = colorLabels
-        defaults.set(allSP, forKey: "folderSpacePicks")
-        defaults.set(allColors, forKey: "folderColorLabels")
+            // 전역 (하위 호환)
+            d.set(ratings, forKey: self.ratingsKey)
 
-        // Write XMP sidecar files in background
-        let snapshot = photos.map { (url: $0.jpgURL, rating: $0.rating, label: $0.colorLabel) }
-        DispatchQueue.global(qos: .utility).async {
-            for item in snapshot where item.rating > 0 || item.label != .none {
+            // 폴더별 SP + 컬러라벨
+            var allSP = d.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
+            var allColors = d.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
+            allSP[folderPath] = spPicks
+            allColors[folderPath] = colorLabels
+            d.set(allSP, forKey: "folderSpacePicks")
+            d.set(allColors, forKey: "folderColorLabels")
+
+            // XMP 사이드카
+            for item in xmpSnapshot {
                 let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
                 XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: false)
             }
@@ -207,9 +234,11 @@ extension PhotoStore {
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
+        _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }
         }
+        _suppressDidSet = false
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
@@ -226,9 +255,11 @@ extension PhotoStore {
 
     func toggleSpacePickForSelected() {
         pushUndo(action: "일괄 SP 토글", photoIDs: selectedPhotoIDs)
+        _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].isSpacePicked.toggle() }
         }
+        _suppressDidSet = false
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
@@ -236,9 +267,11 @@ extension PhotoStore {
 
     func setRatingForSelected(_ rating: Int) {
         pushUndo(action: "일괄 별점 변경", photoIDs: selectedPhotoIDs)
+        _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].rating = rating }
         }
+        _suppressDidSet = false
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()

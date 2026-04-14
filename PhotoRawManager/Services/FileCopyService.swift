@@ -226,46 +226,64 @@ struct FileCopyService {
         let totalOperations = ops.count
         result.totalFiles = totalOperations
 
-        // Parallel copy — 코어 수 기반 동시성 (concurrentPerform이 자동 분배)
+        // Parallel copy — 동시성 4개로 캡 (세마포어)
+        // 과거: concurrentPerform → 무제한 동시성 + fastCopy 8MB 버퍼 × 스레드 수 (대량 복사 시 메모리 폭증)
+        // 현재: 코어 수 기반 2~4 동시성 제한 (I/O 바운드 작업에서 과도한 스레드 경쟁 방지)
         let lock = NSLock()
         var completed = 0
         let copyStart = CFAbsoluteTimeGetCurrent()
 
-        DispatchQueue.concurrentPerform(iterations: ops.count) { index in
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let limit = max(2, min(4, cores / 2))
+        let semaphore = DispatchSemaphore(value: limit)
+        let group = DispatchGroup()
+        let workQueue = DispatchQueue.global(qos: .userInitiated)
 
-            let op = ops[index]
-
-            if op.skip {
-                lock.lock()
-                result.skipped += 1
-                completed += 1
-                let c = completed
-                lock.unlock()
-                DispatchQueue.main.async { progress(c, totalOperations) }
-                return
-            }
-
-            do {
-                try fastCopy(from: op.source, to: op.dest)
-                lock.lock()
-                switch op.type {
-                case .jpg: result.copiedJPG += 1
-                case .raw: result.copiedRAW += 1
+        for index in 0..<ops.count {
+            semaphore.wait()
+            group.enter()
+            workQueue.async {
+                defer {
+                    semaphore.signal()
+                    group.leave()
                 }
-                completed += 1
-                let c = completed
-                lock.unlock()
-                DispatchQueue.main.async { progress(c, totalOperations) }
-            } catch {
-                let msg = op.type == .jpg ? "JPG 복사 실패: \(op.fileName)" : "RAW 복사 실패: \(op.fileName)"
-                lock.lock()
-                result.failedFiles.append(msg)
-                completed += 1
-                let c = completed
-                lock.unlock()
-                DispatchQueue.main.async { progress(c, totalOperations) }
+
+                let op = ops[index]
+
+                if op.skip {
+                    lock.lock()
+                    result.skipped += 1
+                    completed += 1
+                    let c = completed
+                    lock.unlock()
+                    DispatchQueue.main.async { progress(c, totalOperations) }
+                    return
+                }
+
+                do {
+                    try fastCopy(from: op.source, to: op.dest)
+                    lock.lock()
+                    switch op.type {
+                    case .jpg: result.copiedJPG += 1
+                    case .raw: result.copiedRAW += 1
+                    }
+                    completed += 1
+                    let c = completed
+                    lock.unlock()
+                    DispatchQueue.main.async { progress(c, totalOperations) }
+                } catch {
+                    let msg = op.type == .jpg ? "JPG 복사 실패: \(op.fileName)" : "RAW 복사 실패: \(op.fileName)"
+                    lock.lock()
+                    result.failedFiles.append(msg)
+                    completed += 1
+                    let c = completed
+                    lock.unlock()
+                    DispatchQueue.main.async { progress(c, totalOperations) }
+                }
             }
         }
+
+        group.wait()
 
         let copyElapsed = CFAbsoluteTimeGetCurrent() - copyStart
         let totalCopied = result.copiedJPG + result.copiedRAW

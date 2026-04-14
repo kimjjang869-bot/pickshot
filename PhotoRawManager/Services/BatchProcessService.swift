@@ -192,47 +192,56 @@ struct BatchProcessService {
         let sourceURL = photo.rawURL ?? photo.jpgURL
 
         let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!])
-
-        // Try loading as RAW via CIRAWFilter for full 16-bit depth
-        var ciImage: CIImage?
-        if #available(macOS 13.0, *), let rawFilter = CIRAWFilter(imageURL: sourceURL) {
-            rawFilter.extendedDynamicRangeAmount = 0  // standard range
-            ciImage = rawFilter.outputImage
-        }
-
-        // Fallback: load via CIImage
-        if ciImage == nil {
-            ciImage = CIImage(contentsOf: sourceURL)
-        }
-
-        guard var outputCI = ciImage else { return false }
-
-        let origExtent = outputCI.extent
-        let origW = Int(origExtent.width)
-        let origH = Int(origExtent.height)
-
-        // Calculate target size
-        let (targetW, targetH) = calculateTargetSize(
-            origW: origW, origH: origH,
-            requestW: options.targetWidth, requestH: options.targetHeight,
-            maintainAspect: options.maintainAspect
-        )
-
-        // Apply resize if needed
-        if targetW != origW || targetH != origH {
-            let scaleX = CGFloat(targetW) / CGFloat(origW)
-            let scaleY = CGFloat(targetH) / CGFloat(origH)
-            outputCI = outputCI.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-        }
-
-        // Render to 16-bit CGImage
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let cgImage = ciContext.createCGImage(
-            outputCI,
-            from: outputCI.extent,
-            format: .RGBA16,
-            colorSpace: colorSpace
-        ) else { return false }
+
+        // RAW 디코딩 및 16비트 CGImage 렌더는 autoreleasepool로 감싸 중간 CIImage 즉시 해제
+        let renderResult: (cg: CGImage, w: Int, h: Int)? = autoreleasepool {
+            // Try loading as RAW via CIRAWFilter for full 16-bit depth
+            var ciImage: CIImage?
+            if #available(macOS 13.0, *), let rawFilter = CIRAWFilter(imageURL: sourceURL) {
+                rawFilter.extendedDynamicRangeAmount = 0  // standard range
+                ciImage = rawFilter.outputImage
+            }
+
+            // Fallback: load via CIImage
+            if ciImage == nil {
+                ciImage = CIImage(contentsOf: sourceURL)
+            }
+
+            guard var outputCI = ciImage else { return nil }
+
+            let origExtent = outputCI.extent
+            let origW = Int(origExtent.width)
+            let origH = Int(origExtent.height)
+
+            // Calculate target size
+            let (targetW, targetH) = calculateTargetSize(
+                origW: origW, origH: origH,
+                requestW: options.targetWidth, requestH: options.targetHeight,
+                maintainAspect: options.maintainAspect
+            )
+
+            // Apply resize if needed
+            if targetW != origW || targetH != origH {
+                let scaleX = CGFloat(targetW) / CGFloat(origW)
+                let scaleY = CGFloat(targetH) / CGFloat(origH)
+                outputCI = outputCI.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            }
+
+            // Render to 16-bit CGImage
+            guard let cg = ciContext.createCGImage(
+                outputCI,
+                from: outputCI.extent,
+                format: .RGBA16,
+                colorSpace: colorSpace
+            ) else { return nil }
+            return (cg, targetW, targetH)
+        }
+
+        guard let rendered = renderResult else { return false }
+        let cgImage = rendered.cg
+        let targetW = rendered.w
+        let targetH = rendered.h
 
         // If watermark needed, draw it on a 16-bit context
         let finalImage: CGImage

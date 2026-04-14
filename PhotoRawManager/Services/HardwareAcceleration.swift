@@ -66,17 +66,31 @@ struct HWJPEGDecoder {
             }
             return image
         }
-        // Software fallback via CGImageSource
+        // Software fallback via CGImageSource (Data 기반)
         return _decodeSoftware(jpegData: jpegData, maxPixel: maxPixel)
     }
 
     /// Decode JPEG from file URL using hardware acceleration (falls back to software).
+    /// - Note: SW 경로에서는 URL을 직접 `CGImageSourceCreateWithURL`에 전달하여 커널 mmap으로
+    ///         파일 전체를 메모리에 올리지 않도록 한다. HW 경로에서만 실제 Data를 읽는다.
     static func decode(url: URL, maxPixel: CGFloat? = nil) -> CGImage? {
-        guard let data = try? Data(contentsOf: url) else {
-            logger.error("Failed to read JPEG data from \(url.path)")
-            return nil
+        // HW 가능 시에만 전체 Data 로드 (VideoToolbox가 연속 메모리를 요구)
+        if isAvailable {
+            guard let data = try? Data(contentsOf: url) else {
+                logger.error("Failed to read JPEG data from \(url.path)")
+                return nil
+            }
+            if let image = _decodeHardware(jpegData: data) {
+                if let maxPixel = maxPixel {
+                    return _downsample(image: image, maxPixel: maxPixel)
+                }
+                return image
+            }
+            // HW 실패 시 동일 Data로 SW 폴백 (재읽기 방지)
+            return _decodeSoftware(jpegData: data, maxPixel: maxPixel)
         }
-        return decode(jpegData: data, maxPixel: maxPixel)
+        // SW 전용 경로: 커널 mmap (Data 로드 없음 → 40MB 일시 피크 제거)
+        return _decodeSoftware(url: url, maxPixel: maxPixel)
     }
 
     // MARK: Hardware Path
@@ -217,7 +231,23 @@ struct HWJPEGDecoder {
 
     private static func _decodeSoftware(jpegData: Data, maxPixel: CGFloat?) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(jpegData as CFData, nil) else { return nil }
+        return _decodeSoftware(source: source, maxPixel: maxPixel)
+    }
 
+    /// URL 직접 입력 경로 — 커널 mmap으로 파일 전체 로드 회피 (일시 메모리 피크 감소).
+    private static func _decodeSoftware(url: URL, maxPixel: CGFloat?) -> CGImage? {
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false  // 파싱 단계 캐시 억제
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+            logger.warning("CGImageSourceCreateWithURL 실패: \(url.path)")
+            return nil
+        }
+        return _decodeSoftware(source: source, maxPixel: maxPixel)
+    }
+
+    /// 공통 썸네일 디코드 로직 (Data/URL 공유)
+    private static func _decodeSoftware(source: CGImageSource, maxPixel: CGFloat?) -> CGImage? {
         var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -659,9 +689,17 @@ struct MetalImageProcessor {
         let count = width * height
         guard count > 4 else { return 0 }
 
-        // Convert UInt8 to Float for Accelerate operations
+        // Convert UInt8 → Float 직접 변환 (vDSP_vfltu8)
+        // 과거: pixels.map { Int16($0) } → [Float] 두 번 할당 (4K 33M픽셀 ≈ 200MB 임시 피크)
+        // 현재: UInt8 버퍼를 vDSP가 직접 Float로 변환 (임시 Int16 배열 제거)
         var floatPixels = [Float](repeating: 0, count: count)
-        vDSP.convertElements(of: pixels.map { Int16($0) }, to: &floatPixels)
+        pixels.withUnsafeBufferPointer { buf in
+            floatPixels.withUnsafeMutableBufferPointer { dst in
+                if let srcBase = buf.baseAddress, let dstBase = dst.baseAddress {
+                    vDSP_vfltu8(srcBase, 1, dstBase, 1, vDSP_Length(buf.count))
+                }
+            }
+        }
 
         // Laplacian kernel: [0,1,0; 1,-4,1; 0,1,0]
         // Process with stride-2 for speed (same as original)
@@ -771,24 +809,67 @@ struct ParallelFFD8Scanner {
 import Accelerate
 
 /// High-performance memory pool for frequently accessed images.
-/// Uses larger memory budget to trade RAM for speed.
+/// RAM 기반 적응형 cost limit + 메모리 압박 시 자동 해제.
 class AggressiveImageCache {
     static let shared = AggressiveImageCache()
 
     private let cache = NSCache<NSURL, NSImage>()
     private let lock = NSLock()
+    // 메모리 압박 감지 소스 (warning/critical 시 캐시 해제)
+    private var pressureSource: DispatchSourceMemoryPressure?
 
     init() {
-        // Use up to 40% of available RAM for image cache, 최대 8GB 제한
+        // RAM 크기별 적응형 cost limit (과거 40%/최대 8GB → 대폭 축소)
+        // 16GB M1 Pro에서 9GB peak 원인 제거
         let totalRAM = ProcessInfo.processInfo.physicalMemory
-        let maxCacheBytes = UInt64(8) * 1024 * 1024 * 1024  // 8GB cap
-        let cacheLimit = Int(min(totalRAM / 5 * 2, maxCacheBytes))  // 40% of RAM, max 8GB
+        let gb: UInt64 = 1024 * 1024 * 1024
+        let cacheLimit: Int
+        if totalRAM <= 16 * gb {
+            cacheLimit = 300 * 1024 * 1024       // 300MB (≤16GB)
+        } else if totalRAM <= 32 * gb {
+            cacheLimit = 500 * 1024 * 1024       // 500MB (16~32GB)
+        } else if totalRAM <= 64 * gb {
+            cacheLimit = 1024 * 1024 * 1024      // 1GB (32~64GB)
+        } else {
+            cacheLimit = 2 * 1024 * 1024 * 1024  // 2GB cap (>64GB)
+        }
         cache.totalCostLimit = cacheLimit
 
-        // Allow many entries
-        cache.countLimit = 5000
+        // 엔트리 수 제한: 5000 → 1000 (M1 Pro 4K 썸네일 기준 ~200MB/1000장)
+        cache.countLimit = 1000
 
-        print("🧠 [CACHE] Aggressive cache: \(cacheLimit / 1024 / 1024)MB limit (\(totalRAM / 1024 / 1024)MB total RAM)")
+        let ramMB = totalRAM / 1024 / 1024
+        let limitMB = cacheLimit / 1024 / 1024
+        AppLogger.log(.general, "🧠 AggressiveImageCache 초기화: \(limitMB)MB limit, countLimit=1000 (시스템 RAM \(ramMB)MB)")
+
+        // 메모리 압박 핸들러 등록
+        setupMemoryPressureHandler()
+    }
+
+    deinit {
+        pressureSource?.cancel()
+    }
+
+    /// 메모리 압박 이벤트 수신 시 캐시를 해제한다.
+    private func setupMemoryPressureHandler() {
+        let src = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .global(qos: .utility)
+        )
+        src.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            let event = src.data
+            if event.contains(.critical) {
+                self.cache.removeAllObjects()
+                AppLogger.log(.general, "🆘 AggressiveImageCache 전체 해제 (critical)")
+            } else if event.contains(.warning) {
+                // 단순화: 경고 단계에서도 전량 해제 (NSCache 재채움이 빠름)
+                self.cache.removeAllObjects()
+                AppLogger.log(.general, "⚠️ AggressiveImageCache 해제 (warning)")
+            }
+        }
+        src.resume()
+        self.pressureSource = src
     }
 
     func get(_ url: URL) -> NSImage? {

@@ -689,14 +689,11 @@ class KeyCaptureView: NSView {
                 return
             }
             guard !selectedIsFolder else { return }
-            let ids: [UUID] = store.selectionCount > 1
-                ? Array(store.selectedPhotoIDs)
-                : (store.selectedPhotoID.map { [$0] } ?? [])
-            for id in ids {
-                if let i = store.idx(id) {
-                    let newRating = store.photos[i].rating == 5 ? 0 : 5
-                    store.setRating(newRating, for: id)
-                }
+            if store.selectionCount > 1 {
+                let focusRating = store.selectedPhotoID.flatMap { store.idx($0) }.map { store.photos[$0].rating } ?? 0
+                store.setRatingForSelected(focusRating == 5 ? 0 : 5)
+            } else if let id = store.selectedPhotoID, let i = store.idx(id) {
+                store.setRating(store.photos[i].rating == 5 ? 0 : 5, for: id)
             }
             return
         }
@@ -718,7 +715,9 @@ class KeyCaptureView: NSView {
                     let selected = store.multiSelectedPhotos
                     gService.gSelectMultiple(photos: selected)
                     let indices = selected.compactMap { store.idx($0.id) }
+                    store._suppressDidSet = true
                     for i in indices { store.photos[i].isGSelected = true }
+                    store._suppressDidSet = false
                 } else if let id = store.selectedPhotoID, let photo = store.selectedPhoto {
                     let wasGSelected = photo.isGSelected
                     gService.toggleGSelect(photo: photo)
@@ -1662,17 +1661,9 @@ struct FullscreenView: View {
             Color.black.ignoresSafeArea()
 
             // 뷰어 엔진 그대로 사용 — 클릭하면 확대/선명하게
+            // 별점/컬러라벨/SP 보더는 PhotoPreviewView 내부에서 그림 (중복 방지)
             if let photo = currentPhoto {
                 PhotoPreviewView(photo: photo)
-                    .overlay(
-                        Group {
-                            if photo.isSpacePicked {
-                                RoundedRectangle(cornerRadius: 0).strokeBorder(Color.red, lineWidth: 12).allowsHitTesting(false)
-                            } else if photo.rating > 0 {
-                                RoundedRectangle(cornerRadius: 0).strokeBorder(Color.yellow.opacity(0.7), lineWidth: 8).allowsHitTesting(false)
-                            }
-                        }
-                    )
             }
 
             // Top: 카운터 + 파일명 + 닫기

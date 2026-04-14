@@ -16,6 +16,9 @@ struct ContentView: View {
     @State var linkCopied = false
     @State var showGSelectQR = false
 
+    // Mouse side-button (back/forward) event monitor
+    @State private var mouseSideButtonMonitor: Any?
+
     private var folderSizeText: String { store.cachedFolderSizeText }
 
     private var importResultMessage: String {
@@ -488,6 +491,34 @@ struct ContentView: View {
                 dualWindow?.close()
                 dualWindow = nil
             }
+        }
+        .onAppear { setupMouseSideButtonMonitor() }
+        .onDisappear { teardownMouseSideButtonMonitor() }
+    }
+
+    /// 마우스 사이드 버튼 (뒤로=3, 앞으로=4) → 폴더 이력 네비게이션
+    private func setupMouseSideButtonMonitor() {
+        if mouseSideButtonMonitor != nil { return }
+        mouseSideButtonMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { event in
+            switch event.buttonNumber {
+            case 3:
+                // 뒤로가기
+                DispatchQueue.main.async { store.navigateBack() }
+                return nil
+            case 4:
+                // 앞으로가기
+                DispatchQueue.main.async { store.navigateForward() }
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func teardownMouseSideButtonMonitor() {
+        if let m = mouseSideButtonMonitor {
+            NSEvent.removeMonitor(m)
+            mouseSideButtonMonitor = nil
         }
     }
 

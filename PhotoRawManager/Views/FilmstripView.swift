@@ -9,29 +9,40 @@ struct FilmstripView: View {
     /// Convert vertical mouse wheel to horizontal scroll in filmstrip
     private func setupVerticalToHorizontalScroll() {
         if let existing = scrollMonitor { NSEvent.removeMonitor(existing); scrollMonitor = nil }
-        let height = filmstripHeight
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            // Only intercept if mouse is in the filmstrip area (bottom of window)
             guard let window = event.window,
                   let contentView = window.contentView else { return event }
             let pt = event.locationInWindow
-            let mouseY = contentView.convert(pt, from: nil).y
-            guard mouseY < height + 20 else { return event }
+
+            // 커서 아래의 뷰에서 상위로 올라가며 가로 스크롤뷰 탐색
+            guard let hit = contentView.hitTest(pt) else { return event }
+            var v: NSView? = hit
+            var scrollView: NSScrollView? = nil
+            while let cur = v {
+                if let sv = cur as? NSScrollView {
+                    // 가로 문서인지 확인 (documentView가 contentView보다 넓음)
+                    let docWidth = sv.documentView?.frame.width ?? 0
+                    let docHeight = sv.documentView?.frame.height ?? 0
+                    let clipWidth = sv.contentView.bounds.width
+                    let clipHeight = sv.contentView.bounds.height
+                    if docWidth > clipWidth + 1 && docHeight <= clipHeight + 4 {
+                        scrollView = sv
+                        break
+                    }
+                }
+                v = cur.superview
+            }
+            guard let scrollView = scrollView else { return event }
 
             let deltaY = event.scrollingDeltaY
             let deltaX = event.scrollingDeltaX
-            // 수직 휠일 때만 가로 스크롤로 변환 (트랙패드 좌우 스와이프는 그대로)
-            guard abs(deltaY) > abs(deltaX), abs(deltaY) > 0.1 else { return event }
-
-            // 커서 아래의 NSScrollView를 직접 찾아서 가로 스크롤
-            guard let hit = contentView.hitTest(pt) else { return event }
-            var v: NSView? = hit
-            while let cur = v, !(cur is NSScrollView) { v = cur.superview }
-            guard let scrollView = v as? NSScrollView else { return event }
+            // 트랙패드 가로 스와이프는 그대로 통과
+            if abs(deltaX) > abs(deltaY) { return event }
+            guard abs(deltaY) > 0.01 else { return event }
 
             // 휠 위로(deltaY > 0) → 왼쪽 (origin.x 감소)
             // 휠 아래로(deltaY < 0) → 오른쪽 (origin.x 증가)
-            let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 16.0
+            let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 30.0
             let dx = -deltaY * multiplier
             var origin = scrollView.contentView.bounds.origin
             origin.x += dx
@@ -73,6 +84,10 @@ struct FilmstripView: View {
                         ForEach(store.filteredPhotos) { photo in
                             FilmstripCell(
                                 photo: photo,
+                                rating: photo.rating,
+                                colorLabel: photo.colorLabel,
+                                isSpacePicked: photo.isSpacePicked,
+                                isGSelected: photo.isGSelected,
                                 isSelected: store.isSelected(photo.id),
                                 isFocused: store.selectedPhotoID == photo.id,
                                 cellHeight: filmstripHeight - 20
@@ -144,16 +159,13 @@ struct FilmstripView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: 별 5개 토글 (이미 5점이면 0점)
+        // 스페이스바: 별 5개 토글 (포커스 사진 기준, 다중 선택 시 일괄)
         if chars == " " {
-            let ids: [UUID] = store.selectedPhotoIDs.count > 1
-                ? Array(store.selectedPhotoIDs)
-                : (store.selectedPhotoID.map { [$0] } ?? [])
-            for id in ids {
-                if let i = store.idx(id) {
-                    let newRating = store.photos[i].rating == 5 ? 0 : 5
-                    store.setRating(newRating, for: id)
-                }
+            if store.selectedPhotoIDs.count > 1 {
+                let focusRating = store.selectedPhotoID.flatMap { store.idx($0) }.map { store.photos[$0].rating } ?? 0
+                store.setRatingForSelected(focusRating == 5 ? 0 : 5)
+            } else if let id = store.selectedPhotoID, let i = store.idx(id) {
+                store.setRating(store.photos[i].rating == 5 ? 0 : 5, for: id)
             }
             return .handled
         }
@@ -172,8 +184,9 @@ struct FilmstripView: View {
         if let ch = chars.first, let num = Int(String(ch)), num >= 6 && num <= 9 {
             let labelMap: [Int: ColorLabel] = [6: .red, 7: .yellow, 8: .green, 9: .blue]
             if let label = labelMap[num] {
-                let ids = store.selectedPhotoIDs.count > 1 ? store.selectedPhotoIDs : (store.selectedPhotoID.map { [$0] } ?? [])
-                for id in ids {
+                if store.selectedPhotoIDs.count > 1 {
+                    store.setColorLabelForSelected(label)
+                } else if let id = store.selectedPhotoID {
                     store.setColorLabel(label, for: id)
                 }
             }
@@ -253,6 +266,11 @@ struct FilmstripView: View {
 
 struct FilmstripCell: View {
     let photo: PhotoItem
+    // 가변 스칼라 필드는 별도 파라미터로 분리 (PhotoItem Equatable이 id만 비교하므로 diff 안 됨)
+    let rating: Int
+    let colorLabel: ColorLabel
+    let isSpacePicked: Bool
+    let isGSelected: Bool
     let isSelected: Bool
     var isFocused: Bool = false
     var cellHeight: CGFloat = 100
@@ -260,6 +278,25 @@ struct FilmstripCell: View {
 
     private var cellWidth: CGFloat { cellHeight * 1.3 }
     private var imgHeight: CGFloat { cellHeight * 0.7 }
+
+    private var hasStateBorder: Bool {
+        isSpacePicked || colorLabel != .none || rating > 0
+    }
+    private var borderColor: Color {
+        if isSpacePicked { return .red }
+        if colorLabel != .none, let c = colorLabel.color { return c }
+        if rating > 0 { return AppTheme.starGold }
+        if isFocused { return AppTheme.accent }
+        if isSelected { return AppTheme.accent.opacity(0.7) }
+        return .clear
+    }
+    private var borderWidth: CGFloat {
+        if isSpacePicked { return 3 }
+        if colorLabel != .none || rating > 0 { return 2.5 }
+        if isFocused { return 2.5 }
+        if isSelected { return 1.5 }
+        return 0
+    }
 
     var body: some View {
         VStack(spacing: 2) {
@@ -270,7 +307,7 @@ struct FilmstripCell: View {
                     .cornerRadius(4)
 
                 // SP badge (red, prominent)
-                if photo.isSpacePicked {
+                if isSpacePicked {
                     Text("SP")
                         .font(.system(size: 8, weight: .black))
                         .foregroundColor(.white)
@@ -295,7 +332,7 @@ struct FilmstripCell: View {
                 }
 
                 // G select badge
-                if photo.isGSelected {
+                if isGSelected {
                     Text("G")
                         .font(.system(size: 8, weight: .black))
                         .foregroundColor(.white)
@@ -315,28 +352,35 @@ struct FilmstripCell: View {
                 .foregroundColor(isSelected ? .white : AppTheme.textSecondary)
                 .frame(width: cellWidth)
 
-            // Star rating
-            StarDisplayView(rating: photo.rating, size: 7)
+            // Star rating — 빈 별 포함해서 항상 5개 표시 (높이 일관성)
+            StarDisplayView(rating: rating, size: 7, compact: false)
         }
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(
-                    isFocused ? AppTheme.accent.opacity(0.35) :
-                    isSelected ? AppTheme.accent.opacity(0.18) :
+                    isFocused ? AppTheme.accent.opacity(0.40) :
+                    isSelected ? AppTheme.accent.opacity(0.22) :
                     isHovered ? Color.white.opacity(0.05) :
                     Color.clear
                 )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 5)
-                .stroke(
-                    photo.isSpacePicked ? Color.red :
-                    isFocused ? AppTheme.accent :
-                    isSelected ? AppTheme.accent.opacity(0.7) :
-                    Color.clear,
-                    lineWidth: photo.isSpacePicked ? 3 : (isFocused ? 2.5 : (isSelected ? 1.5 : 0))
-                )
+                .stroke(borderColor, lineWidth: borderWidth)
+        )
+        .overlay(
+            // 별점/라벨/SP 상태 보더가 있을 때 포커스/선택은 내부 링으로 별도 표시
+            Group {
+                if hasStateBorder && (isFocused || isSelected) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(
+                            isFocused ? AppTheme.accent : AppTheme.accent.opacity(0.85),
+                            lineWidth: isFocused ? 2 : 1.5
+                        )
+                        .padding(3)
+                }
+            }
         )
         .onHover { isHovered = $0 }
     }

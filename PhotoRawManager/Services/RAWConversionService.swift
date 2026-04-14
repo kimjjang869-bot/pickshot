@@ -201,69 +201,73 @@ struct RAWConversionService {
         let maxPixel = options.resolution.maxPixel
         let jpegQuality = options.quality.value
 
-        // Step 1: Load RAW with CIRAWFilter (GPU-accelerated demosaicing)
-        let ciImage: CIImage?
+        // Step 1~5: RAW 디코딩/리사이즈/필터/CGImage 렌더를 autoreleasepool로 감싸
+        // 큰 중간 CIImage가 run loop 종료까지 남지 않도록 즉시 해제
+        let targetColorSpace = options.colorSpace.cgColorSpace
+        let cgImage: CGImage? = autoreleasepool {
+            // Step 1: Load RAW with CIRAWFilter (GPU-accelerated demosaicing)
+            let ciImage: CIImage?
 
-        if #available(macOS 12.0, *) {
-            if let rawFilter = CIRAWFilter(imageURL: inputURL) {
-                rawFilter.boostAmount = 0
-                rawFilter.isGamutMappingEnabled = true
+            if #available(macOS 12.0, *) {
+                if let rawFilter = CIRAWFilter(imageURL: inputURL) {
+                    rawFilter.boostAmount = 0
+                    rawFilter.isGamutMappingEnabled = true
 
-                if let maxPx = maxPixel {
-                    let props = rawFilter.nativeSize
-                    let origMax = max(props.width, props.height)
-                    if origMax > maxPx {
-                        rawFilter.scaleFactor = Float(maxPx / origMax)
+                    if let maxPx = maxPixel {
+                        let props = rawFilter.nativeSize
+                        let origMax = max(props.width, props.height)
+                        if origMax > maxPx {
+                            rawFilter.scaleFactor = Float(maxPx / origMax)
+                        }
                     }
-                }
 
-                ciImage = rawFilter.outputImage
+                    ciImage = rawFilter.outputImage
+                } else {
+                    ciImage = CIImage(contentsOf: inputURL)
+                }
             } else {
                 ciImage = CIImage(contentsOf: inputURL)
             }
-        } else {
-            ciImage = CIImage(contentsOf: inputURL)
-        }
 
-        guard var output = ciImage else { return false }
+            guard var output = ciImage else { return nil }
 
-        // Step 2: Resize if needed
-        if let maxPx = maxPixel {
-            let extent = output.extent
-            let origMax = max(extent.width, extent.height)
-            if origMax > maxPx {
-                let scale = maxPx / origMax
-                output = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-            }
-        }
-
-        // Step 3: Auto Horizon correction
-        if options.autoHorizon {
-            if let corrected = applyAutoHorizon(output) {
-                output = corrected
-            }
-        }
-
-        // Step 4: Sharpening (CIUnsharpMask — GPU accelerated)
-        if options.sharpening != .off {
-            if let sharp = CIFilter(name: "CIUnsharpMask") {
-                sharp.setValue(output, forKey: kCIInputImageKey)
-                sharp.setValue(options.sharpening.radius, forKey: kCIInputRadiusKey)
-                sharp.setValue(options.sharpening.intensity, forKey: kCIInputIntensityKey)
-                if let result = sharp.outputImage {
-                    output = result
+            // Step 2: Resize if needed
+            if let maxPx = maxPixel {
+                let extent = output.extent
+                let origMax = max(extent.width, extent.height)
+                if origMax > maxPx {
+                    let scale = maxPx / origMax
+                    output = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
                 }
             }
+
+            // Step 3: Auto Horizon correction
+            if options.autoHorizon {
+                if let corrected = applyAutoHorizon(output) {
+                    output = corrected
+                }
+            }
+
+            // Step 4: Sharpening (CIUnsharpMask — GPU accelerated)
+            if options.sharpening != .off {
+                if let sharp = CIFilter(name: "CIUnsharpMask") {
+                    sharp.setValue(output, forKey: kCIInputImageKey)
+                    sharp.setValue(options.sharpening.radius, forKey: kCIInputRadiusKey)
+                    sharp.setValue(options.sharpening.intensity, forKey: kCIInputIntensityKey)
+                    if let result = sharp.outputImage {
+                        output = result
+                    }
+                }
+            }
+
+            // Step 5: Render to CGImage with target color space
+            let extent = output.extent
+            return ciContext.createCGImage(output, from: extent,
+                                           format: .RGBA8,
+                                           colorSpace: targetColorSpace)
         }
 
-        // Step 5: Render to CGImage with target color space
-        let targetColorSpace = options.colorSpace.cgColorSpace
-        let extent = output.extent
-        guard let cgImage = ciContext.createCGImage(output, from: extent,
-                                                     format: .RGBA8,
-                                                     colorSpace: targetColorSpace) else {
-            return false
-        }
+        guard let cgImage else { return false }
 
         // Step 6: Write JPEG via CGImageDestination
         guard let destination = CGImageDestinationCreateWithURL(

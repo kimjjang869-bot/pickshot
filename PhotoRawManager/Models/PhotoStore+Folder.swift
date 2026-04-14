@@ -106,6 +106,9 @@ extension PhotoStore {
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
+        // 이전 폴더의 pending save를 먼저 플러시 (폴더 바뀌기 전 현재 폴더 경로로 저장)
+        saveRatingsNow()
+
         // 이전 폴더 로딩/프리페치 취소 + 미리보기 캐시 비움
         ThumbnailLoader.shared.cancelAll()
         PreviewImageCache.shared.clearCache()

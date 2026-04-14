@@ -385,29 +385,33 @@ class PreviewImageCache {
     /// Load RAW file using CIRAWFilter for accurate color management (macOS 12+)
     @available(macOS 12.0, *)
     static func loadRAWWithCIFilter(url: URL, maxPixel: CGFloat) -> NSImage? {
-        guard let rawFilter = CIRAWFilter(imageURL: url) else { return nil }
+        // autoreleasepool로 감싸 RAW 디코딩 중간 CIImage 즉시 해제 (메모리 피크 완화)
+        let cgImage: CGImage? = autoreleasepool {
+            guard let rawFilter = CIRAWFilter(imageURL: url) else { return nil }
 
-        // Preserve original look (no auto-boost)
-        rawFilter.boostAmount = 0
-        rawFilter.isGamutMappingEnabled = true
+            // Preserve original look (no auto-boost)
+            rawFilter.boostAmount = 0
+            rawFilter.isGamutMappingEnabled = true
 
-        guard let ciImage = rawFilter.outputImage else { return nil }
+            guard let ciImage = rawFilter.outputImage else { return nil }
 
-        // Scale down to maxPixel
-        let scale: CGFloat
-        let maxDim = max(ciImage.extent.width, ciImage.extent.height)
-        if maxDim > maxPixel {
-            scale = maxPixel / maxDim
-        } else {
-            scale = 1.0
+            // Scale down to maxPixel
+            let scale: CGFloat
+            let maxDim = max(ciImage.extent.width, ciImage.extent.height)
+            if maxDim > maxPixel {
+                scale = maxPixel / maxDim
+            } else {
+                scale = 1.0
+            }
+
+            let scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+            // Render with target color space
+            let ctx = CIContext(options: [.workingColorSpace: targetColorSpace])
+            return ctx.createCGImage(scaled, from: scaled.extent, format: .RGBA8, colorSpace: targetColorSpace)
         }
 
-        let scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-        // Render with target color space
-        let ctx = CIContext(options: [.workingColorSpace: targetColorSpace])
-        guard let cgImage = ctx.createCGImage(scaled, from: scaled.extent, format: .RGBA8, colorSpace: targetColorSpace) else { return nil }
-
+        guard let cgImage else { return nil }
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 }
@@ -478,6 +482,30 @@ struct PhotoPreviewView: View {
         return q
     }()
     private var isFitMode: Bool { viewState.zoomPreset == .fit }
+
+    // 미리보기 테두리: 컬러라벨 > 별점 > SP > 없음
+    // PhotoItem이 id-only Equatable이라 prop diff로는 갱신이 안 되므로,
+    // store에서 최신 photo를 매번 조회해서 실시간 반영한다.
+    private var livePhoto: PhotoItem {
+        if let idx = store._photoIndex[photo.id], idx < store.photos.count {
+            return store.photos[idx]
+        }
+        return photo
+    }
+    private var previewBorderColor: Color {
+        let p = livePhoto
+        if p.isSpacePicked { return .red }
+        if p.colorLabel != .none, let c = p.colorLabel.color { return c }
+        if p.rating > 0 { return AppTheme.starGold }
+        return .clear
+    }
+    private var previewBorderWidth: CGFloat {
+        let p = livePhoto
+        if p.isSpacePicked { return 4 }
+        if p.colorLabel != .none && p.colorLabel.color != nil { return 3 }
+        if p.rating > 0 { return 3 }
+        return 0
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -698,6 +726,11 @@ struct PhotoPreviewView: View {
                     }
                     .frame(width: vSize.width, height: vSize.height)
                     .background(store.previewBackgroundColor)
+                    .overlay(
+                        Rectangle()
+                            .stroke(previewBorderColor, lineWidth: previewBorderWidth)
+                            .allowsHitTesting(false)
+                    )
                     .contextMenu { previewBgMenu }
                 } else {
                     // No image yet - show empty background
@@ -965,6 +998,17 @@ struct PhotoPreviewView: View {
             image = nil        // Release previous image immediately (메모리 스파이크 방지)
             isHiResLoaded = false
             hiResLoadWork?.cancel()
+
+            // 사진 전환 즉시 hi-res 캐시 사전 purge (memory pressure 대기 X)
+            // 현재 선택된 사진을 제외한 나머지는 모두 해제해서 피크 메모리 스파이크 방지
+            let currentHiResURL: NSURL? = {
+                guard let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder else { return nil }
+                let jpgExt = sel.jpgURL.pathExtension.lowercased()
+                let hasRealJPG = !FileMatchingService.rawExtensions.contains(jpgExt)
+                let hiResURL = hasRealJPG ? sel.jpgURL : (sel.rawURL ?? sel.jpgURL)
+                return hiResURL as NSURL
+            }()
+            Self.purgeHiResCacheExcept(currentURL: currentHiResURL)
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil
@@ -1877,20 +1921,101 @@ struct PhotoPreviewView: View {
     private static var hiResCache = NSCache<NSURL, NSImage>()
     private static var hiResCacheInitialized = false
     private static var hiResMemorySource: DispatchSourceMemoryPressure?
+    // 명시적 LRU 추적: NSCache 자동 evict는 타이밍이 늦어서 피크 메모리 스파이크를 막지 못함
+    private static var hiResCacheOrder: [NSURL] = []
+    private static let hiResCacheLock = NSLock()
+    // RAM 기반으로 결정된 countLimit (purgeOldestIfNeeded에서 사용)
+    private static var hiResCacheCountLimit: Int = 2
 
     private static func initHiResCache() {
         guard !hiResCacheInitialized else { return }
-        hiResCache.countLimit = 3  // Reduce from 5 to 3
-        hiResCache.totalCostLimit = 300 * 1024 * 1024  // 300MB max
+
+        // RAM 기반 캐시 사이징 (M1 Pro 16GB에서 스왑 방지)
+        let physicalRAM = ProcessInfo.processInfo.physicalMemory
+        let gb: UInt64 = 1024 * 1024 * 1024
+        let countLimit: Int
+        let totalCostLimit: Int
+        if physicalRAM <= 32 * gb {
+            // 16GB 및 16~32GB: 보수적 (M1 Pro 16GB 타겟)
+            countLimit = 2
+            totalCostLimit = 150 * 1024 * 1024  // 150MB
+        } else if physicalRAM <= 64 * gb {
+            // 32~64GB: 기존 값
+            countLimit = 3
+            totalCostLimit = 300 * 1024 * 1024  // 300MB
+        } else {
+            // 64GB 이상: 확장
+            countLimit = 5
+            totalCostLimit = 500 * 1024 * 1024  // 500MB
+        }
+
+        hiResCache.countLimit = countLimit
+        hiResCache.totalCostLimit = totalCostLimit
+        hiResCacheCountLimit = countLimit
         hiResCacheInitialized = true
+
+        let ramGB = Double(physicalRAM) / Double(gb)
+        AppLogger.log(.general, "🧠 hiResCache 초기화: RAM=\(String(format: "%.1f", ramGB))GB, countLimit=\(countLimit), totalCostLimit=\(totalCostLimit / (1024*1024))MB")
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler {
+            hiResCacheLock.lock()
             hiResCache.removeAllObjects()
+            hiResCacheOrder.removeAll()
+            hiResCacheLock.unlock()
             AppLogger.log(.general, "⚠️ hiResCache cleared due to memory pressure")
         }
         source.resume()
         hiResMemorySource = source
+    }
+
+    /// 새 hi-res 이미지 삽입 시 countLimit 초과 전에 oldest 엔트리를 명시적으로 제거.
+    /// NSCache의 자동 evict는 타이밍이 느려서 피크 메모리 스파이크를 막지 못하므로 사전에 purge.
+    private static func insertHiRes(_ image: NSImage, forKey url: NSURL, cost: Int) {
+        hiResCacheLock.lock()
+        defer { hiResCacheLock.unlock() }
+
+        // 이미 존재하면 순서 갱신을 위해 기존 엔트리 제거
+        if let existingIdx = hiResCacheOrder.firstIndex(of: url) {
+            hiResCacheOrder.remove(at: existingIdx)
+        }
+
+        // countLimit 도달 시 oldest 수동 제거 (새 삽입 전에)
+        while hiResCacheOrder.count >= hiResCacheCountLimit {
+            if let oldest = hiResCacheOrder.first {
+                hiResCache.removeObject(forKey: oldest)
+                hiResCacheOrder.removeFirst()
+                AppLogger.log(.general, "♻️ hiResCache 사전 LRU purge: \(oldest.lastPathComponent ?? "?")")
+            } else {
+                break
+            }
+        }
+
+        hiResCache.setObject(image, forKey: url, cost: cost)
+        hiResCacheOrder.append(url)
+    }
+
+    /// 현재 사진을 제외한 모든 hi-res 캐시를 즉시 해제 (사진 전환 시 사전 예방용).
+    /// 사후 memory pressure 대응이 아니라 사진이 바뀔 때마다 선제적으로 정리.
+    private static func purgeHiResCacheExcept(currentURL: NSURL?) {
+        hiResCacheLock.lock()
+        defer { hiResCacheLock.unlock() }
+
+        var removedCount = 0
+        let toRemove = hiResCacheOrder.filter { $0 != currentURL }
+        for url in toRemove {
+            hiResCache.removeObject(forKey: url)
+            removedCount += 1
+        }
+        if let current = currentURL {
+            hiResCacheOrder = hiResCacheOrder.contains(current) ? [current] : []
+        } else {
+            hiResCacheOrder.removeAll()
+        }
+
+        if removedCount > 0 {
+            AppLogger.log(.general, "🧹 hiResCache 사진 전환 purge: \(removedCount)개 해제, 현재=\(currentURL?.lastPathComponent ?? "nil")")
+        }
     }
 
     private func loadHiResForZoom() {
@@ -1956,7 +2081,8 @@ struct PhotoPreviewView: View {
                         return
                     }
                     let cost = hi.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
-                    Self.hiResCache.setObject(hi, forKey: url as NSURL, cost: cost)
+                    // 명시적 LRU 사전 purge 후 삽입 (NSCache 자동 evict 타이밍 보완)
+                    Self.insertHiRes(hi, forKey: url as NSURL, cost: cost)
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true

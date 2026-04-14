@@ -164,6 +164,8 @@ class PhotoStore: ObservableObject {
         didSet { splitSaveWork?.cancel(); let v = hSplitRatio; let w = DispatchWorkItem { UserDefaults.standard.set(Double(v), forKey: "savedHSplitRatio") }; splitSaveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w) }
     }
     private var splitSaveWork: DispatchWorkItem?
+    // 별점/SP/컬러라벨 저장 debounce — 연속 변경 시 마지막 것만 실제 저장
+    var saveRatingsWorkItem: DispatchWorkItem?
     @Published var vSplitRatio: CGFloat = {
         let saved = UserDefaults.standard.double(forKey: "savedVSplitRatio")
         if saved > 0.05 && saved < 0.95 { return CGFloat(saved) }
