@@ -299,13 +299,6 @@ class PhotoStore: ObservableObject {
     @Published var toastMessage: String = ""
     @Published var showToast: Bool = false
 
-    func showToastMessage(_ msg: String) {
-        toastMessage = msg
-        showToast = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.showToast = false
-        }
-    }
     @Published var showDeleteOriginalConfirm: Bool = false
     var pendingDeleteIDs: Set<UUID> = []
     @Published var faceGroups: [Int: [UUID]] = [:]
@@ -415,8 +408,8 @@ class PhotoStore: ObservableObject {
     private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove], removedPhotos: [RemovedPhoto])] = []
     private let maxUndoSteps = 100
 
-    private let defaults = UserDefaults.standard
-    private let layoutModeKey = "layoutMode"
+    let defaults = UserDefaults.standard
+    let layoutModeKey = "layoutMode"
     private let lastFolderKey = "lastFolderPath"
     private let ratingsKey = "photoRatings"
     private let folderWatcher = FolderWatcherService()
@@ -562,11 +555,6 @@ class PhotoStore: ObservableObject {
         }
         loadCollections()
         loadFaceGroupNames()
-    }
-
-    func setLayoutMode(_ mode: LayoutMode) {
-        layoutMode = mode
-        defaults.set(mode.rawValue, forKey: layoutModeKey)
     }
 
     // MARK: - Folder Watching
@@ -2513,27 +2501,6 @@ class PhotoStore: ObservableObject {
         return max(1, actualColumnsPerRow)
     }
 
-    /// 그리드 열 수 재계산 — 윈도우 실제 폭 기반 (보조 모니터 대응)
-    func recalcColumnsFromRatio() {
-        // keyWindow가 있으면 해당 윈도우 기준, 없으면 모든 윈도우 중 가장 큰 것
-        let windowW: CGFloat
-        if let kw = NSApp.keyWindow {
-            windowW = kw.frame.width
-        } else if let mainW = NSApp.windows.first(where: { $0.isVisible && !$0.isMiniaturized })?.frame.width {
-            windowW = mainW
-        } else {
-            windowW = NSScreen.main?.frame.width ?? 1440
-        }
-        let leftW = windowW * hSplitRatio
-        let size = thumbnailSize
-        let spacing: CGFloat = 12
-        let cellWidth = size + spacing
-        let cols = max(1, Int((leftW + spacing) / cellWidth))
-        if actualColumnsPerRow != cols {
-            actualColumnsPerRow = cols
-        }
-    }
-
     // Cached filtered index for fast lookup
     private var _filteredIndex: [UUID: Int] = [:]
 
@@ -3369,10 +3336,6 @@ class PhotoStore: ObservableObject {
             }
         }
         return stats
-    }
-
-    func toggleMetadataOverlay() {
-        showMetadataOverlay.toggle()
     }
 
     // MARK: - Batch Rename
