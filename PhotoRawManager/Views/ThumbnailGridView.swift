@@ -23,6 +23,10 @@ struct ThumbnailGridView: View {
             let _ = updateColumns(width: geo.size.width)
             if store.filteredPhotos.isEmpty {
                 emptyStateView
+                    .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                        handleExternalDrop(providers: providers)
+                        return true
+                    }
             } else {
                 // SwiftUI LazyVGrid / List (안정적 + 메모리 캐시 8GB)
                 VStack(spacing: 0) {
@@ -36,6 +40,12 @@ struct ThumbnailGridView: View {
                                 gridView
                             }
                             .scrollIndicators(.visible)
+                            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                                // Finder 등 외부에서 파일을 드롭하면 현재 폴더로 복사
+                                // (Option 누르고 드롭하면 이동)
+                                handleExternalDrop(providers: providers)
+                                return true
+                            }
                             .contextMenu {
                                 // 빈 영역 우클릭 — 정렬 + 새 폴더
                                 Menu("정렬") {
@@ -78,6 +88,34 @@ struct ThumbnailGridView: View {
                 }
             }
             } // Group
+        }
+    }
+
+    /// Finder 등 외부에서 파일을 드롭했을 때 현재 폴더로 복사(기본) 또는 이동(Option).
+    private func handleExternalDrop(providers: [NSItemProvider]) {
+        let moveInstead = NSEvent.modifierFlags.contains(.option)
+        let group = DispatchGroup()
+        var collected: [URL] = []
+        let lock = NSLock()
+
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { continue }
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                defer { group.leave() }
+                var url: URL?
+                if let u = item as? URL { url = u }
+                else if let d = item as? Data { url = URL(dataRepresentation: d, relativeTo: nil) }
+                if let u = url {
+                    lock.lock()
+                    collected.append(u)
+                    lock.unlock()
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            guard !collected.isEmpty else { return }
+            store.importFilesFromExternal(urls: collected, moveInstead: moveInstead)
         }
     }
 
@@ -173,6 +211,11 @@ struct ThumbnailGridView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     store.deselectAll()
+                }
+                .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                    // Finder 등에서 그리드 빈 영역에 드롭 → 현재 폴더로 복사
+                    handleExternalDrop(providers: providers)
+                    return true
                 }
         )
     }

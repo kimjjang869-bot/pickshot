@@ -4,6 +4,7 @@ import ImageIO
 import Vision
 import CoreLocation
 import Combine
+import AVFoundation
 
 
 // MARK: - Analysis Options
@@ -459,7 +460,7 @@ class PhotoStore: ObservableObject {
     /// 삭제 되돌리기용: 삭제된 PhotoItem + 원래 인덱스
     struct RemovedPhoto { let photo: PhotoItem; let originalIndex: Int }
     private var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove], removedPhotos: [RemovedPhoto])] = []
-    private let maxUndoSteps = 20
+    private let maxUndoSteps = 100
 
     private let defaults = UserDefaults.standard
     private let layoutModeKey = "layoutMode"
@@ -961,6 +962,14 @@ class PhotoStore: ObservableObject {
         if let idx = _photoIndex[id], idx < photos.count {
             let photo = photos[idx]
             AppLogger.log(.selection, "selectPhoto: \(photo.fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
+            // 무결성 검증: id 불일치 감지
+            if photo.id != id {
+                fputs("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n", stderr)
+            } else {
+                fputs("[SELECT] click: id=\(id.uuidString.prefix(8)) → \(photo.fileName)\n", stderr)
+            }
+        } else {
+            fputs("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n", stderr)
         }
         if shiftKey {
             // Shift+Click: range selection from anchor
@@ -1033,7 +1042,7 @@ class PhotoStore: ObservableObject {
         guard !idsToRemove.isEmpty else { return }
 
         // Step 1: 다음 선택 대상 미리 계산 — 뒤(다음) 사진 우선
-        // 자연스러운 전방 탐색 워크플로우: 삭제 후 바로 다음 사진으로 이동
+        // 표준 뷰어 관행: 삭제 후 다음 사진으로 이동 (이정열 작가 재피드백)
         let list = filteredPhotos
         ensureFilteredIndex()
         var nextID: UUID? = nil
@@ -1104,10 +1113,9 @@ class PhotoStore: ObservableObject {
         photosToRemove = []
         scrollTrigger &+= 1
 
-        // 삭제 효과음 (Tink 0.56초, 연타 시 중복 방지)
+        // 삭제 효과음 (macOS 휴지통 비우기, 0.28초로 자름)
         if !idsToRemove.isEmpty {
-            Self._deleteSound?.stop()
-            Self._deleteSound?.play()
+            Self.playDeleteSound()
         }
 
         // 폴더 사이즈는 비동기로 (렉 방지)
@@ -1145,9 +1153,23 @@ class PhotoStore: ObservableObject {
         var trashMoves: [FileMove] = []   // 휴지통 복원용
 
         for id in ids {
-            guard let idx = _photoIndex[id], idx < photos.count else { continue }
-            let photo = photos[idx]
+            // 안전장치: _photoIndex가 스테일할 수 있으므로 photo.id == id 검증
+            // 실패 시 선형 탐색으로 폴백하여 엉뚱한 파일 삭제 방지
+            let photo: PhotoItem
+            if let idx = _photoIndex[id], idx < photos.count, photos[idx].id == id {
+                photo = photos[idx]
+            } else if let fallback = photos.first(where: { $0.id == id }) {
+                fputs("[DELETE] WARN: _photoIndex 스테일 감지 — id=\(id.uuidString.prefix(8)), 선형 탐색으로 폴백: \(fallback.fileName)\n", stderr)
+                photo = fallback
+            } else {
+                fputs("[DELETE] ERROR: photo를 찾을 수 없음 — id=\(id.uuidString.prefix(8))\n", stderr)
+                continue
+            }
             guard !photo.isFolder && !photo.isParentFolder else { continue }
+
+            // 무엇을 삭제하는지 명시 로그 (디버깅 용)
+            let rawLog = photo.rawURL.map { $0.lastPathComponent } ?? "nil"
+            fputs("[DELETE] 삭제 대상: jpgURL=\(photo.jpgURL.lastPathComponent), rawURL=\(rawLog)\n", stderr)
 
             // Delete JPG → 휴지통 (복원 경로 기록)
             do {
@@ -1160,8 +1182,8 @@ class PhotoStore: ObservableObject {
                 }
             } catch { failed += 1 }
 
-            // Delete RAW → 휴지통
-            if let rawURL = photo.rawURL {
+            // Delete RAW → 휴지통 (jpgURL과 같으면 스킵 — 이미 삭제됨)
+            if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
                 do {
                     if fm.fileExists(atPath: rawURL.path) {
                         var trashURL: NSURL?
@@ -1177,10 +1199,8 @@ class PhotoStore: ObservableObject {
 
         AppLogger.log(.export, "Deleted \(deleted) files (\(failed) failed) to Trash")
 
-        // 삭제 효과음
-        if deleted > 0 {
-            NSSound(contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif", byReference: true)?.play()
-        }
+        // 삭제 효과음 (macOS 휴지통 비우기, 0.28초)
+        // 주의: removePhotosFromList 안에서도 재생되므로 여기는 생략 — 이중 재생 방지
 
         // Remove from list (undo 스택에 목록 제거 정보 저장됨)
         removePhotosFromList(ids: ids)
@@ -1191,6 +1211,11 @@ class PhotoStore: ObservableObject {
             lastUndo.fileMoves = trashMoves
             undoStack.append(lastUndo)
         }
+
+        // 우리가 직접 삭제한 파일이므로 FolderWatcher가 리로드를 트리거하지 않도록 baseline 동기화
+        // → 1~3초 후 발생하는 화면 깜빡임 방지
+        folderWatcher.syncBaselineSilently()
+        folderReloadWork?.cancel()
     }
 
     /// 폴더를 휴지통으로 이동
@@ -1210,10 +1235,13 @@ class PhotoStore: ObservableObject {
             }
         }
         if deleted > 0 {
-            NSSound(contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif", byReference: true)?.play()
+            Self.playDeleteSound()
         }
         if deleted > 0, let url = folderURL {
+            // 폴더 삭제는 구조가 바뀌므로 리로드가 필요. 다만 watcher 중복 리로드는 막음.
+            folderReloadWork?.cancel()
             loadFolder(url, restoreRatings: true)
+            folderWatcher.syncBaselineSilently()
         }
     }
 
@@ -1264,6 +1292,113 @@ class PhotoStore: ObservableObject {
     }
 
     /// 선택된 사진 파일을 대상 폴더로 이동
+    /// Finder 등 외부에서 드래그된 파일을 현재 폴더로 복사(또는 이동).
+    /// - moveInstead가 true면 이동, 아니면 복사.
+    /// - 폴더가 열려 있어야 하며(folderURL 존재), 이미지/RAW/비디오 파일만 받아들임.
+    /// - 중복 이름은 " (1)", " (2)" 로 자동 네이밍.
+    func importFilesFromExternal(urls: [URL], moveInstead: Bool = false) {
+        guard let destination = folderURL else {
+            showToastMessage("먼저 폴더를 열어주세요")
+            return
+        }
+
+        let fm = FileManager.default
+        // 원본 경로의 폴더(현재 열린 폴더)에서 온 파일은 스킵 — 리오더 같은 내부 드롭 충돌 방지
+        let destPath = destination.standardizedFileURL.path
+        let filtered = urls.filter { url in
+            let parent = url.deletingLastPathComponent().standardizedFileURL.path
+            return parent != destPath
+        }
+        guard !filtered.isEmpty else { return }
+
+        // 지원 가능한 파일만 (이미지/RAW/비디오)
+        let accepted = filtered.filter { url in
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else { return false }
+            return FileMatchingService.isImportableFile(url)
+        }
+        guard !accepted.isEmpty else {
+            showToastMessage("지원하는 이미지/RAW/비디오 파일이 없습니다")
+            return
+        }
+
+        let total = accepted.count
+        let label = moveInstead ? "파일 이동" : "파일 복사"
+
+        DispatchQueue.main.async {
+            self.fileMoveActive = true
+            self.fileMoveDone = 0
+            self.fileMoveTotal = total
+            self.fileMoveLabel = label
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            var done = 0
+            var failed = 0
+            var copiedRecords: [FileMove] = []
+
+            for (index, srcURL) in accepted.enumerated() {
+                // 중복 이름 해결
+                let base = srcURL.deletingPathExtension().lastPathComponent
+                let ext = srcURL.pathExtension
+                var candidate = destination.appendingPathComponent(srcURL.lastPathComponent)
+                var n = 1
+                while fm.fileExists(atPath: candidate.path) {
+                    let newName = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
+                    candidate = destination.appendingPathComponent(newName)
+                    n += 1
+                    if n > 999 { break }
+                }
+
+                do {
+                    if moveInstead {
+                        try fm.moveItem(at: srcURL, to: candidate)
+                    } else {
+                        try fm.copyItem(at: srcURL, to: candidate)
+                    }
+                    copiedRecords.append(FileMove(sourceURL: srcURL, destURL: candidate))
+                    done += 1
+                } catch {
+                    failed += 1
+                    AppLogger.log(.general, "\(label) 실패: \(srcURL.lastPathComponent) → \(error.localizedDescription)")
+                }
+
+                DispatchQueue.main.async {
+                    self.fileMoveDone = index + 1
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.fileMoveActive = false
+
+                // FolderWatcher가 중복 리로드하지 않도록 baseline 갱신
+                self.folderWatcher.syncBaselineSilently()
+
+                // Undo 기록 (이동만, 복사는 수동 삭제가 안전)
+                if moveInstead, !copiedRecords.isEmpty {
+                    self.undoStack.append((action: "파일 가져오기", photoIDs: Set<UUID>(),
+                                           oldRatings: [:], oldSP: [:], oldGSelect: [:],
+                                           fileMoves: copiedRecords, removedPhotos: []))
+                    if self.undoStack.count > self.maxUndoSteps {
+                        self.undoStack.removeFirst(self.undoStack.count - self.maxUndoSteps)
+                    }
+                }
+
+                let verb = moveInstead ? "이동" : "복사"
+                let msg = "\(done)장 \(verb) 완료" + (failed > 0 ? " (\(failed)장 실패)" : "") + (moveInstead ? " (Cmd+Z 되돌리기)" : "")
+                self.showToastMessage(msg)
+
+                // 새 파일이 현재 폴더에 들어왔으므로 리로드
+                if done > 0 {
+                    self.loadFolder(destination, restoreRatings: true)
+                    FolderPreviewCache.shared.invalidate(destination)
+                    NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
+                }
+            }
+        }
+    }
+
     func movePhotosToFolder(fileURLs: [URL], destination: URL) {
         let fm = FileManager.default
         var moved = 0
@@ -1418,6 +1553,8 @@ class PhotoStore: ObservableObject {
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].rating = rating }
         }
+        invalidateFilterCache()
+        photosVersion += 1
         saveRatings()
     }
 
@@ -2287,6 +2424,8 @@ class PhotoStore: ObservableObject {
         AppLogger.log(.rating, "setRating: \(photos[i].fileName) → \(rating) (was \(photos[i].rating))")
         pushUndo(action: "별점 변경", photoIDs: [photoID])
         photos[i].rating = (photos[i].rating == rating) ? 0 : rating
+        invalidateFilterCache()
+        photosVersion += 1
         saveRatings()
     }
 
@@ -2563,8 +2702,38 @@ class PhotoStore: ObservableObject {
         PreviewImageCache.shared.prefetch(urls: urls)
     }
 
-    /// 삭제 효과음 (Tink, 0.56초 — 캐시해서 재사용)
-    private static let _deleteSound: NSSound? = NSSound(named: .init("Tink"))
+    /// 삭제 효과음 — macOS 휴지통 비우기 소리(empty trash.aif)를 0.28초로 잘라 재생
+    /// AVAudioPlayer 사용 → NSSound 대비 레이턴시 낮음 (pre-loaded buffer)
+    /// 연타 대비 플레이어 풀 사용 (stop() 간섭 방지)
+    private static let _deleteSoundPool: [AVAudioPlayer] = {
+        let path = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/finder/empty trash.aif"
+        let url = URL(fileURLWithPath: path)
+        var pool: [AVAudioPlayer] = []
+        for _ in 0..<4 {
+            if let p = try? AVAudioPlayer(contentsOf: url) {
+                p.prepareToPlay()  // 디코더 워밍업 → 첫 재생 레이턴시 감소
+                pool.append(p)
+            }
+        }
+        return pool
+    }()
+    private static var _deleteSoundIndex: Int = 0
+    private static let _deleteSoundDuration: TimeInterval = 0.28  // 짧게 자르기
+
+    static func playDeleteSound() {
+        guard !_deleteSoundPool.isEmpty else { return }
+        // 라운드 로빈: 다음 가용 플레이어 선택 (연타 시 겹치지 않게)
+        _deleteSoundIndex = (_deleteSoundIndex + 1) % _deleteSoundPool.count
+        let player = _deleteSoundPool[_deleteSoundIndex]
+        player.stop()
+        player.currentTime = 0
+        player.play()
+        // 0.28초 후 자동 정지 (꼬리 자르기)
+        // 플레이어는 static 풀이 영구 보유 → retain cycle 없음
+        DispatchQueue.main.asyncAfter(deadline: .now() + _deleteSoundDuration) {
+            player.stop()
+        }
+    }
 
     /// RAW 임베디드 썸네일 프리페치 (이동 방향으로 미리 채움, 병렬 추출)
     private static let thumbPrefetchQueue: OperationQueue = {
@@ -2608,6 +2777,23 @@ class PhotoStore: ObservableObject {
     func selectLeft(shift: Bool = false, cmd: Bool = false) { moveSelection(by: -1, shiftKey: shift, cmdKey: cmd) }
     func selectDown(shift: Bool = false, cmd: Bool = false) {
         fputs("[NAV] down cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
+        // 마지막 행에서 아래로 갈 곳이 없으면 가장 마지막 파일로 점프
+        ensureFilteredIndex()
+        let list = filteredPhotos
+        if !list.isEmpty,
+           let currentID = selectedPhotoID,
+           let currentIdx = _filteredIndex[currentID] {
+            let targetIdx = currentIdx + columnsPerRow
+            if targetIdx >= list.count {
+                // 아래 행이 없음 → 마지막 파일로 이동
+                let lastIdx = list.count - 1
+                if lastIdx > currentIdx {
+                    moveSelection(by: lastIdx - currentIdx, shiftKey: shift, cmdKey: cmd)
+                }
+                return
+            }
+        }
+        // 정상적으로 한 행 아래
         moveSelection(by: columnsPerRow, shiftKey: shift, cmdKey: cmd)
     }
     func selectUp(shift: Bool = false, cmd: Bool = false) {
