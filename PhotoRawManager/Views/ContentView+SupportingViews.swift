@@ -819,9 +819,8 @@ class KeyCaptureView: NSView {
 
             let deleteOriginal = UserDefaults.standard.bool(forKey: "deleteOriginalFile")
             if deleteOriginal {
-                // Show serious warning
-                store.pendingDeleteIDs = store.selectedPhotoIDs
-                store.showDeleteOriginalConfirm = true
+                // 휴지통으로 이동 (설정에 따라 확인 대화상자 skip 가능)
+                store.requestDeleteOriginal(ids: store.selectedPhotoIDs)
             } else {
                 // Just remove from thumbnail list (no file deletion)
                 store.removePhotosFromList(ids: store.selectedPhotoIDs)

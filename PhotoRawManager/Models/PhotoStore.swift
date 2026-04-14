@@ -1217,6 +1217,34 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    /// 삭제 요청 — 설정에 따라 확인 대화상자 표시 or 바로 실행
+    /// 기본값: 확인 없이 바로 휴지통으로 이동 (빠른 셀렉 워크플로우)
+    func requestDeleteOriginal(ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        pendingDeleteIDs = ids
+
+        // 설정 확인 — skipDeleteConfirm 기본값 true (빠른 워크플로우)
+        let skipConfirm = UserDefaults.standard.object(forKey: "skipDeleteConfirm") as? Bool ?? true
+
+        if skipConfirm {
+            // 바로 실행 (파일은 휴지통으로, Undo 가능)
+            let hasFolder = ids.contains { id in
+                guard let idx = _photoIndex[id], idx < photos.count else { return false }
+                return photos[idx].isFolder
+            }
+            if hasFolder { deleteFolders(ids: ids) }
+            let fileIDs = ids.filter { id in
+                guard let idx = _photoIndex[id], idx < photos.count else { return false }
+                return !photos[idx].isFolder && !photos[idx].isParentFolder
+            }
+            if !fileIDs.isEmpty { deleteOriginalFiles(ids: Set(fileIDs)) }
+            pendingDeleteIDs = []
+        } else {
+            // 확인 대화상자 표시
+            showDeleteOriginalConfirm = true
+        }
+    }
+
     /// 선택된 파일/폴더를 휴지통으로 이동 (통합)
     func deleteSelectedItems() {
         let ids = selectedPhotoIDs
@@ -1633,6 +1661,15 @@ class PhotoStore: ObservableObject {
 
             DispatchQueue.main.async {
                 guard self?.folderURL == url else { return }
+
+                // photos 교체 전에 기존 선택 파일명 캡처 (리로드 시 선택 유지용)
+                var prevFileName: String? = nil
+                if let prevID = self?.selectedPhotoID,
+                   let prevIdx = self?._photoIndex[prevID],
+                   let count = self?.photos.count, prevIdx < count {
+                    prevFileName = self?.photos[prevIdx].fileName
+                }
+
                 // Set photos first (triggers didSet but sort is already done)
                 self?.photos = sorted
                 if restoreRatings { self?.applySavedRatings() }
@@ -1640,12 +1677,27 @@ class PhotoStore: ObservableObject {
                 // Select first non-folder photo on NEXT run loop
                 DispatchQueue.main.async {
                     guard self?.folderURL == url else { return }
-                    let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                        ?? sorted.first
-                    if let fp = firstPhoto {
-                        self?.selectedPhotoID = fp.id
-                        self?.selectedPhotoIDs = [fp.id]
+
+                    // 기존 파일명을 새 목록에서 찾아 선택 유지
+                    // (PhotoItem.id는 UUID()로 매번 새로 생성되므로 파일명으로 매칭)
+                    var preserved = false
+                    if let name = prevFileName,
+                       let match = sorted.first(where: { $0.fileName == name && !$0.isFolder && !$0.isParentFolder }) {
+                        self?.selectedPhotoID = match.id
+                        self?.selectedPhotoIDs = [match.id]
                         self?.scrollTrigger += 1
+                        preserved = true
+                    }
+
+                    if !preserved {
+                        // 선택 없거나 사라졌을 때만 첫 사진 선택
+                        let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
+                            ?? sorted.first
+                        if let fp = firstPhoto {
+                            self?.selectedPhotoID = fp.id
+                            self?.selectedPhotoIDs = [fp.id]
+                            self?.scrollTrigger += 1
+                        }
                     }
                     // 열 수는 ContentView.updateGridColumns(leftW)에서 계산
                 }

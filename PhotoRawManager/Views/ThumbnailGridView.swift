@@ -436,8 +436,7 @@ struct NativeListView: View {
             // 행 우클릭 메뉴
             Button {
                 store.selectedPhotoIDs = ids
-                store.pendingDeleteIDs = ids
-                store.showDeleteOriginalConfirm = true
+                store.requestDeleteOriginal(ids: ids)
             } label: {
                 Label("휴지통으로 이동", systemImage: "trash")
             }
@@ -527,8 +526,7 @@ struct NativeListView: View {
         // 백스페이스/Delete: 삭제 확인
         if press.key == .delete || press.key == .deleteForward {
             if !store.selectedPhotoIDs.isEmpty {
-                store.pendingDeleteIDs = store.selectedPhotoIDs
-                store.showDeleteOriginalConfirm = true
+                store.requestDeleteOriginal(ids: store.selectedPhotoIDs)
             }
             return .handled
         }
@@ -743,8 +741,7 @@ struct LazyThumbnailWrapper: View {
                 }
                 Divider()
                 Button(role: .destructive) {
-                    store.pendingDeleteIDs = [photo.id]
-                    store.showDeleteOriginalConfirm = true
+                    store.requestDeleteOriginal(ids: [photo.id])
                 } label: {
                     Label("휴지통으로 이동", systemImage: "trash")
                 }
@@ -776,8 +773,7 @@ struct LazyThumbnailWrapper: View {
                     if photo.isFolder {
                         Divider()
                         Button(role: .destructive) {
-                            store.pendingDeleteIDs = [photo.id]
-                            store.showDeleteOriginalConfirm = true
+                            store.requestDeleteOriginal(ids: [photo.id])
                         } label: {
                             Label("휴지통으로 이동", systemImage: "trash")
                         }
@@ -1150,8 +1146,7 @@ struct PhotoContextMenu: View {
 
         // Delete original (if setting enabled)
         Button(role: .destructive, action: {
-            store.pendingDeleteIDs = targetIDs
-            store.showDeleteOriginalConfirm = true
+            store.requestDeleteOriginal(ids: targetIDs)
         }) {
             Label("휴지통으로 이동", systemImage: "trash")
         }

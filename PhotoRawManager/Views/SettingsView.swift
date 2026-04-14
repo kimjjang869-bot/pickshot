@@ -71,6 +71,7 @@ struct GeneralSettingsTab: View {
     @AppStorage("showFileExtension") private var showFileExtension = true
     @AppStorage("showFolderPreview") private var showFolderPreview = true
     @AppStorage("deleteOriginalFile") private var deleteOriginalFile = false
+    @AppStorage("skipDeleteConfirm") private var skipDeleteConfirm = true
     @AppStorage("windowStartSize") private var windowStartSize = "default"
     @AppStorage("appLanguage") private var appLanguage = "ko"
     @AppStorage("appearance") private var appearance = "system"
@@ -101,6 +102,13 @@ struct GeneralSettingsTab: View {
                             Text("⚠️ 주의: Backspace 키를 누르면 원본 파일이 휴지통으로 이동됩니다. 실수로 삭제할 수 있으니 주의하세요.")
                                 .font(.system(size: 10))
                                 .foregroundColor(.red)
+                        }
+
+                        Toggle("삭제 시 확인 대화상자 건너뛰기 (빠른 워크플로우)", isOn: $skipDeleteConfirm)
+                        if skipDeleteConfirm {
+                            Text("확인 없이 바로 휴지통으로 이동합니다. ⌘Z 로 되돌릴 수 있습니다.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
                         }
 
                         Divider()
