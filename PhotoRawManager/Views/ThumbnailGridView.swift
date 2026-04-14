@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CoreImage
+import Combine
 
 // MARK: - 드래그 드롭 상태 (PhotoStore와 분리 — 성능 최적화)
 class DragDropState: ObservableObject {
@@ -530,12 +531,16 @@ struct NativeListView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: SP(셀렉) 토글 — 빨간 테두리 표시
+        // 스페이스바: 별 5개 토글 (이미 5점이면 0점)
         if chars == " " {
-            if store.selectionCount > 1 {
-                store.toggleSpacePickForSelected()
-            } else if let id = store.selectedPhotoID {
-                store.toggleSpacePick(for: id)
+            let ids: [UUID] = store.selectedPhotoIDs.count > 1
+                ? Array(store.selectedPhotoIDs)
+                : (store.selectedPhotoID.map { [$0] } ?? [])
+            for id in ids {
+                if let i = store.idx(id) {
+                    let newRating = store.photos[i].rating == 5 ? 0 : 5
+                    store.setRating(newRating, for: id)
+                }
             }
             return .handled
         }
@@ -1439,15 +1444,9 @@ struct ThumbnailCell: View, Equatable {
 
     private var starsView: some View {
         let starSize = max(7, size * 0.06)
-        return HStack(spacing: 0) {
-            ForEach(1...5, id: \.self) { i in
-                Image(systemName: i <= photo.rating ? "star.fill" : "star")
-                    .font(.system(size: max(8, starSize)))
-                    .foregroundColor(i <= photo.rating ? AppTheme.starGold : AppTheme.starEmpty.opacity(0.4))
-            }
-        }
-        .frame(height: starSize + 4)
-        .frame(minHeight: 20)
+        return StarDisplayView(rating: photo.rating, size: max(8, starSize), compact: false)
+            .frame(height: starSize + 4)
+            .frame(minHeight: 20)
     }
 
     private var cellBackground: some View {
@@ -2512,7 +2511,6 @@ struct MultiFileDragView: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             mouseDownPoint = event.locationInWindow
             didStartDrag = false
-            // Don't call super — let SwiftUI handle via nextResponder
             nextResponder?.mouseDown(with: event)
         }
 
@@ -2531,7 +2529,6 @@ struct MultiFileDragView: NSViewRepresentable {
             let current = event.locationInWindow
             let distance = hypot(current.x - startPoint.x, current.y - startPoint.y)
 
-            // Need 8px movement to start drag
             guard distance > 8 else {
                 nextResponder?.mouseDragged(with: event)
                 return
@@ -3115,6 +3112,7 @@ struct PhotoReorderDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         ds.dropTargetID = nil
+        let insertBefore = ds.dropLeading
 
         guard let item = info.itemProviders(for: [.utf8PlainText]).first else { return false }
         item.loadItem(forTypeIdentifier: "public.utf8-plain-text", options: nil) { data, _ in
@@ -3122,7 +3120,13 @@ struct PhotoReorderDropDelegate: DropDelegate {
                   let idString = String(data: data, encoding: .utf8),
                   let sourceID = UUID(uuidString: idString) else { return }
             DispatchQueue.main.async {
-                store.movePhoto(from: sourceID, to: photo.id)
+                // 드래그한 셀이 다중 선택에 포함돼 있으면 선택된 모든 사진을 함께 이동
+                let sel = store.selectedPhotoIDs
+                if sel.contains(sourceID) && sel.count > 1 {
+                    store.movePhotos(sel, to: photo.id, insertBefore: insertBefore)
+                } else {
+                    store.movePhoto(from: sourceID, to: photo.id)
+                }
             }
         }
         return true
@@ -3360,19 +3364,46 @@ struct FolderPreviewGrid: View {
 }
 
 // MARK: - 드롭 위치 | 바 오버레이
+/// 셀별 드롭 상태 옵저버 — `DragDropState` 변화 중 본 셀과 무관한 변화는 무시.
+/// (전체 셀이 모든 드래그 이벤트마다 re-render되던 문제 해소)
+final class CellDropObserver: ObservableObject {
+    @Published private(set) var isTarget: Bool = false
+    @Published private(set) var leading: Bool = true
+    private var bag: Set<AnyCancellable> = []
+
+    func bind(to photoID: UUID) {
+        bag.removeAll()
+        let ds = DragDropState.shared
+        ds.$dropTargetID
+            .map { $0 == photoID }
+            .removeDuplicates()
+            .sink { [weak self] in self?.isTarget = $0 }
+            .store(in: &bag)
+        ds.$dropLeading
+            .removeDuplicates()
+            .sink { [weak self] in
+                guard let s = self else { return }
+                if s.isTarget { s.leading = $0 }
+            }
+            .store(in: &bag)
+    }
+}
+
 struct DropIndicatorOverlay: View {
     let photoID: UUID
-    @ObservedObject private var dragState = DragDropState.shared
+    @StateObject private var observer = CellDropObserver()
 
     var body: some View {
         GeometryReader { geo in
-            if dragState.dropTargetID == photoID {
-                let xPos: CGFloat = dragState.dropLeading ? -3 : geo.size.width + 3
+            if observer.isTarget {
+                let xPos: CGFloat = observer.leading ? -3 : geo.size.width + 3
                 dropBar(height: geo.size.height)
                     .position(x: xPos, y: geo.size.height / 2)
             }
         }
         .allowsHitTesting(false)
+        .onAppear { observer.bind(to: photoID) }
+        .onChange(of: photoID) { _ in observer.bind(to: photoID) }
     }
 
     private func dropBar(height: CGFloat) -> some View {

@@ -14,23 +14,33 @@ struct FilmstripView: View {
             // Only intercept if mouse is in the filmstrip area (bottom of window)
             guard let window = event.window,
                   let contentView = window.contentView else { return event }
-            let mouseY = contentView.convert(event.locationInWindow, from: nil).y
-            if mouseY < height + 20 {
-                let deltaY = event.scrollingDeltaY
-                if abs(deltaY) > abs(event.scrollingDeltaX) && abs(deltaY) > 0.5 {
-                    // Create a new horizontal scroll event
-                    if let cgEvent = event.cgEvent?.copy() {
-                        // Swap deltaY → deltaX
-                        cgEvent.setDoubleValueField(.scrollWheelEventDeltaAxis2, value: Double(-deltaY))
-                        cgEvent.setDoubleValueField(.scrollWheelEventDeltaAxis1, value: 0)
-                        if let newEvent = NSEvent(cgEvent: cgEvent) {
-                            window.sendEvent(newEvent)
-                            return nil  // Consume original
-                        }
-                    }
-                }
-            }
-            return event
+            let pt = event.locationInWindow
+            let mouseY = contentView.convert(pt, from: nil).y
+            guard mouseY < height + 20 else { return event }
+
+            let deltaY = event.scrollingDeltaY
+            let deltaX = event.scrollingDeltaX
+            // 수직 휠일 때만 가로 스크롤로 변환 (트랙패드 좌우 스와이프는 그대로)
+            guard abs(deltaY) > abs(deltaX), abs(deltaY) > 0.1 else { return event }
+
+            // 커서 아래의 NSScrollView를 직접 찾아서 가로 스크롤
+            guard let hit = contentView.hitTest(pt) else { return event }
+            var v: NSView? = hit
+            while let cur = v, !(cur is NSScrollView) { v = cur.superview }
+            guard let scrollView = v as? NSScrollView else { return event }
+
+            // 휠 위로(deltaY > 0) → 왼쪽 (origin.x 감소)
+            // 휠 아래로(deltaY < 0) → 오른쪽 (origin.x 증가)
+            let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 16.0
+            let dx = -deltaY * multiplier
+            var origin = scrollView.contentView.bounds.origin
+            origin.x += dx
+            let docWidth = scrollView.documentView?.frame.width ?? scrollView.contentView.bounds.width
+            let maxX = max(0, docWidth - scrollView.contentView.bounds.width)
+            origin.x = min(max(0, origin.x), maxX)
+            scrollView.contentView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            return nil  // Consume
         }
     }
 
@@ -68,14 +78,13 @@ struct FilmstripView: View {
                                 cellHeight: filmstripHeight - 20
                             )
                             .id(photo.id)
-                            .onTapGesture(count: 2) {
-                                // Double-click: enter folder
-                                if photo.isFolder || photo.isParentFolder {
+                            .onTapGesture {
+                                // 단일 탭 (더블클릭은 NSEvent.clickCount로 즉시 분기 — 250ms 지연 회피)
+                                let clickCount = NSApp.currentEvent?.clickCount ?? 1
+                                if clickCount >= 2, photo.isFolder || photo.isParentFolder {
                                     store.loadFolder(photo.jpgURL, restoreRatings: true)
+                                    return
                                 }
-                            }
-                            .onTapGesture(count: 1) {
-                                // Single click: select (folders too)
                                 if photo.isFolder || photo.isParentFolder {
                                     store.selectedPhotoID = photo.id
                                     store.selectedPhotoIDs = [photo.id]
@@ -135,12 +144,16 @@ struct FilmstripView: View {
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
 
-        // 스페이스바: SP(셀렉) 토글 — 빨간 테두리
+        // 스페이스바: 별 5개 토글 (이미 5점이면 0점)
         if chars == " " {
-            if store.selectionCount > 1 {
-                store.toggleSpacePickForSelected()
-            } else if let id = store.selectedPhotoID {
-                store.toggleSpacePick(for: id)
+            let ids: [UUID] = store.selectedPhotoIDs.count > 1
+                ? Array(store.selectedPhotoIDs)
+                : (store.selectedPhotoID.map { [$0] } ?? [])
+            for id in ids {
+                if let i = store.idx(id) {
+                    let newRating = store.photos[i].rating == 5 ? 0 : 5
+                    store.setRating(newRating, for: id)
+                }
             }
             return .handled
         }
@@ -303,13 +316,7 @@ struct FilmstripCell: View {
                 .frame(width: cellWidth)
 
             // Star rating
-            if photo.rating > 0 {
-                HStack(spacing: 0) {
-                    Text(String(repeating: "\u{2605}", count: photo.rating))
-                        .font(.system(size: 7))
-                        .foregroundColor(AppTheme.starFilled)
-                }
-            }
+            StarDisplayView(rating: photo.rating, size: 7)
         }
         .padding(4)
         .background(

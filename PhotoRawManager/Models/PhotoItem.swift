@@ -141,10 +141,6 @@ struct QualityAnalysis {
         return .poor
     }
 
-    mutating func finalizeGrade() {
-        // score is computed, no caching needed
-    }
-
     enum Grade: String {
         case good = "좋음"
         case average = "보통"

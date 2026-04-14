@@ -92,7 +92,6 @@
 		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
 		AF10001 /* AdaFaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF10002 /* AdaFaceService.swift */; };
 		AF10003 /* AdaFaceR18.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = AF10004 /* AdaFaceR18.mlpackage */; };
-		SR10001 /* SuperResolutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SR10002 /* SuperResolutionService.swift */; };
 		901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */; };
 		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
 		UG10001 /* UprightGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = UG10002 /* UprightGuideView.swift */; };
@@ -197,7 +196,6 @@
 		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
 		AF10002 /* AdaFaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaFaceService.swift; sourceTree = "<group>"; };
 		AF10004 /* AdaFaceR18.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = AdaFaceR18.mlpackage; sourceTree = "<group>"; };
-		SR10002 /* SuperResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperResolutionService.swift; sourceTree = "<group>"; };
 		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
 		81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = NIMAAesthetic.mlpackage; sourceTree = "<group>"; };
 		UG10002 /* UprightGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
@@ -351,7 +349,6 @@
 				XMP10002,
 				KWT10002 /* KeywordTaggingService.swift */,
 				BP10002 /* BatchProcessService.swift */,
-				SR10002 /* SuperResolutionService.swift */,
 				SC10002 /* SmartCropService.swift */,
 				AE10002 /* AIEnhanceService.swift */,
 				PS10002 /* PictureStyleService.swift */,
@@ -453,7 +450,6 @@
 				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
 				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
 				AF10001 /* AdaFaceService.swift in Sources */,
-				SR10001 /* SuperResolutionService.swift in Sources */,
 				89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */,
 				6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */,
 				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,

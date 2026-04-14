@@ -388,7 +388,7 @@ struct ExportView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(photos.isEmpty || store.isExporting || store.isConverting || store.bgExportActive)
+                    .disabled(photos.isEmpty || store.isConverting || store.bgExportActive)
                 }
             }
         }

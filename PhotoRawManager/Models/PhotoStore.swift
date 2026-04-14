@@ -144,9 +144,6 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var viewMode: ViewMode = .grid
-    @Published var useAppKitGrid: Bool = UserDefaults.standard.object(forKey: "useAppKitGrid") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(useAppKitGrid, forKey: "useAppKitGrid") }
-    }
     @Published var thumbnailSize: CGFloat = {
         let saved = UserDefaults.standard.double(forKey: "savedThumbnailSize")
         return saved > 0 ? CGFloat(saved) : 100
@@ -237,8 +234,6 @@ class PhotoStore: ObservableObject {
         if remaining < 60 { return "\(Int(remaining))초" }
         return "\(Int(remaining / 60))분 \(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
     }
-    @Published var exportProgress: Double = 0
-    @Published var isExporting = false
     // 백그라운드 내보내기 상태
     @Published var bgExportActive = false
     @Published var bgExportProgress: Double = 0
@@ -2565,6 +2560,43 @@ class PhotoStore: ObservableObject {
         photosVersion += 1
         objectWillChange.send()
         fputs("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n", stderr)
+    }
+
+    /// 여러 사진을 한 번에 target 위치로 이동 (다중 선택 드래그 리오더).
+    /// - sourceIDs가 1개면 movePhoto로 위임.
+    /// - target이 source에 포함되면 무시.
+    /// - insertBefore=true면 target 앞, false면 뒤에 블록 삽입.
+    func movePhotos(_ sourceIDs: Set<UUID>, to targetID: UUID, insertBefore: Bool = true) {
+        guard !sourceIDs.isEmpty else { return }
+        if sourceIDs.count == 1, let only = sourceIDs.first {
+            movePhoto(from: only, to: targetID)
+            return
+        }
+        guard !sourceIDs.contains(targetID) else { return }
+
+        let list = filteredPhotos
+        let allOrdered = list.map { $0.id }
+        let selectedInOrder = allOrdered.filter { sourceIDs.contains($0) }
+        let remaining = allOrdered.filter { !sourceIDs.contains($0) }
+
+        guard let targetIdx = remaining.firstIndex(of: targetID) else { return }
+        let insertAt = insertBefore ? targetIdx : targetIdx + 1
+
+        var newOrder = remaining
+        newOrder.insert(contentsOf: selectedInOrder, at: insertAt)
+
+        customOrderMap.removeAll()
+        for (i, id) in newOrder.enumerated() {
+            customOrderMap[id] = i
+        }
+
+        if sortMode != .customOrder {
+            sortMode = .customOrder
+        }
+        invalidateFilterCache()
+        photosVersion += 1
+        // photosVersion @Published 변경으로 충분 — objectWillChange.send() 중복 호출 제거
+        fputs("[REORDER MULTI] \(sourceIDs.count)장 → \(targetID.uuidString.prefix(8)) (before=\(insertBefore))\n", stderr)
     }
 
     @Published var actualColumnsPerRow: Int = 4

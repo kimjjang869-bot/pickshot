@@ -42,7 +42,6 @@ struct ImageAnalysisService {
             addExifInfo(photo: photo, analysis: &analysis)
         }
 
-        analysis.finalizeGrade()
         return analysis
     }
 

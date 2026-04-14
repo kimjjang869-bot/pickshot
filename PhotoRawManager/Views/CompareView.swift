@@ -200,13 +200,7 @@ struct CompareView: View {
                 .foregroundColor(.secondary)
 
                 // Rating
-                HStack(spacing: 2) {
-                    ForEach(1...5, id: \.self) { star in
-                        Image(systemName: star <= photo.rating ? "star.fill" : "star")
-                            .font(.system(size: 10))
-                            .foregroundColor(star <= photo.rating ? .yellow : .gray.opacity(0.3))
-                    }
-                }
+                StarDisplayView(rating: photo.rating, size: 10, compact: false)
 
                 // Quality + Scene tag
                 HStack(spacing: 6) {

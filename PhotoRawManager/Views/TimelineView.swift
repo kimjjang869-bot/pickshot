@@ -64,7 +64,7 @@ struct TimelineView: View {
             AsyncTimelineThumbnail(url: photo.jpgURL, size: 80)
             HStack(spacing: 2) {
                 if photo.isSpacePicked { Circle().fill(Color.red).frame(width: 8, height: 8) }
-                if photo.rating > 0 { HStack(spacing: 0) { ForEach(0..<photo.rating, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 5)).foregroundColor(.yellow) } } }
+                StarDisplayView(rating: photo.rating, size: 5)
             }.padding(3)
         }.frame(width: 80, height: 80).cornerRadius(4)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(store.selectedPhotoID == photo.id ? Color.accentColor : photo.isSpacePicked ? Color.red.opacity(0.6) : Color.clear, lineWidth: store.selectedPhotoID == photo.id ? 3 : 2))

@@ -2294,13 +2294,7 @@ struct MetadataOverlayView: View {
                     Text(photo.fileName)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
 
-                    HStack(spacing: 2) {
-                        ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= photo.rating ? "star.fill" : "star")
-                                .font(.system(size: 10))
-                                .foregroundColor(star <= photo.rating ? .yellow : .gray.opacity(0.5))
-                        }
-                    }
+                    StarDisplayView(rating: photo.rating, size: 10, compact: false)
 
                     if let tag = photo.sceneTag {
                         Text(tag)

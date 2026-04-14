@@ -682,17 +682,21 @@ class KeyCaptureView: NSView {
         let isVideo = videoPreviewVisible && store.selectedPhoto?.isVideoFile == true
         let videoMgr = VideoPlayerManager.shared
 
-        // Spacebar: 비디오면 재생/일시정지, 아니면 SP(셀렉) 토글 — 빨간 테두리 표시
+        // Spacebar: 비디오면 재생/일시정지, 아니면 별 5개 토글 (이미 5점이면 0점)
         if chars == " " || keyCode == 49 {
             if isVideo && videoMgr.isReady {
                 videoMgr.togglePlayPause()
                 return
             }
             guard !selectedIsFolder else { return }
-            if store.selectionCount > 1 {
-                store.toggleSpacePickForSelected()
-            } else if let id = store.selectedPhotoID {
-                store.toggleSpacePick(for: id)
+            let ids: [UUID] = store.selectionCount > 1
+                ? Array(store.selectedPhotoIDs)
+                : (store.selectedPhotoID.map { [$0] } ?? [])
+            for id in ids {
+                if let i = store.idx(id) {
+                    let newRating = store.photos[i].rating == 5 ? 0 : 5
+                    store.setRating(newRating, for: id)
+                }
             }
             return
         }

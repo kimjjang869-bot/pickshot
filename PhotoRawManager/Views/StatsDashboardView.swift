@@ -34,7 +34,7 @@ struct StatsDashboardView: View {
                 let pct = stats.totalPhotos > 0 ? Double(count) / Double(stats.totalPhotos) : 0
                 HStack(spacing: 8) {
                     if rating == 0 { Text("없음").font(.system(size: 11)).frame(width: 40, alignment: .trailing) }
-                    else { HStack(spacing: 1) { ForEach(0..<rating, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 8)).foregroundColor(.yellow) } }.frame(width: 40, alignment: .trailing) }
+                    else { StarDisplayView(rating: rating, size: 8).frame(width: 40, alignment: .trailing) }
                     barView(fraction: pct, color: rating == 0 ? .gray : .yellow)
                     Text("\(count)").font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary).frame(width: 40, alignment: .trailing)
                 }
