@@ -28,6 +28,15 @@ struct PhotoRawManagerApp: App {
         _ = SystemSpec.shared
         AppLogger.log(.general, SystemSpec.shared.debugSummary)
 
+        // 썸네일 캐시 버전 invalidate — orientation 보정 로직 추가됨 (이전 버전에서 가로/세로 잘못 저장된 캐시 폐기)
+        let thumbCacheVersionKey = "thumbCacheVersion"
+        let currentThumbCacheVersion = "v8.7-aspect-fix"
+        if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
+            DiskThumbnailCache.shared.clearAll()
+            UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
+            fputs("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n", stderr)
+        }
+
         SubscriptionManager.shared.checkTrialStatus()
     }
 

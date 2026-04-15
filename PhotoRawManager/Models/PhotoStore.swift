@@ -105,10 +105,11 @@ class PhotoStore: ObservableObject {
     @Published var cachedFolderSizeText: String = ""
     @Published var selectedPhotoID: UUID? {
         didSet {
-            if !isKeyRepeat {
-                prefetchNearbyThumbnails()
-                if let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
-            }
+            // 프리페치는 키 연타 중에도 실행 (내부 디바운스로 마지막 한 번만 작동)
+            // → 빠른 탐색 시 다음 셀이 즉시 캐시 HIT으로 표시됨
+            prefetchNearbyThumbnails()
+            // 지오코딩은 키 떼는 순간에만
+            if !isKeyRepeat, let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
         }
     }
     @Published var selectedPhotoIDs: Set<UUID> = []
@@ -148,6 +149,9 @@ class PhotoStore: ObservableObject {
         set { analysisCancelLock.lock(); _analysisCancel = newValue; analysisCancelLock.unlock() }
     }
     @Published var folderURL: URL?
+    /// 현재 폴더가 느린 디스크(HDD/SD/NAS)에 있는지. loadFolder에서 background로 검사 후 set.
+    /// PhotoPreviewView가 stage2 스킵 결정 등에 활용.
+    @Published var currentFolderIsSlowDisk: Bool = false
     // 비율 기반 분할 (0.0~1.0) — 창 크기 변해도 비율 유지
     @Published var hSplitRatio: CGFloat = {
         let saved = UserDefaults.standard.double(forKey: "savedHSplitRatio")

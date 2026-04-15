@@ -137,6 +137,20 @@ extension PhotoStore {
         // Auto-optimize for NAS/network volumes
         ThumbnailLoader.shared.optimizeForPath(url.path)
 
+        // 느린 디스크 여부 캐시 — PhotoPreviewView가 stage2 스킵 결정에 활용
+        // (검사 자체가 sysctl/fs metadata 호출이므로 background에서)
+        let folderPath = url.path
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let isSlow = SystemSpec.isSlowDisk(path: folderPath)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.folderURL?.path == folderPath else { return }
+                self.currentFolderIsSlowDisk = isSlow
+                if isSlow {
+                    fputs("[STORAGE] 느린 디스크 감지 — stage2 미리보기 스킵 (\(folderPath))\n", stderr)
+                }
+            }
+        }
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var items = FileMatchingService.scanAndMatch(folderURL: url)
 
@@ -207,8 +221,14 @@ extension PhotoStore {
                     }
                     // 열 수는 ContentView.updateGridColumns(leftW)에서 계산
                 }
-                // Preload thumbnails with slight delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // Prewarming 시점/범위는 디스크 속도에 따라 다르게:
+                // - SSD: visible 표시 후 1.5초 (visible 로딩과 충돌 방지, ±40장으로 충분)
+                // - HDD/SD: 폴더 클릭 후 visible이 표시되자마자 0.5초에 시작 (HDD는 어차피 천천히 채워짐)
+                //   → 사용자가 다음 스크롤 전까지 미리 채워둘 시간 확보
+                // HDD: visible 로딩이 거의 끝난 후(2초)에 시작 — 디스크 경합 회피가 visible 표시 속도에 가장 큰 영향
+                // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
+                let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
                     self?.preloadAllThumbnails()
                 }
                 // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
@@ -303,8 +323,11 @@ extension PhotoStore {
                         self?.scrollTrigger += 1
                     }
                 }
-                // 썸네일 프리로드
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // 썸네일 prewarming: SSD 1.5초 / HDD-SD 0.5초 (HDD는 천천히 채워지므로 빨리 시작)
+                // HDD: visible 로딩이 거의 끝난 후(2초)에 시작 — 디스크 경합 회피가 visible 표시 속도에 가장 큰 영향
+                // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
+                let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
                     self?.preloadAllThumbnails()
                 }
             }

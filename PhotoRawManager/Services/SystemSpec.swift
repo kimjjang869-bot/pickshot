@@ -266,6 +266,67 @@ final class SystemSpec {
         }
     }
 
+    /// 미리보기 Stage1 (빠른 첫 표시) 해상도
+    /// low 머신은 800px로 표시 즉응성 우선, high+는 1600px로 화질 우선
+    func previewStage1MaxPixel() -> CGFloat {
+        switch effectiveTier {
+        case .low:      return 800
+        case .standard: return 1200
+        case .high:     return 1600
+        case .extreme:  return 1600
+        }
+    }
+
+    /// 미리보기 Stage2 (후속 고화질) 해상도. 0 = 원본
+    /// low: stage2도 1600px로 메모리 절감 (스파이크 ~40% 축소)
+    /// extreme: 원본 로드
+    func previewStage2MaxPixel() -> CGFloat {
+        switch effectiveTier {
+        case .low:      return 1600
+        case .standard: return 2400
+        case .high:     return 3200
+        case .extreme:  return 0    // 원본
+        }
+    }
+
+    // MARK: - Storage 감지 (경로 기반 — ThumbnailLoader와 공유)
+
+    /// 경로의 디스크가 느린 디스크(HDD/SD/NAS)인지 판단.
+    /// PhotoPreviewView가 stage2 스킵 등 정책 결정에 사용.
+    /// detectStorageType과 동일 로직 — 단순화 버전.
+    static func isSlowDisk(path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+
+        // 1) 네트워크 볼륨 (NAS) — OS metadata 우선
+        if let values = try? url.resourceValues(forKeys: [.volumeIsLocalKey]),
+           let isLocal = values.volumeIsLocal, !isLocal {
+            return true
+        }
+
+        // 2) 내장 디스크 = SSD (Apple Silicon Mac)
+        if !path.hasPrefix("/Volumes/") {
+            return false
+        }
+
+        // 3) 외장 볼륨 — SSD 힌트 우선 검사
+        let volumeName = url.pathComponents.count >= 3 ? url.pathComponents[2].lowercased() : ""
+        let ssdHints = ["ssd", "extreme", "samsung t", "sandisk extreme", "nvme", "thunderbolt", "portable ssd"]
+        if ssdHints.contains(where: { volumeName.contains($0) }) {
+            return false
+        }
+
+        // 4) 용량 ≤256GB → SD/USB 메모리로 추정 → slow
+        let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
+           let totalSize = attrs[.systemSize] as? Int64 {
+            let sizeGB = totalSize / (1024 * 1024 * 1024)
+            if sizeGB <= 256 { return true }
+        }
+
+        // 5) 그 외 외장 — HDD 가능성 → slow 취급
+        return true
+    }
+
     // MARK: - 디버깅/로그용 요약
     var debugSummary: String {
         """

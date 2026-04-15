@@ -7,7 +7,7 @@ extension PhotoStore {
     // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
 
     func prefetchNearbyThumbnails() {
-        // 디바운스: 빠른 키 연타 시 마지막 한 번만 실행
+        // 디바운스 짧게 (10ms) — 빠른 연타 시 마지막 한 번만, 단일 이동은 즉시
         prefetchWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self, let id = self.selectedPhotoID else { return }
@@ -15,9 +15,10 @@ extension PhotoStore {
             self.ensureFilteredIndex()
             guard let idx = self._filteredIndex[id] else { return }
 
-            // 앞뒤 20장 중 메모리 캐시 미스만 로딩
-            let start = max(0, idx - 20)
-            let end = min(list.count - 1, idx + 20)
+            // ±30장 (총 60장) 임베디드 JPEG 직접 추출 → ThumbnailCache 적재
+            // ThumbnailLoader 우회: 내부 lock/queue 경합 회피 + 풀 디코드 방지
+            let start = max(0, idx - 30)
+            let end = min(list.count - 1, idx + 30)
             guard start <= end else { return }
 
             var toLoad: [URL] = []
@@ -29,13 +30,24 @@ extension PhotoStore {
                 }
             }
 
-            // 최대 10장만 큐에 추가 (과도한 큐 적재 방지)
-            for url in toLoad.prefix(10) {
-                ThumbnailLoader.shared.load(url: url) { _ in }
+            // 8-way concurrent 추출
+            let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .userInitiated, attributes: .concurrent)
+            for url in toLoad.prefix(60) {
+                concurrentQueue.async {
+                    if ThumbnailCache.shared.get(url) != nil { return }
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceThumbnailMaxPixelSize: 400,
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                            kCGImageSourceCreateThumbnailWithTransform: true
+                          ] as CFDictionary) else { return }
+                    let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                    ThumbnailCache.shared.set(url, image: img)
+                }
             }
         }
         prefetchWorkItem = work
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: work)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.01, execute: work)
     }
 
     /// Lazy-load RAW EXIF when a photo is selected (not at folder load time)
@@ -168,8 +180,52 @@ extension PhotoStore {
     }
 
     func preloadAllThumbnails() {
-        thumbsTotal = photos.filter { !$0.isFolder && !$0.isParentFolder }.count
+        let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
+        thumbsTotal = list.count
         thumbsLoaded = thumbsTotal
+
+        // 디스크 속도별 차별화:
+        // - SSD: visible-first가 충분히 빠르므로 prewarming은 보조적 (±40장)
+        // - HDD/SD: 한 장당 100-300ms 소요 → 미리 많이 채워둬야 스크롤 시 cache hit
+        //   ±100장으로 확대, concurrency도 4-way로 (HDD NCQ 활용)
+        guard !list.isEmpty else { return }
+
+        let currentIdx: Int = {
+            if let selID = selectedPhotoID, let idx = list.firstIndex(where: { $0.id == selID }) { return idx }
+            return 0
+        }()
+
+        let isSlow = currentFolderIsSlowDisk
+        let radius = isSlow ? 100 : 40
+        let start = max(0, currentIdx - radius)
+        let end = min(list.count, currentIdx + radius)
+        guard start < end else { return }
+
+        let urls = (start..<end).sorted { abs($0 - currentIdx) < abs($1 - currentIdx) }.map { list[$0].jpgURL }
+        let gen = idlePrefetchGeneration
+
+        // HDD: prewarming concurrency 2로 제한 — visible 로딩(ThumbnailLoader 6-way)과 디스크 경합 최소화
+        // (HDD에서 동시 8+ way seek은 NCQ 한계 초과 → 모두 느려짐)
+        // SSD: tier 기반 (low=2, standard=3, high=4)
+        let concurrency = isSlow ? 2 : SystemSpec.shared.ssdThumbnailConcurrency()
+        let sem = DispatchSemaphore(value: concurrency)
+        let concurrentQueue = DispatchQueue(label: "preview.thumb.prewarm", qos: .utility, attributes: .concurrent)
+        for url in urls {
+            concurrentQueue.async { [weak self] in
+                sem.wait()
+                defer { sem.signal() }
+                guard self?.idlePrefetchGeneration == gen else { return }
+                if ThumbnailCache.shared.get(url) != nil { return }  // 이미 캐시됨
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                        kCGImageSourceThumbnailMaxPixelSize: 400,
+                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                        kCGImageSourceCreateThumbnailWithTransform: true
+                      ] as CFDictionary) else { return }
+                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                ThumbnailCache.shared.set(url, image: img)
+            }
+        }
     }
 
     func startIdlePreviewPrefetch() {

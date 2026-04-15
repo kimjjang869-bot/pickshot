@@ -73,8 +73,10 @@ struct ThumbnailGridView: View {
                                         let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
                                         guard !name.isEmpty else { return }
                                         try? FileManager.default.createDirectory(at: parentURL.appendingPathComponent(name), withIntermediateDirectories: true)
-                                        // 즉시 리로드
+                                        // 썸네일 그리드 리로드 + 폴더 트리 새로고침
                                         store.loadFolder(parentURL, restoreRatings: true)
+                                        FolderPreviewCache.shared.invalidate(parentURL)
+                                        NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
                                     }
                                 }) {
                                     Label("새 폴더 만들기", systemImage: "folder.badge.plus")
@@ -1813,9 +1815,10 @@ class ThumbnailLoader {
         case .externalHDD:
             isNetworkMode = false
             isExternalHDD = true
-            queue.maxConcurrentOperationCount = 2
-            normalConcurrency = 2
-            AppLogger.log(.performance, "External HDD: concurrency=2, thumbSize=160 for \(path)")
+            // HDD NCQ 큐 깊이 활용 — 6-way까지 sustained throughput 증가 (8-way는 USB 외장에서 역효과)
+            queue.maxConcurrentOperationCount = 6
+            normalConcurrency = 6
+            AppLogger.log(.performance, "External HDD: concurrency=6, thumbSize=160 for \(path)")
         case .sdCard:
             // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
             isNetworkMode = false
@@ -2250,7 +2253,8 @@ class ThumbnailLoader {
                 for idx in 0..<imageCount {
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                         if cgImage.width >= 50 && cgImage.height >= 50 {
-                            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                            let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                            return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                         }
                     }
                 }
@@ -2265,7 +2269,8 @@ class ThumbnailLoader {
                     kCGImageSourceShouldCache: false
                 ]
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                 }
             }
         }
@@ -2293,9 +2298,9 @@ class ThumbnailLoader {
 
             // Calculate optimal subsample factor
             var subsample = 1
-            if origMax > thumbSize * 8 { subsample = 8 }       // 6000px+ → 1/8 decode
-            else if origMax > thumbSize * 4 { subsample = 4 }  // 800px+ → 1/4 decode
-            else if origMax > thumbSize * 2 { subsample = 2 }  // 400px+ → 1/2 decode
+            if origMax > thumbSize * 8 { subsample = 8 }
+            else if origMax > thumbSize * 4 { subsample = 4 }
+            else if origMax > thumbSize * 2 { subsample = 2 }
 
             var options: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: thumbSize,
@@ -2309,7 +2314,8 @@ class ThumbnailLoader {
             }
 
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
             }
         }
 
@@ -2840,8 +2846,45 @@ class TileDocumentView: NSView {
 
     // MARK: - 스크롤
 
+    private var scrollPrefetchWork: DispatchWorkItem?
+
     @objc func scrollChanged() {
         updateVisibleTiles()
+
+        // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
+        // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
+        scrollPrefetchWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.prefetchAroundVisible()
+        }
+        scrollPrefetchWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+    }
+
+    /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
+    /// ThumbnailLoader.load를 fire-and-forget으로 호출 → cache 채우기만.
+    /// Slow disk(HDD/SD)에서는 범위를 ±2행으로 축소 (queue 폭주 방지).
+    private func prefetchAroundVisible() {
+        guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
+        let visibleRect = scrollView.documentVisibleRect
+
+        // HDD에서도 적극적 prefetch (concurrency 4와 함께 동작) — 사용자가 스크롤 직후 회색 placeholder 보지 않도록
+        let margin = ThumbnailLoader.shared.isSlowDisk ? 4 : 5
+        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
+        let totalRows = (photos.count + cols - 1) / cols
+        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)
+
+        let startIdx = max(0, startRow * cols)
+        let endIdx = min(photos.count, endRow * cols)
+
+        guard startIdx < endIdx else { return }
+        for idx in startIdx..<endIdx {
+            let photo = photos[idx]
+            if photo.isFolder || photo.isParentFolder { continue }
+            let url = photo.jpgURL
+            if ThumbnailCache.shared.get(url) != nil { continue }  // 이미 메모리 캐시
+            ThumbnailLoader.shared.load(url: url) { _ in }  // fire-and-forget
+        }
     }
 
     func scrollToSelected() {

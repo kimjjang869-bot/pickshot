@@ -285,6 +285,9 @@ class PreviewImageCache {
         let ext = url.pathExtension.lowercased()
         let isJPG = ["jpg", "jpeg"].contains(ext)
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
+        let isTIFF = ["tif", "tiff"].contains(ext)
+        // TIFF는 풀 디코드 매우 느림 (100MB+ 파일이 흔함) → SubsampleFactor 적용 대상
+        let canSubsample = isJPG || isTIFF
 
         // JPG: load at original size if smaller than maxPixel
         if isJPG && origMax > 0 && origMax <= Int(maxPixel) {
@@ -314,7 +317,8 @@ class PreviewImageCache {
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, embedOnly as CFDictionary) {
                 if cgImage.width >= Int(maxPixel * 0.3) || cgImage.height >= Int(maxPixel * 0.3) {
-                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                 }
             }
 
@@ -333,11 +337,14 @@ class PreviewImageCache {
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceShouldCache: false
             ]
-            if isJPG && subsample > 1 {
+            if canSubsample && subsample > 1 {
+                // JPG/TIFF: SubsampleFactor 2/4/8로 디코드 시간 4~64배 단축
+                // (TIFF 100MB → 1.5초+ 풀 디코드가 ~0.2초로 줄어듦)
                 genOpts[kCGImageSourceSubsampleFactor as NSString] = subsample
             }
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
             }
         }
 
@@ -1020,6 +1027,17 @@ struct PhotoPreviewView: View {
                 self.image = nil
                 return
             }
+            // 비디오 파일: VideoPlayerView가 별도 렌더링 → image state clear해서 이전 이미지 잔상 방지
+            // CGImageSource로 MP4 열면 잘못된 프레임이 추출될 수 있음 → 임베디드 썸네일 추출도 스킵
+            if selected.isVideoFile {
+                self.image = nil
+                self.lowResImage = nil
+                self.rotatedImage = nil
+                imageLoadWork?.cancel()
+                hiResWorkItem?.cancel()
+                preloadWork?.cancel()
+                return
+            }
             let url = selected.jpgURL
 
             // Fast path: cache hit → show immediately
@@ -1032,18 +1050,20 @@ struct PhotoPreviewView: View {
             }
 
             // Show thumbnail instantly while full image loads
+            // JPG/RAW 모두 임베디드 썸네일 동기 추출 (~1-15ms, 풀 디코드 없음 → RAW도 빠름)
+            // CreateThumbnailFromImageIfAbsent: false → 임베디드 JPEG만 사용, 없으면 nil
+            // (slow disk라도 이 단계는 동기 유지 — 실측상 거의 항상 빠르고, background로 돌리면 표시 체감이 오히려 늦어짐)
             if let thumb = ThumbnailCache.shared.get(url) {
                 image = thumb
-            } else if ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) {
-                // JPG만 동기 추출 (~1ms) — RAW는 느려서 스킵
-                if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                   let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceThumbnailMaxPixelSize: 300,
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                   ] as CFDictionary) {
-                    image = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                }
+            } else if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                        kCGImageSourceThumbnailMaxPixelSize: 800,  // 빠른 탐색 중에도 적당한 화질
+                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                        kCGImageSourceCreateThumbnailWithTransform: true
+                      ] as CFDictionary) {
+                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                image = img
+                ThumbnailCache.shared.set(url, image: img)
             }
 
             // 미리보기 로딩 (키 연타 시 디바운스)
@@ -1070,7 +1090,14 @@ struct PhotoPreviewView: View {
                     self.loadImageDirect(for: url, id: newID)
                 }
                 imageLoadWork = delayedWork
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: delayedWork)
+                // ⚠️ main 큐에서 dispatch — loadImageDirect의 캐시 HIT 분기가 self.image를 직접 쓰므로
+                // 백그라운드에서 실행 시 SwiftUI @State 업데이트가 누락되어 미리보기가 비어 보임.
+                // 무거운 디코드는 loadImageDirect 내부에서 별도 global 큐로 보냄.
+                // 디바운스 20ms — 키 떼는 즉시 고화질 로딩 (50ms 체감 지연 제거)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: delayedWork)
+
+                // 빠른 탐색 중 ±3장 임베디드 JPEG 프리페치 (다음 이동 instant hit)
+                Self.prefetchEmbeddedNeighbors(store: store, currentURL: url, range: 3)
             } else {
                 // 단일 이동 → 즉시 로딩
                 loadImageDirect(for: url, id: newID)
@@ -1418,8 +1445,17 @@ struct PhotoPreviewView: View {
         let cacheKey = resolution > 0 ? url.appendingPathExtension("r\(resolution)") : url.appendingPathExtension("orig")
         if let cached = PreviewImageCache.shared.get(cacheKey) {
             fputs("[LD] HIT \(fileName) \(Int(cached.size.width))x\(Int(cached.size.height))\n", stderr)
-            self.image = cached
-            self.lowResImage = cached
+            // ⚠️ 메인 스레드 보장 — bg 큐에서 호출 시 @State 업데이트 누락 방지
+            if Thread.isMainThread {
+                self.image = cached
+                self.lowResImage = cached
+            } else {
+                RunLoop.main.perform(inModes: [.common]) {
+                    guard self.pendingPhotoID == id else { return }
+                    self.image = cached
+                    self.lowResImage = cached
+                }
+            }
             // 캐시 히트라도 해상도가 낮으면 고화질 계속 로딩
             if cached.size.width > 1500 { return }
         }
@@ -1455,11 +1491,12 @@ struct PhotoPreviewView: View {
                     self.lowResImage = loaded
                 }
             } else {
-                // RAW: 2-stage loading
+                // RAW: 2-stage loading (tier 기반)
                 let optimalPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
+                let stage1MaxPx = SystemSpec.shared.previewStage1MaxPixel()
 
-                // Stage 1: Fast load at 1200px for rapid navigation
-                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(1200, optimalPx))
+                // Stage 1: Fast load — low: 800px / standard: 1200px / high+: 1600px
+                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(stage1MaxPx, optimalPx))
 
                 // Fix orientation: compare with stableImageSize (which has correct orientation)
                 if let fast = fastImage, let stable = self.viewState.stableImageSize {
@@ -1484,10 +1521,22 @@ struct PhotoPreviewView: View {
                     self.lowResImage = fast
                 }
 
-                // Stage 2: Higher res preview (2400px — good enough for most screens)
+                // Stage 2: Higher res preview (tier 기반)
+                // low: 1600px (메모리 ~40% 절감) / standard: 2400px / high: 3200px / extreme: 원본
+                // 느린 디스크(HDD/SD/NAS): stage2 스킵 — stage1만으로 충분, 사용자가 줌하면 별도 풀해상도
                 guard self.pendingPhotoID == id else { return }
-                let stage2Px: CGFloat = 2400
-                if optimalPx > 1200, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
+                if store.currentFolderIsSlowDisk {
+                    fputs("[LD] RAW-S2 SKIP (slow disk) \(fileName)\n", stderr)
+                    PreviewImageCache.shared.set(cacheKey, image: fast)
+                    DispatchQueue.main.async {
+                        guard self.pendingPhotoID == id else { return }
+                        self.scheduleSmartPreload(currentID: id, resolution: resolution)
+                    }
+                    return
+                }
+                let stage2MaxPx = SystemSpec.shared.previewStage2MaxPixel()
+                let stage2Px: CGFloat = stage2MaxPx == 0 ? optimalPx : stage2MaxPx
+                if stage2Px > stage1MaxPx, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
                     var finalHR = hr
                     if let stable = self.viewState.stableImageSize {
                         let sp = stable.height > stable.width
@@ -2005,6 +2054,43 @@ struct PhotoPreviewView: View {
         }
     }
 
+    /// 빠른 탐색 시 ±range 이웃 사진의 임베디드 JPEG 썸네일을 백그라운드에서 미리 추출.
+    /// 다음 키 입력 시 ThumbnailCache HIT으로 즉시 표시 (디스크 I/O 회피).
+    private static let prefetchQueue = DispatchQueue(label: "preview.prefetch", qos: .userInitiated, attributes: .concurrent)
+    private static func prefetchEmbeddedNeighbors(store: PhotoStore, currentURL: URL, range: Int) {
+        let photos = store.filteredPhotos
+        guard let curIdx = photos.firstIndex(where: { $0.jpgURL == currentURL }) else { return }
+
+        var targets: [URL] = []
+        for offset in 1...range {
+            for sign in [1, -1] {
+                let i = curIdx + sign * offset
+                guard i >= 0 && i < photos.count else { continue }
+                let p = photos[i]
+                guard !p.isFolder && !p.isParentFolder else { continue }
+                let url = p.jpgURL
+                if ThumbnailCache.shared.get(url) == nil {
+                    targets.append(url)
+                }
+            }
+        }
+
+        for url in targets {
+            prefetchQueue.async {
+                // 이미 채워졌으면 스킵 (race condition 방지)
+                if ThumbnailCache.shared.get(url) != nil { return }
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                        kCGImageSourceThumbnailMaxPixelSize: 800,
+                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                        kCGImageSourceCreateThumbnailWithTransform: true
+                      ] as CFDictionary) else { return }
+                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                ThumbnailCache.shared.set(url, image: img)
+            }
+        }
+    }
+
     private func loadHiResForZoom() {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
@@ -2227,48 +2313,95 @@ struct PhotoPreviewView: View {
     }
 
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
-    private static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-                ?? { guard let t = image.tiffRepresentation, let b = NSBitmapImageRep(data: t) else { return nil }; return b.cgImage }()
-        else { return image }
+    /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
+    /// 원래 CGContext 기반 구현으로 복원 — CIImage.oriented()는 일부 케이스에서 예상과 다른 방향 적용
+    /// 썸네일 방향 보정.
+    ///
+    /// 배경: iOS Photos.app에서 편집 후 저장된 일부 JPEG는 main image의
+    /// `kCGImagePropertyOrientation`이 6(CW 90°)로 저장돼 있지만, 파일에 박힌
+    /// embedded thumbnail은 "회전 전 landscape" 상태 그대로 박혀있음.
+    /// `kCGImageSourceCreateThumbnailWithTransform: true`를 써도 embedded thumbnail
+    /// 디코딩 경로에서는 회전이 적용되지 않아 landscape로 반환됨.
+    ///
+    /// 전략: 썸네일 반환 직후 main image 메타데이터와 aspect를 비교.
+    /// - main orientation 적용 후의 display aspect가 썸네일 aspect와 다르면 수동 회전.
+    /// - orientation=1 또는 이미 일치하는 경우 no-op (정상 파일 영향 없음).
+    static func correctThumbnailOrientationIfNeeded(_ image: NSImage, source: CGImageSource) -> NSImage {
+        guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return image }
+        let mainOrient = props[kCGImagePropertyOrientation as String] as? Int ?? 1
+        guard mainOrient != 1 else { return image }
+        let mainPw = props[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+        let mainPh = props[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+        guard mainPw > 0, mainPh > 0 else { return image }
 
-        let w = cgImage.width
-        let h = cgImage.height
-
-        // For orientations 5-8, the output size is swapped
-        let outputSize: CGSize
-        let transform: CGAffineTransform
-
-        switch orientation {
-        case 6: // 90° CW (most common for portrait photos)
-            outputSize = CGSize(width: h, height: w)
-            transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
-        case 8: // 90° CCW
-            outputSize = CGSize(width: h, height: w)
-            transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
-        case 5: // Mirrored + 90° CW
-            outputSize = CGSize(width: h, height: w)
-            transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
-        case 7: // Mirrored + 90° CCW
-            outputSize = CGSize(width: h, height: w)
-            transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
-        default:
-            return image
+        // main image의 "display aspect" (orientation 적용 후)
+        let displayLandscape: Bool
+        if mainOrient >= 5 && mainOrient <= 8 {
+            // orientation 5-8 → width/height가 swap됨 (raw가 landscape면 display는 portrait)
+            displayLandscape = mainPh > mainPw
+        } else {
+            // orientation 1-4 → aspect 그대로
+            displayLandscape = mainPw > mainPh
         }
+        let thumbLandscape = image.size.width > image.size.height
+        if displayLandscape == thumbLandscape { return image }
+        // 불일치: transform=true가 적용되지 않은 케이스 → 수동 회전
+        return applyOrientation(image, orientation: mainOrient)
+    }
 
-        guard let context = CGContext(data: nil,
-                                       width: Int(outputSize.width),
-                                       height: Int(outputSize.height),
-                                       bitsPerComponent: cgImage.bitsPerComponent,
-                                       bytesPerRow: 0,
-                                       space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-                                       bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
+    static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage {
+        return autoreleasepool {
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                    ?? { guard let t = image.tiffRepresentation, let b = NSBitmapImageRep(data: t) else { return nil }; return b.cgImage }()
+            else { return image }
 
-        context.concatenate(transform)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            let w = cgImage.width
+            let h = cgImage.height
 
-        guard let rotated = context.makeImage() else { return image }
-        return NSImage(cgImage: rotated, size: outputSize)
+            // For orientations 5-8, the output size is swapped
+            let outputSize: CGSize
+            let transform: CGAffineTransform
+
+            switch orientation {
+            case 6: // 90° CW (most common for portrait photos)
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
+            case 8: // 90° CCW
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
+            case 5: // Mirrored + 90° CW
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
+            case 7: // Mirrored + 90° CCW
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
+            default:
+                return image
+            }
+
+            guard let context = CGContext(data: nil,
+                                           width: Int(outputSize.width),
+                                           height: Int(outputSize.height),
+                                           bitsPerComponent: cgImage.bitsPerComponent,
+                                           bytesPerRow: 0,
+                                           space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                           bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
+
+            context.concatenate(transform)
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+            guard let rotated = context.makeImage() else { return image }
+            return NSImage(cgImage: rotated, size: outputSize)
+        }
+    }
+
+    /// 썸네일/미리보기 orientation 보정 — 현재는 no-op.
+    /// 이유: loadOptimized(maxPixel 크게) 경로로 통일하면 CGImageSource가 메인 이미지 preview를
+    /// transform=true와 함께 처리해서 대부분 정상. 수동 보정은 오히려 일부 RAW/iPhone JPG의
+    /// PixelWidth/Height metadata를 잘못 해석해 정상 이미지를 뒤집는 회귀를 유발함.
+    /// 추후 특정 케이스만 확인되면 file-type-specific 보정으로 재활성화.
+    static func ensureCorrectOrientation(_ image: NSImage, sourceURL: URL) -> NSImage {
+        return image
     }
 
     // MARK: - Loupe (magnifying bubble at click point)

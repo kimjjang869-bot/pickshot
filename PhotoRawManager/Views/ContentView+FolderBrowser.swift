@@ -182,7 +182,11 @@ struct FolderBrowserView: View {
             do {
                 try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
                 store.showToastMessage("📁 '\(name)' 폴더 생성 완료")
-                // 트리 새로고침
+                // 프리뷰 캐시 무효화 + 트리/그리드 새로고침
+                FolderPreviewCache.shared.invalidate(parentURL)
+                if store.folderURL == parentURL {
+                    store.loadFolder(parentURL, restoreRatings: true)
+                }
                 refreshRootItems()
             } catch {
                 store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
@@ -190,17 +194,28 @@ struct FolderBrowserView: View {
         }
     }
 
-    /// Debounced tree refresh — 빠른 연속 호출 (마운트/언마운트 등) 병합
+    /// Debounced tree refresh — 빠른 연속 호출 (마운트/언마운트 등) 병합.
+    /// 확장 상태(isExpanded + children)를 보존하기 위해 oldItems 스냅샷을 캡처하고
+    /// 새 rootItems와 경로 기준으로 머지한다. 머지 중 확장된 폴더의 자식은 디스크에서
+    /// 새로 읽어 새 폴더 생성/이동 결과가 즉시 반영되도록 한다.
     private func refreshRootItems() {
         refreshWork?.cancel()
+        let oldSnapshot = rootItems  // main thread 호출 가정 — @State 값 타입이라 deep copy
+        let currentIconURL = currentIconFolder  // icon 모드 새로고침용
         let work = DispatchWorkItem {
-            let items = buildRootItems()
+            let newRoots = buildRootItems()
+            let merged = Self.mergePreservingExpansion(newItems: newRoots, oldItems: oldSnapshot)
             let favs = store.loadFavoriteFolders()
             let recents = store.loadRecentFolders()
+            // icon 모드에서 현재 보고 있는 폴더의 자식 목록도 재스캔
+            let refreshedIconContents: [FolderItem]? = currentIconURL.map { FolderItem.loadChildren(of: $0) }
             DispatchQueue.main.async {
-                rootItems = items
+                rootItems = merged
                 favorites = favs
                 recentFolders = recents
+                if let items = refreshedIconContents {
+                    iconFolderContents = items
+                }
                 // rootItems 로드 완료 후 현재 폴더 경로로 트리 확장
                 if let url = store.folderURL {
                     expandTreeToPath(url)
@@ -209,6 +224,27 @@ struct FolderBrowserView: View {
         }
         refreshWork = work
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    /// 경로 기준으로 newItems에 oldItems의 isExpanded / children을 재귀 이식.
+    /// 확장된 폴더는 디스크에서 children을 새로 읽어 신규 서브폴더를 포함시키고,
+    /// 그 아래 노드들의 확장 상태 역시 같은 규칙으로 보존한다.
+    private static func mergePreservingExpansion(newItems: [FolderItem], oldItems: [FolderItem]) -> [FolderItem] {
+        guard !oldItems.isEmpty else { return newItems }
+        var oldByPath: [String: FolderItem] = [:]
+        oldByPath.reserveCapacity(oldItems.count)
+        for item in oldItems { oldByPath[item.url.path] = item }
+        return newItems.map { newItem in
+            guard let oldItem = oldByPath[newItem.url.path], oldItem.isExpanded else {
+                return newItem
+            }
+            var merged = newItem
+            merged.isExpanded = true
+            let freshChildren = FolderItem.loadChildren(of: newItem.url)
+            let oldChildren = oldItem.children ?? []
+            merged.children = mergePreservingExpansion(newItems: freshChildren, oldItems: oldChildren)
+            return merged
+        }
     }
 
     /// Auto-expand tree to show the currently loaded folder (async to avoid blocking main thread)
@@ -991,6 +1027,12 @@ struct FolderRowView: View {
                 // 트리 아이템 자식 새로고침
                 item.children = FolderItem.loadChildren(of: item.url)
                 if !item.isExpanded { item.isExpanded = true }
+                // 생성된 폴더가 현재 열려있는 폴더라면 그리드도 리로드
+                if store.folderURL == parentURL {
+                    store.loadFolder(parentURL, restoreRatings: true)
+                }
+                FolderPreviewCache.shared.invalidate(parentURL)
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
             } catch {
                 store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
             }
