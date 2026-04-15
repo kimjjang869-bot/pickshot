@@ -106,6 +106,14 @@ class SubscriptionManager: ObservableObject {
         trialDaysRemaining = max(0, Int(ceil(remaining / (24 * 60 * 60))))
         isTrialExpired = remaining <= 0
 
+        // 테스터 키가 활성 상태면 Pro 로 간주
+        if TesterKeyService.isActive() {
+            currentTier = .pro
+            isTrialExpired = false
+            trialDaysRemaining = TesterKeyService.daysRemaining()
+            return
+        }
+
         // 구독자는 트라이얼 무시
         if currentTier != .free {
             isTrialExpired = false
@@ -116,12 +124,27 @@ class SubscriptionManager: ObservableObject {
     /// 트라이얼 만료 시 Paywall 모달 노출 플래그를 켠다.
     /// - ContentView 에서 `$subscriptionManager.showTrialExpiredPaywall` 를 관찰해 sheet 로 띄운다.
     /// - App Store 정책: 앱이 스스로 종료하면 안 되므로 강제 `NSApp.terminate` 은 사용하지 않는다.
+    /// - 테스터 키가 활성이면 Paywall 을 띄우지 않는다.
     func enforceTrialIfExpired() {
         checkTrialStatus()
+        if TesterKeyService.isActive() { return }
         guard isTrialExpired && currentTier == .free else { return }
         DispatchQueue.main.async {
             self.showTrialExpiredPaywall = true
         }
+    }
+
+    /// 테스터 키 활성화. 성공 시 Pro tier 로 즉시 승격.
+    @discardableResult
+    func activateTesterKey(_ code: String) -> TesterKeyService.ActivationResult {
+        let result = TesterKeyService.activate(code: code)
+        if case .success = result {
+            currentTier = .pro
+            isTrialExpired = false
+            showTrialExpiredPaywall = false
+            trialDaysRemaining = TesterKeyService.daysRemaining()
+        }
+        return result
     }
 
     var featureAccess: FeatureAccess {

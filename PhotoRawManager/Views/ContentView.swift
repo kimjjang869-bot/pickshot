@@ -20,6 +20,13 @@ struct ContentView: View {
     // Mouse side-button (back/forward) event monitor
     @State private var mouseSideButtonMonitor: Any?
 
+    // 테스터 키 — 숨겨진 Cmd+Shift+Option+K 로 다이얼로그 표시
+    @State private var testerKeyMonitor: Any?
+    @State private var showTesterKeySheet = false
+    @State private var testerKeyInput: String = ""
+    @State private var testerKeyAlertMessage: String?
+    @State private var testerKeyAlertSuccess: Bool = false
+
     private var folderSizeText: String { store.cachedFolderSizeText }
 
     private var importResultMessage: String {
@@ -429,6 +436,26 @@ struct ContentView: View {
             PaywallView()
                 .interactiveDismissDisabled(true)
         }
+        // 테스터 키 입력 시트 (숨겨진 Cmd+Shift+Option+K 단축키로 호출)
+        .sheet(isPresented: $showTesterKeySheet) {
+            TesterKeyInputSheet(
+                input: $testerKeyInput,
+                message: $testerKeyAlertMessage,
+                isSuccess: $testerKeyAlertSuccess,
+                onSubmit: {
+                    let result = subscriptionManager.activateTesterKey(testerKeyInput)
+                    applyTesterKeyResult(result)
+                },
+                onClose: {
+                    showTesterKeySheet = false
+                    testerKeyInput = ""
+                    testerKeyAlertMessage = nil
+                    testerKeyAlertSuccess = false
+                }
+            )
+        }
+        .onAppear { installTesterKeyMonitor() }
+        .onDisappear { removeTesterKeyMonitor() }
         .alert("업데이트 확인", isPresented: $updateService.showUpToDateAlert) {
             Button("확인", role: .cancel) { }
         } message: {
@@ -542,6 +569,64 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 테스터 키 단축키 처리
+
+    /// Cmd+Shift+Option+K 를 로컬 이벤트로 감시해 키 입력 시트를 연다. (메뉴/어디에도 노출 안됨)
+    private func installTesterKeyMonitor() {
+        guard testerKeyMonitor == nil else { return }
+        testerKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let required: NSEvent.ModifierFlags = [.command, .shift, .option]
+            let masked = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // K 키 keyCode = 40
+            if masked.contains(required) && event.keyCode == 40 {
+                DispatchQueue.main.async {
+                    // 이미 활성 상태면 현재 만료일 보여주고 초기 포커스
+                    if TesterKeyService.isActive() {
+                        let days = TesterKeyService.daysRemaining()
+                        testerKeyAlertSuccess = true
+                        testerKeyAlertMessage = "이 기기는 이미 테스터 키로 활성화되어 있습니다.\n남은 기간: \(days)일"
+                    } else {
+                        testerKeyAlertMessage = nil
+                        testerKeyAlertSuccess = false
+                    }
+                    showTesterKeySheet = true
+                }
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeTesterKeyMonitor() {
+        if let m = testerKeyMonitor {
+            NSEvent.removeMonitor(m)
+            testerKeyMonitor = nil
+        }
+    }
+
+    private func applyTesterKeyResult(_ result: TesterKeyService.ActivationResult) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        switch result {
+        case .success(let expiry):
+            testerKeyAlertSuccess = true
+            testerKeyAlertMessage = "✅ 활성화되었습니다.\n\(formatter.string(from: expiry)) 까지 사용 가능"
+            testerKeyInput = ""
+        case .invalid:
+            testerKeyAlertSuccess = false
+            testerKeyAlertMessage = "❌ 유효하지 않은 키입니다."
+        case .revoked:
+            testerKeyAlertSuccess = false
+            testerKeyAlertMessage = "❌ 이 키는 무효화되었습니다."
+        case .alreadyActivated(let expiry):
+            testerKeyAlertSuccess = true
+            testerKeyAlertMessage = "이미 이 기기에서 동일한 키로 활성화됨.\n\(formatter.string(from: expiry)) 까지 사용 가능"
+        case .deviceAlreadyHasKey:
+            testerKeyAlertSuccess = false
+            testerKeyAlertMessage = "❌ 이 기기는 이미 다른 테스터 키로 활성화되어 있습니다."
+        }
+    }
+
     private func openDualViewer() {
         guard dualWindow == nil else { return }
         let dualView = DualViewerContent()
@@ -569,5 +654,59 @@ extension View {
         onHover { inside in
             if inside { cursor.push() } else { NSCursor.pop() }
         }
+    }
+}
+
+// MARK: - 테스터 키 입력 시트
+
+struct TesterKeyInputSheet: View {
+    @Binding var input: String
+    @Binding var message: String?
+    @Binding var isSuccess: Bool
+    var onSubmit: () -> Void
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.orange)
+                Text("테스터 키 활성화")
+                    .font(.system(size: 16, weight: .bold))
+                Spacer()
+            }
+
+            Text("출시 전 테스터 전용 키입니다. 활성화 시 1년 동안 PickShot Pro 를 무료로 사용할 수 있습니다.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("PS-XXXX-XXXX-XXXX", text: $input)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13, design: .monospaced))
+                .onSubmit(onSubmit)
+                .disableAutocorrection(true)
+
+            if let msg = message {
+                Text(msg)
+                    .font(.system(size: 11))
+                    .foregroundColor(isSuccess ? .green : .red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Spacer()
+                Button("닫기") { onClose() }
+                    .keyboardShortcut(.cancelAction)
+                Button("활성화") { onSubmit() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
     }
 }

@@ -32,3 +32,5 @@ Secrets.xcconfig
 
 # DMG builds
 *.dmg
+tester_keys.txt
+TESTER_KEYS.md
