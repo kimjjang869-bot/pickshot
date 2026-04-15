@@ -81,6 +81,8 @@ class SubscriptionManager: ObservableObject {
     @Published var products: [Product] = []
     @Published var purchasedProductIDs: Set<String> = []
     @Published var isTrialExpired: Bool = false
+    /// 트라이얼 만료 후 Paywall 모달을 띄워야 하는지. ContentView 에서 sheet 로 관찰한다.
+    @Published var showTrialExpiredPaywall: Bool = false
     @Published var trialDaysRemaining: Int = 21
 
     // MARK: - 3주 트라이얼
@@ -111,29 +113,14 @@ class SubscriptionManager: ObservableObject {
         }
     }
 
-    /// 트라이얼 만료 시 경고 표시 + 5초 후 종료
+    /// 트라이얼 만료 시 Paywall 모달 노출 플래그를 켠다.
+    /// - ContentView 에서 `$subscriptionManager.showTrialExpiredPaywall` 를 관찰해 sheet 로 띄운다.
+    /// - App Store 정책: 앱이 스스로 종료하면 안 되므로 강제 `NSApp.terminate` 은 사용하지 않는다.
     func enforceTrialIfExpired() {
         checkTrialStatus()
         guard isTrialExpired && currentTier == .free else { return }
-
         DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "체험 기간이 만료되었습니다"
-            alert.informativeText = "PickShot 3주 무료 체험이 종료되었습니다.\n계속 사용하려면 구독을 구매해주세요.\n\n5초 후 프로그램이 종료됩니다."
-            alert.alertStyle = .critical
-            alert.addButton(withTitle: "구매하기")
-            alert.addButton(withTitle: "종료")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                // 구매 페이지 열기 (PaywallView)
-                // 5초 후 종료
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                    NSApplication.shared.terminate(nil)
-                }
-            } else {
-                NSApplication.shared.terminate(nil)
-            }
+            self.showTrialExpiredPaywall = true
         }
     }
 
@@ -239,6 +226,9 @@ class SubscriptionManager: ObservableObject {
            newPurchased.contains(Self.premiumMonthlyID) ||
            newPurchased.contains(Self.premiumYearlyID) {
             currentTier = .pro
+            // 구독이 활성화되면 트라이얼 만료 Paywall 을 즉시 닫는다.
+            showTrialExpiredPaywall = false
+            isTrialExpired = false
         } else {
             currentTier = .free
         }

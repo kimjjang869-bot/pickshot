@@ -140,14 +140,18 @@ extension ContentView {
                     .help("파일명/JPG/AI 매칭 셀렉")
 
                     // AI 스마트 셀렉
-                    Button(action: { store.showSmartCull = true }) {
-                        actionLabel("brain", "AI 셀렉", .indigo)
+                    if !AppConfig.hideAIFeatures {
+                        Button(action: { store.showSmartCull = true }) {
+                            actionLabel("brain", "AI 셀렉", .indigo)
+                        }
+                        .buttonStyle(.plain)
+                        .help("유사 그룹핑 + A컷 자동 추천")
                     }
-                    .buttonStyle(.plain)
-                    .help("유사 그룹핑 + A컷 자동 추천")
 
                     // 인물 그룹 필터
-                    faceGroupFilterMenu
+                    if !AppConfig.hideAIFeatures {
+                        faceGroupFilterMenu
+                    }
 
                     // G Select
                     gSelectButton
@@ -293,7 +297,9 @@ extension ContentView {
                             .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
                             // AI 분류
-                            qualityFilterMenu
+                            if !AppConfig.hideAIFeatures {
+                                qualityFilterMenu
+                            }
 
                             // 스마트 컬렉션
                             Menu {
@@ -376,13 +382,15 @@ extension ContentView {
                     .opacity(store.selectionCount >= 2 ? 1 : 0.4)
                     .help("비교 보기 (2~4장)")
 
-                    iconButton("face.smiling", active: false) {
-                        if store.selectionCount >= 2 && store.selectionCount <= 6 {
-                            store.showFaceCompare = true
+                    if !AppConfig.hideAIFeatures {
+                        iconButton("face.smiling", active: false) {
+                            if store.selectionCount >= 2 && store.selectionCount <= 6 {
+                                store.showFaceCompare = true
+                            }
                         }
+                        .opacity(store.selectionCount >= 2 ? 1 : 0.4)
+                        .help("표정 비교 (2~6장)")
                     }
-                    .opacity(store.selectionCount >= 2 ? 1 : 0.4)
-                    .help("표정 비교 (2~6장)")
 
                     // 더보기 메뉴 (사용빈도 낮은 기능)
                     Menu {
@@ -479,7 +487,9 @@ extension ContentView {
             .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
             // AI 분류 (품질 + 장면 통합)
-            qualityFilterMenu
+            if !AppConfig.hideAIFeatures {
+                qualityFilterMenu
+            }
 
             // 스마트 컬렉션
             Menu {

@@ -1163,20 +1163,19 @@ struct PhotoContextMenu: View {
             Label("연결 프로그램으로 열기", systemImage: "arrow.up.forward.app")
         }
 
-        // 이 사람만 보기 (얼굴 그룹 필터)
-        if let fgID = photo.faceGroupID {
-            Button(action: {
-                store.faceGroupFilter = fgID
-                store.showToastMessage("👤 \(store.faceGroupName(for: fgID)) 필터 적용")
-            }) {
-                Label("이 사람만 보기", systemImage: "person.crop.circle")
+        // 이 사람만 보기 (얼굴 그룹 필터) — AI 기능 숨김 시 제외
+        if !AppConfig.hideAIFeatures {
+            if let fgID = photo.faceGroupID {
+                Button(action: {
+                    store.faceGroupFilter = fgID
+                    store.showToastMessage("👤 \(store.faceGroupName(for: fgID)) 필터 적용")
+                }) {
+                    Label("이 사람만 보기", systemImage: "person.crop.circle")
+                }
+            } else if !store.faceGroups.isEmpty {
+                // 얼굴 그룹핑은 됐지만 이 사진에 얼굴이 없는 경우 — 메뉴에서 제외
+                // (disabled 버튼은 UX 혼란을 주므로 그냥 숨김)
             }
-        } else if !store.faceGroups.isEmpty {
-            // 얼굴 그룹핑은 됐지만 이 사진에 얼굴이 없는 경우
-            Button(action: {}) {
-                Label("얼굴 미감지", systemImage: "person.crop.circle.badge.questionmark")
-            }
-            .disabled(true)
         }
 
         Divider()

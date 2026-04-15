@@ -28,6 +28,7 @@
 		'PSF20001' = {isa = PBXBuildFile; fileRef = 'PSF20002'; };
 		'PSM20001' = {isa = PBXBuildFile; fileRef = 'PSM20002'; };
 		'PSA20001' = {isa = PBXBuildFile; fileRef = 'PSA20002'; };
+		CFG10001 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFG10002 /* AppConfig.swift */; };
 		'A10005' = {isa = PBXBuildFile; fileRef = B10005; };
 		'A10006' = {isa = PBXBuildFile; fileRef = B10006; };
 		'A10007' = {isa = PBXBuildFile; fileRef = B10007; };
@@ -182,6 +183,7 @@
 		'PSF20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Folder.swift"; sourceTree = "<group>"; };
 		'PSM20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Move.swift"; sourceTree = "<group>"; };
 		'PSA20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Analysis.swift"; sourceTree = "<group>"; };
+		CFG10002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		'B10005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMatchingService.swift; sourceTree = "<group>"; };
 		'B10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
 		'B10007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
@@ -343,6 +345,7 @@
 				PSF20002,
 				PSM20002,
 				PSA20002,
+				CFG10002 /* AppConfig.swift */,
 				81F5C27DF3F5D27545AA8F87,
 				AF10004 /* AdaFaceR18.mlpackage */,
 			);
@@ -631,6 +634,7 @@
 				PSF20001,
 				PSM20001,
 				PSA20001,
+				CFG10001 /* AppConfig.swift in Sources */,
 				A10005,
 				A10006,
 				A10007,

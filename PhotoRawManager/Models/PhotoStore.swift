@@ -312,6 +312,8 @@ class PhotoStore: ObservableObject {
     // 드래그 드롭 상태 (DragDropState로 분리 — PhotoStore 리드로우 방지)
     // dropTargetID/dropLeading 삭제 → DragDropState 사용
     var lastRenameMap: [(oldURL: URL, newURL: URL)] = []  // Undo용 이름 변경 기록
+    var lastRenameNameMap: [(oldName: String, newName: String)] = []  // Undo용 파일명 매핑 (UserDefaults 복원)
+    var lastRenameFolderPath: String = ""  // Undo 시 폴더별 컬러/스페이스픽 복원용
     @Published var showCustomPrompt: Bool = false
     @Published var showBatchProcess: Bool = false
     @Published var showFaceCompare: Bool = false

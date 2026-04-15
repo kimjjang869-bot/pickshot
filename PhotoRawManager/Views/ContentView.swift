@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var store: PhotoStore
     @ObservedObject private var updateService = UpdateService.shared
     @ObservedObject private var memoryCardService = MemoryCardBackupService.shared
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var folderBrowserExpanded: Bool = false
     @State private var folderBrowserWidth: CGFloat = 250
     @State private var showFullscreen: Bool = false
@@ -421,6 +422,12 @@ struct ContentView: View {
         }
         .sheet(isPresented: $updateService.showUpdateSheet) {
             UpdateView(updateService: updateService)
+        }
+        // 트라이얼 만료 Paywall — 이전엔 앱을 강제 종료했지만 App Store 정책 위배.
+        // 대신 해제 불가능한 sheet 로 Paywall 을 노출해 구매하도록 유도한다.
+        .sheet(isPresented: $subscriptionManager.showTrialExpiredPaywall) {
+            PaywallView()
+                .interactiveDismissDisabled(true)
         }
         .alert("업데이트 확인", isPresented: $updateService.showUpToDateAlert) {
             Button("확인", role: .cancel) { }

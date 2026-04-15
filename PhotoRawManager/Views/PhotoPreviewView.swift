@@ -3026,15 +3026,17 @@ struct BatchCorrectionView: View {
             // Toggle(isOn: $options.autoHorizon) { ... }
             // Toggle(isOn: $options.autoUpright) { ... }
 
-            Toggle(isOn: $options.faceBalance) {
-                Label("얼굴 기준 보정", systemImage: "face.smiling").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("피부톤 기준 색감/밝기 보정")
+            if !AppConfig.hideAIFeatures {
+                Toggle(isOn: $options.faceBalance) {
+                    Label("얼굴 기준 보정", systemImage: "face.smiling").font(.system(size: 12))
+                }.toggleStyle(.checkbox).disabled(isProcessing)
+                .help("피부톤 기준 색감/밝기 보정")
 
-            Toggle(isOn: $options.skinSmoothing) {
-                Label("피부 스무딩", systemImage: "sparkles").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("피부 부드럽게")
+                Toggle(isOn: $options.skinSmoothing) {
+                    Label("피부 스무딩", systemImage: "sparkles").font(.system(size: 12))
+                }.toggleStyle(.checkbox).disabled(isProcessing)
+                .help("피부 부드럽게")
+            }
 
             Toggle(isOn: $options.autoLevel) {
                 Label("자동 노출 보정", systemImage: "sun.max").font(.system(size: 12))
@@ -3046,48 +3048,50 @@ struct BatchCorrectionView: View {
             }.toggleStyle(.checkbox).disabled(isProcessing)
             .help("색온도/틴트 자동 보정")
 
-            // NPU 고급 보정
-            Divider()
+            // NPU 고급 보정 (AI) — 출시 단계에서는 숨김
+            if !AppConfig.hideAIFeatures {
+                Divider()
 
-            Text("NPU 고급 보정")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
+                Text("NPU 고급 보정")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
 
-            Toggle(isOn: $options.aiEnhance) {
-                Label("AI 보정", systemImage: "brain").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("NPU 가속 자동 화질 향상")
+                Toggle(isOn: $options.aiEnhance) {
+                    Label("AI 보정", systemImage: "brain").font(.system(size: 12))
+                }.toggleStyle(.checkbox).disabled(isProcessing)
+                .help("NPU 가속 자동 화질 향상")
 
-            Toggle(isOn: $options.denoise) {
-                Label("디노이즈", systemImage: "dot.radiowaves.right").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("AI 기반 노이즈 제거")
+                Toggle(isOn: $options.denoise) {
+                    Label("디노이즈", systemImage: "dot.radiowaves.right").font(.system(size: 12))
+                }.toggleStyle(.checkbox).disabled(isProcessing)
+                .help("AI 기반 노이즈 제거")
 
-            if options.denoise {
-                HStack(spacing: 8) {
-                    Spacer().frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text("강도")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("\(Int(options.denoiseStrength * 100))%")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
+                if options.denoise {
+                    HStack(spacing: 8) {
+                        Spacer().frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("강도")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(Int(options.denoiseStrength * 100))%")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            Slider(value: $options.denoiseStrength, in: 0...1, step: 0.05)
+                                .controlSize(.small)
                         }
-                        Slider(value: $options.denoiseStrength, in: 0...1, step: 0.05)
-                            .controlSize(.small)
                     }
+                    .padding(.leading, 8)
+                    .disabled(isProcessing)
                 }
-                .padding(.leading, 8)
-                .disabled(isProcessing)
-            }
 
-            Toggle(isOn: $options.personAwareEnhance) {
-                Label("인물 인식 보정", systemImage: "person.crop.rectangle").font(.system(size: 12))
-            }.toggleStyle(.checkbox).disabled(isProcessing)
-            .help("인물 세그멘테이션 기반 선택적 보정")
+                Toggle(isOn: $options.personAwareEnhance) {
+                    Label("인물 인식 보정", systemImage: "person.crop.rectangle").font(.system(size: 12))
+                }.toggleStyle(.checkbox).disabled(isProcessing)
+                .help("인물 세그멘테이션 기반 선택적 보정")
+            }
 
             Divider()
 

@@ -43,7 +43,7 @@ struct PhotoRawManagerApp: App {
     var body: some Scene {
         WindowGroup({
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "8.0"
-            return "PickShot v\(ver)-beta"
+            return "PickShot v\(ver)"
         }()) {
             ContentView()
                 .environmentObject(store)
@@ -89,14 +89,16 @@ struct PhotoRawManagerApp: App {
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
             CommandMenu("셀렉") {
-                Button("스마트 셀렉...") {
-                    store.previewSmartSelect()
-                    store.showSmartSelect = true
-                }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-                .disabled(store.photos.isEmpty)
+                if !AppConfig.hideAIFeatures {
+                    Button("스마트 셀렉...") {
+                        store.previewSmartSelect()
+                        store.showSmartSelect = true
+                    }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .disabled(store.photos.isEmpty)
 
-                Divider()
+                    Divider()
+                }
 
                 Button("셀렉 내보내기...") {
                     let folderName = store.folderURL?.lastPathComponent ?? "PickShot"

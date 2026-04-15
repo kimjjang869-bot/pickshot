@@ -457,19 +457,17 @@ struct ExportView: View {
         }
 
         if !existingFiles.isEmpty {
-            // 중복 다이얼로그 표시 → 변환은 기존 방식 유지 (덮어쓰기/건너뛰기만)
+            // 중복 다이얼로그 표시 — 건너뛰기 로직이 변환 경로에 구현되지 않아
+            // 오도하지 않도록 덮어쓰기 / 취소만 제공한다.
             let alert = NSAlert()
             alert.messageText = "이미 존재하는 파일 \(existingFiles.count)개"
             alert.informativeText = existingFiles.prefix(5).joined(separator: "\n") +
-                (existingFiles.count > 5 ? "\n... 외 \(existingFiles.count - 5)개" : "")
+                (existingFiles.count > 5 ? "\n... 외 \(existingFiles.count - 5)개" : "") +
+                "\n\n덮어쓰기로 진행하시겠습니까?"
             alert.addButton(withTitle: "덮어쓰기")
-            alert.addButton(withTitle: "건너뛰기")
             alert.addButton(withTitle: "취소")
             let response = alert.runModal()
-            if response == .alertThirdButtonReturn { return }
-            if response == .alertSecondButtonReturn {
-                // TODO: 건너뛰기 로직 (RAWConversionService 내부)
-            }
+            if response == .alertSecondButtonReturn { return }
         }
 
         store.conversionTotal = photos.count

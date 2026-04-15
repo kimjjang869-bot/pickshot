@@ -571,6 +571,7 @@ extension PhotoStore {
         var errors: [String] = []
         let fm = FileManager.default
         var renameMap: [(oldURL: URL, newURL: URL)] = []
+        var nameMap: [(oldName: String, newName: String)] = []  // Undo용 파일명 매핑
         var ratingMap: [String: Int] = [:]         // oldFilename → rating
         var colorMap: [String: String] = [:]       // oldFilename → colorLabel.rawValue
         var spaceMap: [String: Bool] = [:]         // oldFilename → isSpacePicked
@@ -615,6 +616,7 @@ extension PhotoStore {
                 // JPG 이름 변경
                 try fm.moveItem(at: photo.jpgURL, to: newJPGURL)
                 renameMap.append((photo.jpgURL, newJPGURL))
+                nameMap.append((photo.fileName, newBaseName))
 
                 // RAW 이름 변경
                 if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
@@ -672,6 +674,8 @@ extension PhotoStore {
 
         // Undo 기록 저장
         lastRenameMap = renameMap
+        lastRenameNameMap = nameMap
+        lastRenameFolderPath = folderPathKey
         fputs("[RENAME] 완료: \(successCount)개 성공, \(errors.count)개 실패, undo \(renameMap.count)개 기록\n", stderr)
 
         // 폴더 리로드
@@ -688,19 +692,61 @@ extension PhotoStore {
         let fm = FileManager.default
         var success = true
 
-        // 역순으로 되돌리기
+        // 1) 파일 역순으로 되돌리기
         for entry in lastRenameMap.reversed() {
             do {
                 if fm.fileExists(atPath: entry.newURL.path) {
                     try fm.moveItem(at: entry.newURL, to: entry.oldURL)
                 }
             } catch {
-                fputs("[RENAME] Undo 실패: \(error.localizedDescription)\n", stderr)
+                fputs("[RENAME] Undo 파일 복원 실패: \(error.localizedDescription)\n", stderr)
                 success = false
             }
         }
 
+        // 2) UserDefaults 레이팅/컬러라벨/스페이스픽 복원
+        //    (newName에 있던 값을 oldName으로 되돌림)
+        let folderPathKey = lastRenameFolderPath
+        if !lastRenameNameMap.isEmpty {
+            // 전역 레이팅
+            var ratings = UserDefaults.standard.dictionary(forKey: ratingsKey) as? [String: Int] ?? [:]
+            // 폴더별 컬러라벨
+            var allColors = UserDefaults.standard.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
+            var folderColors = folderPathKey.isEmpty ? [:] : (allColors[folderPathKey] ?? [:])
+            // 폴더별 스페이스픽
+            var allSP = UserDefaults.standard.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
+            var folderSP = folderPathKey.isEmpty ? [:] : (allSP[folderPathKey] ?? [:])
+
+            for entry in lastRenameNameMap {
+                // 레이팅: newName → oldName
+                if let r = ratings[entry.newName] {
+                    ratings.removeValue(forKey: entry.newName)
+                    ratings[entry.oldName] = r
+                }
+                // 컬러라벨
+                if !folderPathKey.isEmpty, let c = folderColors[entry.newName] {
+                    folderColors.removeValue(forKey: entry.newName)
+                    folderColors[entry.oldName] = c
+                }
+                // 스페이스픽
+                if !folderPathKey.isEmpty, folderSP[entry.newName] == true {
+                    folderSP.removeValue(forKey: entry.newName)
+                    folderSP[entry.oldName] = true
+                }
+            }
+
+            UserDefaults.standard.set(ratings, forKey: ratingsKey)
+            if !folderPathKey.isEmpty {
+                allColors[folderPathKey] = folderColors
+                UserDefaults.standard.set(allColors, forKey: "folderColorLabels")
+                allSP[folderPathKey] = folderSP
+                UserDefaults.standard.set(allSP, forKey: "folderSpacePicks")
+            }
+        }
+
         lastRenameMap = []
+        lastRenameNameMap = []
+        lastRenameFolderPath = ""
 
         // 폴더 리로드
         if let url = folderURL {
