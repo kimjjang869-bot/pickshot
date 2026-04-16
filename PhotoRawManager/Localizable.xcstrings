@@ -29557,6 +29557,12 @@
             "state": "translated",
             "value": "íì´ë"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fade"
+          }
         }
       }
     },
@@ -29567,6 +29573,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì´ì§ ì¤ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page Setup"
           }
         }
       }
@@ -29579,6 +29591,12 @@
             "state": "translated",
             "value": "í¸ì§íì¬ì©"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use After Edit"
+          }
         }
       }
     },
@@ -29589,6 +29607,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íê°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rating"
           }
         }
       }
@@ -29601,6 +29625,12 @@
             "state": "translated",
             "value": "íê·  ì ì¬ë: \\(String(format: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avg Similarity: \\(String(format:"
+          }
         }
       }
     },
@@ -29611,6 +29641,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íê·  ì ì: \\(stats.averageScore)ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avg Score: \\(stats.averageScore)pts"
           }
         }
       }
@@ -29623,6 +29659,12 @@
             "state": "translated",
             "value": "í´ë"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder"
+          }
         }
       }
     },
@@ -29633,6 +29675,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ë´ë³´ë´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Folder"
           }
         }
       }
@@ -29645,6 +29693,12 @@
             "state": "translated",
             "value": "í´ë ë¸ë¼ì°ì "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Browser"
+          }
         }
       }
     },
@@ -29655,6 +29709,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ë¸ë¼ì°ì  ì´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder Browser"
           }
         }
       }
@@ -29667,6 +29727,12 @@
             "state": "translated",
             "value": "í´ë ë¸ë¼ì°ì  ì ê¸°"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse Folder Browser"
+          }
         }
       }
     },
@@ -29677,6 +29743,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ìì± ì¤í¨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to Create Folder"
           }
         }
       }
@@ -29689,6 +29761,12 @@
             "state": "translated",
             "value": "í´ë ìì± ì¤í¨: \\(error.localizedDescription)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to Create Folder: \\(error.localizedDescription)"
+          }
         }
       }
     },
@@ -29699,6 +29777,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ìì± ì¤í¨: \\(responseStr.prefix(200))"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to Create Folder: \\(responseStr.prefix(200))"
           }
         }
       }
@@ -29711,6 +29795,12 @@
             "state": "translated",
             "value": "í´ë ì í"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder"
+          }
         }
       }
     },
@@ -29721,6 +29811,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ì í í ë´ë³´ë´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder and Export"
           }
         }
       }
@@ -29733,6 +29829,12 @@
             "state": "translated",
             "value": "í´ë ì í..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder..."
+          }
         }
       }
     },
@@ -29743,6 +29845,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ì´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder"
           }
         }
       }
@@ -29755,6 +29863,12 @@
             "state": "translated",
             "value": "í´ë ì´ê¸°..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder..."
+          }
         }
       }
     },
@@ -29765,6 +29879,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ì´ë¦"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Name"
           }
         }
       }
@@ -29777,6 +29897,12 @@
             "state": "translated",
             "value": "í´ë ì´ë¦ ë³ê²½"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename Folder"
+          }
         }
       }
     },
@@ -29787,6 +29913,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ì´ë¦:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Name:"
           }
         }
       }
@@ -29799,6 +29931,12 @@
             "state": "translated",
             "value": "í´ë ì´ë¦ì ìë ¥íì¸ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter folder name"
+          }
         }
       }
     },
@@ -29809,6 +29947,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ë ì ë¦¬"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organize Folder"
           }
         }
       }
@@ -29821,6 +29965,12 @@
             "state": "translated",
             "value": "í´ë íì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse Folder"
+          }
         }
       }
     },
@@ -29831,6 +29981,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ëë¡ ë³µì¬ ë¶ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy & Sort to Folder"
           }
         }
       }
@@ -29843,6 +29999,12 @@
             "state": "translated",
             "value": "í´ëë¡ ë¶ë¥"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sort to Folder"
+          }
         }
       }
     },
@@ -29853,6 +30015,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ëë¡ ì´ë ë¶ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move & Sort to Folder"
           }
         }
       }
@@ -29865,6 +30033,12 @@
             "state": "translated",
             "value": "í´ëë¥¼ ì ííì¸ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a folder"
+          }
         }
       }
     },
@@ -29875,6 +30049,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ëë¥¼ ì°í´ë¦­íì¬ ì¶ê°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right-click folder to add"
           }
         }
       }
@@ -29887,6 +30067,12 @@
             "state": "translated",
             "value": "íì í­ëª©"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display Items"
+          }
         }
       }
     },
@@ -29897,6 +30083,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íìí  ì´ë¦ì ìë ¥íì¸ì (ì¤ì  í´ë ì´ë¦ì ë³ê²½ëì§ ììµëë¤)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter display name (actual folder name will not change)"
           }
         }
       }
@@ -29909,6 +30101,12 @@
             "state": "translated",
             "value": "íìí  ì´ë¯¸ì§ê° ììµëë¤"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No images to display"
+          }
         }
       }
     },
@@ -29919,6 +30117,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì  ê°ì§ + ì¼êµ´ ë¹êµ í¨ë"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expression Detection + Face Comparison Panel"
           }
         }
       }
@@ -29931,6 +30135,12 @@
             "state": "translated",
             "value": "íì  ë¹êµ (2~6ì¥)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expression Compare (2–6 photos)"
+          }
         }
       }
     },
@@ -29941,6 +30151,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì  ë¹êµ (\\(photos.count)ì¥)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expression Compare (\\(photos.count) photos)"
           }
         }
       }
@@ -29953,6 +30169,12 @@
             "state": "translated",
             "value": "íì§"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
         }
       }
     },
@@ -29963,6 +30185,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì§ ê¸°ë° Aì»· ì¶ì²"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality-based Best Shot Recommendation"
           }
         }
       }
@@ -29975,6 +30203,12 @@
             "state": "translated",
             "value": "íì§ ë¶ì (ë¡ì»¬)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Analysis (Local)"
+          }
         }
       }
     },
@@ -29985,6 +30219,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì§ ë¶ì í­ëª©"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Analysis Items"
           }
         }
       }
@@ -29997,6 +30237,12 @@
             "state": "translated",
             "value": "íì§ ë¶ìì ë¨¼ì  ì¤ííë©´ ë ì íí ë² ì¤í¸ì·ì ì íí  ì ììµëë¤"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Quality Analysis first for more accurate best shot selection"
+          }
         }
       }
     },
@@ -30007,6 +30253,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì§ ë¶ìì ë¨¼ì  ì¤ííì¸ì"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Quality Analysis first"
           }
         }
       }
@@ -30019,6 +30271,12 @@
             "state": "translated",
             "value": "íì§ ë¶í¬"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Distribution"
+          }
         }
       }
     },
@@ -30029,6 +30287,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íê²½"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Landscape"
           }
         }
       }
@@ -30041,6 +30305,12 @@
             "state": "translated",
             "value": "íë¡ ìì¤ ë³´ì ê° ì ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro-level Correction Suggestions"
+          }
         }
       }
     },
@@ -30051,6 +30321,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë¡ê·¸ë¨ ì í"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Application"
           }
         }
       }
@@ -30063,6 +30339,12 @@
             "state": "translated",
             "value": "íë¡ê·¸ë¨ ìì ì ìëì° í¬ê¸°"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window Size on Launch"
+          }
         }
       }
     },
@@ -30073,6 +30355,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë¡ì í¸"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project"
           }
         }
       }
@@ -30085,6 +30373,12 @@
             "state": "translated",
             "value": "íë¦¬ì ì í"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Preset"
+          }
         }
       }
     },
@@ -30095,6 +30389,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë¦¬ì:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preset:"
           }
         }
       }
@@ -30107,6 +30407,12 @@
             "state": "translated",
             "value": "íë¦¬í¨ì¹ ë²ì: \\(prefetchRange)ì¥"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefetch Range: \\(prefetchRange) photos"
+          }
         }
       }
     },
@@ -30117,6 +30423,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í¼ë¶ ë¶ëë½ê²"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth Skin"
           }
         }
       }
@@ -30129,6 +30441,12 @@
             "state": "translated",
             "value": "í¼ë¶ ì¤ë¬´ë©"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin Smoothing"
+          }
         }
       }
     },
@@ -30139,6 +30457,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í¼ë¶ ì§ê° ë¶ëë½ê² (ì¸ë¬¼ ì¬ì§)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soften Skin Texture (Portraits)"
           }
         }
       }
@@ -30151,6 +30475,12 @@
             "state": "translated",
             "value": "í¼ë¶í¤ ê¸°ì¤ ìê°/ë°ê¸° ë³´ì "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin Tone Color/Brightness Correction"
+          }
         }
       }
     },
@@ -30161,6 +30491,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í¼ë¶í¤ ê¸°ì¤ íì´í¸ë°¸ë°ì¤ + ì¼êµ´ ë°ê¸° ë³´ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin Tone White Balance + Face Brightness Correction"
           }
         }
       }
@@ -30173,6 +30509,12 @@
             "state": "translated",
             "value": "í½ì· ìë  ê°ì ¸ì¤ê¸° Â· JPG,RAW ë§¤ì¹­ ë³µì¬"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import PickShot Culling · Copy JPG/RAW Matches"
+          }
         }
       }
     },
@@ -30183,6 +30525,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í½ì³ ì¤íì¼"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picture Style"
           }
         }
       }
@@ -30195,6 +30543,12 @@
             "state": "translated",
             "value": "í½ì³ì¤íì¼ ë¯¸ë¦¬ë³´ê¸° (CIRAWFilter)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picture Style Preview (CIRAWFilter)"
+          }
         }
       }
     },
@@ -30205,6 +30559,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë¦ì¤í¸ë¦½"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filmstrip"
           }
         }
       }
@@ -30217,6 +30577,12 @@
             "state": "translated",
             "value": "íí°ë ì¬ì§"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtered Photos"
+          }
         }
       }
     },
@@ -30227,6 +30593,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íí¬"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pink"
           }
         }
       }
@@ -30239,6 +30611,12 @@
             "state": "translated",
             "value": "íë/ì¼ëª°"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sky/Sunset"
+          }
         }
       }
     },
@@ -30249,6 +30627,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì í¬í¨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include Subfolders"
           }
         }
       }
@@ -30261,6 +30645,12 @@
             "state": "translated",
             "value": "íì í´ë ì¤ìº ì¤..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanning subfolders..."
+          }
         }
       }
     },
@@ -30271,6 +30661,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì í´ë ìì"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Subfolders"
           }
         }
       }
@@ -30283,6 +30679,12 @@
             "state": "translated",
             "value": "íì í´ë í¬í¨ \\(photoCount)ì¥ ë¡ëë¨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photoCount) photos loaded (incl. subfolders)"
+          }
         }
       }
     },
@@ -30293,6 +30695,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì í´ë í¬í¨ ì´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open with Subfolders"
           }
         }
       }
@@ -30305,6 +30713,12 @@
             "state": "translated",
             "value": "íìµ \\(styleLearner.sessionCount)í"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trained \\(styleLearner.sessionCount) times"
+          }
         }
       }
     },
@@ -30315,6 +30729,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íìµ \\(styleLearner.sessionCount)í ìë£"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(styleLearner.sessionCount) training sessions complete"
           }
         }
       }
@@ -30327,6 +30747,12 @@
             "state": "translated",
             "value": "íìµ ë°ì´í° ìì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Training Data"
+          }
         }
       }
     },
@@ -30337,6 +30763,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íìµ ìë£"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Training Complete"
           }
         }
       }
@@ -30349,6 +30781,12 @@
             "state": "translated",
             "value": "íìµë ì·¨í¥ì¼ë¡ ìë ìë "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-cull with Learned Preferences"
+          }
         }
       }
     },
@@ -30359,6 +30797,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í í´ëì ë´ë³´ë´ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export to Single Folder"
           }
         }
       }
@@ -30371,6 +30815,12 @@
             "state": "translated",
             "value": "íêµ­ íë³´ ì¤íì¼ ìë ë³´ì "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Korean Editorial Auto Correction"
+          }
         }
       }
     },
@@ -30381,6 +30831,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íêµ­ì´"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Korean"
           }
         }
       }
@@ -30393,6 +30849,12 @@
             "state": "translated",
             "value": "í­ì ë¤í¬"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always Dark"
+          }
         }
       }
     },
@@ -30403,6 +30865,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í­ì ë¼ì´í¸"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always Light"
           }
         }
       }
@@ -30415,6 +30883,12 @@
             "state": "translated",
             "value": "í´ìë"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution"
+          }
         }
       }
     },
@@ -30425,6 +30899,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ìë ë° ìºì"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution & Cache"
           }
         }
       }
@@ -30437,6 +30917,12 @@
             "state": "translated",
             "value": "í"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Row"
+          }
         }
       }
     },
@@ -30447,6 +30933,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬/ì¸ë¬¼/êµ°ì¤/ë¶ìê¸° ìë ë¶ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-classify: Event/Person/Crowd/Mood"
           }
         }
       }
@@ -30459,6 +30951,12 @@
             "state": "translated",
             "value": "íì¬ JPGë§ ìì¼ë©´ â RAW í´ëìì ê°ì ì´ë¦ RAW ì°ê²°"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If only JPG exists → link matching RAW from RAW folder"
+          }
         }
       }
     },
@@ -30469,6 +30967,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ RAWë§ ìì¼ë©´ â JPG í´ëìì ê°ì ì´ë¦ JPG ì°ê²°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If only RAW exists → link matching JPG from JPG folder"
           }
         }
       }
@@ -30481,6 +30985,12 @@
             "state": "translated",
             "value": "íì¬ ëª©ë¡ì íì¼ê³¼ ë§¤ì¹­í  RAW ëë JPG íì¼ì´ ìë í´ëë¥¼ ì ííì¸ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select folder containing RAW or JPG files to match with current list"
+          }
         }
       }
     },
@@ -30491,6 +31001,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ ë²ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Version"
           }
         }
       }
@@ -30503,6 +31019,12 @@
             "state": "translated",
             "value": "íì¬ ë³´ì  ììì´ ì§í ì¤ìëë¤. ìë£ë  ëê¹ì§ ê¸°ë¤ë ¤ì£¼ì¸ì."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Correction in progress. Please wait until complete."
+          }
         }
       }
     },
@@ -30513,6 +31035,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ ë¶ìì´ ì§í ì¤ìëë¤. ìë£ í ë¤ì ìëí´ì£¼ì¸ì."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis in progress. Please try again after completion."
           }
         }
       }
@@ -30525,6 +31053,12 @@
             "state": "translated",
             "value": "íì¬ ì¬ì© ê°ë¥í ë¨ì¶í¤ ëª©ë¡ìëë¤. (ì½ê¸° ì ì©)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available keyboard shortcuts. (Read-only)"
+          }
         }
       }
     },
@@ -30535,6 +31069,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ ì¤ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Settings"
           }
         }
       }
@@ -30547,6 +31087,12 @@
             "state": "translated",
             "value": "íì¬ ìë  íìµ"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn Current Culling"
+          }
         }
       }
     },
@@ -30557,6 +31103,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ ì´ë¦° í´ëì íì¼ê³¼ ì íí í´ëì íì¼ì íì¼ëª(baseName)ì¼ë¡ ë¹êµíì¬\nJPGâRAWë¥¼ ìë ì°ê²°í©ëë¤."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compares files in the current folder with selected folder by filename (baseName)\nto auto-link JPG↔RAW."
           }
         }
       }
@@ -30569,6 +31121,12 @@
             "state": "translated",
             "value": "íì¬ í­ ì¤ì ì ê¸°ë³¸ê°ì¼ë¡ ì´ê¸°í"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Current Tab Settings to Default"
+          }
         }
       }
     },
@@ -30579,6 +31137,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ í´ë: \\(url.lastPathComponent)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Folder: \\(url.lastPathComponent)"
           }
         }
       }
@@ -30591,6 +31155,12 @@
             "state": "translated",
             "value": "íì¬ í´ëìì ëë¤ ì¬ì§ 6ì¥ì ë³´ì¬ì¤ëë¤.\në§ìì ëë ì¬ì§ì ì ííì¸ì."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows 6 random photos from the current folder.\nSelect your favorites."
+          }
         }
       }
     },
@@ -30601,6 +31171,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ íí° ê¸°ì¤"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Filter Criteria"
           }
         }
       }
@@ -30613,6 +31189,12 @@
             "state": "translated",
             "value": "íì¬ íí° ê¸°ì¤ ì ì²´ ì¬ì§ì ìë¡ëí©ëë¤"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload all photos based on current filter"
+          }
         }
       }
     },
@@ -30623,6 +31205,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬ íí° ì¤ì ì ì ì¥í©ëë¤."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save current filter settings."
           }
         }
       }
@@ -30635,6 +31223,12 @@
             "state": "translated",
             "value": "íì¬ íí° ì ì¥..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Current Filter..."
+          }
         }
       }
     },
@@ -30645,6 +31239,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¬: \\(subscriptionManager.currentTier.displayName)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current: \\(subscriptionManager.currentTier.displayName)"
           }
         }
       }
@@ -30657,6 +31257,12 @@
             "state": "translated",
             "value": "íì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Format"
+          }
         }
       }
     },
@@ -30667,6 +31273,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í¸íì±"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatibility"
           }
         }
       }
@@ -30679,6 +31291,12 @@
             "state": "translated",
             "value": "ííì´ì§"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Homepage"
+          }
         }
       }
     },
@@ -30689,6 +31307,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë©´ ë§ì¶¤"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit to Screen"
           }
         }
       }
@@ -30701,6 +31325,12 @@
             "state": "translated",
             "value": "íë©´ ë§ì¶¤ (Cmd+0)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit to Screen (Cmd+0)"
+          }
         }
       }
     },
@@ -30711,6 +31341,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì§ ì°ì "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality First"
           }
         }
       }
@@ -30723,6 +31359,12 @@
             "state": "translated",
             "value": "íë"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom In"
+          }
         }
       }
     },
@@ -30733,6 +31375,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë (Cmd+)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom In (Cmd+)"
           }
         }
       }
@@ -30745,6 +31393,12 @@
             "state": "translated",
             "value": "íë / ì¶ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom In / Out"
+          }
         }
       }
     },
@@ -30755,6 +31409,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë/ì¶ì"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
           }
         }
       }
@@ -30767,6 +31427,12 @@
             "state": "translated",
             "value": "íë/ì¶ì (ëë¸í´ë¦­: íë©´ ë§ì¶¤)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom (Double-click: Fit to Screen)"
+          }
         }
       }
     },
@@ -30777,6 +31443,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¸"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }
@@ -30789,6 +31461,12 @@
             "state": "translated",
             "value": "íì¸ ìì´ ë°ë¡ í´ì§íµì¼ë¡ ì´ëí©ëë¤. âZ ë¡ ëëë¦´ ì ììµëë¤."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Trash immediately without confirmation. Undo with ⌘Z."
+          }
         }
       }
     },
@@ -30799,6 +31477,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¥ì ì ê±° í íì¼ëª(baseName) ë¹êµ"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare by filename without extension (baseName)"
           }
         }
       }
@@ -30811,6 +31495,12 @@
             "state": "translated",
             "value": "íì¥ìë³"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Extension"
+          }
         }
       }
     },
@@ -30821,6 +31511,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì±í"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activate"
           }
         }
       }
@@ -30833,6 +31529,12 @@
             "state": "translated",
             "value": "íì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gray"
+          }
         }
       }
     },
@@ -30843,6 +31545,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í´ì§íµì¼ë¡ ì´ë"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Trash"
           }
         }
       }
@@ -30855,6 +31563,12 @@
             "state": "translated",
             "value": "íë°±"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black & White"
+          }
         }
       }
     },
@@ -30865,6 +31579,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íë¤ë¦¼, ì´ì  ëê°, ì¸ë¬¼ ì´ì  ë¯¸ì¤ ê°ì§"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detect blur, out-of-focus, and missed focus on subjects"
           }
         }
       }
@@ -30877,6 +31597,12 @@
             "state": "translated",
             "value": "í°ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "White"
+          }
         }
       }
     },
@@ -30887,6 +31613,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "í°ì ê³ì´"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "White Tones"
           }
         }
       }
@@ -30899,6 +31631,12 @@
             "state": "translated",
             "value": "íì¤í ê·¸ë¨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Histogram"
+          }
         }
       }
     },
@@ -30909,6 +31647,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¤í ê·¸ë¨ ê¸°ë³¸ íì"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Histogram by Default"
           }
         }
       }
@@ -30921,6 +31665,12 @@
             "state": "translated",
             "value": "íì¤í ê·¸ë¨ ì¤ë²ë ì´ í ê¸"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toggle Histogram Overlay"
+          }
         }
       }
     },
@@ -30931,6 +31681,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "íì¤í ë¦¬ ì§ì°ê¸°"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear History"
           }
         }
       }
@@ -30943,6 +31699,12 @@
             "state": "translated",
             "value": "ð¢ ì ì½ â ìë ì°ì  ì¤ì  ì¶ì²"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐢 Economy — Speed-first setting recommended"
+          }
         }
       }
     },
@@ -30953,6 +31715,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¤ \\(store.faceGroupName(for: fgID)) íí° ì ì©"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "👤 Applying \\(store.faceGroupName(for: fgID)) filter"
           }
         }
       }
@@ -30965,6 +31733,12 @@
             "state": "translated",
             "value": "ð° ë¹ì©: $\\(String(format: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💰 Cost: $\\(String(format:"
+          }
         }
       }
     },
@@ -30975,6 +31749,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¾ JPG: ìëë³´ì /\\(jpg.lastPathComponent)\n"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💾 JPG: AutoCorrection/\\(jpg.lastPathComponent)"
           }
         }
       }
@@ -30987,6 +31767,12 @@
             "state": "translated",
             "value": "ð¾ RAW: ìëë³´ì /\\(raw.lastPathComponent)\n"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💾 RAW: AutoCorrection/\\(raw.lastPathComponent)"
+          }
         }
       }
     },
@@ -30997,6 +31783,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð '\\(folderURL.lastPathComponent)' â '\\(destination.lastPathComponent)'ë¡ ì´ë"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📁 Moved '\\(folderURL.lastPathComponent)' → '\\(destination.lastPathComponent)'"
           }
         }
       }
@@ -31009,6 +31801,12 @@
             "state": "translated",
             "value": "ð '\\(name)' í´ë ìì± ìë£"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📁 Folder '\\(name)' created"
+          }
         }
       }
     },
@@ -31019,6 +31817,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð \\(cat): \\(count)ì¥ (\\(pct)%)\n"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📁 \\(cat): \\(count) photos (\\(pct)%)"
           }
         }
       }
@@ -31031,6 +31835,12 @@
             "state": "translated",
             "value": "ð \\(copied)ê° íì¼ ë³µì¬ ìë£ â \\(destFolder.lastPathComponent)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📂 \\(copied) files copied → \\(destFolder.lastPathComponent)"
+          }
         }
       }
     },
@@ -31041,6 +31851,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð \\(movedCount)ì¥ì \\(Set(categorized.compactMap { $0.aiCategory }).count)ê° í´ëë¡ ì ë¦¬ ìë£"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📂 \\(movedCount) photos organized into \\(Set(categorized.compactMap { $0.aiCategory }).count) folders"
           }
         }
       }
@@ -31053,6 +31869,12 @@
             "state": "translated",
             "value": "ð ì¹´íê³ ë¦¬"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📂 Category"
+          }
         }
       }
     },
@@ -31063,6 +31885,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð ì ì²´: \\(totalCount)ì¥\n"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📊 Total: \\(totalCount) photos"
           }
         }
       }
@@ -31075,6 +31903,12 @@
             "state": "translated",
             "value": "ð íì©ë"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📊 Usage"
+          }
         }
       }
     },
@@ -31085,6 +31919,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð \\(targetCount)ê° íì¼ëª ë³µì¬ë¨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📋 \\(targetCount) filenames copied"
           }
         }
       }
@@ -31097,6 +31937,12 @@
             "state": "translated",
             "value": "ð ê³µì  ë§í¬ê° í´ë¦½ë³´ëì ë³µì¬ëììµëë¤.\ní´ë¼ì´ì¸í¸ìê² ì ë¬í´ì£¼ì¸ì."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🔗 Share link copied to clipboard.\nSend it to your client."
+          }
         }
       }
     },
@@ -31107,6 +31953,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð ê³ ì±ë¥ â ìµë ì¤ì  ê°ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🚀 High Performance — Maximum settings available"
           }
         }
       }
@@ -31119,6 +31971,12 @@
             "state": "translated",
             "value": "ð¤ AI ë² ì¤í¸ì·"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Best Shot"
+          }
         }
       }
     },
@@ -31129,6 +31987,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¤ AI ë³´ì  ìë£\n\n"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Correction Complete"
           }
         }
       }
@@ -31141,6 +32005,12 @@
             "state": "translated",
             "value": "ð¤ AI ë³´ì  ì ì"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Correction Suggestions"
+          }
         }
       }
     },
@@ -31151,6 +32021,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¤ AI ë¶ë¥ ì¤í"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 Run AI Classification"
           }
         }
       }
@@ -31163,6 +32039,12 @@
             "state": "translated",
             "value": "ð¤ AI ì¬ì§ ì¤ëª"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Photo Description"
+          }
         }
       }
     },
@@ -31173,6 +32055,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¤ AI ì¤ë§í¸ ë¶ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Smart Classification"
           }
         }
       }
@@ -31185,6 +32073,12 @@
             "state": "translated",
             "value": "ð¤ AI ìë ë³´ì "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Auto Correction"
+          }
         }
       }
     },
@@ -31195,6 +32089,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ð¤ AI íë¡¬íí¸ ë¶ë¥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Prompt Classification"
           }
         }
       }
@@ -31207,6 +32107,12 @@
             "state": "translated",
             "value": "ð¤ ìì§: \\(engine)\n"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 Engine: \\(engine)"
+          }
         }
       }
     },
@@ -31217,6 +32123,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\n\n--- 자동 보정 적용 완료 ---\n"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--- Auto Correction Applied ---"
           }
         }
       }
@@ -31229,6 +32141,12 @@
             "state": "translated",
             "value": "\n\n덮어쓰기로 진행하시겠습니까?"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proceed with overwrite?"
+          }
         }
       }
     },
@@ -31239,6 +32157,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\n\n미매칭: \\(r.unmatched.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched: \\(r.unmatched.count) photos"
           }
         }
       }
@@ -31251,6 +32175,12 @@
             "state": "translated",
             "value": "\n... 외 \\(existingFiles.count - 5)개"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(existingFiles.count - 5) more"
+          }
         }
       }
     },
@@ -31261,6 +32191,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\nSP 셀렉: \\(spCount)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SP Select: \\(spCount) photos"
           }
         }
       }
@@ -31273,6 +32209,12 @@
             "state": "translated",
             "value": "\n💰 API 비용: $\\(String(format: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💰 API Cost: $\\(String(format:"
+          }
         }
       }
     },
@@ -31283,6 +32225,12 @@
           "stringUnit": {
             "state": "translated",
             "value": " (Cmd+Z 되돌리기)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(Undo: Cmd+Z)"
           }
         }
       }
@@ -31295,6 +32243,12 @@
             "state": "translated",
             "value": " (\\(failed)장 실패)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(\\(failed) photos failed)"
+          }
         }
       }
     },
@@ -31305,6 +32259,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\"유사 그룹핑\" → \"현재 셀렉 학습\""
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"Similar Grouping\" → \"Learn Current Culling\""
           }
         }
       }
@@ -31317,6 +32277,12 @@
             "state": "translated",
             "value": "%.0f분 %.0f초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.0fm %.0fs"
+          }
         }
       }
     },
@@ -31327,6 +32293,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%.0f초"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.0fs"
           }
         }
       }
@@ -31339,6 +32311,12 @@
             "state": "translated",
             "value": "%.1f초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.1fs"
+          }
         }
       }
     },
@@ -31349,6 +32327,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%d분 %d초"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%dm %ds"
           }
         }
       }
@@ -31361,6 +32345,12 @@
             "state": "translated",
             "value": "'\\(backup.detectedVolumeName)' 카드의 사진을 백업합니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backing up photos from '\\(backup.detectedVolumeName)' card"
+          }
         }
       }
     },
@@ -31371,6 +32361,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "'\\(displayName)' 볼륨에 접근합니다. 열기를 눌러주세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessing '\\(displayName)' volume. Please click Open."
           }
         }
       }
@@ -31383,6 +32379,12 @@
             "state": "translated",
             "value": "'\\(item.name)' 볼륨을 추출하시겠습니까?"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eject '\\(item.name)' volume?"
+          }
         }
       }
     },
@@ -31393,6 +32395,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "'\\(item.name)' 추출"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eject '\\(item.name)'"
           }
         }
       }
@@ -31405,6 +32413,12 @@
             "state": "translated",
             "value": "'\\(item.name)' 추출 실패: \\(error.localizedDescription)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to eject '\\(item.name)': \\(error.localizedDescription)"
+          }
         }
       }
     },
@@ -31415,6 +32429,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "'\\(item.name)' 추출 완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'\\(item.name)' ejected"
           }
         }
       }
@@ -31427,6 +32447,12 @@
             "state": "translated",
             "value": "'\\(newName)'으로 이름 변경 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renamed to '\\(newName)'"
+          }
         }
       }
     },
@@ -31437,6 +32463,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "'\\(newName)'으로 표시 이름 변경"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display name changed to '\\(newName)'"
           }
         }
       }
@@ -31449,6 +32481,12 @@
             "state": "translated",
             "value": "'\\(result.volumeName)' 카드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'\\(result.volumeName)' Card"
+          }
         }
       }
     },
@@ -31459,6 +32497,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "'\\(store.faceGroupName(for: gid))' 의 이름을 입력하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter name for '\\(store.faceGroupName(for: gid))'"
           }
         }
       }
@@ -31471,6 +32515,12 @@
             "state": "translated",
             "value": "'\\(store.faceGroupName(for: gid))' 이름 변경"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename '\\(store.faceGroupName(for: gid))'"
+          }
         }
       }
     },
@@ -31481,6 +32531,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "(\\(targetPhotos.count)장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(\\(targetPhotos.count) photos)"
           }
         }
       }
@@ -31493,6 +32549,12 @@
             "state": "translated",
             "value": ")\\(secs)초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ")\\(secs)s"
+          }
         }
       }
     },
@@ -31503,6 +32565,12 @@
           "stringUnit": {
             "state": "translated",
             "value": ")초 이내"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ")s or less"
           }
         }
       }
@@ -31515,6 +32583,12 @@
             "state": "translated",
             "value": "+\\(remainCount)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+\\(remainCount) photos"
+          }
         }
       }
     },
@@ -31525,6 +32599,12 @@
           "stringUnit": {
             "state": "translated",
             "value": ", avgSimilarity * 100))% — ★1 별점 적용됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", avgSimilarity * 100))% — ★1 star applied"
           }
         }
       }
@@ -31537,6 +32617,12 @@
             "state": "translated",
             "value": ", result.totalTime))초)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", result.totalTime))s)"
+          }
         }
       }
     },
@@ -31547,6 +32633,12 @@
           "stringUnit": {
             "state": "translated",
             "value": ", tracker.estimatedCostUSD)) 사용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", tracker.estimatedCostUSD)) used"
           }
         }
       }
@@ -31559,6 +32651,12 @@
             "state": "translated",
             "value": ", tracker.remainingUSD)) 남음"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", tracker.remainingUSD)) remaining"
+          }
         }
       }
     },
@@ -31569,6 +32667,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "- (대시)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "- (dash)"
           }
         }
       }
@@ -31581,6 +32685,12 @@
             "state": "translated",
             "value": ". (점)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ". (period)"
+          }
         }
       }
     },
@@ -31591,6 +32701,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "... 외 \\(duplicateFiles.count - 5)개"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(duplicateFiles.count - 5) more"
           }
         }
       }
@@ -31603,6 +32719,12 @@
             "state": "translated",
             "value": "... 외 \\(result.groups.count - 20)개 그룹"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(result.groups.count - 20) more groups"
+          }
         }
       }
     },
@@ -31613,6 +32735,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "... 외 \\(targetPhotos.count - 5)개"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(targetPhotos.count - 5) more"
           }
         }
       }
@@ -31625,6 +32753,12 @@
             "state": "translated",
             "value": "... 외 \\(unmatchedList.count - 20)개"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(unmatchedList.count - 20) more"
+          }
         }
       }
     },
@@ -31635,6 +32769,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "... 외 \\(uploadErrors.count - 5)건"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "... and \\(uploadErrors.count - 5) more errors"
           }
         }
       }
@@ -31647,6 +32787,12 @@
             "state": "translated",
             "value": ".pickshot 파일\n가져오기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ".pickshot File\nImport"
+          }
         }
       }
     },
@@ -31657,6 +32803,12 @@
           "stringUnit": {
             "state": "translated",
             "value": ".pickshot 파일 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select .pickshot File"
           }
         }
       }
@@ -31669,6 +32821,12 @@
             "state": "translated",
             "value": ".pickshot 파일을 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a .pickshot file"
+          }
         }
       }
     },
@@ -31679,6 +32837,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "/년"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/year"
           }
         }
       }
@@ -31691,6 +32855,12 @@
             "state": "translated",
             "value": "/월"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/month"
+          }
         }
       }
     },
@@ -31701,6 +32871,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "2~4장의 사진을 선택해야 비교할 수 있습니다.\n현재 \\(currentCount)장 선택됨.\n\nCmd+클릭으로 여러 장을 선택하세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select 2–4 photos to compare.\nCurrently \\(currentCount) selected.\n\nCmd+click to select multiple photos."
           }
         }
       }
@@ -31713,6 +32889,12 @@
             "state": "translated",
             "value": "3주 트라이얼 시스템"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3-Week Trial System"
+          }
         }
       }
     },
@@ -31723,6 +32905,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 기능은 Pro 구독이 필요합니다.\nAPI 키가 설정되어 있지 않으면 설정에서 입력해주세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI features require a Pro subscription.\nIf no API key is set, enter it in Settings."
           }
         }
       }
@@ -31735,6 +32923,12 @@
             "state": "translated",
             "value": "AI 기능을 사용하려면"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To use AI features"
+          }
         }
       }
     },
@@ -31745,6 +32939,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 모델 업데이트 (NIMA + AdaFace R18)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Model Update (NIMA + AdaFace R18)"
           }
         }
       }
@@ -31757,6 +32957,12 @@
             "state": "translated",
             "value": "AI 사용량: $\\(String(format: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Usage: $\\(String(format:"
+          }
         }
       }
     },
@@ -31767,6 +32973,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 사진 매칭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Photo Matching"
           }
         }
       }
@@ -31779,6 +32991,12 @@
             "state": "translated",
             "value": "AI 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Culling"
+          }
         }
       }
     },
@@ -31789,6 +33007,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 추천"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Picks"
           }
         }
       }
@@ -31801,6 +33025,12 @@
             "state": "translated",
             "value": "AI 추천 (\\(aiCount)장)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Picks (\\(aiCount) photos)"
+          }
         }
       }
     },
@@ -31811,6 +33041,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "API 업로드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Upload"
           }
         }
       }
@@ -31823,6 +33059,12 @@
             "state": "translated",
             "value": "API 오류 (\\(httpResponse.statusCode)): \\(responseBody)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Error (\\(httpResponse.statusCode)): \\(responseBody)"
+          }
         }
       }
     },
@@ -31833,6 +33075,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "API 키를 먼저 설정해주세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set up your API key first"
           }
         }
       }
@@ -31845,6 +33093,12 @@
             "state": "translated",
             "value": "API 키를 입력하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter API key"
+          }
         }
       }
     },
@@ -31855,6 +33109,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AdaFace 얼굴 인식 (R18 CoreML)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AdaFace Face Recognition (R18 CoreML)"
           }
         }
       }
@@ -31867,6 +33127,12 @@
             "state": "translated",
             "value": "Before/After 보정 비교"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before/After Correction Compare"
+          }
         }
       }
     },
@@ -31877,6 +33143,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cmd + 방향키"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cmd + Arrow Keys"
           }
         }
       }
@@ -31889,6 +33161,12 @@
             "state": "translated",
             "value": "Cmd + 클릭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cmd + Click"
+          }
         }
       }
     },
@@ -31899,6 +33177,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Drive에 .pickshot 파일이 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No .pickshot files on Drive"
           }
         }
       }
@@ -31911,6 +33195,12 @@
             "state": "translated",
             "value": "Drive에 폴더가 없습니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No folders on Drive"
+          }
         }
       }
     },
@@ -31921,6 +33211,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Drive에서 .pickshot 파일 검색 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching for .pickshot files on Drive..."
           }
         }
       }
@@ -31933,6 +33229,12 @@
             "state": "translated",
             "value": "Drive에서 클라이언트 셀렉 폴더 검색 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching for client culling folders on Drive..."
+          }
         }
       }
     },
@@ -31943,6 +33245,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "EXIF Rating 자동 적용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-apply EXIF Rating"
           }
         }
       }
@@ -31955,6 +33263,12 @@
             "state": "translated",
             "value": "FolderWatcher 리로드/CPU 과부하 수정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FolderWatcher Reload/CPU Overload Fix"
+          }
         }
       }
     },
@@ -31965,6 +33279,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "GPS 사진: \\(gpsPhotos.count)장 / 전체: \\(photos.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GPS Photos: \\(gpsPhotos.count) / Total: \\(photos.count)"
           }
         }
       }
@@ -31977,6 +33297,12 @@
             "state": "translated",
             "value": "Google Drive 로그인 필요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Login Required"
+          }
         }
       }
     },
@@ -31987,6 +33313,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive 로그인이 필요합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive login required"
           }
         }
       }
@@ -31999,6 +33331,12 @@
             "state": "translated",
             "value": "Google Drive 로그인이 필요합니다.\n설정에서 Google 로그인을 해주세요."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive login required.\nPlease sign in to Google in Settings."
+          }
         }
       }
     },
@@ -32009,6 +33347,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive 미연결"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Not Connected"
           }
         }
       }
@@ -32021,6 +33365,12 @@
             "state": "translated",
             "value": "Google Drive 업로드 + G Select 웹 뷰어"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Upload + G Select Web Viewer"
+          }
         }
       }
     },
@@ -32031,6 +33381,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive 연결됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Connected"
           }
         }
       }
@@ -32043,6 +33399,12 @@
             "state": "translated",
             "value": "Google Drive 전송"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send to Google Drive"
+          }
         }
       }
     },
@@ -32053,6 +33415,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive에서 클라이언트 셀렉 폴더를 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select client culling folder from Google Drive"
           }
         }
       }
@@ -32065,6 +33433,12 @@
             "state": "translated",
             "value": "Google OAuth Client ID가 설정되지 않았습니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google OAuth Client ID is not configured."
+          }
         }
       }
     },
@@ -32075,6 +33449,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google 로그인 실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Sign-in Failed"
           }
         }
       }
@@ -32087,6 +33467,12 @@
             "state": "translated",
             "value": "Google 오류: \\(errorMsg)\n\\(desc)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Error: \\(errorMsg)\n\\(desc)"
+          }
         }
       }
     },
@@ -32097,6 +33483,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select"
           }
         }
       }
@@ -32109,6 +33501,12 @@
             "state": "translated",
             "value": "G셀렉 (Drive)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select (Drive)"
+          }
         }
       }
     },
@@ -32119,6 +33517,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉 \\(gSelectedIDs.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select \\(gSelectedIDs.count) photos"
           }
         }
       }
@@ -32131,6 +33535,12 @@
             "state": "translated",
             "value": "G셀렉 ↑업로드 중... (\\(gSelectedIDs.count)장)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select ↑Uploading... (\\(gSelectedIDs.count) photos)"
+          }
         }
       }
     },
@@ -32141,6 +33551,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉 완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select Complete"
           }
         }
       }
@@ -32153,6 +33569,12 @@
             "state": "translated",
             "value": "G셀렉 해제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear G-Select"
+          }
         }
       }
     },
@@ -32163,6 +33585,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉: \\(gSelect.uploadedCount)/\\(gSelect.gSelectedIDs.count)장 업로드 완료 | 클릭하여 종료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select: \\(gSelect.uploadedCount)/\\(gSelect.gSelectedIDs.count) uploaded | Click to dismiss"
           }
         }
       }
@@ -32175,6 +33603,12 @@
             "state": "translated",
             "value": "G셀렉을 사용하려면 Google 계정으로 로그인해야 합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select requires signing in with a Google account."
+          }
         }
       }
     },
@@ -32185,6 +33619,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G키 → 업로드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G key → Upload"
           }
         }
       }
@@ -32197,6 +33637,12 @@
             "state": "translated",
             "value": "HW JPEG 디코더 + Metal GPU 가속"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HW JPEG Decoder + Metal GPU Acceleration"
+          }
         }
       }
     },
@@ -32207,6 +33653,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG \\(result.copiedJPG)장, RAW \\(result.copiedRAW)장 복사됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(result.copiedJPG) JPG, \\(result.copiedRAW) RAW copied"
           }
         }
       }
@@ -32219,6 +33671,12 @@
             "state": "translated",
             "value": "JPG 반환 매칭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG Return Matching"
+          }
         }
       }
     },
@@ -32229,6 +33687,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG 변환 시작"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start JPG Conversion"
           }
         }
       }
@@ -32241,6 +33705,12 @@
             "state": "translated",
             "value": "JPG 파일로 미리보기하고, 매칭되는 RAW 파일을 함께 관리합니다.\njpg/raw 폴더가 분리되어 있어도 자동으로 매칭됩니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview with JPG files and manage matched RAW files together.\nAuto-matches even if jpg/raw folders are separated."
+          }
         }
       }
     },
@@ -32251,6 +33721,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG 파일이 있는 폴더를 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select folder containing JPG files"
           }
         }
       }
@@ -32263,6 +33739,12 @@
             "state": "translated",
             "value": "JPG 폴더 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select JPG Folder"
+          }
         }
       }
     },
@@ -32273,6 +33755,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG+RAW 매칭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG+RAW Matching"
           }
         }
       }
@@ -32285,6 +33773,12 @@
             "state": "translated",
             "value": "JPG+RAW 매칭 + 내보내기 UI 개편"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG+RAW Matching + Export UI Redesign"
+          }
         }
       }
     },
@@ -32295,6 +33789,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG, RAW\n매칭 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG, RAW\nMatched Copy"
           }
         }
       }
@@ -32307,6 +33807,12 @@
             "state": "translated",
             "value": "JPG: \\(photos.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG: \\(photos.count) photos"
+          }
         }
       }
     },
@@ -32317,6 +33823,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG만 있음 (RAW 없음): \\(result.jpgOnlyNames.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG only (no RAW): \\(result.jpgOnlyNames.count) photos"
           }
         }
       }
@@ -32329,6 +33841,12 @@
             "state": "translated",
             "value": "JPG와 RAW 파일을 복사할 대상 폴더를 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select destination folder for JPG and RAW files"
+          }
         }
       }
     },
@@ -32339,6 +33857,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG와 같은 이름의 RAW를\n찾아서 함께 복사합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finds RAW files with the same name as JPG\nand copies them together"
           }
         }
       }
@@ -32351,6 +33875,12 @@
             "state": "translated",
             "value": "LUT 관리 — .cube 파일 로딩 + 실시간 프리뷰"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LUT Management — .cube file loading + live preview"
+          }
         }
       }
     },
@@ -32361,6 +33891,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "LUT 끄기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LUT Off"
           }
         }
       }
@@ -32373,6 +33909,12 @@
             "state": "translated",
             "value": "LUT 켜기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LUT On"
+          }
         }
       }
     },
@@ -32383,6 +33925,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lightroom 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lightroom Export"
           }
         }
       }
@@ -32395,6 +33943,12 @@
             "state": "translated",
             "value": "Lightroom으로 가져올 RAW + XMP 파일을 저장할 폴더를 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select folder to save RAW + XMP files for Lightroom import"
+          }
         }
       }
     },
@@ -32405,6 +33959,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "M월 d일 HH:mm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MMM d HH:mm"
           }
         }
       }
@@ -32417,6 +33977,12 @@
             "state": "translated",
             "value": "NIMA AI 미적 품질 점수 (CoreML)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NIMA AI Aesthetic Quality Score (CoreML)"
+          }
         }
       }
     },
@@ -32427,6 +33993,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "PDF 생성 실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF Generation Failed"
           }
         }
       }
@@ -32439,6 +34011,12 @@
             "state": "translated",
             "value": "PDF 저장 실패: \\(error.localizedDescription)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF Save Failed: \\(error.localizedDescription)"
+          }
         }
       }
     },
@@ -32449,6 +34027,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "PDF 저장 완료 → \\(url.lastPathComponent)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF Saved → \\(url.lastPathComponent)"
           }
         }
       }
@@ -32461,6 +34045,12 @@
             "state": "translated",
             "value": "PhotoStore 대규모 모듈화 (Selection/Folder/Rating/...)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PhotoStore Large-scale Modularization (Selection/Folder/Rating/...)"
+          }
         }
       }
     },
@@ -32471,6 +34061,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "PickShot 뷰어"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PickShot Viewer"
           }
         }
       }
@@ -32483,6 +34079,12 @@
             "state": "translated",
             "value": "Quick Look 미리보기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Look Preview"
+          }
         }
       }
     },
@@ -32493,6 +34095,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW + Lightroom 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW + Lightroom Export"
           }
         }
       }
@@ -32505,6 +34113,12 @@
             "state": "translated",
             "value": "RAW \\(result.copiedRAW)장, XMP \\(result.copiedXMP)장 내보냄"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(result.copiedRAW) RAW, \\(result.copiedXMP) XMP exported"
+          }
         }
       }
     },
@@ -32515,6 +34129,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW → JPG 변환"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW → JPG Conversion"
           }
         }
       }
@@ -32527,6 +34147,12 @@
             "state": "translated",
             "value": "RAW → JPG 변환 (\\(targetCount)장)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW → JPG Conversion (\\(targetCount) photos)"
+          }
         }
       }
     },
@@ -32537,6 +34163,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW 없는 사진 \\(photos.count - withRAW)장은 제외됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photos.count - withRAW) photos without RAW will be excluded"
           }
         }
       }
@@ -32549,6 +34181,12 @@
             "state": "translated",
             "value": "RAW 폴더 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select RAW Folder"
+          }
         }
       }
     },
@@ -32559,6 +34197,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW: \\(withRAW)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW: \\(withRAW) photos"
           }
         }
       }
@@ -32571,6 +34215,12 @@
             "state": "translated",
             "value": "RAW: \\(withRAW)장 (매칭됨)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW: \\(withRAW) photos (matched)"
+          }
         }
       }
     },
@@ -32581,6 +34231,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW만 있음 (JPG 없음): \\(result.rawOnlyNames.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW only (no JPG): \\(result.rawOnlyNames.count) photos"
           }
         }
       }
@@ -32593,6 +34249,12 @@
             "state": "translated",
             "value": "Resumable 세션 시작 실패 (HTTP \\(code))"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to start resumable session (HTTP \\(code))"
+          }
         }
       }
     },
@@ -32603,6 +34265,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "SP 셀렉"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SP Select"
           }
         }
       }
@@ -32615,6 +34283,12 @@
             "state": "translated",
             "value": "SP 토글"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SP Toggle"
+          }
         }
       }
     },
@@ -32625,6 +34299,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "SP 해제"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear SP"
           }
         }
       }
@@ -32637,6 +34317,12 @@
             "state": "translated",
             "value": "SP: \\(spCount)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SP: \\(spCount) photos"
+          }
         }
       }
     },
@@ -32647,6 +34333,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "SSD 고속"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSD Fast"
           }
         }
       }
@@ -32659,6 +34351,12 @@
             "state": "translated",
             "value": "Shift + 방향키"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift + Arrow Keys"
+          }
         }
       }
     },
@@ -32669,6 +34367,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Shift + 클릭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift + Click"
           }
         }
       }
@@ -32681,6 +34385,12 @@
             "state": "translated",
             "value": "SmartCull + 인물 메뉴 + HDD/SD 최적화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SmartCull + People Menu + HDD/SD Optimization"
+          }
         }
       }
     },
@@ -32691,6 +34401,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Upright 가이드 + 듀얼 스크린 뷰어"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upright Guide + Dual Screen Viewer"
           }
         }
       }
@@ -32703,6 +34419,12 @@
             "state": "translated",
             "value": "Vision 로컬 분류"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vision Local Classification"
+          }
         }
       }
     },
@@ -32713,6 +34435,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vision 장면 분류 + 얼굴 그룹핑"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vision Scene Classification + Face Grouping"
           }
         }
       }
@@ -32725,6 +34453,12 @@
             "state": "translated",
             "value": "XMP (별점): \\(withRAW)장 생성 예정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XMP (rating): \\(withRAW) files to be created"
+          }
         }
       }
     },
@@ -32735,6 +34469,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "XMP 사이드카 (Lightroom/Bridge 호환)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XMP Sidecar (Lightroom/Bridge compatible)"
           }
         }
       }
@@ -32747,6 +34487,12 @@
             "state": "translated",
             "value": "\\(Int(elapsed))초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(elapsed))s"
+          }
         }
       }
     },
@@ -32757,6 +34503,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(Int(interval / 3600))시간 \\(Int((interval.truncatingRemainder(dividingBy: 3600)) / 60))분"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(interval / 3600))h \\(Int((interval.truncatingRemainder(dividingBy: 3600)) / 60))m"
           }
         }
       }
@@ -32769,6 +34521,12 @@
             "state": "translated",
             "value": "\\(Int(interval / 60))분"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(interval / 60))m"
+          }
         }
       }
     },
@@ -32779,6 +34537,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(Int(interval))초"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(interval))s"
           }
         }
       }
@@ -32791,6 +34555,12 @@
             "state": "translated",
             "value": "\\(Int(previewCacheSize))장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(previewCacheSize)) photos"
+          }
         }
       }
     },
@@ -32801,6 +34571,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(Int(remaining / 60))분 \\(Int(remaining) % 60)초 남음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(remaining / 60))m \\(Int(remaining) % 60)s remaining"
           }
         }
       }
@@ -32813,6 +34589,12 @@
             "state": "translated",
             "value": "\\(Int(remaining / 60))분 \\(Int(remaining.truncatingRemainder(dividingBy: 60)))초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(remaining / 60))m \\(Int(remaining.truncatingRemainder(dividingBy: 60)))s"
+          }
         }
       }
     },
@@ -32823,6 +34605,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(Int(remaining / 60))분 \\(Int(remaining.truncatingRemainder(dividingBy: 60)))초 남음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(remaining / 60))m \\(Int(remaining.truncatingRemainder(dividingBy: 60)))s remaining"
           }
         }
       }
@@ -32835,6 +34623,12 @@
             "state": "translated",
             "value": "\\(Int(remaining))초"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(remaining))s"
+          }
         }
       }
     },
@@ -32845,6 +34639,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(Int(remaining))초 남음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(Int(remaining))s remaining"
           }
         }
       }
@@ -32857,6 +34657,12 @@
             "state": "translated",
             "value": "\\(Int(styleThreshold))점 이상 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select \\(Int(styleThreshold))+ points"
+          }
         }
       }
     },
@@ -32867,6 +34673,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(SystemSpec.shared.cpuBrand) (\\(SystemSpec.shared.coreCount)코어)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(SystemSpec.shared.cpuBrand) (\\(SystemSpec.shared.coreCount) cores)"
           }
         }
       }
@@ -32879,6 +34691,12 @@
             "state": "translated",
             "value": "\\(activeCount)개 작업"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(activeCount) tasks"
+          }
         }
       }
     },
@@ -32889,6 +34707,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(activeFields)개 필드 → \\(targetPhotos.count)장에 적용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(activeFields) fields → applied to \\(targetPhotos.count) photos"
           }
         }
       }
@@ -32901,6 +34725,12 @@
             "state": "translated",
             "value": "\\(aiConcurrency)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(aiConcurrency) photos"
+          }
         }
       }
     },
@@ -32911,6 +34741,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(analysisType) 분석 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyzing \\(analysisType)..."
           }
         }
       }
@@ -32923,6 +34759,12 @@
             "state": "translated",
             "value": "\\(analyzed)/\\(total)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(analyzed)/\\(total) photos"
+          }
         }
       }
     },
@@ -32933,6 +34775,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(bestPhoto.fileName) 스페이스 셀렉 토글"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(bestPhoto.fileName) space select toggle"
           }
         }
       }
@@ -32945,6 +34793,12 @@
             "state": "translated",
             "value": "\\(cluster.photoIDs.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(cluster.photoIDs.count) photos"
+          }
         }
       }
     },
@@ -32955,6 +34809,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(completed)/\\(photos.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(completed)/\\(photos.count) photos"
           }
         }
       }
@@ -32967,6 +34827,12 @@
             "state": "translated",
             "value": "\\(count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(count) photos"
+          }
         }
       }
     },
@@ -32977,6 +34843,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(count)장 · \\(modelName)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(count) photos · \\(modelName)"
           }
         }
       }
@@ -32989,6 +34861,12 @@
             "state": "translated",
             "value": "\\(count)장 업로드됨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(count) photos uploaded"
+          }
         }
       }
     },
@@ -32999,6 +34877,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(count)장의 사진이 발견되었습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(count) photos found"
           }
         }
       }
@@ -33011,6 +34895,12 @@
             "state": "translated",
             "value": "\\(done)장 \\(verb) 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(done) photos \\(verb) complete"
+          }
         }
       }
     },
@@ -33021,6 +34911,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(engine.capitalized) 연결 성공"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(engine.capitalized) connected successfully"
           }
         }
       }
@@ -33033,6 +34929,12 @@
             "state": "translated",
             "value": "\\(faceRows.count)명 감지"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(faceRows.count) faces detected"
+          }
         }
       }
     },
@@ -33043,6 +34945,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(failed)장 실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(failed) photos failed"
           }
         }
       }
@@ -33055,6 +34963,12 @@
             "state": "translated",
             "value": "\\(filesToUpload.count)개 파일"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(filesToUpload.count) files"
+          }
         }
       }
     },
@@ -33065,6 +34979,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(group.clusters.flatMap(\\.photoIDs).count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(group.clusters.flatMap(\\.photoIDs).count) photos"
           }
         }
       }
@@ -33077,6 +34997,12 @@
             "state": "translated",
             "value": "\\(group.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(group.count) photos"
+          }
         }
       }
     },
@@ -33087,6 +35013,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(group.photos.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(group.photos.count) photos"
           }
         }
       }
@@ -33099,6 +35031,12 @@
             "state": "translated",
             "value": "\\(groups.count)개 시간대 · \\(groups.reduce(0) { $0 + $1.photos.count })장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(groups.count) time slots · \\(groups.reduce(0) { $0 + $1.photos.count }) photos"
+          }
         }
       }
     },
@@ -33109,6 +35047,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(icon) \\(cat) (\\(count)장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(icon) \\(cat) (\\(count) photos)"
           }
         }
       }
@@ -33121,6 +35065,12 @@
             "state": "translated",
             "value": "\\(icon) \\(level) (\\(count)장)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(icon) \\(level) (\\(count) photos)"
+          }
         }
       }
     },
@@ -33131,6 +35081,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(label.rawValue) (키: \\(label.key.isEmpty ? "
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(label.rawValue) (key: \\(label.key.isEmpty ?"
           }
         }
       }
@@ -33143,6 +35099,12 @@
             "state": "translated",
             "value": "\\(label.rawValue) 라벨 필터 (\\(label.key.isEmpty ? "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(label.rawValue) label filter (\\(label.key.isEmpty ?"
+          }
         }
       }
     },
@@ -33153,6 +35115,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(minGroupSize)장 이상"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(minGroupSize)+ photos"
           }
         }
       }
@@ -33165,6 +35133,12 @@
             "state": "translated",
             "value": "\\(moved)장 이동 완료 (Cmd+Z 되돌리기)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(moved) photos moved (Undo: Cmd+Z)"
+          }
         }
       }
     },
@@ -33175,6 +35149,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(parsedFilenameCount)개 감지됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(parsedFilenameCount) detected"
           }
         }
       }
@@ -33187,6 +35167,12 @@
             "state": "translated",
             "value": "\\(photo.fileName): 이름 충돌"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photo.fileName): Name conflict"
+          }
         }
       }
     },
@@ -33197,6 +35183,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(photoCount)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photoCount) photos"
           }
         }
       }
@@ -33209,6 +35201,12 @@
             "state": "translated",
             "value": "\\(photos.count)장 선택됨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photos.count) photos selected"
+          }
         }
       }
     },
@@ -33219,6 +35217,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(photos.filter { !$0.isFolder }.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photos.filter { !$0.isFolder }.count) photos"
           }
         }
       }
@@ -33231,6 +35235,12 @@
             "state": "translated",
             "value": "\\(photosToUpload.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(photosToUpload.count) photos"
+          }
         }
       }
     },
@@ -33241,6 +35251,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(q.score)점"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(q.score)pts"
           }
         }
       }
@@ -33253,6 +35269,12 @@
             "state": "translated",
             "value": "\\(quizSelected.count)장 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(quizSelected.count) photos selected"
+          }
         }
       }
     },
@@ -33263,6 +35285,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(r)점"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(r)pts"
           }
         }
       }
@@ -33275,6 +35303,12 @@
             "state": "translated",
             "value": "\\(result.succeeded)장 완료 (\\(String(format: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(result.succeeded) photos complete (\\(String(format:"
+          }
         }
       }
     },
@@ -33285,6 +35319,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(result.success)개 파일 변경 완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(result.success) files changed"
           }
         }
       }
@@ -33297,6 +35337,12 @@
             "state": "translated",
             "value": "\\(savedCount)개 파일에 메타데이터가 저장되었습니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadata saved to \\(savedCount) files."
+          }
         }
       }
     },
@@ -33307,6 +35353,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(score)점"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(score)pts"
           }
         }
       }
@@ -33319,6 +35371,12 @@
             "state": "translated",
             "value": "\\(self.cameraName) 연결 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to \\(self.cameraName)..."
+          }
         }
       }
     },
@@ -33329,6 +35387,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(self.cameraName) 연결됨 - 촬영 대기 중"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(self.cameraName) connected — waiting for shot"
           }
         }
       }
@@ -33341,6 +35405,12 @@
             "state": "translated",
             "value": "\\(self.cameraName) 준비 완료 - 촬영하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(self.cameraName) ready — shoot now"
+          }
         }
       }
     },
@@ -33351,6 +35421,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(self.photos.filter { !$0.isFolder }.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(self.photos.filter { !$0.isFolder }.count) photos"
           }
         }
       }
@@ -33363,6 +35439,12 @@
             "state": "translated",
             "value": "\\(service.uploadDone)장 업로드 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(service.uploadDone) photos uploaded"
+          }
         }
       }
     },
@@ -33373,6 +35455,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(session.volumeName) 백업 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backing up \\(session.volumeName)..."
           }
         }
       }
@@ -33385,6 +35473,12 @@
             "state": "translated",
             "value": "\\(sessionName)_원본.zip"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(sessionName)_original.zip"
+          }
         }
       }
     },
@@ -33395,6 +35489,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(skippedCount)장 중복 건너뛰기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(skippedCount) duplicates skipped"
           }
         }
       }
@@ -33407,6 +35507,12 @@
             "state": "translated",
             "value": "\\(sourcePhotos.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(sourcePhotos.count) photos"
+          }
         }
       }
     },
@@ -33417,6 +35523,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(speed) · 남은 시간: \\(eta)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(speed) · Time remaining: \\(eta)"
           }
         }
       }
@@ -33429,6 +35541,12 @@
             "state": "translated",
             "value": "\\(store.aiClassifyErrors.count) 실패"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(store.aiClassifyErrors.count) failed"
+          }
         }
       }
     },
@@ -33439,6 +35557,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(store.fileMoveLabel) 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(store.fileMoveLabel)..."
           }
         }
       }
@@ -33451,6 +35575,12 @@
             "state": "translated",
             "value": "\\(store.filteredPhotos.filter { !$0.isFolder }.count)장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(store.filteredPhotos.filter { !$0.isFolder }.count) photos"
+          }
         }
       }
     },
@@ -33461,6 +35591,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(store.photos.count)장의 사진을 분석합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyzing \\(store.photos.count) photos"
           }
         }
       }
@@ -33473,6 +35609,12 @@
             "state": "translated",
             "value": "\\(subfolderCount)개 폴더"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(subfolderCount) folders"
+          }
         }
       }
     },
@@ -33483,6 +35625,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(succeeded)장 성공"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(succeeded) photos succeeded"
           }
         }
       }
@@ -33495,6 +35643,12 @@
             "state": "translated",
             "value": "\\(targetPhotos.count)개 파일 이름 변경 예정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(targetPhotos.count) files to be renamed"
+          }
         }
       }
     },
@@ -33505,6 +35659,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(targetPhotos.count)장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(targetPhotos.count) photos"
           }
         }
       }
@@ -33517,6 +35677,12 @@
             "state": "translated",
             "value": "\\(targetPhotos.count)장 → \\(totalPages)페이지"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(targetPhotos.count) photos → \\(totalPages) pages"
+          }
         }
       }
     },
@@ -33527,6 +35693,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(tierDisplayName(SystemSpec.shared.effectiveTier)) (자동: \\(tierDisplayName(SystemSpec.shared.autoTier)))"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(tierDisplayName(SystemSpec.shared.effectiveTier)) (auto: \\(tierDisplayName(SystemSpec.shared.autoTier)))"
           }
         }
       }
@@ -33539,6 +35711,12 @@
             "state": "translated",
             "value": "\\(total)장 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(total) photos selected"
+          }
         }
       }
     },
@@ -33549,6 +35727,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(tracker.requestCount)회"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(tracker.requestCount) requests"
           }
         }
       }
@@ -33561,6 +35745,12 @@
             "state": "translated",
             "value": "_ (언더스코어)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "_ (underscore)"
+          }
         }
       }
     },
@@ -33571,6 +35761,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "pHash(이미지 지문) + EXIF 촬영시간으로 원본을 찾습니다.\nAPI 비용 없이 로컬에서 실행됩니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finds originals using pHash (image fingerprint) + EXIF capture time.\nRuns locally with no API cost."
           }
         }
       }
@@ -33583,6 +35779,12 @@
             "state": "translated",
             "value": "yyyy년 M월 d일 HH:mm"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MMM d, yyyy HH:mm"
+          }
         }
       }
     },
@@ -33593,6 +35795,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "~10초"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~10s"
           }
         }
       }
@@ -33605,6 +35813,12 @@
             "state": "translated",
             "value": "~2분"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~2m"
+          }
         }
       }
     },
@@ -33615,6 +35829,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "~30초"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~30s"
           }
         }
       }
@@ -33627,6 +35847,12 @@
             "state": "translated",
             "value": "~5분"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~5m"
+          }
         }
       }
     },
@@ -33637,6 +35863,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "© 2026 작가 이름"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Photographer Name"
           }
         }
       }
@@ -33649,6 +35881,12 @@
             "state": "translated",
             "value": "· \\(result.failed)장 실패"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· \\(result.failed) photos failed"
+          }
         }
       }
     },
@@ -33659,6 +35897,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "⚠️ \\(failedCount)개 실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ \\(failedCount) failed"
           }
         }
       }
@@ -33671,6 +35915,12 @@
             "state": "translated",
             "value": "⚠️ 폴더 생성 실패: \\(error.localizedDescription)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ Folder creation failed: \\(error.localizedDescription)"
+          }
         }
       }
     },
@@ -33681,6 +35931,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "⚠️ 폴더 이동 실패: \\(error.localizedDescription)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ Folder move failed: \\(error.localizedDescription)"
           }
         }
       }
@@ -33693,6 +35949,12 @@
             "state": "translated",
             "value": "⚡ 균형 — 표준 설정 추천"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚡ Balanced — standard settings recommended"
+          }
         }
       }
     },
@@ -33703,6 +35965,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "✅ 활성화되었습니다.\n\\(formatter.string(from: expiry)) 까지 사용 가능"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✅ Activated.\nAvailable until \\(formatter.string(from: expiry))"
           }
         }
       }
@@ -33715,6 +35983,12 @@
             "state": "translated",
             "value": "❌ AI 보정 실패: \\(error.localizedDescription)\n\nAPI 키와 잔액을 확인하세요."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❌ AI correction failed: \\(error.localizedDescription)\n\nCheck your API key and balance."
+          }
         }
       }
     },
@@ -33725,6 +35999,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "❌ 유효하지 않은 키입니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❌ Invalid key."
           }
         }
       }
@@ -33737,6 +36017,12 @@
             "state": "translated",
             "value": "❌ 이 기기는 이미 다른 테스터 키로 활성화되어 있습니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❌ This device is already activated with a different tester key."
+          }
         }
       }
     },
@@ -33747,6 +36033,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "❌ 이 키는 무효화되었습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❌ This key has been invalidated."
           }
         }
       }
@@ -33759,6 +36051,12 @@
             "state": "translated",
             "value": "가져오기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
         }
       }
     },
@@ -33769,6 +36067,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "가져오기 실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Failed"
           }
         }
       }
@@ -33781,6 +36085,12 @@
             "state": "translated",
             "value": "개별 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Individual Select"
+          }
         }
       }
     },
@@ -33791,6 +36101,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "개별 추가/해제"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add/Remove Individually"
           }
         }
       }
@@ -33803,6 +36119,12 @@
             "state": "translated",
             "value": "건너뛴 파일: \\(result.skipped)개"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped files: \\(result.skipped)"
+          }
         }
       }
     },
@@ -33813,6 +36135,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "검정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black"
           }
         }
       }
@@ -33825,6 +36153,12 @@
             "state": "translated",
             "value": "검증 실패"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Validation Failed"
+          }
         }
       }
     },
@@ -33835,6 +36169,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "검증 완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Validation Complete"
           }
         }
       }
@@ -33847,6 +36187,12 @@
             "state": "translated",
             "value": "계산 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calculating..."
+          }
         }
       }
     },
@@ -33857,6 +36203,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "계속 업로드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue Upload"
           }
         }
       }
@@ -33869,6 +36221,12 @@
             "state": "translated",
             "value": "고객이 QR 스캔 → 사진 셀렉 → 완료\n결과가 Google Drive에 자동 저장됩니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client scans QR → selects photos → done\nResults auto-saved to Google Drive"
+          }
         }
       }
     },
@@ -33879,6 +36237,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "공개 링크"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Public Link"
           }
         }
       }
@@ -33891,6 +36255,12 @@
             "state": "translated",
             "value": "공유 권한 설정 실패 (\\(statusCode))"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to set sharing permissions (\\(statusCode))"
+          }
         }
       }
     },
@@ -33901,6 +36271,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "공유 링크 (\\(shareLinks.count)개):"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share links (\\(shareLinks.count)):"
           }
         }
       }
@@ -33913,6 +36289,12 @@
             "state": "translated",
             "value": "국가"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Country"
+          }
         }
       }
     },
@@ -33923,6 +36305,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "군중"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crowd"
           }
         }
       }
@@ -33935,6 +36323,12 @@
             "state": "translated",
             "value": "균형 (추천)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balanced (Recommended)"
+          }
         }
       }
     },
@@ -33945,6 +36339,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "그룹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group"
           }
         }
       }
@@ -33957,6 +36357,12 @@
             "state": "translated",
             "value": "그룹 \\(group.groupIndex + 1)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group \\(group.groupIndex + 1)"
+          }
         }
       }
     },
@@ -33967,6 +36373,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "그룹핑 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grouping..."
           }
         }
       }
@@ -33979,6 +36391,12 @@
             "state": "translated",
             "value": "기념"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commemoration"
+          }
         }
       }
     },
@@ -33989,6 +36407,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본 내보내기 폴더를 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select default export folder"
           }
         }
       }
@@ -34001,6 +36425,12 @@
             "state": "translated",
             "value": "기준 \\(Int(threshold))점 이상 \\(recommended.count)장 셀렉 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\\(recommended.count) photos selected at \\(Int(threshold))+ points"
+          }
         }
       }
     },
@@ -34011,6 +36441,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기타"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
           }
         }
       }
@@ -34023,6 +36459,12 @@
             "state": "translated",
             "value": "남은 시간: \\(session.eta)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time remaining: \\(session.eta)"
+          }
         }
       }
     },
@@ -34033,6 +36475,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "낮은 해상도\n빠른 탐색"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low Resolution\nFast Browse"
           }
         }
       }
@@ -34045,6 +36493,12 @@
             "state": "translated",
             "value": "낮음"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low"
+          }
         }
       }
     },
@@ -34056,6 +36510,12 @@
             "state": "translated",
             "value": "내 컬렉션"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My Collection"
+          }
         }
       }
     },
@@ -34066,6 +36526,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내보내기 (\\(targetCount)장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export (\\(targetCount) photos)"
           }
         }
       }
@@ -35863,6 +38329,12 @@
             "state": "translated",
             "value": "분류 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classifying..."
+          }
         }
       }
     },
@@ -35873,6 +38345,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "분석"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis"
           }
         }
       }
@@ -35885,6 +38363,12 @@
             "state": "translated",
             "value": "분석 진행 중"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis in Progress"
+          }
         }
       }
     },
@@ -35895,6 +38379,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "분위기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mood"
           }
         }
       }
@@ -35907,6 +38397,12 @@
             "state": "translated",
             "value": "블러 / 초점 분석"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blur / Focus Analysis"
+          }
         }
       }
     },
@@ -35917,6 +38413,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "비교 모드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare Mode"
           }
         }
       }
@@ -35929,6 +38431,12 @@
             "state": "translated",
             "value": "비교 보기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare View"
+          }
         }
       }
     },
@@ -35939,6 +38447,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "비디오 플레이어 — MP4/MOV 재생, 썸네일 미리보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video Player — MP4/MOV playback, thumbnail preview"
           }
         }
       }
