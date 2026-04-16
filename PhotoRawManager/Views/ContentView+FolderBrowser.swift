@@ -996,7 +996,6 @@ struct FolderRowView: View {
     let onAddFavorite: (URL) -> Void
     @State private var showEjectConfirm: Bool = false
     @State private var ejectResult: String?
-    @State private var imageCount: Int?
     @State private var isDropTarget: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renamingText: String = ""
@@ -1211,8 +1210,6 @@ struct FolderRowView: View {
                     Button("디스크 추출") { showEjectConfirm = true }
                 }
             }
-
-            .onAppear { }
 
             // Children — 안전한 인덱스 바인딩
             if item.isExpanded, let children = item.children, !children.isEmpty {

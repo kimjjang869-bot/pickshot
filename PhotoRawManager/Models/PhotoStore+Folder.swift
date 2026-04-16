@@ -474,6 +474,9 @@ extension PhotoStore {
         panel.message = "사진이 있는 폴더를 선택하세요 (jpg/raw 하위 폴더도 자동 스캔)"
 
         if panel.runModal() == .OK, let url = panel.url {
+            // NSOpenPanel scope 만료 전에 bookmark 동기 저장
+            SandboxBookmarkService.saveBookmark(for: url, key: "lastFolder")
+            SandboxBookmarkService.saveBookmark(for: url, key: "volume_\(url.path)")
             loadFolder(url)
         }
     }
@@ -514,7 +517,7 @@ extension PhotoStore {
 
     func loadRecentFolders() -> [URL] {
         // Try security-scoped bookmarks first (App Sandbox)
-        let bookmarked = SandboxBookmarkService.resolveBookmarks(keyPrefix: "recentFolders")
+        let bookmarked = SandboxBookmarkService.resolveBookmarkURLs(keyPrefix: "recentFolders")
         if !bookmarked.isEmpty { return bookmarked }
         // Fallback to path strings (backward compat)
         let paths = defaults.stringArray(forKey: recentFoldersKey) ?? []
@@ -540,7 +543,7 @@ extension PhotoStore {
 
     func loadFavoriteFolders() -> [URL] {
         // Try security-scoped bookmarks first (App Sandbox)
-        let bookmarked = SandboxBookmarkService.resolveBookmarks(keyPrefix: "favoriteFolders")
+        let bookmarked = SandboxBookmarkService.resolveBookmarkURLs(keyPrefix: "favoriteFolders")
         if !bookmarked.isEmpty { return bookmarked }
         // Fallback to path strings (backward compat)
         let paths = defaults.stringArray(forKey: favoriteFoldersKey) ?? []

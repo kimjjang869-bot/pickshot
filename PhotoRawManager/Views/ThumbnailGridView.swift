@@ -1863,7 +1863,7 @@ class ThumbnailLoader {
         // External volume: SD카드 / HDD / SSD 판별
         let volumeName = url.pathComponents.count >= 3 ? url.pathComponents[2].lowercased() : ""
 
-        // 1. SD카드 감지: diskutil info에서 프로토콜 확인
+        // 1. SD카드 감지: URLResourceValues로 볼륨 속성 확인
         if let sdType = checkIfSDCard(volumeName: volumeName) {
             return sdType
         }
@@ -1889,7 +1889,7 @@ class ThumbnailLoader {
         return .externalHDD
     }
 
-    /// SD카드 / USB 메모리 감지 — diskutil info로 프로토콜 확인
+    /// SD카드 / USB 메모리 감지 — URLResourceValues로 볼륨 속성 확인
     private func checkIfSDCard(volumeName: String) -> StorageType? {
         // 이름 기반 빠른 판별
         let sdHints = ["sd card", "micro sd", "sdxc", "sdhc", "sduc", "memory card",

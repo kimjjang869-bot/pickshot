@@ -443,11 +443,8 @@ class PhotoStore: ObservableObject {
         // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
         // Try security-scoped bookmark first, then fall back to path string
         let hasLastFolder: Bool = {
-            if SandboxBookmarkService.resolveBookmark(key: "lastFolder") != nil {
-                // Stop accessing immediately — restoreLastSession will re-resolve
-                if let url = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
-                    SandboxBookmarkService.stopAccessing(url)
-                }
+            if let url = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
+                SandboxBookmarkService.stopAccessing(url)
                 return true
             }
             if let lastPath = defaults.string(forKey: lastFolderKey),

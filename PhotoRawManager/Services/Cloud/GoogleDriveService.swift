@@ -26,11 +26,12 @@ class GoogleDriveService {
             return bookmarked
         }
 
-        // 2. Sandbox 밖에서만 작동하는 경로 탐색 (sandbox 해제 시 폴백)
+        // 2. 경로 직접 탐색 — 샌드박스 빌드에서는 접근이 차단되므로 동작하지 않음.
+        //    샌드박스를 비활성화한(non-sandbox) 빌드에서만 폴백으로 사용됨.
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
 
-        // ~/Google Drive/ (sandbox에서도 user-selected 경로면 접근 가능)
+        // ~/Google Drive/ — 샌드박스 비활성화 빌드 전용 폴백
         let googleDrive = home.appendingPathComponent("Google Drive")
         if fm.fileExists(atPath: googleDrive.path) {
             let myDrive = googleDrive.appendingPathComponent("My Drive")
@@ -40,7 +41,7 @@ class GoogleDriveService {
             return googleDrive
         }
 
-        // /Volumes/GoogleDrive/
+        // /Volumes/GoogleDrive/ — 샌드박스 비활성화 빌드 전용 폴백
         let volumeGD = URL(fileURLWithPath: "/Volumes/GoogleDrive")
         if fm.fileExists(atPath: volumeGD.path) {
             return volumeGD

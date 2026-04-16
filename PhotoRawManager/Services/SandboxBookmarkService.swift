@@ -54,12 +54,28 @@ enum SandboxBookmarkService {
         UserDefaults.standard.set(urls.count, forKey: "\(keyPrefix)_count")
     }
 
-    /// 여러 bookmark 일괄 복원
+    /// 여러 bookmark 일괄 복원 (security-scoped access 시작됨 — 반드시 stop 필요)
     static func resolveBookmarks(keyPrefix: String) -> [URL] {
         let count = UserDefaults.standard.integer(forKey: "\(keyPrefix)_count")
         var urls: [URL] = []
         for i in 0..<count {
             if let url = resolveBookmark(key: "\(keyPrefix)_\(i)") {
+                urls.append(url)
+            }
+        }
+        return urls
+    }
+
+    /// 여러 bookmark 의 URL 만 조회 (security scope 시작하지 않음 — 목록 표시용)
+    static func resolveBookmarkURLs(keyPrefix: String) -> [URL] {
+        guard let store = UserDefaults.standard.dictionary(forKey: bookmarkStoreKey) as? [String: Data] else { return [] }
+        let count = UserDefaults.standard.integer(forKey: "\(keyPrefix)_count")
+        var urls: [URL] = []
+        for i in 0..<count {
+            let key = "\(keyPrefix)_\(i)"
+            guard let data = store[key] else { continue }
+            var stale = false
+            if let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale) {
                 urls.append(url)
             }
         }
@@ -87,21 +103,23 @@ enum SandboxBookmarkService {
             return false
         }
 
-        for (_, data) in store {
+        for (bookmarkKey, data) in store {
             do {
                 var isStale = false
                 let bookmarkedURL = try URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
-                // 이 bookmark 이 요청 URL 의 부모(또는 동일)인지 확인
                 let bookmarkedPath = bookmarkedURL.path
                 let targetPath = url.path
-                if targetPath.hasPrefix(bookmarkedPath) || targetPath == bookmarkedPath {
+                // 경로 경계 정확히 확인: /Volumes/Photos 가 /Volumes/Photos2 와 매치되지 않도록
+                let isMatch = targetPath == bookmarkedPath
+                    || targetPath.hasPrefix(bookmarkedPath + "/")
+                if isMatch {
                     if bookmarkedURL.startAccessingSecurityScopedResource() {
                         // 이전 활성 접근 해제
                         if let prev = activeAccessURL, prev != bookmarkedURL {
                             prev.stopAccessingSecurityScopedResource()
                         }
                         activeAccessURL = bookmarkedURL
-                        if isStale { saveBookmark(for: bookmarkedURL, key: "") }
+                        if isStale { saveBookmark(for: bookmarkedURL, key: bookmarkKey) }
                         return true
                     }
                 }
