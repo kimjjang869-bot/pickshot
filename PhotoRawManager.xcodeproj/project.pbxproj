@@ -37,6 +37,7 @@
 		A10011 /* ExifInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ExifInfoView.swift */; };
 		A10012 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* ExportView.swift */; };
 		A10013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10013 /* Assets.xcassets */; };
+		L10001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = L10002 /* Localizable.xcstrings */; };
 		A10014 /* ImageAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ImageAnalysisService.swift */; };
 		A10015 /* ImageCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* ImageCorrectionService.swift */; };
 		A10017 /* AIAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* AIAnalysisView.swift */; };
@@ -90,6 +91,7 @@
 		FC10001 /* FaceCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10002 /* FaceCompareView.swift */; };
 		FPK10001 /* FocusPeakingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPK10002 /* FocusPeakingOverlay.swift */; };
 		HW10001 /* HWJPEGDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10002 /* HWJPEGDecoder.swift */; };
+		NR10001 /* NASOptimizedReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = NR10002 /* NASOptimizedReader.swift */; };
 		HW10003 /* MetalImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10004 /* MetalImageProcessor.swift */; };
 		HW10005 /* ParallelFFD8Scanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10006 /* ParallelFFD8Scanner.swift */; };
 		HW10007 /* AggressiveImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10008 /* AggressiveImageCache.swift */; };
@@ -188,6 +190,7 @@
 		B10011 /* ExifInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
 		B10012 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		B10013 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		L10002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		B10014 /* ImageAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAnalysisService.swift; sourceTree = "<group>"; };
 		B10015 /* ImageCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCorrectionService.swift; sourceTree = "<group>"; };
 		B10017 /* AIAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisView.swift; sourceTree = "<group>"; };
@@ -231,6 +234,7 @@
 		FE4B8111B82E42D81DC67D2E /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		FPK10002 /* FocusPeakingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPeakingOverlay.swift; sourceTree = "<group>"; };
 		HW10002 /* HWJPEGDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HWJPEGDecoder.swift; sourceTree = "<group>"; };
+		NR10002 /* NASOptimizedReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
 		HW10004 /* MetalImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalImageProcessor.swift; sourceTree = "<group>"; };
 		HW10006 /* ParallelFFD8Scanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelFFD8Scanner.swift; sourceTree = "<group>"; };
 		HW10008 /* AggressiveImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggressiveImageCache.swift; sourceTree = "<group>"; };
@@ -344,6 +348,7 @@
 				D10003 /* Views */,
 				D10004 /* Services */,
 				B10013 /* Assets.xcassets */,
+				L10002 /* Localizable.xcstrings */,
 			);
 			path = PhotoRawManager;
 			sourceTree = "<group>";
@@ -495,6 +500,7 @@
 			children = (
 				HW10002 /* HWJPEGDecoder.swift */,
 				HW10004 /* MetalImageProcessor.swift */,
+				NR10002 /* NASOptimizedReader.swift */,
 				HW10006 /* ParallelFFD8Scanner.swift */,
 				HW10008 /* AggressiveImageCache.swift */,
 			);
@@ -590,6 +596,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10013 /* Assets.xcassets in Resources */,
+				L10001 /* Localizable.xcstrings in Resources */,
 				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
 				AF10003 /* AdaFaceR18.mlpackage in Resources */,
 			);
@@ -733,6 +740,7 @@
 				CS10002 /* ClientSelectSetupView.swift in Sources */,
 				SSP10001 /* SystemSpec.swift in Sources */,
 				HW10001 /* HWJPEGDecoder.swift in Sources */,
+				NR10001 /* NASOptimizedReader.swift in Sources */,
 				HW10003 /* MetalImageProcessor.swift in Sources */,
 				HW10005 /* ParallelFFD8Scanner.swift in Sources */,
 				HW10007 /* AggressiveImageCache.swift in Sources */,
@@ -790,7 +798,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -843,7 +851,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
@@ -862,6 +870,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -891,6 +900,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";

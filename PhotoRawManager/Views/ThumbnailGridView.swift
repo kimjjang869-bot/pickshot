@@ -1833,8 +1833,12 @@ class ThumbnailLoader {
         case .network:
             isNetworkMode = true
             isExternalHDD = false
-            queue.maxConcurrentOperationCount = 64
-            AppLogger.log(.performance, "NAS/Network: concurrency=64, thumbSize=160 for \(path)")
+            // NAS 30-50MB/s 기준: 병목은 네트워크 대역폭
+            // 4-way 가 최적 (8+ 은 NIC 포화, TCP retransmit → 오히려 느려짐)
+            // 전제: 스테이지1 썸네일은 RAW 임베디드 JPEG (3-5MB) + 부분 읽기
+            queue.maxConcurrentOperationCount = 4
+            normalConcurrency = 4
+            AppLogger.log(.performance, "NAS/Network: concurrency=4 (대역폭 보호), thumbSize=100 for \(path)")
         }
     }
 
@@ -2210,6 +2214,15 @@ class ThumbnailLoader {
         }
 
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
+
+        // NAS fast path: RAW 파일의 앞쪽 4MB 만 읽어서 임베디드 JPEG 추출
+        // (전체 파일 다운로드 회피 → 30-50MB/s 링크에서 10배 이상 빠름)
+        if isRAW && ThumbnailLoader.shared.isNetworkMode {
+            if let cgImage = NASOptimizedReader.extractRAWThumbnail(url: url, maxPixel: CGFloat(thumbSize)) {
+                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            // 실패 시 일반 경로로 폴백 (아래)
+        }
 
         // CGImageSource path FIRST — handles EXIF orientation automatically via Transform flag
         let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]

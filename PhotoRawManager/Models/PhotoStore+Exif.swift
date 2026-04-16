@@ -196,7 +196,13 @@ extension PhotoStore {
         }()
 
         let isSlow = currentFolderIsSlowDisk
-        let radius = isSlow ? 100 : 40
+        // NAS 의 경우 네트워크 대역폭 제한으로 radius 를 작게 (30장)
+        // 외장 HDD 는 NCQ 활용으로 100장 유지
+        let isNetwork = ThumbnailLoader.shared.isNetworkMode
+        let radius: Int
+        if isNetwork { radius = 30 }       // NAS: 현재 화면 주변만 prewarm
+        else if isSlow { radius = 100 }    // 외장 HDD
+        else { radius = 40 }               // SSD
         let start = max(0, currentIdx - radius)
         let end = min(list.count, currentIdx + radius)
         guard start < end else { return }
