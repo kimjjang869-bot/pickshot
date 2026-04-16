@@ -58,6 +58,9 @@ class PreviewImageCache {
     private var maxEntries: Int
     private var memoryPressureSource: DispatchSourceMemoryPressure?
     private let diskCacheDir: URL
+    // 디스크 쓰기 serialization: evict 시 concurrent queue 로 뿌리면 누적 I/O 병목 → 직렬 큐로 변경
+    // 빠른 네비게이션 후반부에 속도 저하 주요 원인 (20장 이동 = 20개 JPEG 인코딩 병렬 → 디스크 경합)
+    private let diskEvictQueue = DispatchQueue(label: "previewcache.evict", qos: .utility)
 
     init() {
         // UserDefaults에 저장된 값 우선, 없으면 RAM 기반 자동 설정
@@ -115,12 +118,14 @@ class PreviewImageCache {
         }
         lock.unlock()
 
-        // Disk cache hit
+        // Disk cache hit — NSImage(contentsOf:) 는 lazy decoding 이라
+        // 다음 렌더 프레임에 스파이크가 나므로 즉시 bitmap 으로 디코딩
         let diskPath = diskKey(for: url)
-        if let img = NSImage(contentsOf: diskPath) {
-            // Promote back to RAM cache
-            set(url, image: img)
-            return img
+        if let data = try? Data(contentsOf: diskPath),
+           let cgImg = NSBitmapImageRep(data: data)?.cgImage {
+            let decoded = NSImage(cgImage: cgImg, size: NSSize(width: cgImg.width, height: cgImg.height))
+            set(url, image: decoded)
+            return decoded
         }
         return nil
     }
@@ -146,7 +151,11 @@ class PreviewImageCache {
                 accessTime.removeValue(forKey: key)
                 let diskPath = diskKey(for: key)
                 let capturedImg = evictedImg
-                DispatchQueue.global(qos: .utility).async {
+                // 직렬 큐로 뿌려서 동시 JPEG 인코딩/디스크 쓰기 경합 방지
+                // (빠른 네비게이션 시 누적되는 작업 수가 제한됨)
+                diskEvictQueue.async {
+                    // 이미 디스크에 있으면 쓰기 스킵 — 불필요한 I/O 제거
+                    if FileManager.default.fileExists(atPath: diskPath.path) { return }
                     if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                         let bitmap = NSBitmapImageRep(cgImage: cgImage)
                         if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
