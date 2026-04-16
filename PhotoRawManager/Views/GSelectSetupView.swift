@@ -12,6 +12,7 @@ struct GSelectSetupView: View {
 
     @State private var folderName: String = ""
     @State private var uploadType: GSelectUploadType = .both
+    @State private var showLogoutConfirm: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,7 +51,7 @@ struct GSelectSetupView: View {
                     Spacer()
 
                     if gSelect.isLoggedIn {
-                        Button("로그아웃") { gSelect.logout() }
+                        Button("로그아웃") { showLogoutConfirm = true }
                             .font(.system(size: 11))
                     } else {
                         Button("Google 로그인") { gSelect.loginToGoogle() }
@@ -61,6 +62,38 @@ struct GSelectSetupView: View {
                 .padding(10)
                 .background(Color.gray.opacity(0.08))
                 .cornerRadius(8)
+
+                // 권한 및 개인정보 안내 (Google OAuth 심사 준수)
+                if !gSelect.isLoggedIn {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 11))
+                            Text("PickShot 이 요청하는 권한")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        Text("• PickShot 이 업로드한 파일에만 접근 (drive.file)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text("• 사용자의 다른 Google Drive 파일은 보지 않습니다")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text("• 토큰은 Mac Keychain 에만 저장되며 외부로 전송되지 않습니다")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Link("개인정보 처리방침", destination: URL(string: "https://pickshot.app/privacy.html")!)
+                                .font(.system(size: 10))
+                            Link("서비스 약관", destination: URL(string: "https://pickshot.app/terms.html")!)
+                                .font(.system(size: 10))
+                        }
+                        .padding(.top, 2)
+                    }
+                    .padding(10)
+                    .background(Color.blue.opacity(0.05))
+                    .cornerRadius(8)
+                }
 
                 // Folder name
                 VStack(alignment: .leading, spacing: 4) {
@@ -127,9 +160,15 @@ struct GSelectSetupView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 18)
         }
-        .frame(width: 420, height: 500)
+        .frame(width: 420, height: 560)
         .onAppear {
             folderName = defaultFolderName
+        }
+        .confirmationDialog("Google Drive 연동을 해제하시겠습니까?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button("연동 해제", role: .destructive) { gSelect.logout() }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("Google 서버에서 토큰이 즉시 취소되고 로컬 자격증명도 삭제됩니다. 다시 사용하려면 재로그인이 필요합니다.")
         }
     }
 

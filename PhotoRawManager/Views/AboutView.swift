@@ -140,6 +140,16 @@ struct AboutView: View {
 
                     Divider()
 
+                    // 법적 링크
+                    HStack(spacing: 14) {
+                        Link("개인정보 처리방침", destination: URL(string: "https://pickshot.app/privacy.html")!)
+                            .font(.system(size: 11))
+                        Link("서비스 약관", destination: URL(string: "https://pickshot.app/terms.html")!)
+                            .font(.system(size: 11))
+                        Link("홈페이지", destination: URL(string: "https://pickshot.app")!)
+                            .font(.system(size: 11))
+                    }
+
                     Text("Copyright 2026. All rights reserved.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)

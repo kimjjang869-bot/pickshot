@@ -716,10 +716,43 @@ class GoogleDriveService {
         }.resume()
     }
 
-    /// Logout - clear saved tokens
+    /// Logout - Google 서버에서 토큰 revoke + 로컬 토큰 삭제
+    /// Google API 정책 준수: https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke
     static func logout() {
+        // 1. Google 서버에 revoke 요청 (refresh token 우선, 없으면 access token)
+        let tokenToRevoke = savedRefreshToken ?? savedAccessToken
+        if let token = tokenToRevoke, !token.isEmpty {
+            revokeToken(token) { success in
+                if success {
+                    AppLogger.log(.general, "Google OAuth 토큰 revoke 성공")
+                } else {
+                    AppLogger.log(.general, "Google OAuth 토큰 revoke 실패 (로컬 삭제는 완료)")
+                }
+            }
+        }
+        // 2. 로컬 토큰/캐시 즉시 삭제 (revoke 결과 기다리지 않음)
         savedAccessToken = nil
         savedRefreshToken = nil
+        // 3. Google Drive 폴더 bookmark 도 삭제 (사용자가 선택한 저장 위치)
+        SandboxBookmarkService.removeBookmark(key: "googleDriveFolder")
+    }
+
+    /// Google OAuth 토큰을 서버에서 revoke
+    private static func revokeToken(_ token: String, completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "https://oauth2.googleapis.com/revoke") else {
+            completion(false); return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "token=\(token)".data(using: .utf8)
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                completion(true)
+            } else {
+                completion(false)
+            }
+        }.resume()
     }
 
     // MARK: - Helpers
