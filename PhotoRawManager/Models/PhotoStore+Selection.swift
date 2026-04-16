@@ -187,12 +187,25 @@ extension PhotoStore {
         selectedPhotoID = newID
         scrollTrigger &+= 1
 
+        // 성능 측정 시작 (NavPerfMonitor 활성 시에만 의미 있음)
+        let dirSymbol = offset == 1 ? "→" : offset == -1 ? "←" : (offset > 0 ? "↓" : "↑")
+        let capturedIndex = newIndex
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: capturedIndex, direction: dirSymbol)
+            }
+        }
+
         // 빠른 탐색: 썸네일 즉시 표시 (SwiftUI onChange 병합 우회)
         let photo = list[newIndex]
         if !photo.isFolder && !photo.isParentFolder {
             onQuickPreview?(photo.jpgURL)
         }
 
+        // 측정 종료 (다음 프레임)
+        DispatchQueue.main.async {
+            NavigationPerformanceMonitor.shared.notifyMoveCompleted()
+        }
     }
 
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }

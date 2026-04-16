@@ -227,6 +227,15 @@ class PreviewImageCache {
         lock.unlock()
     }
 
+    /// 디버그용 — 현재 캐시 통계 (NavigationPerformanceMonitor 에서 사용)
+    func debugStats() -> (count: Int, bytes: Int) {
+        lock.lock()
+        let c = cache.count
+        let b = currentBytes
+        lock.unlock()
+        return (c, b)
+    }
+
     /// Prefetch previews at given resolution
     private static let prefetchQueue: OperationQueue = {
         let q = OperationQueue()
