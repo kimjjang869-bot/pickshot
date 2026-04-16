@@ -142,11 +142,11 @@ struct AboutView: View {
 
                     // 법적 링크
                     HStack(spacing: 14) {
-                        Link("개인정보 처리방침", destination: URL(string: "https://pickshot.app/privacy.html")!)
+                        Link("개인정보 처리방침", destination: URL(string: "https://kimjjang869-bot.github.io/pickshot/privacy.html")!)
                             .font(.system(size: 11))
-                        Link("서비스 약관", destination: URL(string: "https://pickshot.app/terms.html")!)
+                        Link("서비스 약관", destination: URL(string: "https://kimjjang869-bot.github.io/pickshot/terms.html")!)
                             .font(.system(size: 11))
-                        Link("홈페이지", destination: URL(string: "https://pickshot.app")!)
+                        Link("홈페이지", destination: URL(string: "https://kimjjang869-bot.github.io/pickshot/")!)
                             .font(.system(size: 11))
                     }
 
