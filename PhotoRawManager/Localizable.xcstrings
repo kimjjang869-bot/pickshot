@@ -9,6 +9,12 @@
             "state": "translated",
             "value": "1000px (저사양)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1000px (Low-end)"
+          }
         }
       }
     },
@@ -19,6 +25,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "2개월 무료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 Months Free"
           }
         }
       }
@@ -31,6 +43,12 @@
             "state": "translated",
             "value": "2자리"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 Digits"
+          }
         }
       }
     },
@@ -41,6 +59,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "2장 이상 선택해주세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select at least 2 photos"
           }
         }
       }
@@ -53,6 +77,12 @@
             "state": "translated",
             "value": "3자리"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3 Digits"
+          }
         }
       }
     },
@@ -63,6 +93,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "4자리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4 Digits"
           }
         }
       }
@@ -75,6 +111,12 @@
             "state": "translated",
             "value": "500px (초저사양)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "500px (Ultra Low-end)"
+          }
         }
       }
     },
@@ -85,6 +127,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "50장 이상은 메모리 사용량이 크게 증가할 수 있습니다 (RAM 16GB 이상 권장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading 50+ photos may significantly increase memory usage (16GB RAM recommended)"
           }
         }
       }
@@ -97,6 +145,12 @@
             "state": "translated",
             "value": "AI 기능은 추후 업데이트에서 오픈됩니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI features will be available in a future update"
+          }
         }
       }
     },
@@ -107,6 +161,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 기반 노이즈 제거"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI-based Noise Reduction"
           }
         }
       }
@@ -119,6 +179,12 @@
             "state": "translated",
             "value": "AI 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Adjustment"
+          }
         }
       }
     },
@@ -129,6 +195,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 분류"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification"
           }
         }
       }
@@ -141,6 +213,12 @@
             "state": "translated",
             "value": "AI 분류 + 품질 필터"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification + Quality Filter"
+          }
         }
       }
     },
@@ -151,6 +229,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 분류 결과"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification Results"
           }
         }
       }
@@ -163,6 +247,12 @@
             "state": "translated",
             "value": "AI 분류 및 보정에 사용할 엔진과 API 키를 관리합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage the engine and API key used for AI classification and adjustment."
+          }
         }
       }
     },
@@ -173,6 +263,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 분류 엔진"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification Engine"
           }
         }
       }
@@ -185,6 +281,12 @@
             "state": "translated",
             "value": "AI 분류 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification Complete"
+          }
         }
       }
     },
@@ -195,6 +297,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 분류 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classifying with AI..."
           }
         }
       }
@@ -207,6 +315,12 @@
             "state": "translated",
             "value": "AI 분류 커스텀 프롬프트"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Classification Custom Prompt"
+          }
         }
       }
     },
@@ -217,6 +331,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 분석"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Analysis"
           }
         }
       }
@@ -229,6 +349,12 @@
             "state": "translated",
             "value": "AI 사용량"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Usage"
+          }
         }
       }
     },
@@ -239,6 +365,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 스마트 분류 필터"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Smart Classification Filter"
           }
         }
       }
@@ -251,6 +383,12 @@
             "state": "translated",
             "value": "AI 스마트 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Smart Culling"
+          }
         }
       }
     },
@@ -261,6 +399,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 엔진"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Engine"
           }
         }
       }
@@ -273,6 +417,12 @@
             "state": "translated",
             "value": "AI 엔진 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Engine Settings"
+          }
         }
       }
     },
@@ -283,6 +433,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI가 최적 크롭 영역을 자동으로 제안합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI automatically suggests the optimal crop area"
           }
         }
       }
@@ -295,6 +451,12 @@
             "state": "translated",
             "value": "AI로 사진 선별을 한 단계 업그레이드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take your photo culling to the next level with AI"
+          }
         }
       }
     },
@@ -305,6 +467,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "API 키"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
           }
         }
       }
@@ -317,6 +485,12 @@
             "state": "translated",
             "value": "A컷"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A-Cut"
+          }
         }
       }
     },
@@ -327,6 +501,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Backspace 키로 원본 파일 삭제 (휴지통)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete original file with Backspace key (Trash)"
           }
         }
       }
@@ -339,6 +519,12 @@
             "state": "translated",
             "value": "Bearer 토큰 입력"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter Bearer Token"
+          }
         }
       }
     },
@@ -349,6 +535,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "CIRAWFilter 모드에서 사용할 출력 색공간"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output color space to use in CIRAWFilter mode"
           }
         }
       }
@@ -361,6 +553,12 @@
             "state": "translated",
             "value": "Claude API 키 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure Claude API Key"
+          }
         }
       }
     },
@@ -371,6 +569,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude Haiku — 저렴·빠름 ($0.25/M)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Haiku — Affordable & Fast ($0.25/M)"
           }
         }
       }
@@ -383,6 +587,12 @@
             "state": "translated",
             "value": "Claude Sonnet — 정확 ($3/M)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Sonnet — Accurate ($3/M)"
+          }
         }
       }
     },
@@ -393,6 +603,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Drive 폴더"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drive Folder"
           }
         }
       }
@@ -405,6 +621,12 @@
             "state": "translated",
             "value": "Drive에서 가져오기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import from Drive"
+          }
         }
       }
     },
@@ -415,6 +637,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "EXIF 정보 (ISO, 셔터, 조리개)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EXIF Info (ISO, Shutter, Aperture)"
           }
         }
       }
@@ -427,6 +655,12 @@
             "state": "translated",
             "value": "EXIF 정보 기본 표시"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show EXIF Info by Default"
+          }
         }
       }
     },
@@ -437,6 +671,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "EXIF 촬영시간 비교 (2초 이내 = 같은 사진)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare EXIF capture time (within 2 sec = same shot)"
           }
         }
       }
@@ -449,6 +689,12 @@
             "state": "translated",
             "value": "Esc 또는 Cmd+Enter"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc or Cmd+Enter"
+          }
         }
       }
     },
@@ -459,6 +705,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Finder에서 보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View in Finder"
           }
         }
       }
@@ -471,6 +723,12 @@
             "state": "translated",
             "value": "Finder에서 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Finder"
+          }
         }
       }
     },
@@ -481,6 +739,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "GPS 정보가 있는 사진이 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No photos with GPS data"
           }
         }
       }
@@ -493,6 +757,12 @@
             "state": "translated",
             "value": "GPS 지도"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GPS Map"
+          }
         }
       }
     },
@@ -503,6 +773,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "GPU 가속 사용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use GPU Acceleration"
           }
         }
       }
@@ -515,6 +791,12 @@
             "state": "translated",
             "value": "Gemini Flash — 최저가 ($0.075/M)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini Flash — Best Value ($0.075/M)"
+          }
         }
       }
     },
@@ -525,6 +807,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gemini Pro — 고성능 ($1.25/M)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini Pro — High Performance ($1.25/M)"
           }
         }
       }
@@ -537,6 +825,12 @@
             "state": "translated",
             "value": "Google Drive for Desktop이 설치되지 않았습니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive for Desktop is not installed"
+          }
         }
       }
     },
@@ -547,6 +841,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive 감지됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Detected"
           }
         }
       }
@@ -559,6 +859,12 @@
             "state": "translated",
             "value": "Google Drive 업로드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive Upload"
+          }
         }
       }
     },
@@ -569,6 +875,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive 연동을 해제하시겠습니까?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect Google Drive?"
           }
         }
       }
@@ -581,6 +893,12 @@
             "state": "translated",
             "value": "Google Drive 폴더 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Google Drive Folder"
+          }
         }
       }
     },
@@ -591,6 +909,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive에 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy to Google Drive"
           }
         }
       }
@@ -603,6 +927,12 @@
             "state": "translated",
             "value": "Google Drive에 업로드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload to Google Drive"
+          }
         }
       }
     },
@@ -613,6 +943,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google Drive에 이 이름으로 폴더가 생성됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A folder with this name will be created on Google Drive"
           }
         }
       }
@@ -625,6 +961,12 @@
             "state": "translated",
             "value": "Google OAuth Playground에서 토큰을 생성하세요 (scope: drive.file)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate a token from Google OAuth Playground (scope: drive.file)"
+          }
         }
       }
     },
@@ -635,6 +977,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google 로그인"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Google"
           }
         }
       }
@@ -647,6 +995,12 @@
             "state": "translated",
             "value": "Google 서버에서 토큰이 즉시 취소되고 로컬 자격증명도 삭제됩니다. 다시 사용하려면 재로그인이 필요합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The token will be immediately revoked on Google's servers and local credentials will be deleted. You'll need to sign in again to reconnect."
+          }
         }
       }
     },
@@ -657,6 +1011,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉 공유"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "G-Select Share"
           }
         }
       }
@@ -669,6 +1029,12 @@
             "state": "translated",
             "value": "G셀렉 시작"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start G-Select"
+          }
         }
       }
     },
@@ -679,6 +1045,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "G셀렉 시작 - G키로 사진 선택 시 Google Drive에 즉시 업로드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start G-Select — Photos selected with G key upload to Google Drive instantly"
           }
         }
       }
@@ -691,6 +1063,12 @@
             "state": "translated",
             "value": "G키를 눌러 사진을 선택하면 Google Drive에 즉시 업로드됩니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press G to select a photo and it will upload to Google Drive instantly"
+          }
         }
       }
     },
@@ -701,6 +1079,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "High Pass 필터로 피부 부드럽게"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth skin with High Pass filter"
           }
         }
       }
@@ -713,6 +1097,12 @@
             "state": "translated",
             "value": "JPEG 품질:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPEG Quality:"
+          }
         }
       }
     },
@@ -723,6 +1113,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG · RAW 파일 연동하기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link JPG · RAW Files"
           }
         }
       }
@@ -735,6 +1131,12 @@
             "state": "translated",
             "value": "JPG 내보내기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export JPG"
+          }
         }
       }
     },
@@ -745,6 +1147,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG 저장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save JPG"
           }
         }
       }
@@ -757,6 +1165,12 @@
             "state": "translated",
             "value": "JPG 폴더 선택 및 매칭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select JPG Folder & Match"
+          }
         }
       }
     },
@@ -767,6 +1181,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG 폴더명"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG Folder Name"
           }
         }
       }
@@ -779,6 +1199,12 @@
             "state": "translated",
             "value": "JPG, RAW 매칭 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG, RAW Matching Complete"
+          }
         }
       }
     },
@@ -789,6 +1215,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "JPG만"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPG Only"
           }
         }
       }
@@ -801,6 +1233,12 @@
             "state": "translated",
             "value": "LOG 자동 적용 끄기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn Off Auto LOG Apply"
+          }
         }
       }
     },
@@ -811,6 +1249,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "LOG 자동 적용 켜기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn On Auto LOG Apply"
           }
         }
       }
@@ -823,6 +1267,12 @@
             "state": "translated",
             "value": "LUT 제거"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove LUT"
+          }
         }
       }
     },
@@ -833,6 +1283,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "LUT 파일 불러오기..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load LUT File..."
           }
         }
       }
@@ -845,6 +1301,12 @@
             "state": "translated",
             "value": "Lightroom 자동 실행"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-launch Lightroom"
+          }
         }
       }
     },
@@ -855,6 +1317,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lightroom에서 폴더를 가져오면 별점이 자동 적용됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ratings will be applied automatically when importing the folder in Lightroom"
           }
         }
       }
@@ -867,6 +1335,12 @@
             "state": "translated",
             "value": "NPU 가속 자동 화질 향상"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NPU-Accelerated Auto Image Enhancement"
+          }
         }
       }
     },
@@ -877,6 +1351,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "NPU 고급 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NPU Advanced Adjustment"
           }
         }
       }
@@ -889,6 +1369,12 @@
             "state": "translated",
             "value": "Neural Engine 기반 자동 화질 향상"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neural Engine-based Auto Image Enhancement"
+          }
         }
       }
     },
@@ -899,6 +1385,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "OAuth Playground 열기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open OAuth Playground"
           }
         }
       }
@@ -911,6 +1403,12 @@
             "state": "translated",
             "value": "PDF 생성 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generating PDF..."
+          }
         }
       }
     },
@@ -921,6 +1419,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "PDF 저장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save PDF"
           }
         }
       }
@@ -933,6 +1437,12 @@
             "state": "translated",
             "value": "PickShot AI 분류 실행..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running PickShot AI Classification..."
+          }
         }
       }
     },
@@ -943,6 +1453,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "PickShot 이 요청하는 권한"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions Requested by PickShot"
           }
         }
       }
@@ -955,6 +1471,12 @@
             "state": "translated",
             "value": "PickShot 정보"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About PickShot"
+          }
         }
       }
     },
@@ -965,6 +1487,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pro 전용 AI 기능"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro-exclusive AI Features"
           }
         }
       }
@@ -977,6 +1505,12 @@
             "state": "translated",
             "value": "QR 저장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save QR"
+          }
         }
       }
     },
@@ -987,6 +1521,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "QR 코드 표시 - 클라이언트 폰으로 스캔"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show QR Code — Scan with client's phone"
           }
         }
       }
@@ -999,6 +1539,12 @@
             "state": "translated",
             "value": "RAW 내보내기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export RAW"
+          }
         }
       }
     },
@@ -1009,6 +1555,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW 디코딩 품질"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW Decoding Quality"
           }
         }
       }
@@ -1021,6 +1573,12 @@
             "state": "translated",
             "value": "RAW 미리보기 모드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW Preview Mode"
+          }
         }
       }
     },
@@ -1031,6 +1589,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW 색공간"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW Color Space"
           }
         }
       }
@@ -1043,6 +1607,12 @@
             "state": "translated",
             "value": "RAW 파일 + XMP 사이드카(별점 포함)를 내보냅니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exports RAW files + XMP sidecar (with ratings)"
+          }
         }
       }
     },
@@ -1053,6 +1623,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW 파일이 있으면 16비트 깊이를 유지합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16-bit depth is preserved when a RAW file is available"
           }
         }
       }
@@ -1065,6 +1641,12 @@
             "state": "translated",
             "value": "RAW 폴더명"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW Folder Name"
+          }
         }
       }
     },
@@ -1075,6 +1657,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAW+JPG 분리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separate RAW+JPG"
           }
         }
       }
@@ -1087,6 +1675,12 @@
             "state": "translated",
             "value": "RAW만"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW Only"
+          }
         }
       }
     },
@@ -1097,6 +1691,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vision 분석"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vision Analysis"
           }
         }
       }
@@ -1109,6 +1709,12 @@
             "state": "translated",
             "value": "XMP 사이드카 생성"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create XMP Sidecar"
+          }
         }
       }
     },
@@ -1119,6 +1725,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ZIP 파일 열기..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open ZIP File..."
           }
         }
       }
@@ -1131,6 +1743,12 @@
             "state": "translated",
             "value": "pHash 이미지 지문 비교 (구도/색감/밝기)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pHash image fingerprint comparison (Composition/Color/Brightness)"
+          }
         }
       }
     },
@@ -1141,6 +1759,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "v5.0 이전"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before v5.0"
           }
         }
       }
@@ -1153,6 +1777,12 @@
             "state": "translated",
             "value": "v8.0 새로운 기능"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What's New in v8.0"
+          }
         }
       }
     },
@@ -1163,6 +1793,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "• PickShot 이 업로드한 파일에만 접근 (drive.file)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "• Access only files uploaded by PickShot (drive.file)"
           }
         }
       }
@@ -1175,6 +1811,12 @@
             "state": "translated",
             "value": "• 사용자의 다른 Google Drive 파일은 보지 않습니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "• Your other Google Drive files are never accessed"
+          }
         }
       }
     },
@@ -1185,6 +1827,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "• 토큰은 Mac Keychain 에만 저장되며 외부로 전송되지 않습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "• Token is stored only in Mac Keychain and never transmitted externally"
           }
         }
       }
@@ -1197,6 +1845,12 @@
             "state": "translated",
             "value": "⌘↩ 닫기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘↩ Close"
+          }
         }
       }
     },
@@ -1207,6 +1861,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "⚠️ JSON 출력 형식을 포함해야 결과가 정상적으로 파싱됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ JSON output format must be included for results to be parsed correctly"
           }
         }
       }
@@ -1219,6 +1879,12 @@
             "state": "translated",
             "value": "⚠️ 주의: Backspace 키를 누르면 원본 파일이 휴지통으로 이동됩니다. 실수로 삭제할 수 있으니 주의하세요."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ Caution: Pressing Backspace moves the original file to the Trash. Be careful not to delete files accidentally."
+          }
         }
       }
     },
@@ -1229,6 +1895,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "⚠️ 휴지통으로 이동"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠️ Move to Trash"
           }
         }
       }
@@ -1241,6 +1913,12 @@
             "state": "translated",
             "value": "가이드 원근 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guided Perspective Correction"
+          }
         }
       }
     },
@@ -1251,6 +1929,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "가져오기 결과가 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No import results"
           }
         }
       }
@@ -1263,6 +1947,12 @@
             "state": "translated",
             "value": "감지된 얼굴이 없습니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No faces detected"
+          }
         }
       }
     },
@@ -1273,6 +1963,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "감지된 연사 그룹이 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No burst groups detected"
           }
         }
       }
@@ -1285,6 +1981,12 @@
             "state": "translated",
             "value": "강도"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intensity"
+          }
         }
       }
     },
@@ -1295,6 +1997,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "건너뛰기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip"
           }
         }
       }
@@ -1307,6 +2015,12 @@
             "state": "translated",
             "value": "건너뛰기 →"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip →"
+          }
         }
       }
     },
@@ -1317,6 +2031,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "건너뜀"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped"
           }
         }
       }
@@ -1329,6 +2049,12 @@
             "state": "translated",
             "value": "검색"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search"
+          }
         }
       }
     },
@@ -1339,6 +2065,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "검정 계열"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black tones"
           }
         }
       }
@@ -1351,6 +2083,12 @@
             "state": "translated",
             "value": "결과 창 닫기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Results"
+          }
         }
       }
     },
@@ -1361,6 +2099,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "결과 초기화"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Results"
           }
         }
       }
@@ -1373,6 +2117,12 @@
             "state": "translated",
             "value": "경로 복사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Path"
+          }
         }
       }
     },
@@ -1383,6 +2133,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "경로 찾기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find Path"
           }
         }
       }
@@ -1395,6 +2151,12 @@
             "state": "translated",
             "value": "경로: ~/Library/Logs/PickShot/"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Path: ~/Library/Logs/PickShot/"
+          }
         }
       }
     },
@@ -1405,6 +2167,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "고감도 노이즈 제거"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High-sensitivity Noise Reduction"
           }
         }
       }
@@ -1417,6 +2185,12 @@
             "state": "translated",
             "value": "고객 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Culling"
+          }
         }
       }
     },
@@ -1427,6 +2201,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "공유 링크 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Share Link"
           }
         }
       }
@@ -1439,6 +2219,12 @@
             "state": "translated",
             "value": "관대 (40)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lenient (40)"
+          }
         }
       }
     },
@@ -1449,6 +2235,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "구독 중"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscribed"
           }
         }
       }
@@ -1461,6 +2253,12 @@
             "state": "translated",
             "value": "구독 플랜 보기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Subscription Plans"
+          }
         }
       }
     },
@@ -1471,6 +2269,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "구매 복원"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Purchases"
           }
         }
       }
@@ -1483,6 +2287,12 @@
             "state": "translated",
             "value": "구분자"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separator"
+          }
         }
       }
     },
@@ -1493,6 +2303,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "균형"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balance"
           }
         }
       }
@@ -1505,6 +2321,12 @@
             "state": "translated",
             "value": "그리드+미리보기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grid+Preview"
+          }
         }
       }
     },
@@ -1515,6 +2337,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
           }
         }
       }
@@ -1527,6 +2355,12 @@
             "state": "translated",
             "value": "기본 내보내기 폴더"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Export Folder"
+          }
         }
       }
     },
@@ -1537,6 +2371,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본 보기 모드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default View Mode"
           }
         }
       }
@@ -1549,6 +2389,12 @@
             "state": "translated",
             "value": "기본 앱으로 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open with Default App"
+          }
         }
       }
     },
@@ -1559,6 +2405,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본 위치로"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to Default Position"
           }
         }
       }
@@ -1571,6 +2423,12 @@
             "state": "translated",
             "value": "기본 정렬"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Sort"
+          }
         }
       }
     },
@@ -1581,6 +2439,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본 정보"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basic Info"
           }
         }
       }
@@ -1593,6 +2457,12 @@
             "state": "translated",
             "value": "기준점 이상 자동 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-cull Above Threshold"
+          }
         }
       }
     },
@@ -1603,6 +2473,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "기타 프로그램 선택..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Other App..."
           }
         }
       }
@@ -1615,6 +2491,12 @@
             "state": "translated",
             "value": "긴 변:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Long edge:"
+          }
         }
       }
     },
@@ -1625,6 +2507,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "꺼내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eject"
           }
         }
       }
@@ -1637,6 +2525,12 @@
             "state": "translated",
             "value": "나중에"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
         }
       }
     },
@@ -1647,6 +2541,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "날짜 + 번호"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date + Number"
           }
         }
       }
@@ -1659,6 +2559,12 @@
             "state": "translated",
             "value": "날짜 + 텍스트 + 번호"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date + Text + Number"
+          }
         }
       }
     },
@@ -1669,6 +2575,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "날짜순 (오래된)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date (Oldest First)"
           }
         }
       }
@@ -1681,6 +2593,12 @@
             "state": "translated",
             "value": "날짜순 (최신)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date (Newest First)"
+          }
         }
       }
     },
@@ -1691,6 +2609,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내 취향 기반 점수"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Score Based on My Preferences"
           }
         }
       }
@@ -1703,6 +2627,12 @@
             "state": "translated",
             "value": "내보내기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export"
+          }
         }
       }
     },
@@ -1713,6 +2643,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내보내기 (Cmd+E)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export (Cmd+E)"
           }
         }
       }
@@ -1725,6 +2661,12 @@
             "state": "translated",
             "value": "내보내기 / 배치 처리"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export / Batch Process"
+          }
         }
       }
     },
@@ -1735,6 +2677,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내보내기 설정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Settings"
           }
         }
       }
@@ -1747,6 +2695,12 @@
             "state": "translated",
             "value": "내보내기 시 하위 폴더 구조"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subfolder structure on export"
+          }
         }
       }
     },
@@ -1757,6 +2711,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내보내기 완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Complete"
           }
         }
       }
@@ -1769,6 +2729,12 @@
             "state": "translated",
             "value": "내보내기 취소"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Export"
+          }
         }
       }
     },
@@ -1779,6 +2745,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "내보내기 후 Finder 열기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Finder after Export"
           }
         }
       }
@@ -1791,6 +2763,12 @@
             "state": "translated",
             "value": "너비"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Width"
+          }
         }
       }
     },
@@ -1801,6 +2779,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "다른 폴더의 RAW/JPG 파일을 현재 목록과 매칭합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match RAW/JPG files from another folder with the current list"
           }
         }
       }
@@ -1813,6 +2797,12 @@
             "state": "translated",
             "value": "다시 분석"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Re-analyze"
+          }
         }
       }
     },
@@ -1823,6 +2813,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "다운로드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
           }
         }
       }
@@ -1835,6 +2831,12 @@
             "state": "translated",
             "value": "다음 메모리카드를 백업하시겠습니까?"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back up the next memory card?"
+          }
         }
       }
     },
@@ -1845,6 +2847,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "다음 카드 대기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for Next Card"
           }
         }
       }
@@ -1857,6 +2865,12 @@
             "state": "translated",
             "value": "다음 프레임 (→)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Frame (→)"
+          }
         }
       }
     },
@@ -1867,6 +2881,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "다크 그레이"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark Gray"
           }
         }
       }
@@ -1879,6 +2899,12 @@
             "state": "translated",
             "value": "다크 모드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark Mode"
+          }
         }
       }
     },
@@ -1889,6 +2915,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "단축키"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcuts"
           }
         }
       }
@@ -1901,6 +2933,12 @@
             "state": "translated",
             "value": "단축키 안내"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard Shortcuts Guide"
+          }
         }
       }
     },
@@ -1911,6 +2949,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "닫기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
           }
         }
       }
@@ -1923,6 +2967,12 @@
             "state": "translated",
             "value": "대상"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
+          }
         }
       }
     },
@@ -1933,6 +2983,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "더보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More"
           }
         }
       }
@@ -1945,6 +3001,12 @@
             "state": "translated",
             "value": "덮어쓰기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overwrite"
+          }
         }
       }
     },
@@ -1955,6 +3017,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "돌아가기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go Back"
           }
         }
       }
@@ -1967,6 +3035,12 @@
             "state": "translated",
             "value": "동기화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync"
+          }
         }
       }
     },
@@ -1977,6 +3051,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "동시 처리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Concurrent Processing"
           }
         }
       }
@@ -1989,6 +3069,12 @@
             "state": "translated",
             "value": "되돌리기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
         }
       }
     },
@@ -1999,6 +3085,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "두 가지 합산으로 최종 유사도 판단"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Final similarity determined by combining both methods"
           }
         }
       }
@@ -2011,6 +3103,12 @@
             "state": "translated",
             "value": "뒤로"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
         }
       }
     },
@@ -2021,6 +3119,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "듀얼 뷰어 (D)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dual Viewer (D)"
           }
         }
       }
@@ -2033,6 +3137,12 @@
             "state": "translated",
             "value": "디노이즈"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denoise"
+          }
         }
       }
     },
@@ -2043,6 +3153,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "디스크 추출"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disk Eject"
           }
         }
       }
@@ -2055,6 +3171,12 @@
             "state": "translated",
             "value": "디스크 추출 결과"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disk Eject Result"
+          }
         }
       }
     },
@@ -2065,6 +3187,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "디폴트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
           }
         }
       }
@@ -2077,6 +3205,12 @@
             "state": "translated",
             "value": "또는 수동 학습:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or manual training:"
+          }
         }
       }
     },
@@ -2087,6 +3221,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "라벨 필터 해제"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Label Filter"
           }
         }
       }
@@ -2099,6 +3239,12 @@
             "state": "translated",
             "value": "라벨 해제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Label"
+          }
         }
       }
     },
@@ -2109,6 +3255,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "라이트 그레이"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light Gray"
           }
         }
       }
@@ -2121,6 +3273,12 @@
             "state": "translated",
             "value": "레이아웃 전환"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Layout"
+          }
         }
       }
     },
@@ -2131,6 +3289,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "레이팅/컬러라벨 보존"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve Rating/Color Label"
           }
         }
       }
@@ -2143,6 +3307,12 @@
             "state": "translated",
             "value": "렌즈"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lens"
+          }
         }
       }
     },
@@ -2153,6 +3323,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "로고 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Logo"
           }
         }
       }
@@ -2165,6 +3341,12 @@
             "state": "translated",
             "value": "로그 폴더 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Log Folder"
+          }
         }
       }
     },
@@ -2175,6 +3357,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "로그아웃"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign Out"
           }
         }
       }
@@ -2187,6 +3375,12 @@
             "state": "translated",
             "value": "로딩 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading..."
+          }
         }
       }
     },
@@ -2197,6 +3391,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "링크 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Link"
           }
         }
       }
@@ -2209,6 +3409,12 @@
             "state": "translated",
             "value": "마음에 드는 사진을 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select the photos you like"
+          }
         }
       }
     },
@@ -2219,6 +3425,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "마지막 크기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last Size"
           }
         }
       }
@@ -2231,6 +3443,12 @@
             "state": "translated",
             "value": "맞춤"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit"
+          }
         }
       }
     },
@@ -2241,6 +3459,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "매칭 결과"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matching Results"
           }
         }
       }
@@ -2253,6 +3477,12 @@
             "state": "translated",
             "value": "매칭 모드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matching Mode"
+          }
         }
       }
     },
@@ -2263,6 +3493,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "매칭 성공"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match Successful"
           }
         }
       }
@@ -2275,6 +3511,12 @@
             "state": "translated",
             "value": "매칭 실행"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Matching"
+          }
         }
       }
     },
@@ -2285,6 +3527,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "매칭됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matched"
           }
         }
       }
@@ -2297,6 +3545,12 @@
             "state": "translated",
             "value": "매칭할 폴더 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder to Match"
+          }
         }
       }
     },
@@ -2307,6 +3561,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "머리글/바닥글"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Header/Footer"
           }
         }
       }
@@ -2319,6 +3579,12 @@
             "state": "translated",
             "value": "먼저 RAW 폴더를 열어주세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please open a RAW folder first"
+          }
         }
       }
     },
@@ -2329,6 +3595,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "먼저 폴더를 열어주세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please open a folder first"
           }
         }
       }
@@ -2341,6 +3613,12 @@
             "state": "translated",
             "value": "메모리 제한"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Memory Limit"
+          }
         }
       }
     },
@@ -2351,6 +3629,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모리, CPU, 응답시간 이상 시 경고 기록"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log warnings for memory, CPU, and response time anomalies"
           }
         }
       }
@@ -2363,6 +3647,12 @@
             "state": "translated",
             "value": "메모리카드 감지됨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Memory Card Detected"
+          }
         }
       }
     },
@@ -2373,6 +3663,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모리카드 자동 백업"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Backup Memory Card"
           }
         }
       }
@@ -2385,6 +3681,12 @@
             "state": "translated",
             "value": "메모리카드(SD/CF) 연결 시 자동으로 백업 폴더를 묻고 복사합니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When an SD/CF card is connected — asks for a backup folder and copies files automatically"
+          }
         }
       }
     },
@@ -2395,6 +3697,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메인 뷰어에서 사진을 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a photo in the main viewer"
           }
         }
       }
@@ -2407,6 +3715,12 @@
             "state": "translated",
             "value": "메타데이터"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadata"
+          }
         }
       }
     },
@@ -2417,6 +3731,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메타데이터 배치 편집"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Metadata Edit"
           }
         }
       }
@@ -2429,6 +3749,12 @@
             "state": "translated",
             "value": "메타데이터 저장 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadata Saved"
+          }
         }
       }
     },
@@ -2439,6 +3765,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메타데이터 편집"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Metadata"
           }
         }
       }
@@ -2451,6 +3783,12 @@
             "state": "translated",
             "value": "모니터 맞춤 (자동)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit to Monitor (Auto)"
+          }
         }
       }
     },
@@ -2461,6 +3799,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "모두 추가"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add All"
           }
         }
       }
@@ -2473,6 +3817,12 @@
             "state": "translated",
             "value": "모드"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode"
+          }
         }
       }
     },
@@ -2483,6 +3833,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "모든 분석 항목 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select All Analysis Items"
           }
         }
       }
@@ -2495,6 +3851,12 @@
             "state": "translated",
             "value": "모든 분석 항목 해제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deselect All Analysis Items"
+          }
         }
       }
     },
@@ -2505,6 +3867,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "목록에서 제거"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from List"
           }
         }
       }
@@ -2517,6 +3885,12 @@
             "state": "translated",
             "value": "무료로 제공되는 기능"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Features Included"
+          }
         }
       }
     },
@@ -2527,6 +3901,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "문제 있음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Issues Found"
           }
         }
       }
@@ -2539,6 +3919,12 @@
             "state": "translated",
             "value": "미디엄 그레이"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medium Gray"
+          }
         }
       }
     },
@@ -2549,6 +3935,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "미리 보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
           }
         }
       }
@@ -2561,6 +3953,12 @@
             "state": "translated",
             "value": "미리보기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
+          }
         }
       }
     },
@@ -2571,6 +3969,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "미리보기 로딩..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading preview..."
           }
         }
       }
@@ -2583,6 +3987,12 @@
             "state": "translated",
             "value": "미리보기 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview Settings"
+          }
         }
       }
     },
@@ -2593,6 +4003,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "미리보기 해상도"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview Resolution"
           }
         }
       }
@@ -2605,6 +4021,12 @@
             "state": "translated",
             "value": "미리보기를 클릭하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click the preview"
+          }
         }
       }
     },
@@ -2615,6 +4037,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "미리보기할 사진이 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No photos to preview"
           }
         }
       }
@@ -2627,6 +4055,12 @@
             "state": "translated",
             "value": "미매칭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched"
+          }
         }
       }
     },
@@ -2637,6 +4071,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "미매칭 파일:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched files:"
           }
         }
       }
@@ -2649,6 +4089,12 @@
             "state": "translated",
             "value": "미분류:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unclassified:"
+          }
         }
       }
     },
@@ -2659,6 +4105,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "바닥글"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Footer"
           }
         }
       }
@@ -2671,6 +4123,12 @@
             "state": "translated",
             "value": "밝기, 톤커브 자동 조정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-adjust brightness, tone curve"
+          }
         }
       }
     },
@@ -2681,6 +4139,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "밝기/톤커브 자동 조정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-adjust brightness/tone curve"
           }
         }
       }
@@ -2693,6 +4157,12 @@
             "state": "translated",
             "value": "배경/인물 영역 분리 후 선택적 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selective adjustment after separating background/subject areas"
+          }
         }
       }
     },
@@ -2703,6 +4173,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "배치 처리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Processing"
           }
         }
       }
@@ -2715,6 +4191,12 @@
             "state": "translated",
             "value": "배치 처리 (리사이즈+워터마크)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Processing (Resize + Watermark)"
+          }
         }
       }
     },
@@ -2725,6 +4207,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "백그라운드에서 내보내기 진행 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporting in background..."
           }
         }
       }
@@ -2737,6 +4225,12 @@
             "state": "translated",
             "value": "백업 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup Complete"
+          }
         }
       }
     },
@@ -2747,6 +4241,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "백업 취소"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Backup"
           }
         }
       }
@@ -2759,6 +4259,12 @@
             "state": "translated",
             "value": "백업할 폴더를 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a folder to back up"
+          }
         }
       }
     },
@@ -2769,6 +4275,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "번호 + 텍스트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Number + Text"
           }
         }
       }
@@ -2781,6 +4293,12 @@
             "state": "translated",
             "value": "변경"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
         }
       }
     },
@@ -2791,6 +4309,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "변경 사항"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes"
           }
         }
       }
@@ -2803,6 +4327,12 @@
             "state": "translated",
             "value": "변경 시 기존 캐시는 이동되지 않습니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing cache will not be moved when changed"
+          }
         }
       }
     },
@@ -2813,6 +4343,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "변환 중지"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Conversion"
           }
         }
       }
@@ -2825,6 +4361,12 @@
             "state": "translated",
             "value": "별점"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rating"
+          }
         }
       }
     },
@@ -2835,6 +4377,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "별점 분포"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rating Distribution"
           }
         }
       }
@@ -2847,6 +4395,12 @@
             "state": "translated",
             "value": "별점 없음"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Rating"
+          }
         }
       }
     },
@@ -2857,6 +4411,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "별점 자동 부여"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Rating"
           }
         }
       }
@@ -2869,6 +4429,12 @@
             "state": "translated",
             "value": "별점순"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Rating"
+          }
         }
       }
     },
@@ -2879,6 +4445,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "보기 모드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Mode"
           }
         }
       }
@@ -2891,6 +4463,12 @@
             "state": "translated",
             "value": "보기 모드 전환 (그리드/목록)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toggle View Mode (Grid/List)"
+          }
         }
       }
     },
@@ -2901,6 +4479,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjustment"
           }
         }
       }
@@ -2913,6 +4497,12 @@
             "state": "translated",
             "value": "보정 취소"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Adjustment"
+          }
         }
       }
     },
@@ -2923,6 +4513,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "보정 파일 저장 방식 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select how to save adjusted files"
           }
         }
       }
@@ -2935,6 +4531,12 @@
             "state": "translated",
             "value": "보정 패널 닫기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Adjustment Panel"
+          }
         }
       }
     },
@@ -2945,6 +4547,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "보정된 사진을 JPG로 저장 (원본 옆에 _corrected 파일 생성)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save adjusted photo as JPG (creates _corrected file next to original)"
           }
         }
       }
@@ -2957,6 +4565,12 @@
             "state": "translated",
             "value": "보정된 파일 폴더 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Adjusted Files Folder"
+          }
         }
       }
     },
@@ -2967,6 +4581,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "보정할 항목이 없습니다 (이미 양호)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing to adjust (already good)"
           }
         }
       }
@@ -2979,6 +4599,12 @@
             "state": "translated",
             "value": "복사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
         }
       }
     },
@@ -2989,6 +4615,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "복사 완료!"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied!"
           }
         }
       }
@@ -3001,6 +4633,12 @@
             "state": "translated",
             "value": "복사된 파일 폴더 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Copied Files Folder"
+          }
         }
       }
     },
@@ -3011,6 +4649,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "분류 실행"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Classification"
           }
         }
       }
@@ -3023,6 +4667,12 @@
             "state": "translated",
             "value": "분류 취소"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Classification"
+          }
         }
       }
     },
@@ -3033,6 +4683,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "분석 결과 없음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Analysis Results"
           }
         }
       }
@@ -3045,6 +4701,12 @@
             "state": "translated",
             "value": "분석 시작"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Analysis"
+          }
         }
       }
     },
@@ -3055,6 +4717,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "분석 중지"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Analysis"
           }
         }
       }
@@ -3067,6 +4735,12 @@
             "state": "translated",
             "value": "뷰어"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viewer"
+          }
         }
       }
     },
@@ -3077,6 +4751,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "뷰어 링크"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viewer Link"
           }
         }
       }
@@ -3089,6 +4769,12 @@
             "state": "translated",
             "value": "브라우저에서 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Browser"
+          }
         }
       }
     },
@@ -3099,6 +4785,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "비교 보기 (2~4장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare (2–4 photos)"
           }
         }
       }
@@ -3111,6 +4803,12 @@
             "state": "translated",
             "value": "비디오 정보"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video Info"
+          }
         }
       }
     },
@@ -3121,6 +4819,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "비율 유지"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep Aspect Ratio"
           }
         }
       }
@@ -3133,6 +4837,12 @@
             "state": "translated",
             "value": "빠른 미리보기 (내장 프리뷰)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Preview (Embedded Preview)"
+          }
         }
       }
     },
@@ -3143,6 +4853,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "빠름"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast"
           }
         }
       }
@@ -3155,6 +4871,12 @@
             "state": "translated",
             "value": "빨간/주황 선을 건물 수직선에 맞추세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Align the red/orange line with the vertical edge of the building"
+          }
         }
       }
     },
@@ -3165,6 +4887,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용량 초기화"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Usage"
           }
         }
       }
@@ -3177,6 +4905,12 @@
             "state": "translated",
             "value": "사전 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Presets"
+          }
         }
       }
     },
@@ -3187,6 +4921,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사진 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Photos"
           }
         }
       }
@@ -3199,6 +4939,12 @@
             "state": "translated",
             "value": "사진 내보내기의 기본 동작을 설정합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure default export behavior."
+          }
         }
       }
     },
@@ -3209,6 +4955,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사진 선별 · 분류 · 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cull · Classify · Export"
           }
         }
       }
@@ -3221,6 +4973,12 @@
             "state": "translated",
             "value": "사진 업로드 + 링크 생성"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Photos + Generate Link"
+          }
         }
       }
     },
@@ -3231,6 +4989,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사진 퀴즈로 취향 학습"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn your preferences with photo quizzes"
           }
         }
       }
@@ -3243,6 +5007,12 @@
             "state": "translated",
             "value": "사진 폴더 선택 및 매칭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select & Match Photo Folders"
+          }
         }
       }
     },
@@ -3253,6 +5023,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사진 폴더 열기 (Cmd+O)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Photo Folder (Cmd+O)"
           }
         }
       }
@@ -3265,6 +5041,12 @@
             "state": "translated",
             "value": "사진 폴더를 열어주세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please open a photo folder"
+          }
         }
       }
     },
@@ -3275,6 +5057,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사진을 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a photo"
           }
         }
       }
@@ -3287,6 +5075,12 @@
             "state": "translated",
             "value": "사진을 어떻게 분류할지 자유롭게 작성하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Describe how you'd like to classify the photos"
+          }
         }
       }
     },
@@ -3297,6 +5091,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "삭제"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
           }
         }
       }
@@ -3309,6 +5109,12 @@
             "state": "translated",
             "value": "삭제 시 확인 대화상자 건너뛰기 (빠른 워크플로우)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip confirmation dialog when deleting (fast workflow)"
+          }
         }
       }
     },
@@ -3319,6 +5125,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "삭제 후 다음 로딩 시 캐시가 다시 생성됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache will be rebuilt on next load after deletion"
           }
         }
       }
@@ -3331,6 +5143,12 @@
             "state": "translated",
             "value": "삭제…"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete…"
+          }
         }
       }
     },
@@ -3341,6 +5159,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "상세 보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detail View"
           }
         }
       }
@@ -3353,6 +5177,12 @@
             "state": "translated",
             "value": "상위 폴더로"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to Parent Folder"
+          }
         }
       }
     },
@@ -3363,6 +5193,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "새 파일 이름"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New File Name"
           }
         }
       }
@@ -3375,6 +5211,12 @@
             "state": "translated",
             "value": "새 폴더 만들기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create New Folder"
+          }
         }
       }
     },
@@ -3385,6 +5227,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "새 폴더로 이동"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to New Folder"
           }
         }
       }
@@ -3397,6 +5245,12 @@
             "state": "translated",
             "value": "새로운 버전이 있습니다!"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A new version is available!"
+          }
         }
       }
     },
@@ -3407,6 +5261,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "색공간"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color Space"
           }
         }
       }
@@ -3419,6 +5279,12 @@
             "state": "translated",
             "value": "색상"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color"
+          }
         }
       }
     },
@@ -3429,6 +5295,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "색온도, 틴트 자동 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-correct white balance, tint"
           }
         }
       }
@@ -3441,6 +5313,12 @@
             "state": "translated",
             "value": "색온도/틴트 자동 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-correct white balance/tint"
+          }
         }
       }
     },
@@ -3451,6 +5329,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "샤프닝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sharpening"
           }
         }
       }
@@ -3463,6 +5347,12 @@
             "state": "translated",
             "value": "선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
+          }
         }
       }
     },
@@ -3473,6 +5363,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "선택 (Space)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select (Space)"
           }
         }
       }
@@ -3485,6 +5381,12 @@
             "state": "translated",
             "value": "선택 기준"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selection Criteria"
+          }
         }
       }
     },
@@ -3495,6 +5397,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "선택..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select..."
           }
         }
       }
@@ -3507,6 +5415,12 @@
             "state": "translated",
             "value": "선택한 사진 일괄 보정 시작"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start batch adjustment on selected photos"
+          }
         }
       }
     },
@@ -3517,6 +5431,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "선택한 옵션으로 보정 적용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply adjustment with selected options"
           }
         }
       }
@@ -3529,6 +5449,12 @@
             "state": "translated",
             "value": "선택한 항목으로 분석 시작"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start analysis with selected items"
+          }
         }
       }
     },
@@ -3539,6 +5465,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "설정 적용 완료!"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings applied!"
           }
         }
       }
@@ -3551,6 +5483,12 @@
             "state": "translated",
             "value": "성공"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Success"
+          }
         }
       }
     },
@@ -3561,6 +5499,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "성능 로그가 자동으로 기록됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Performance logs are recorded automatically"
           }
         }
       }
@@ -3573,6 +5517,12 @@
             "state": "translated",
             "value": "성능 리포트 복사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Performance Report"
+          }
         }
       }
     },
@@ -3583,6 +5533,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "성능 최적화"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Performance Optimization"
           }
         }
       }
@@ -3595,6 +5551,12 @@
             "state": "translated",
             "value": "성능 프로필"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Performance Profile"
+          }
         }
       }
     },
@@ -3605,6 +5567,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "세션 이름"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session Name"
           }
         }
       }
@@ -3617,6 +5585,12 @@
             "state": "translated",
             "value": "셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling"
+          }
         }
       }
     },
@@ -3627,6 +5601,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "셀렉 가져오기 결과"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Culling Results"
           }
         }
       }
@@ -3639,6 +5619,12 @@
             "state": "translated",
             "value": "셀렉 가져오기 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling Import Complete"
+          }
         }
       }
     },
@@ -3649,6 +5635,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "셀렉 가져오기..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Culling..."
           }
         }
       }
@@ -3661,6 +5653,12 @@
             "state": "translated",
             "value": "셀렉 내보내기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Culling"
+          }
         }
       }
     },
@@ -3671,6 +5669,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "셀렉 내보내기..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Culling..."
           }
         }
       }
@@ -3683,6 +5687,12 @@
             "state": "translated",
             "value": "셀렉 매칭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling Match"
+          }
         }
       }
     },
@@ -3693,6 +5703,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "셀렉 통계"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling Statistics"
           }
         }
       }
@@ -3705,6 +5721,12 @@
             "state": "translated",
             "value": "셀렉 파일 가져오기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Culling File"
+          }
         }
       }
     },
@@ -3715,6 +5737,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "셀렉 파일을 가져오거나 JPG와 RAW를 매칭합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import a culling file or match JPG and RAW files"
           }
         }
       }
@@ -3727,6 +5755,12 @@
             "state": "translated",
             "value": "셔터속도"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shutter Speed"
+          }
         }
       }
     },
@@ -3737,6 +5771,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "속도 우선"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speed Priority"
           }
         }
       }
@@ -3749,6 +5789,12 @@
             "state": "translated",
             "value": "수정일"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date Modified"
+          }
         }
       }
     },
@@ -3759,6 +5805,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "쉼표, 줄바꿈, 공백으로 구분됩니다. 확장자는 자동 제거됩니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separated by commas, line breaks, or spaces. Extensions are removed automatically."
           }
         }
       }
@@ -3771,6 +5823,12 @@
             "state": "translated",
             "value": "스마트 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart Culling"
+          }
         }
       }
     },
@@ -3781,6 +5839,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "스마트 셀렉..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart Culling..."
           }
         }
       }
@@ -3793,6 +5857,12 @@
             "state": "translated",
             "value": "스마트 컬렉션"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart Collection"
+          }
         }
       }
     },
@@ -3803,6 +5873,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "스마트 크롭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart Crop"
           }
         }
       }
@@ -3815,6 +5891,12 @@
             "state": "translated",
             "value": "스타일 점수 계산 중..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calculating style score..."
+          }
         }
       }
     },
@@ -3825,6 +5907,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "스타일 추천 적용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Style Recommendation"
           }
         }
       }
@@ -3837,6 +5925,12 @@
             "state": "translated",
             "value": "슬라이드쇼"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slideshow"
+          }
         }
       }
     },
@@ -3847,6 +5941,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "시스템"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
           }
         }
       }
@@ -3859,6 +5959,12 @@
             "state": "translated",
             "value": "시스템을 분석하고 최적의 설정을 자동으로 적용합니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyzes your system and automatically applies optimal settings"
+          }
         }
       }
     },
@@ -3869,6 +5975,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "시작"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start"
           }
         }
       }
@@ -3881,6 +5993,12 @@
             "state": "translated",
             "value": "시작 시 마지막 폴더 자동 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-open last folder on launch"
+          }
         }
       }
     },
@@ -3891,6 +6009,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "시작 화면으로 돌아가기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to Start Screen"
           }
         }
       }
@@ -3903,6 +6027,12 @@
             "state": "translated",
             "value": "실패"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
         }
       }
     },
@@ -3913,6 +6043,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "실패 항목 재시도"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry Failed Items"
           }
         }
       }
@@ -3925,6 +6061,12 @@
             "state": "translated",
             "value": "실패 항목:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed items:"
+          }
         }
       }
     },
@@ -3935,6 +6077,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "실패한 파일:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed files:"
           }
         }
       }
@@ -3947,6 +6095,12 @@
             "state": "translated",
             "value": "썸네일"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumbnail"
+          }
         }
       }
     },
@@ -3957,6 +6111,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "썸네일 캐시 최대"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Max Thumbnail Cache"
           }
         }
       }
@@ -3969,6 +6129,12 @@
             "state": "translated",
             "value": "썸네일 크기 조절"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust Thumbnail Size"
+          }
         }
       }
     },
@@ -3979,6 +6145,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "썸네일 크기: 자동 (SSD 140 / HDD 100 / SD 90)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumbnail size: Auto (SSD 140 / HDD 100 / SD 90)"
           }
         }
       }
@@ -3991,6 +6163,12 @@
             "state": "translated",
             "value": "아무 키나 누르면 닫힘"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press any key to close"
+          }
         }
       }
     },
@@ -4001,6 +6179,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "알림 표시 (내보내기 완료, 분석 완료 등)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show notifications (export complete, analysis complete, etc.)"
           }
         }
       }
@@ -4013,6 +6197,12 @@
             "state": "translated",
             "value": "앱의 기본 동작과 외관을 설정합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure the app's default behavior and appearance."
+          }
         }
       }
     },
@@ -4023,6 +6213,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "양호 이상"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good or better"
           }
         }
       }
@@ -4035,6 +6231,12 @@
             "state": "translated",
             "value": "어텐션 히트맵 오버레이 표시/숨김"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show/Hide attention heatmap overlay"
+          }
         }
       }
     },
@@ -4045,6 +6247,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "언어 설정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language Settings"
           }
         }
       }
@@ -4057,6 +6265,12 @@
             "state": "translated",
             "value": "얼굴"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face"
+          }
         }
       }
     },
@@ -4067,6 +6281,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "얼굴 감지 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detecting faces..."
           }
         }
       }
@@ -4079,6 +6299,12 @@
             "state": "translated",
             "value": "얼굴 그룹 실행"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Face Grouping"
+          }
         }
       }
     },
@@ -4089,6 +6315,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "얼굴 기준 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face-based Adjustment"
           }
         }
       }
@@ -4101,6 +6333,12 @@
             "state": "translated",
             "value": "얼굴 피부톤 기준 색감/밝기 자동 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-adjust color/brightness based on face skin tone"
+          }
         }
       }
     },
@@ -4111,6 +6349,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "엄격 (90)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strict (90)"
           }
         }
       }
@@ -4123,6 +6367,12 @@
             "state": "translated",
             "value": "업데이트 확인"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates"
+          }
         }
       }
     },
@@ -4133,6 +6383,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "업데이트 확인..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for updates..."
           }
         }
       }
@@ -4145,6 +6401,12 @@
             "state": "translated",
             "value": "업로드 대상"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Target"
+          }
         }
       }
     },
@@ -4155,6 +6417,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "업로드 시작"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Upload"
           }
         }
       }
@@ -4167,6 +6435,12 @@
             "state": "translated",
             "value": "업로드 오류"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Error"
+          }
         }
       }
     },
@@ -4177,6 +6451,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "업로드 완료!"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Complete!"
           }
         }
       }
@@ -4189,6 +6469,12 @@
             "state": "translated",
             "value": "업로드 취소"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Upload"
+          }
         }
       }
     },
@@ -4199,6 +6485,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "업로드 파일"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Files"
           }
         }
       }
@@ -4211,6 +6503,12 @@
             "state": "translated",
             "value": "업로드 폴더 이름"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Folder Name"
+          }
         }
       }
     },
@@ -4221,6 +6519,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "없음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
           }
         }
       }
@@ -4233,6 +6537,12 @@
             "state": "translated",
             "value": "연결 상태"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Status"
+          }
         }
       }
     },
@@ -4243,6 +6553,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "연결 프로그램으로 열기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open With"
           }
         }
       }
@@ -4255,6 +6571,12 @@
             "state": "translated",
             "value": "연동 해제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
         }
       }
     },
@@ -4265,6 +6587,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "연사 간격"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Burst Interval"
           }
         }
       }
@@ -4277,6 +6605,12 @@
             "state": "translated",
             "value": "연사/버스트 중 베스트샷을 자동으로 선택합니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically selects the best shot from burst sequences"
+          }
         }
       }
     },
@@ -4287,6 +6621,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "열"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Columns"
           }
         }
       }
@@ -4299,6 +6639,12 @@
             "state": "translated",
             "value": "예: 20260322_행사_셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. 20260322_event_culling"
+          }
         }
       }
     },
@@ -4309,6 +6655,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "예: 김철수, 이영희"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. John Kim, Jane Lee"
           }
         }
       }
@@ -4321,6 +6673,12 @@
             "state": "translated",
             "value": "예: 김철수-이영희 웨딩"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. JohnKim-JaneLee Wedding"
+          }
         }
       }
     },
@@ -4331,6 +6689,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "예: 뜜_나나_루카루카"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. Artist1_Artist2_Artist3"
           }
         }
       }
@@ -4343,6 +6707,12 @@
             "state": "translated",
             "value": "예산 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Settings"
+          }
         }
       }
     },
@@ -4353,6 +6723,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "예산 적용"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Budget"
           }
         }
       }
@@ -4365,6 +6741,12 @@
             "state": "translated",
             "value": "오류:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error:"
+          }
         }
       }
     },
@@ -4375,6 +6757,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "오른쪽 90° 회전"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rotate 90° Right"
           }
         }
       }
@@ -4387,6 +6775,12 @@
             "state": "translated",
             "value": "옵션"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Options"
+          }
         }
       }
     },
@@ -4397,6 +6791,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
           }
         }
       }
@@ -4409,6 +6809,12 @@
             "state": "translated",
             "value": "왼쪽 90° 회전"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rotate 90° Left"
+          }
         }
       }
     },
@@ -4419,6 +6825,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "요청 횟수"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request Count"
           }
         }
       }
@@ -4431,6 +6843,12 @@
             "state": "translated",
             "value": "용지 크기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paper Size"
+          }
         }
       }
     },
@@ -4441,6 +6859,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "워터마크 텍스트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watermark Text"
           }
         }
       }
@@ -4453,6 +6877,12 @@
             "state": "translated",
             "value": "원본"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original"
+          }
         }
       }
     },
@@ -4463,6 +6893,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "원본 + 번호"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original + Number"
           }
         }
       }
@@ -4475,6 +6911,12 @@
             "state": "translated",
             "value": "원본 파일 업로드 (클라이언트 다운로드용)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload original files (for client download)"
+          }
         }
       }
     },
@@ -4485,6 +6927,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "월 예산"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly Budget"
           }
         }
       }
@@ -4497,6 +6945,12 @@
             "state": "translated",
             "value": "위치"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Location"
+          }
         }
       }
     },
@@ -4507,6 +6961,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "위치 변경..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Location..."
           }
         }
       }
@@ -4519,6 +6979,12 @@
             "state": "translated",
             "value": "위치 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Location"
+          }
         }
       }
     },
@@ -4529,6 +6995,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "유사 그룹핑"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Similar Grouping"
           }
         }
       }
@@ -4541,6 +7013,12 @@
             "state": "translated",
             "value": "유사 그룹핑 + A컷 자동 추천"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Similar Grouping + Auto A-cut Recommendation"
+          }
         }
       }
     },
@@ -4551,6 +7029,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이 버전 건너뛰기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip This Version"
           }
         }
       }
@@ -4563,6 +7047,12 @@
             "state": "translated",
             "value": "이 보정 내용을 자동 보정에 적용하시겠습니까?"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply these adjustments to auto-correction?"
+          }
         }
       }
     },
@@ -4573,6 +7063,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이 사람만 보기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Only This Person"
           }
         }
       }
@@ -4585,6 +7081,12 @@
             "state": "translated",
             "value": "이 사진 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select This Photo"
+          }
         }
       }
     },
@@ -4595,6 +7097,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이 사진에 대한 요청사항 입력..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter notes for this photo..."
           }
         }
       }
@@ -4607,6 +7115,12 @@
             "state": "translated",
             "value": "이름 바꾸기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
         }
       }
     },
@@ -4617,6 +7131,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이름 변경"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
           }
         }
       }
@@ -4629,6 +7149,12 @@
             "state": "translated",
             "value": "이름 변경하여 내보내기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export with Rename"
+          }
         }
       }
     },
@@ -4639,6 +7165,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이름순"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Name"
           }
         }
       }
@@ -4651,6 +7183,12 @@
             "state": "translated",
             "value": "이름순 (역순)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Name (Reverse)"
+          }
         }
       }
     },
@@ -4661,6 +7199,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이메일 전송"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Email"
           }
         }
       }
@@ -4673,6 +7217,12 @@
             "state": "translated",
             "value": "이미지 미리보기와 표시 방식을 설정합니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure image preview and display settings."
+          }
         }
       }
     },
@@ -4683,6 +7233,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이미지 전환 애니메이션"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image Transition Animation"
           }
         }
       }
@@ -4695,6 +7251,12 @@
             "state": "translated",
             "value": "이전 프레임 (←)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous Frame (←)"
+          }
         }
       }
     },
@@ -4705,6 +7267,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "인물 그룹 필터"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Person Group Filter"
           }
         }
       }
@@ -4717,6 +7285,12 @@
             "state": "translated",
             "value": "인물 세그멘테이션 기반 선택적 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selective Adjustment Based on Person Segmentation"
+          }
         }
       }
     },
@@ -4727,6 +7301,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "인물 인식 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Person-Aware Adjustment"
           }
         }
       }
@@ -4739,6 +7319,12 @@
             "state": "translated",
             "value": "일괄 보정 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Adjustment Complete"
+          }
         }
       }
     },
@@ -4749,6 +7335,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일괄 보정 패널 닫기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Batch Adjustment Panel"
           }
         }
       }
@@ -4761,6 +7353,12 @@
             "state": "translated",
             "value": "일괄 이름 바꾸기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Rename"
+          }
         }
       }
     },
@@ -4771,6 +7369,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일괄 자동 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Auto Adjustment"
           }
         }
       }
@@ -4783,6 +7387,12 @@
             "state": "translated",
             "value": "일반"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
         }
       }
     },
@@ -4793,6 +7403,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일반 설정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General Settings"
           }
         }
       }
@@ -4805,6 +7421,12 @@
             "state": "translated",
             "value": "입력 토큰"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input Tokens"
+          }
         }
       }
     },
@@ -4815,6 +7437,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "자동"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
           }
         }
       }
@@ -4827,6 +7455,12 @@
             "state": "translated",
             "value": "자동 노출 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Exposure Correction"
+          }
         }
       }
     },
@@ -4837,6 +7471,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "자동 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Adjustment"
           }
         }
       }
@@ -4849,6 +7489,12 @@
             "state": "translated",
             "value": "자동 보정 적용"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Auto Adjustment"
+          }
         }
       }
     },
@@ -4859,6 +7505,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "자동 생성 키워드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-Generated Keywords"
           }
         }
       }
@@ -4871,6 +7523,12 @@
             "state": "translated",
             "value": "자동 화이트밸런스"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto White Balance"
+          }
         }
       }
     },
@@ -4881,6 +7539,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto: hardware-optimized default · Speed/Quality: one tier up or down"
           }
         }
       }
@@ -4893,6 +7557,12 @@
             "state": "translated",
             "value": "작가, 저작권, 사용조건이 저장됩니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Author, copyright, and usage rights will be saved."
+          }
         }
       }
     },
@@ -4903,6 +7573,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "작가명, 연락처 등"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Author name, contact info, etc."
           }
         }
       }
@@ -4915,6 +7591,12 @@
             "state": "translated",
             "value": "장 분석 예정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis Pending"
+          }
         }
       }
     },
@@ -4925,6 +7607,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "저작권"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright"
           }
         }
       }
@@ -4937,6 +7625,12 @@
             "state": "translated",
             "value": "저장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
         }
       }
     },
@@ -4947,6 +7641,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장 방식"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Method"
           }
         }
       }
@@ -4959,6 +7659,12 @@
             "state": "translated",
             "value": "저장 폴더"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Folder"
+          }
         }
       }
     },
@@ -4969,6 +7675,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장된 컬렉션 없음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Saved Collections"
           }
         }
       }
@@ -4981,6 +7693,12 @@
             "state": "translated",
             "value": "적용"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply"
+          }
         }
       }
     },
@@ -4991,6 +7709,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "적용된 보정:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applied Adjustments:"
           }
         }
       }
@@ -5003,6 +7727,12 @@
             "state": "translated",
             "value": "전체"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
         }
       }
     },
@@ -5013,6 +7743,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체 링크 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy All Links"
           }
         }
       }
@@ -5025,6 +7761,12 @@
             "state": "translated",
             "value": "전체 삭제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete All"
+          }
         }
       }
     },
@@ -5035,6 +7777,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select All"
           }
         }
       }
@@ -5047,6 +7795,12 @@
             "state": "translated",
             "value": "전체 해제"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deselect All"
+          }
         }
       }
     },
@@ -5057,6 +7811,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체화면 (⌘F)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Screen (⌘F)"
           }
         }
       }
@@ -5069,6 +7829,12 @@
             "state": "translated",
             "value": "점수 분포"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Score Distribution"
+          }
         }
       }
     },
@@ -5079,6 +7845,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "접근 권한"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access Permissions"
           }
         }
       }
@@ -5091,6 +7863,12 @@
             "state": "translated",
             "value": "접두사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefix"
+          }
         }
       }
     },
@@ -5101,6 +7879,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "정렬"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sort"
           }
         }
       }
@@ -5113,6 +7897,12 @@
             "state": "translated",
             "value": "정렬 순서 변경 (촬영시간/파일명/별점)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Sort Order (Date Taken / Filename / Rating)"
+          }
         }
       }
     },
@@ -5123,6 +7913,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "제거"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
           }
         }
       }
@@ -5135,6 +7931,12 @@
             "state": "translated",
             "value": "제목"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title"
+          }
         }
       }
     },
@@ -5145,6 +7947,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "조리개"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperture"
           }
         }
       }
@@ -5157,6 +7965,12 @@
             "state": "translated",
             "value": "종료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit"
+          }
         }
       }
     },
@@ -5167,6 +7981,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "종료 시 별점/셀렉 자동 저장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-save Ratings/Culling on Quit"
           }
         }
       }
@@ -5179,6 +7999,12 @@
             "state": "translated",
             "value": "종류"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
         }
       }
     },
@@ -5189,6 +8015,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "준비 중..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting Ready..."
           }
         }
       }
@@ -5201,6 +8033,12 @@
             "state": "translated",
             "value": "중복 파일 발견"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate File Found"
+          }
         }
       }
     },
@@ -5211,6 +8049,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "중지"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
           }
         }
       }
@@ -5223,6 +8067,12 @@
             "state": "translated",
             "value": "즐겨찾기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites"
+          }
         }
       }
     },
@@ -5233,6 +8083,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "즐겨찾기에 추가"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to Favorites"
           }
         }
       }
@@ -5245,6 +8101,12 @@
             "state": "translated",
             "value": "즐겨찾기에서 제거"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from Favorites"
+          }
         }
       }
     },
@@ -5255,6 +8117,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "진단"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics"
           }
         }
       }
@@ -5267,6 +8135,12 @@
             "state": "translated",
             "value": "초고속 사진 선별 도구"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ultra-Fast Photo Culling Tool"
+          }
         }
       }
     },
@@ -5277,6 +8151,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "초과 시 오래된 항목부터 자동 삭제"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-delete oldest items when limit is exceeded"
           }
         }
       }
@@ -5289,6 +8169,12 @@
             "state": "translated",
             "value": "초기화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset"
+          }
         }
       }
     },
@@ -5299,6 +8185,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "총 캐시 용량"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total Cache Size"
           }
         }
       }
@@ -5311,6 +8203,12 @@
             "state": "translated",
             "value": "촬영 수"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shot Count"
+          }
         }
       }
     },
@@ -5321,6 +8219,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "촬영 시간 정보가 있는 사진이 없습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No photos with capture time data"
           }
         }
       }
@@ -5333,6 +8237,12 @@
             "state": "translated",
             "value": "촬영 장르"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shooting Genre"
+          }
         }
       }
     },
@@ -5343,6 +8253,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "촬영 현황"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shooting Status"
           }
         }
       }
@@ -5355,6 +8271,12 @@
             "state": "translated",
             "value": "촬영시간"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date Taken"
+          }
         }
       }
     },
@@ -5365,6 +8287,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "촬영을 시작하면 여기에 사진이 표시됩니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos will appear here once you start shooting"
           }
         }
       }
@@ -5377,6 +8305,12 @@
             "state": "translated",
             "value": "최고품질"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum Quality"
+          }
         }
       }
     },
@@ -5387,6 +8321,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "최근 LUT"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent LUTs"
           }
         }
       }
@@ -5399,6 +8339,12 @@
             "state": "translated",
             "value": "최근 열었던 폴더 없음"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Recently Opened Folders"
+          }
         }
       }
     },
@@ -5409,6 +8355,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "최근 파일"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent Files"
           }
         }
       }
@@ -5421,6 +8373,12 @@
             "state": "translated",
             "value": "최근 폴더"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent Folders"
+          }
         }
       }
     },
@@ -5431,6 +8389,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "최대화"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximize"
           }
         }
       }
@@ -5443,6 +8407,12 @@
             "state": "translated",
             "value": "최소 연사 수"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimum Burst Count"
+          }
         }
       }
     },
@@ -5453,6 +8423,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "최신 버전"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest Version"
           }
         }
       }
@@ -5465,6 +8441,12 @@
             "state": "translated",
             "value": "추가"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
         }
       }
     },
@@ -5475,6 +8457,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "추천 기준점"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended Reference Point"
           }
         }
       }
@@ -5487,6 +8475,12 @@
             "state": "translated",
             "value": "추천 프로필: "
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended Profile:"
+          }
         }
       }
     },
@@ -5497,6 +8491,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "추출"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extract"
           }
         }
       }
@@ -5509,6 +8509,12 @@
             "state": "translated",
             "value": "축소 (Cmd-)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom Out (Cmd-)"
+          }
         }
       }
     },
@@ -5519,6 +8525,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "출력 토큰"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output Tokens"
           }
         }
       }
@@ -5531,6 +8543,12 @@
             "state": "translated",
             "value": "출시 전 테스터 전용 키입니다. 활성화 시 1년 동안 PickShot Pro 를 무료로 사용할 수 있습니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This key is for pre-release testers only. Activating it gives you PickShot Pro for 1 year."
+          }
         }
       }
     },
@@ -5541,6 +8559,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "취소"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
           }
         }
       }
@@ -5553,6 +8577,12 @@
             "state": "translated",
             "value": "측정 결과를 기반으로 미리보기, 캐시, 썸네일 설정을 자동으로 최적화합니다"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically optimizes preview, cache, and thumbnail settings based on benchmark results"
+          }
         }
       }
     },
@@ -5563,6 +8593,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "측정 중... (약 5초)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benchmarking... (approx. 5 sec)"
           }
         }
       }
@@ -5575,6 +8611,12 @@
             "state": "translated",
             "value": "카메라"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera"
+          }
         }
       }
     },
@@ -5585,6 +8627,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "카메라 연결 · 실시간 촬영"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera Connected · Live Shooting"
           }
         }
       }
@@ -5597,6 +8645,12 @@
             "state": "translated",
             "value": "카메라 정보"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera Info"
+          }
         }
       }
     },
@@ -5607,6 +8661,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "카메라를 USB로 연결하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect your camera via USB"
           }
         }
       }
@@ -5619,6 +8679,12 @@
             "state": "translated",
             "value": "카카오톡/iMessage/메일로 공유"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share via KakaoTalk / iMessage / Mail"
+          }
         }
       }
     },
@@ -5629,6 +8695,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "카톡/메신저로 받은 사진 폴더를 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select the folder of photos received via KakaoTalk or Messenger"
           }
         }
       }
@@ -5641,6 +8713,12 @@
             "state": "translated",
             "value": "캐시"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache"
+          }
         }
       }
     },
@@ -5651,6 +8729,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "캐시, 메모리, GPU 등 성능 관련 옵션을 조정합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust performance options such as cache, memory, and GPU."
           }
         }
       }
@@ -5663,6 +8747,12 @@
             "state": "translated",
             "value": "커스텀 배경색"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom Background Color"
+          }
         }
       }
     },
@@ -5673,6 +8763,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "커스텀 컬러..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom Color..."
           }
         }
       }
@@ -5685,6 +8781,12 @@
             "state": "translated",
             "value": "커스텀 프롬프트..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom Prompt..."
+          }
         }
       }
     },
@@ -5695,6 +8797,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "컨택트시트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact Sheet"
           }
         }
       }
@@ -5707,6 +8815,12 @@
             "state": "translated",
             "value": "컨택트시트 PDF"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact Sheet PDF"
+          }
         }
       }
     },
@@ -5717,6 +8831,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "컨택트시트 제목"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact Sheet Title"
           }
         }
       }
@@ -5729,6 +8849,12 @@
             "state": "translated",
             "value": "컬러 라벨"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color Label"
+          }
         }
       }
     },
@@ -5739,6 +8865,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "컬링 강도"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling Strength"
           }
         }
       }
@@ -5751,6 +8883,12 @@
             "state": "translated",
             "value": "컬링 완료!"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Culling Complete!"
+          }
         }
       }
     },
@@ -5761,6 +8899,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "코멘트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comment"
           }
         }
       }
@@ -5773,6 +8917,12 @@
             "state": "translated",
             "value": "크기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Size"
+          }
         }
       }
     },
@@ -5783,6 +8933,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "크기순"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By Size"
           }
         }
       }
@@ -5795,6 +8951,12 @@
             "state": "translated",
             "value": "크롭"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crop"
+          }
         }
       }
     },
@@ -5805,6 +8967,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "클라이언트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client"
           }
         }
       }
@@ -5817,6 +8985,12 @@
             "state": "translated",
             "value": "클라이언트 셀렉"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Culling"
+          }
         }
       }
     },
@@ -5827,6 +9001,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "클라이언트 셀렉 보내기/가져오기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send/Import Client Culling"
           }
         }
       }
@@ -5839,6 +9019,12 @@
             "state": "translated",
             "value": "클라이언트 코멘트"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Comment"
+          }
         }
       }
     },
@@ -5849,6 +9035,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "클라이언트가 반환한 JPG 폴더를 선택하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select the JPG folder returned by the client"
           }
         }
       }
@@ -5861,6 +9053,12 @@
             "state": "translated",
             "value": "클릭: 선택 / 더블클릭: 이동 / Enter: 이동"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click: Select / Double-click: Open / Enter: Open"
+          }
         }
       }
     },
@@ -5871,6 +9069,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "클릭하여 원본/보정 전환"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to toggle Original / Adjusted"
           }
         }
       }
@@ -5883,6 +9087,12 @@
             "state": "translated",
             "value": "클립보드에서 붙여넣기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste from Clipboard"
+          }
         }
       }
     },
@@ -5893,6 +9103,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "키워드"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keywords"
           }
         }
       }
@@ -5905,6 +9121,12 @@
             "state": "translated",
             "value": "키워드 (쉼표로 구분)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keywords (comma-separated)"
+          }
         }
       }
     },
@@ -5915,6 +9137,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "타임라인"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeline"
           }
         }
       }
@@ -5927,6 +9155,12 @@
             "state": "translated",
             "value": "테더링"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tethering"
+          }
         }
       }
     },
@@ -5937,6 +9171,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "테더링을 시작하면 촬영된 사진을 미리볼 수 있습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start tethering to preview photos as they are taken"
           }
         }
       }
@@ -5949,6 +9189,12 @@
             "state": "translated",
             "value": "테스터 키 활성화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activate Tester Key"
+          }
         }
       }
     },
@@ -5959,6 +9205,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "테스트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test"
           }
         }
       }
@@ -5971,6 +9223,12 @@
             "state": "translated",
             "value": "텍스트 + 번호"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text + Number"
+          }
         }
       }
     },
@@ -5981,6 +9239,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "텍스트 입력"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text Input"
           }
         }
       }
@@ -5993,6 +9257,12 @@
             "state": "translated",
             "value": "템플릿"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Template"
+          }
         }
       }
     },
@@ -6003,6 +9273,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "템플릿 이름"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Template Name"
           }
         }
       }
@@ -6015,6 +9291,12 @@
             "state": "translated",
             "value": "템플릿 저장"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Template"
+          }
         }
       }
     },
@@ -6025,6 +9307,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "통합"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integration"
           }
         }
       }
@@ -6037,6 +9325,12 @@
             "state": "translated",
             "value": "파일 연동하기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link Files"
+          }
         }
       }
     },
@@ -6047,6 +9341,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일 유형"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Type"
           }
         }
       }
@@ -6059,6 +9359,12 @@
             "state": "translated",
             "value": "파일 이름"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Name"
+          }
         }
       }
     },
@@ -6069,6 +9375,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일 저장"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save File"
           }
         }
       }
@@ -6081,6 +9393,12 @@
             "state": "translated",
             "value": "파일 형식"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Format"
+          }
         }
       }
     },
@@ -6091,6 +9409,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일 확장자 배지 표시 (JPG, R+J, RAW 등)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show file extension badge (JPG, R+J, RAW, etc.)"
           }
         }
       }
@@ -6103,6 +9427,12 @@
             "state": "translated",
             "value": "파일명"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filename"
+          }
         }
       }
     },
@@ -6113,6 +9443,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일명 목록을 붙여넣거나 입력하세요"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste or type a list of filenames"
           }
         }
       }
@@ -6125,6 +9461,12 @@
             "state": "translated",
             "value": "파일명 복사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Filename"
+          }
         }
       }
     },
@@ -6135,6 +9477,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일명/JPG/AI 매칭 셀렉"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filename / JPG / AI Matching Culling"
           }
         }
       }
@@ -6147,6 +9495,12 @@
             "state": "translated",
             "value": "파일명에 확장자 표시 (IMG_9741.JPG)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show extension in filename (IMG_9741.JPG)"
+          }
         }
       }
     },
@@ -6157,6 +9511,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "파일에서 불러오기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import from File"
           }
         }
       }
@@ -6169,6 +9529,12 @@
             "state": "translated",
             "value": "퍼포먼스 설정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Performance Settings"
+          }
         }
       }
     },
@@ -6179,6 +9545,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "페이지 설정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page Setup"
           }
         }
       }
@@ -6191,6 +9563,12 @@
             "state": "translated",
             "value": "폴더"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder"
+          }
         }
       }
     },
@@ -6201,6 +9579,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 브라우저"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Browser"
           }
         }
       }
@@ -6213,6 +9597,12 @@
             "state": "translated",
             "value": "폴더 브라우저 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder Browser"
+          }
         }
       }
     },
@@ -6223,6 +9613,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 브라우저 접기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse Folder Browser"
           }
         }
       }
@@ -6235,6 +9631,12 @@
             "state": "translated",
             "value": "폴더 선택"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder"
+          }
         }
       }
     },
@@ -6245,6 +9647,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 선택..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Folder..."
           }
         }
       }
@@ -6257,6 +9665,12 @@
             "state": "translated",
             "value": "폴더 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder"
+          }
         }
       }
     },
@@ -6267,6 +9681,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 열기..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Folder..."
           }
         }
       }
@@ -6279,6 +9699,12 @@
             "state": "translated",
             "value": "폴더 이름"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Name"
+          }
         }
       }
     },
@@ -6289,6 +9715,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 이름 변경"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename Folder"
           }
         }
       }
@@ -6301,6 +9733,12 @@
             "state": "translated",
             "value": "폴더 이름:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Name:"
+          }
         }
       }
     },
@@ -6311,6 +9749,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더 정리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organize Folders"
           }
         }
       }
@@ -6323,6 +9767,12 @@
             "state": "translated",
             "value": "폴더 탐색"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse Folders"
+          }
         }
       }
     },
@@ -6333,6 +9783,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더로 복사 분류"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy & Sort into Folders"
           }
         }
       }
@@ -6345,6 +9801,12 @@
             "state": "translated",
             "value": "폴더로 분류"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sort into Folders"
+          }
         }
       }
     },
@@ -6355,6 +9817,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더로 이동 분류"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move & Sort into Folders"
           }
         }
       }
@@ -6367,6 +9835,12 @@
             "state": "translated",
             "value": "폴더를 선택하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a folder"
+          }
         }
       }
     },
@@ -6377,6 +9851,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "폴더를 우클릭하여 추가"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right-click a folder to add"
           }
         }
       }
@@ -6389,6 +9869,12 @@
             "state": "translated",
             "value": "표시 항목"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display Items"
+          }
         }
       }
     },
@@ -6399,6 +9885,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "표정 비교 (2~6장)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expression Compare (2–6 photos)"
           }
         }
       }
@@ -6411,6 +9903,12 @@
             "state": "translated",
             "value": "품질"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
         }
       }
     },
@@ -6421,6 +9919,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "품질 기반 A컷 추천"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality-Based Best Shot Recommendation"
           }
         }
       }
@@ -6433,6 +9937,12 @@
             "state": "translated",
             "value": "품질 분석 항목"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Analysis Metrics"
+          }
         }
       }
     },
@@ -6443,6 +9953,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "품질 분석을 먼저 실행하면 더 정확한 베스트샷을 선택할 수 있습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run quality analysis first for more accurate best shot selection"
           }
         }
       }
@@ -6455,6 +9971,12 @@
             "state": "translated",
             "value": "품질 분석을 먼저 실행하세요"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run quality analysis first"
+          }
         }
       }
     },
@@ -6465,6 +9987,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "품질 분포"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Distribution"
           }
         }
       }
@@ -6477,6 +10005,12 @@
             "state": "translated",
             "value": "프로그램 시작 시 윈도우 크기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window Size at Launch"
+          }
         }
       }
     },
@@ -6487,6 +10021,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "프리셋 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Preset"
           }
         }
       }
@@ -6499,6 +10039,12 @@
             "state": "translated",
             "value": "프리셋:"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preset:"
+          }
         }
       }
     },
@@ -6509,6 +10055,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "피부 부드럽게"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth Skin"
           }
         }
       }
@@ -6521,6 +10073,12 @@
             "state": "translated",
             "value": "피부 스무딩"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin Smoothing"
+          }
         }
       }
     },
@@ -6531,6 +10089,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "피부 질감 부드럽게 (인물 사진)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soften Skin Texture (Portrait)"
           }
         }
       }
@@ -6543,6 +10107,12 @@
             "state": "translated",
             "value": "피부톤 기준 색감/밝기 보정"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color/Brightness Correction Based on Skin Tone"
+          }
         }
       }
     },
@@ -6553,6 +10123,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "피부톤 기준 화이트밸런스 + 얼굴 밝기 보정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "White Balance + Face Brightness Correction Based on Skin Tone"
           }
         }
       }
@@ -6565,6 +10141,12 @@
             "state": "translated",
             "value": "픽샷 셀렉 가져오기 · JPG,RAW 매칭 복사"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import PickShot Culling · Copy Matched JPG,RAW"
+          }
         }
       }
     },
@@ -6575,6 +10157,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "픽쳐 스타일"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picture Style"
           }
         }
       }
@@ -6587,6 +10175,12 @@
             "state": "translated",
             "value": "픽쳐스타일 미리보기 (CIRAWFilter)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picture Style Preview (CIRAWFilter)"
+          }
         }
       }
     },
@@ -6597,6 +10191,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "필름스트립"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filmstrip"
           }
         }
       }
@@ -6609,6 +10209,12 @@
             "state": "translated",
             "value": "하위 포함"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include Subfolders"
+          }
         }
       }
     },
@@ -6619,6 +10225,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "하위 폴더 없음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Subfolders"
           }
         }
       }
@@ -6631,6 +10243,12 @@
             "state": "translated",
             "value": "하위 폴더 포함 열기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open with Subfolders"
+          }
         }
       }
     },
@@ -6641,6 +10259,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "학습 데이터 없음"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Training Data"
           }
         }
       }
@@ -6653,6 +10277,12 @@
             "state": "translated",
             "value": "학습 완료"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Training Complete"
+          }
         }
       }
     },
@@ -6663,6 +10293,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "한 폴더에 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export to One Folder"
           }
         }
       }
@@ -6675,6 +10311,12 @@
             "state": "translated",
             "value": "한국어"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Korean"
+          }
         }
       }
     },
@@ -6685,6 +10327,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "항상 다크"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always Dark"
           }
         }
       }
@@ -6697,6 +10345,12 @@
             "state": "translated",
             "value": "항상 라이트"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always Light"
+          }
         }
       }
     },
@@ -6707,6 +10361,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "해상도"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution"
           }
         }
       }
@@ -6719,6 +10379,12 @@
             "state": "translated",
             "value": "행"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Row"
+          }
         }
       }
     },
@@ -6729,6 +10395,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "현재 JPG만 있으면 → RAW 폴더에서 같은 이름 RAW 연결"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If only JPG exists → link matching RAW from RAW folder"
           }
         }
       }
@@ -6741,6 +10413,12 @@
             "state": "translated",
             "value": "현재 RAW만 있으면 → JPG 폴더에서 같은 이름 JPG 연결"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If only RAW exists → link matching JPG from JPG folder"
+          }
         }
       }
     },
@@ -6751,6 +10429,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "현재 버전"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Version"
           }
         }
       }
@@ -6763,6 +10447,12 @@
             "state": "translated",
             "value": "현재 사용 가능한 단축키 목록입니다. (읽기 전용)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "List of available keyboard shortcuts (read-only)"
+          }
         }
       }
     },
@@ -6773,6 +10463,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "현재 셀렉 학습"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn Current Culling"
           }
         }
       }
@@ -6785,6 +10481,12 @@
             "state": "translated",
             "value": "현재 탭 설정을 기본값으로 초기화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset current tab settings to default"
+          }
         }
       }
     },
@@ -6795,6 +10497,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "현재 필터 기준 전체 사진을 업로드합니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload all photos matching the current filter"
           }
         }
       }
@@ -6807,6 +10515,12 @@
             "state": "translated",
             "value": "현재 필터 저장..."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Current Filter..."
+          }
         }
       }
     },
@@ -6817,6 +10531,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "형식"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Format"
           }
         }
       }
@@ -6829,6 +10549,12 @@
             "state": "translated",
             "value": "호환성"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatibility"
+          }
         }
       }
     },
@@ -6839,6 +10565,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "화면 맞춤 (Cmd+0)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit to Screen (Cmd+0)"
           }
         }
       }
@@ -6851,6 +10583,12 @@
             "state": "translated",
             "value": "화질 우선"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality Priority"
+          }
         }
       }
     },
@@ -6861,6 +10599,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "확대 (Cmd+)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom In (Cmd+)"
           }
         }
       }
@@ -6873,6 +10617,12 @@
             "state": "translated",
             "value": "확대/축소 (더블클릭: 화면 맞춤)"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom In/Out (Double-click: Fit to Screen)"
+          }
         }
       }
     },
@@ -6883,6 +10633,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "확인"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }
@@ -6895,6 +10651,12 @@
             "state": "translated",
             "value": "확인 없이 바로 휴지통으로 이동합니다. ⌘Z 로 되돌릴 수 있습니다."
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moves to Trash immediately without confirmation. You can undo with ⌘Z."
+          }
         }
       }
     },
@@ -6905,6 +10667,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "확장자 제거 후 파일명(baseName) 비교"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare filenames without extension (baseName)"
           }
         }
       }
@@ -6917,6 +10685,12 @@
             "state": "translated",
             "value": "활성화"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activate"
+          }
         }
       }
     },
@@ -6927,6 +10701,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "휴지통으로 이동"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Trash"
           }
         }
       }
@@ -6939,6 +10719,12 @@
             "state": "translated",
             "value": "흰색 계열"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "White Tones"
+          }
         }
       }
     },
@@ -6949,6 +10735,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "히스토그램 기본 표시"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Histogram by Default"
           }
         }
       }
@@ -6961,6 +10753,12 @@
             "state": "translated",
             "value": "히스토리 지우기"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear History"
+          }
         }
       }
     },
@@ -6971,6 +10769,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "📂 카테고리"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📂 Category"
           }
         }
       }
@@ -6983,6 +10787,12 @@
             "state": "translated",
             "value": "📊 활용도"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "📊 Usage"
+          }
         }
       }
     },
@@ -6994,6 +10804,12 @@
             "state": "translated",
             "value": "🤖 AI 분류 실행"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 Run AI Classification"
+          }
         }
       }
     },
@@ -7004,6 +10820,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "🤖 AI 프롬프트 분류"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🤖 AI Prompt Classification"
           }
         }
       }
