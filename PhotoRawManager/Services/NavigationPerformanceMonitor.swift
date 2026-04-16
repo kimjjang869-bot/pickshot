@@ -2,24 +2,24 @@
 //  NavigationPerformanceMonitor.swift
 //  PhotoRawManager
 //
-//  행 이동 성능 디버깅 도구.
-//  - 각 행 이동 간 간격(ms) 측정
-//  - 썸네일 로드 시간 측정
-//  - 프리뷰 로드 시간 측정
-//  - 메모리 사용량 스냅샷
-//  - 디스크 캐시 히트율
+//  행 이동 성능 디버깅 — 키 꾹 누르기(key repeat burst) 최적화된 계측.
+//
+//  측정 지표:
+//  1. 이동 간격 (interval): 이전 이동 시작 ~ 현재 이동 시작
+//  2. Main thread 처리 시간 (processingMs): executeMoveSelection 동기 구간
+//  3. Burst fps: key repeat 꾹 누르기 구간의 실제 이동 속도
+//  4. Burst slowdown: burst 초반 vs 후반 처리 시간 비교
+//  5. RAM / PreviewCache / Memory pressure
 //
 //  사용법:
-//  1. Cmd+Shift+D 로 디버그 HUD 토글
-//  2. 화살표 키로 이동하며 데이터 수집
-//  3. HUD 에 실시간 그래프/통계 표시
-//  4. `session report` 로 CSV 저장
+//  - Cmd+Shift+D 로 HUD 토글
+//  - 화살표 키를 꾹 누르면 burst 가 시작됨 (간격 < 100ms)
+//  - 릴리즈 후 100ms 지나면 burst 종료 + 최종 통계
 //
 
 import Foundation
 import AppKit
 
-/// 행 이동 성능 측정기 (싱글톤)
 @MainActor
 final class NavigationPerformanceMonitor: ObservableObject {
     static let shared = NavigationPerformanceMonitor()
@@ -32,131 +32,246 @@ final class NavigationPerformanceMonitor: ObservableObject {
         }
     }
 
-    /// 최근 이동 기록 (링 버퍼)
+    /// 최근 이동 기록 (링 버퍼, 최근 120개)
     @Published private(set) var recentMoves: [MoveEvent] = []
 
-    /// 통계 (실시간 갱신)
+    /// 현재 활성 burst (꾹 누르기 중) — nil 이면 대기 상태
+    @Published private(set) var activeBurst: BurstInfo?
+
+    /// 마지막 완료된 burst (통계 조회용)
+    @Published private(set) var lastBurst: BurstInfo?
+
+    /// 전체 통계 (세션)
     @Published private(set) var stats: Stats = Stats()
 
     // MARK: - 데이터 구조
 
     struct MoveEvent: Identifiable {
         let id: UUID = UUID()
-        let index: Int              // 이 이동이 몇 번째인지 (세션 시작부터)
-        let photoIndex: Int         // 사진 리스트에서의 인덱스
+        let index: Int              // 세션 내 순번
+        let photoIndex: Int         // 사진 리스트 인덱스
         let direction: String       // "→", "↓" 등
-        let intervalMs: Double      // 이전 이동과의 간격
-        let thumbnailLoadMs: Double?  // 썸네일 로드 시간 (있으면)
-        let previewLoadMs: Double?  // 프리뷰 로드 시간 (있으면)
-        let ramUsageMB: Int         // 이 시점 RAM 사용량
+        let intervalMs: Double      // 이전 이동 시작과의 간격
+        let processingMs: Double    // main thread 동기 처리 시간
+        let isRepeat: Bool          // key repeat 여부 (interval < 100ms)
+        let ramUsageMB: Int
         let previewCacheCount: Int
         let previewCacheMB: Int
         let timestamp: Date
     }
 
-    struct Stats {
-        var totalMoves: Int = 0
-        var avgIntervalMs: Double = 0
-        var minIntervalMs: Double = .infinity
-        var maxIntervalMs: Double = 0
-        var recentAvgIntervalMs: Double = 0   // 최근 20개 평균
-        var firstHalfAvgMs: Double = 0        // 세션 전반 평균
-        var secondHalfAvgMs: Double = 0       // 세션 후반 평균 (저하 감지)
-        var slowdownRatio: Double = 1.0       // second / first (1.5+ 이면 저하)
+    struct BurstInfo: Identifiable {
+        let id: UUID = UUID()
+        var startedAt: Date
+        var endedAt: Date? = nil
+        var moves: [MoveEvent] = []
+        var movesCount: Int { moves.count }
+        var durationMs: Double {
+            let end = endedAt ?? Date()
+            return end.timeIntervalSince(startedAt) * 1000.0
+        }
+        /// 실측 fps (moves / duration)
+        var fps: Double {
+            guard durationMs > 0 else { return 0 }
+            return Double(movesCount) / (durationMs / 1000.0)
+        }
+        /// burst 초반 1/3 평균 간격
+        var earlyAvgIntervalMs: Double {
+            let third = max(1, moves.count / 3)
+            let early = Array(moves.prefix(third).dropFirst())
+            guard !early.isEmpty else { return 0 }
+            return early.map(\.intervalMs).reduce(0, +) / Double(early.count)
+        }
+        /// burst 후반 1/3 평균 간격 — 저하 감지
+        var lateAvgIntervalMs: Double {
+            let third = max(1, moves.count / 3)
+            let late = Array(moves.suffix(third))
+            guard !late.isEmpty else { return 0 }
+            return late.map(\.intervalMs).reduce(0, +) / Double(late.count)
+        }
+        /// burst 내 저하 비율 (late / early) — 1.0 이 정상, 1.5+ 면 저하
+        var internalSlowdown: Double {
+            guard earlyAvgIntervalMs > 0 else { return 1.0 }
+            return lateAvgIntervalMs / earlyAvgIntervalMs
+        }
+        /// main thread 평균 처리 시간
+        var avgProcessingMs: Double {
+            guard !moves.isEmpty else { return 0 }
+            return moves.map(\.processingMs).reduce(0, +) / Double(moves.count)
+        }
+        /// main thread 최대 처리 시간
+        var maxProcessingMs: Double {
+            moves.map(\.processingMs).max() ?? 0
+        }
     }
 
+    struct Stats {
+        var totalMoves: Int = 0
+        var totalBursts: Int = 0
+        var avgBurstFps: Double = 0          // 모든 burst 의 평균 fps
+        var worstBurstSlowdown: Double = 1.0 // 가장 심한 burst 내 저하
+        var lastBurstFps: Double = 0
+        var lastBurstSlowdown: Double = 1.0
+        var avgProcessingMs: Double = 0
+        var maxProcessingMs: Double = 0
+    }
+
+    // MARK: - 설정
+
+    /// 이 간격 이하면 같은 burst 로 그룹화 (key repeat rate = 30Hz = 33ms, 여유 있게)
+    private let burstThresholdMs: Double = 100.0
+
+    /// 이 시간 동안 이벤트 없으면 burst 종료
+    private let burstEndGraceMs: Double = 150.0
+
+    private let maxRecent = 120
+
+    // MARK: - 내부 상태
+
     private var session: Session?
-    private let maxRecent = 100  // UI 에 표시할 최근 기록 수
+    private var allBursts: [BurstInfo] = []
+
+    // 현재 이동 처리 중 (notifyMoveStart → notifyMoveCompleted 사이)
+    private var currentMoveStartTime: Date?
+    private var currentMovePhotoIndex: Int = 0
+    private var currentMoveDirection: String = "·"
+    private var previousMoveStartTime: Date?
+
+    // burst 종료 타이머
+    private var burstEndTimer: DispatchWorkItem?
 
     struct Session {
         var startedAt: Date
-        var allMoves: [MoveEvent] = []
     }
 
     private init() {}
 
-    // MARK: - 측정 API
+    // MARK: - Public API (호출 지점에서 사용)
 
-    /// 행 이동 시작을 알림 (executeMoveSelection 직전)
-    private var lastMoveAt: Date?
-    private var pendingLoadStart: Date?
-    private var pendingPhotoIndex: Int = 0
-    private var pendingDirection: String = "·"
-
+    /// 이동 시작 (executeMoveSelection 내부에서 호출)
+    /// - 반환: 없음 (processing 시간 측정은 notifyMoveCompleted 와 쌍)
     func notifyMoveStart(photoIndex: Int, direction: String) {
-        pendingLoadStart = Date()
-        pendingPhotoIndex = photoIndex
-        pendingDirection = direction
+        guard isEnabled else { return }
+        currentMoveStartTime = Date()
+        currentMovePhotoIndex = photoIndex
+        currentMoveDirection = direction
     }
 
-    /// 썸네일이 표시되었을 때
-    func notifyMoveCompleted(thumbnailLoadMs: Double? = nil, previewLoadMs: Double? = nil) {
-        guard isEnabled, var sess = session else { return }
-
+    /// 이동 완료 (동기 처리 끝난 뒤, 예: scrollTrigger 증가 직후)
+    func notifyMoveCompleted() {
+        guard isEnabled, let startTime = currentMoveStartTime else { return }
         let now = Date()
+        let processingMs = now.timeIntervalSince(startTime) * 1000.0
+
+        // 이전 move 시작과 지금 시작 간 간격 (사용자가 체감하는 이동 fps)
         let intervalMs: Double
-        if let last = lastMoveAt {
-            intervalMs = now.timeIntervalSince(last) * 1000.0
+        if let prev = previousMoveStartTime {
+            intervalMs = startTime.timeIntervalSince(prev) * 1000.0
         } else {
             intervalMs = 0
         }
-        lastMoveAt = now
+        previousMoveStartTime = startTime
 
-        let ev = MoveEvent(
-            index: sess.allMoves.count,
-            photoIndex: pendingPhotoIndex,
-            direction: pendingDirection,
+        // burst 판정
+        let isRepeat = intervalMs > 0 && intervalMs < burstThresholdMs
+
+        let event = MoveEvent(
+            index: (session.map { _ in allBursts.reduce(0) { $0 + $1.movesCount } }) ?? 0 + recentMoves.count,
+            photoIndex: currentMovePhotoIndex,
+            direction: currentMoveDirection,
             intervalMs: intervalMs,
-            thumbnailLoadMs: thumbnailLoadMs,
-            previewLoadMs: previewLoadMs,
+            processingMs: processingMs,
+            isRepeat: isRepeat,
             ramUsageMB: currentRamMB(),
             previewCacheCount: PreviewImageCache.shared.count,
             previewCacheMB: PreviewImageCache.shared.currentBytesMB,
-            timestamp: now
+            timestamp: startTime
         )
 
-        sess.allMoves.append(ev)
-        session = sess
+        // burst 업데이트
+        if isRepeat, var current = activeBurst {
+            current.moves.append(event)
+            activeBurst = current
+        } else if isRepeat, activeBurst == nil {
+            // 직전 non-repeat 이동을 burst 시작으로 승격 (이벤트 2개째부터 인지됨)
+            var newBurst = BurstInfo(startedAt: event.timestamp)
+            newBurst.moves.append(event)
+            activeBurst = newBurst
+        } else {
+            // non-repeat: 기존 burst 종료 + 독립 이동
+            if var current = activeBurst {
+                current.endedAt = now
+                current.moves.append(event)
+                finalizeBurst(current)
+            } else {
+                // 독립 이동도 1-event burst 로 기록
+                var single = BurstInfo(startedAt: event.timestamp)
+                single.endedAt = now
+                single.moves.append(event)
+                finalizeBurst(single)
+            }
+        }
 
-        // UI 용 링버퍼
-        recentMoves.append(ev)
+        // 링 버퍼
+        recentMoves.append(event)
         if recentMoves.count > maxRecent {
             recentMoves.removeFirst(recentMoves.count - maxRecent)
         }
 
+        // burst 종료 타이머 (타이머 내에 다음 이동 없으면 burst 마감)
+        scheduleBurstEndCheck()
+
+        currentMoveStartTime = nil
         updateStats()
     }
 
-    // MARK: - 세션 관리
+    // MARK: - Session / Export
 
     func startSession() {
         session = Session(startedAt: Date())
         recentMoves.removeAll()
+        allBursts.removeAll()
+        activeBurst = nil
+        lastBurst = nil
+        previousMoveStartTime = nil
         stats = Stats()
-        lastMoveAt = nil
         fputs("[NAVPERF] 세션 시작\n", stderr)
     }
 
     func endSession() {
         guard let sess = session else { return }
+        // 진행 중 burst 마감
+        if var current = activeBurst {
+            current.endedAt = Date()
+            finalizeBurst(current)
+        }
         let dur = Date().timeIntervalSince(sess.startedAt)
-        fputs("[NAVPERF] 세션 종료: \(sess.allMoves.count) moves in \(String(format: "%.1f", dur))s\n", stderr)
+        fputs("[NAVPERF] 세션 종료: \(allBursts.count) bursts, \(recentMoves.count) moves in \(String(format: "%.1f", dur))s\n", stderr)
         session = nil
     }
 
     /// CSV 리포트 저장
     @discardableResult
     func exportReport() -> URL? {
-        guard let sess = session else { return nil }
+        guard session != nil else { return nil }
         let fm = FileManager.default
-        let fileName = "navperf_\(Int(sess.startedAt.timeIntervalSince1970)).csv"
+        let fileName = "navperf_\(Int(Date().timeIntervalSince1970)).csv"
         let url = fm.temporaryDirectory.appendingPathComponent(fileName)
 
-        var csv = "index,photoIndex,direction,intervalMs,thumbMs,previewMs,ramMB,cacheCount,cacheMB,timestamp\n"
-        for e in sess.allMoves {
-            let thumb = e.thumbnailLoadMs.map { String(format: "%.1f", $0) } ?? ""
-            let prev = e.previewLoadMs.map { String(format: "%.1f", $0) } ?? ""
-            csv += "\(e.index),\(e.photoIndex),\(e.direction),\(String(format: "%.1f", e.intervalMs)),\(thumb),\(prev),\(e.ramUsageMB),\(e.previewCacheCount),\(e.previewCacheMB),\(e.timestamp.timeIntervalSince1970)\n"
+        var csv = "burst,move,photoIndex,dir,intervalMs,processingMs,isRepeat,ramMB,cacheCount,cacheMB,timestamp\n"
+        // 완료된 burst + 진행 중 burst
+        var allToExport = allBursts
+        if let current = activeBurst { allToExport.append(current) }
+        for (bi, b) in allToExport.enumerated() {
+            for (mi, m) in b.moves.enumerated() {
+                csv += "\(bi),\(mi),\(m.photoIndex),\(m.direction),\(String(format: "%.2f", m.intervalMs)),\(String(format: "%.2f", m.processingMs)),\(m.isRepeat),\(m.ramUsageMB),\(m.previewCacheCount),\(m.previewCacheMB),\(m.timestamp.timeIntervalSince1970)\n"
+            }
+        }
+        // burst 요약
+        csv += "\n--- BURST SUMMARY ---\n"
+        csv += "burst,moves,durationMs,fps,earlyIntervalMs,lateIntervalMs,internalSlowdown,avgProcMs,maxProcMs\n"
+        for (bi, b) in allToExport.enumerated() {
+            csv += "\(bi),\(b.movesCount),\(String(format: "%.1f", b.durationMs)),\(String(format: "%.2f", b.fps)),\(String(format: "%.2f", b.earlyAvgIntervalMs)),\(String(format: "%.2f", b.lateAvgIntervalMs)),\(String(format: "%.2f", b.internalSlowdown)),\(String(format: "%.2f", b.avgProcessingMs)),\(String(format: "%.2f", b.maxProcessingMs))\n"
         }
 
         do {
@@ -172,34 +287,48 @@ final class NavigationPerformanceMonitor: ObservableObject {
 
     // MARK: - 내부 구현
 
+    private func scheduleBurstEndCheck() {
+        burstEndTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            if var current = self.activeBurst {
+                current.endedAt = Date()
+                self.finalizeBurst(current)
+            }
+        }
+        burstEndTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(burstEndGraceMs)), execute: work)
+    }
+
+    private func finalizeBurst(_ burst: BurstInfo) {
+        allBursts.append(burst)
+        lastBurst = burst
+        activeBurst = nil
+        updateStats()
+    }
+
     private func updateStats() {
-        guard let sess = session, !sess.allMoves.isEmpty else { return }
-        let all = sess.allMoves
-
         var s = Stats()
-        s.totalMoves = all.count
-        let intervals = all.dropFirst().map { $0.intervalMs }  // 첫 번째는 0
-        guard !intervals.isEmpty else {
-            self.stats = s; return
+        s.totalMoves = recentMoves.count
+        // allBursts 기반 통계
+        let allMoves = allBursts.flatMap { $0.moves } + (activeBurst?.moves ?? [])
+        s.totalMoves = allMoves.count
+
+        let multiMoveBursts = allBursts.filter { $0.movesCount >= 3 }  // 의미 있는 burst 만
+        s.totalBursts = multiMoveBursts.count
+
+        if !multiMoveBursts.isEmpty {
+            s.avgBurstFps = multiMoveBursts.map(\.fps).reduce(0, +) / Double(multiMoveBursts.count)
+            s.worstBurstSlowdown = multiMoveBursts.map(\.internalSlowdown).max() ?? 1.0
         }
-
-        s.avgIntervalMs = intervals.reduce(0, +) / Double(intervals.count)
-        s.minIntervalMs = intervals.min() ?? 0
-        s.maxIntervalMs = intervals.max() ?? 0
-
-        let recent = Array(intervals.suffix(20))
-        s.recentAvgIntervalMs = recent.reduce(0, +) / Double(recent.count)
-
-        // 저하 비율 분석: 전반/후반 반 나눠서 평균 비교
-        if intervals.count >= 10 {
-            let half = intervals.count / 2
-            let firstHalf = Array(intervals.prefix(half))
-            let secondHalf = Array(intervals.suffix(intervals.count - half))
-            s.firstHalfAvgMs = firstHalf.reduce(0, +) / Double(firstHalf.count)
-            s.secondHalfAvgMs = secondHalf.reduce(0, +) / Double(secondHalf.count)
-            s.slowdownRatio = s.firstHalfAvgMs > 0 ? s.secondHalfAvgMs / s.firstHalfAvgMs : 1.0
+        if let last = lastBurst {
+            s.lastBurstFps = last.fps
+            s.lastBurstSlowdown = last.internalSlowdown
         }
-
+        if !allMoves.isEmpty {
+            s.avgProcessingMs = allMoves.map(\.processingMs).reduce(0, +) / Double(allMoves.count)
+            s.maxProcessingMs = allMoves.map(\.processingMs).max() ?? 0
+        }
         self.stats = s
     }
 
@@ -216,17 +345,8 @@ final class NavigationPerformanceMonitor: ObservableObject {
     }
 }
 
-// MARK: - PreviewImageCache 통계 확장 (비침습적)
+// MARK: - PreviewImageCache 통계 확장
 extension PreviewImageCache {
-    /// 현재 캐시된 이미지 개수 (디버그용)
-    var count: Int {
-        // lock 은 내부 private 이므로 근사치 반환
-        // 정확히 필요하면 PreviewImageCache 내부에 getter 추가 필요
-        debugStats().count
-    }
-
-    /// 현재 캐시 바이트 (MB)
-    var currentBytesMB: Int {
-        debugStats().bytes / (1024 * 1024)
-    }
+    var count: Int { debugStats().count }
+    var currentBytesMB: Int { debugStats().bytes / (1024 * 1024) }
 }

@@ -184,17 +184,19 @@ extension PhotoStore {
             shiftAnchorIndex = nil
         }
 
-        selectedPhotoID = newID
-        scrollTrigger &+= 1
-
-        // 성능 측정 시작 (NavPerfMonitor 활성 시에만 의미 있음)
+        // 성능 측정 시작 — scrollTrigger/selectedPhotoID 변경 직전에 측정 시작
+        // (SwiftUI body 재계산 + onChange 호출이 모두 동기 구간에 포함되도록)
         let dirSymbol = offset == 1 ? "→" : offset == -1 ? "←" : (offset > 0 ? "↓" : "↑")
         let capturedIndex = newIndex
-        if Thread.isMainThread {
+        let measuring = Thread.isMainThread
+        if measuring {
             MainActor.assumeIsolated {
                 NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: capturedIndex, direction: dirSymbol)
             }
         }
+
+        selectedPhotoID = newID
+        scrollTrigger &+= 1
 
         // 빠른 탐색: 썸네일 즉시 표시 (SwiftUI onChange 병합 우회)
         let photo = list[newIndex]
@@ -202,9 +204,11 @@ extension PhotoStore {
             onQuickPreview?(photo.jpgURL)
         }
 
-        // 측정 종료 (다음 프레임)
-        DispatchQueue.main.async {
-            NavigationPerformanceMonitor.shared.notifyMoveCompleted()
+        // 측정 종료 — 동기 구간 끝난 직후
+        if measuring {
+            MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.notifyMoveCompleted()
+            }
         }
     }
 
