@@ -304,7 +304,7 @@ extension PhotoStore {
                 log += "[CLASSIFY] 인물감지: \(personPhotos)장, 텍스트감지: \(textPhotos)장\n"
                 log += "[CLASSIFY] ━━━━━━━━━━━━━━━\n\n"
                 fputs(log, stderr)
-                try? log.write(toFile: "/tmp/pickshot_classify.log", atomically: true, encoding: .utf8)
+                try? log.write(toFile: FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_classify.log").path, atomically: true, encoding: .utf8)
             }
         }
     }

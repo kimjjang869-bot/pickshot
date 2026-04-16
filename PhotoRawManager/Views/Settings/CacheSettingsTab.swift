@@ -129,12 +129,12 @@ struct CacheSettingsTab: View {
                 ThumbnailCache.shared.removeAll()
             case .preview:
                 PreviewImageCache.shared.clearCache()
-                try? FileManager.default.removeItem(atPath: "/tmp/pickshot_cache")
+                try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_cache"))
             case .all:
                 DiskThumbnailCache.shared.clearAll()
                 ThumbnailCache.shared.removeAll()
                 PreviewImageCache.shared.clearCache()
-                try? FileManager.default.removeItem(atPath: "/tmp/pickshot_cache")
+                try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_cache"))
                 ExifService.clearCache()
             }
             DispatchQueue.main.async { isClearing = false; refreshCacheSizes() }
@@ -144,7 +144,7 @@ struct CacheSettingsTab: View {
     private func refreshCacheSizes() {
         DispatchQueue.global(qos: .utility).async {
             let thumb = folderSize(path: defaultCachePath + "/thumbnails")
-            let preview = folderSize(path: "/tmp/pickshot_cache")
+            let preview = folderSize(path: FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_cache").path)
             let log = folderSize(path: defaultCachePath + "/logs")
             let total = thumb + preview + log
             DispatchQueue.main.async {

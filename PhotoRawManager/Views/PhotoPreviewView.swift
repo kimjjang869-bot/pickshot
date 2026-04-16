@@ -78,7 +78,7 @@ class PreviewImageCache {
         }
 
         // Setup disk cache directory
-        diskCacheDir = URL(fileURLWithPath: "/tmp/pickshot_cache")
+        diskCacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_cache")
         try? FileManager.default.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
 
         // Listen for memory pressure → auto-clear cache

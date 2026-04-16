@@ -1,6 +1,8 @@
 import SwiftUI
 import Foundation
 import AppKit
+import AppleArchive
+import System
 
 extension PhotoStore {
     // MARK: - Folder Size Cache
@@ -89,6 +91,12 @@ extension PhotoStore {
     // MARK: - Session Persistence
 
     func restoreLastSession() {
+        // Try security-scoped bookmark first (App Sandbox)
+        if let url = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
+            loadFolder(url, restoreRatings: true)
+            return
+        }
+        // Fallback to path string (backward compat)
         guard let path = defaults.string(forKey: lastFolderKey) else { return }
         let url = URL(fileURLWithPath: path)
         guard FileManager.default.fileExists(atPath: path) else { return }
@@ -98,11 +106,52 @@ extension PhotoStore {
     func saveLastFolder() {
         guard let url = folderURL else { return }
         defaults.set(url.path, forKey: lastFolderKey)
+        SandboxBookmarkService.saveBookmark(for: url, key: "lastFolder")
+    }
+
+    /// URL 이 속한 볼륨 루트를 찾음 (예: /Volumes/4tb/photos/2025 → /Volumes/4tb)
+    private static func findVolumeRoot(for url: URL) -> URL {
+        let path = url.path
+        // /Volumes/XXX/... → /Volumes/XXX
+        if path.hasPrefix("/Volumes/") {
+            let components = path.split(separator: "/", maxSplits: 3)
+            if components.count >= 2 {
+                return URL(fileURLWithPath: "/\(components[0])/\(components[1])")
+            }
+        }
+        // 그 외 (홈 폴더 등) → 원래 URL 반환
+        return url
     }
 
     // MARK: - Folder Loading
 
     func loadFolder(_ url: URL, restoreRatings: Bool = false) {
+        // Sandbox: 1) 직접 접근 가능? 2) bookmark 으로 접근? 3) NSOpenPanel
+        let canAccess = FileManager.default.isReadableFile(atPath: url.path)
+            || SandboxBookmarkService.startFolderAccess(for: url)
+        if !canAccess {
+            // Sandbox: 볼륨 루트를 NSOpenPanel 으로 한번만 허용하면 전체 하위 접근 가능
+            let volumeRoot = Self.findVolumeRoot(for: url)
+            let displayName = volumeRoot.lastPathComponent
+            AppLogger.log(.folder, "Sandbox 접근 불가 → 볼륨 접근 요청: \(displayName)")
+            DispatchQueue.main.async { [weak self] in
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.directoryURL = volumeRoot  // 볼륨 루트 바로 열기
+                panel.message = "'\(displayName)' 볼륨에 접근합니다. 열기를 눌러주세요."
+                panel.prompt = "열기"
+                if panel.runModal() == .OK, let granted = panel.url {
+                    SandboxBookmarkService.saveBookmark(for: granted, key: "volume_\(granted.path)")
+                    SandboxBookmarkService.saveBookmark(for: granted, key: "lastFolder")
+                    let targetURL = FileManager.default.isReadableFile(atPath: url.path) ? url : granted
+                    self?.loadFolder(targetURL, restoreRatings: restoreRatings)
+                }
+            }
+            return
+        }
+
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
@@ -350,15 +399,48 @@ extension PhotoStore {
         do {
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-            // unzip 명령어로 임시 폴더에 풀기
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            process.arguments = ["-o", "-q", zipURL.path, "-d", tempDir.path]
-            try process.run()
-            process.waitUntilExit()
+            // App Sandbox 호환: AppleArchive 프레임워크로 ZIP 압축 해제 (macOS 13+)
+            if #available(macOS 13.0, *) {
+                guard let fileStream = ArchiveByteStream.fileStream(
+                    path: FilePath(zipURL.path),
+                    mode: .readOnly,
+                    options: [],
+                    permissions: FilePermissions(rawValue: 0o644)
+                ) else {
+                    fputs("[ZIP] 파일 스트림 열기 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    try? FileManager.default.removeItem(at: tempDir)
+                    return
+                }
+                defer { try? fileStream.close() }
 
-            guard process.terminationStatus == 0 else {
-                fputs("[ZIP] unzip 실패: \(zipURL.lastPathComponent)\n", stderr)
+                guard let decompressStream = ArchiveByteStream.decompressionStream(readingFrom: fileStream) else {
+                    fputs("[ZIP] 압축 해제 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    try? FileManager.default.removeItem(at: tempDir)
+                    return
+                }
+                defer { try? decompressStream.close() }
+
+                guard let decodeStream = ArchiveStream.decodeStream(readingFrom: decompressStream) else {
+                    fputs("[ZIP] 디코드 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    try? FileManager.default.removeItem(at: tempDir)
+                    return
+                }
+                defer { try? decodeStream.close() }
+
+                guard let extractStream = ArchiveStream.extractStream(
+                    extractingTo: FilePath(tempDir.path),
+                    flags: [.ignoreOperationNotPermitted]
+                ) else {
+                    fputs("[ZIP] 추출 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    try? FileManager.default.removeItem(at: tempDir)
+                    return
+                }
+                defer { try? extractStream.close() }
+
+                try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
+            } else {
+                fputs("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n", stderr)
+                try? FileManager.default.removeItem(at: tempDir)
                 return
             }
 
@@ -427,9 +509,14 @@ extension PhotoStore {
         recents.insert(url, at: 0)
         if recents.count > 5 { recents = Array(recents.prefix(5)) }
         defaults.set(recents.map { $0.path }, forKey: recentFoldersKey)
+        SandboxBookmarkService.saveBookmarks(for: recents, keyPrefix: "recentFolders")
     }
 
     func loadRecentFolders() -> [URL] {
+        // Try security-scoped bookmarks first (App Sandbox)
+        let bookmarked = SandboxBookmarkService.resolveBookmarks(keyPrefix: "recentFolders")
+        if !bookmarked.isEmpty { return bookmarked }
+        // Fallback to path strings (backward compat)
         let paths = defaults.stringArray(forKey: recentFoldersKey) ?? []
         return paths.map { URL(fileURLWithPath: $0) }
     }
@@ -441,15 +528,21 @@ extension PhotoStore {
         guard !favs.contains(where: { $0.path == url.path }) else { return }
         favs.append(url)
         defaults.set(favs.map { $0.path }, forKey: favoriteFoldersKey)
+        SandboxBookmarkService.saveBookmarks(for: favs, keyPrefix: "favoriteFolders")
     }
 
     func removeFavoriteFolder(_ url: URL) {
         var favs = loadFavoriteFolders()
         favs.removeAll { $0.path == url.path }
         defaults.set(favs.map { $0.path }, forKey: favoriteFoldersKey)
+        SandboxBookmarkService.saveBookmarks(for: favs, keyPrefix: "favoriteFolders")
     }
 
     func loadFavoriteFolders() -> [URL] {
+        // Try security-scoped bookmarks first (App Sandbox)
+        let bookmarked = SandboxBookmarkService.resolveBookmarks(keyPrefix: "favoriteFolders")
+        if !bookmarked.isEmpty { return bookmarked }
+        // Fallback to path strings (backward compat)
         let paths = defaults.stringArray(forKey: favoriteFoldersKey) ?? []
         return paths.map { URL(fileURLWithPath: $0) }
     }

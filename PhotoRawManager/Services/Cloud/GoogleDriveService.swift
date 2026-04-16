@@ -19,27 +19,18 @@ class GoogleDriveService {
     // MARK: - Method 1: Local Google Drive Folder
 
     /// Search for Google Drive for Desktop folder on this Mac
+    /// - Sandbox: ~/Library/CloudStorage 직접 접근 불가 → 저장된 bookmark 또는 nil 반환
     static func findGoogleDriveFolder() -> URL? {
+        // 1. 이전에 사용자가 선택한 Google Drive 폴더 (security-scoped bookmark)
+        if let bookmarked = SandboxBookmarkService.resolveBookmark(key: "googleDriveFolder") {
+            return bookmarked
+        }
+
+        // 2. Sandbox 밖에서만 작동하는 경로 탐색 (sandbox 해제 시 폴백)
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
 
-        // 1. ~/Library/CloudStorage/GoogleDrive-*/
-        let cloudStorage = home.appendingPathComponent("Library/CloudStorage")
-        if let contents = try? fm.contentsOfDirectory(at: cloudStorage, includingPropertiesForKeys: nil) {
-            for folder in contents {
-                if folder.lastPathComponent.hasPrefix("GoogleDrive-") {
-                    // Look for "My Drive" subfolder
-                    let myDrive = folder.appendingPathComponent("My Drive")
-                    if fm.fileExists(atPath: myDrive.path) {
-                        return myDrive
-                    }
-                    // Some installs put it directly
-                    return folder
-                }
-            }
-        }
-
-        // 2. ~/Google Drive/
+        // ~/Google Drive/ (sandbox에서도 user-selected 경로면 접근 가능)
         let googleDrive = home.appendingPathComponent("Google Drive")
         if fm.fileExists(atPath: googleDrive.path) {
             let myDrive = googleDrive.appendingPathComponent("My Drive")
@@ -49,19 +40,18 @@ class GoogleDriveService {
             return googleDrive
         }
 
-        // 3. ~/Google Drive My Drive/
-        let myDriveDirect = home.appendingPathComponent("Google Drive My Drive")
-        if fm.fileExists(atPath: myDriveDirect.path) {
-            return myDriveDirect
-        }
-
-        // 4. /Volumes/GoogleDrive/
+        // /Volumes/GoogleDrive/
         let volumeGD = URL(fileURLWithPath: "/Volumes/GoogleDrive")
         if fm.fileExists(atPath: volumeGD.path) {
             return volumeGD
         }
 
         return nil
+    }
+
+    /// 사용자가 NSOpenPanel으로 Google Drive 폴더를 선택한 후 bookmark 저장
+    static func saveGoogleDriveFolderBookmark(_ url: URL) {
+        SandboxBookmarkService.saveBookmark(for: url, key: "googleDriveFolder")
     }
 
     /// Copy files to a subfolder inside Google Drive local folder

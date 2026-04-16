@@ -1147,44 +1147,15 @@ struct FolderRowView: View {
                             }
                             PreviewImageCache.shared.clearCache()
                             ThumbnailCache.shared.removeAll()
-                            // 진단: 어떤 프로세스가 볼륨을 잡고 있는지
-                            let volumePath = item.url.path
-                            DispatchQueue.global(qos: .userInitiated).async {
-                                let proc = Process()
-                                proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-                                proc.arguments = ["+D", volumePath]
-                                let pipe = Pipe()
-                                proc.standardOutput = pipe
-                                proc.standardError = pipe
-                                try? proc.run()
-                                proc.waitUntilExit()
-                                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                                let output = String(data: data, encoding: .utf8) ?? ""
-                                fputs("[EJECT] lsof before eject:\n\(output)\n", stderr)
-
-                                // diskutil eject 사용 (NSWorkspace API보다 안정적)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    let proc = Process()
-                                    proc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-                                    proc.arguments = ["eject", volumePath]
-                                    let pipe = Pipe()
-                                    proc.standardOutput = pipe
-                                    proc.standardError = pipe
-                                    do {
-                                        try proc.run()
-                                        proc.waitUntilExit()
-                                        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                                        let output = String(data: data, encoding: .utf8) ?? ""
-                                        fputs("[EJECT] diskutil result: \(output)\n", stderr)
-                                        if proc.terminationStatus == 0 {
-                                            ejectResult = "'\(item.name)' 추출 완료"
-                                        } else {
-                                            ejectResult = "'\(item.name)' 추출 실패: \(output)"
-                                        }
-                                    } catch {
-                                        fputs("[EJECT] diskutil error: \(error)\n", stderr)
-                                        ejectResult = "'\(item.name)' 추출 실패: \(error.localizedDescription)"
-                                    }
+                            // NSWorkspace로 추출 (App Sandbox 호환)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                do {
+                                    try NSWorkspace.shared.unmountAndEjectDevice(at: item.url)
+                                    fputs("[EJECT] NSWorkspace eject success: \(item.name)\n", stderr)
+                                    ejectResult = "'\(item.name)' 추출 완료"
+                                } catch {
+                                    fputs("[EJECT] NSWorkspace eject error: \(error)\n", stderr)
+                                    ejectResult = "'\(item.name)' 추출 실패: \(error.localizedDescription)"
                                 }
                             }
                         }

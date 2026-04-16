@@ -75,12 +75,17 @@ struct StartupView: View {
                     Button(action: {
                         store.startupMode = .viewer
                         store.shouldOpenFolderBrowser = true
-                        let lastPath = UserDefaults.standard.string(forKey: "lastFolderPath") ?? ""
                         let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
-                        if !lastPath.isEmpty && FileManager.default.fileExists(atPath: lastPath) {
-                            store.loadFolder(URL(fileURLWithPath: lastPath), restoreRatings: true)
+                        // Try security-scoped bookmark first (App Sandbox)
+                        if let bookmarkedURL = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
+                            store.loadFolder(bookmarkedURL, restoreRatings: true)
                         } else {
-                            store.loadFolder(desktop, restoreRatings: true)
+                            let lastPath = UserDefaults.standard.string(forKey: "lastFolderPath") ?? ""
+                            if !lastPath.isEmpty && FileManager.default.fileExists(atPath: lastPath) {
+                                store.loadFolder(URL(fileURLWithPath: lastPath), restoreRatings: true)
+                            } else {
+                                store.loadFolder(desktop, restoreRatings: true)
+                            }
                         }
                     }) {
                         HStack(spacing: 10) {

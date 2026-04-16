@@ -918,8 +918,11 @@ struct PhotoContextMenu: View {
     private static let recentFoldersKey = "recentCopyFolders"
 
     private var recentCopyFolders: [URL] {
-        // fileExists 체크 제거 — 메인 스레드 디스크 I/O 방지
-        (UserDefaults.standard.stringArray(forKey: Self.recentFoldersKey) ?? [])
+        // Try security-scoped bookmarks first (App Sandbox)
+        let bookmarked = SandboxBookmarkService.resolveBookmarks(keyPrefix: "recentCopyFolders")
+        if !bookmarked.isEmpty { return bookmarked }
+        // Fallback to path strings (backward compat)
+        return (UserDefaults.standard.stringArray(forKey: Self.recentFoldersKey) ?? [])
             .compactMap { URL(fileURLWithPath: $0) }
     }
 
@@ -929,6 +932,8 @@ struct PhotoContextMenu: View {
         folders.insert(url.path, at: 0)
         if folders.count > 5 { folders = Array(folders.prefix(5)) }
         UserDefaults.standard.set(folders, forKey: Self.recentFoldersKey)
+        let urls = folders.compactMap { URL(fileURLWithPath: $0) }
+        SandboxBookmarkService.saveBookmarks(for: urls, keyPrefix: "recentCopyFolders")
     }
 
     private func collectFileURLs() -> [URL] {
@@ -1894,63 +1899,35 @@ class ThumbnailLoader {
             return .sdCard
         }
 
-        // diskutil info 로 프로토콜 타입 확인 (비동기 아님, 빠름 ~10ms)
-        let mountPoint = "/Volumes/" + volumeName
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        process.arguments = ["info", mountPoint]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
+        // URLResourceValues 로 볼륨 용량 확인 (App Sandbox 호환)
+        let mountPoint = URL(fileURLWithPath: "/Volumes/" + volumeName)
         do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
+            let resourceValues = try mountPoint.resourceValues(forKeys: [
+                .volumeNameKey,
+                .volumeTotalCapacityKey,
+                .volumeAvailableCapacityKey
+            ])
 
-            // Protocol Type: USB, Secure Digital, Apple Fabric
-            // Device / Media Name: hints
-            let outputLower = output.lowercased()
-
-            // SD카드 프로토콜
-            if outputLower.contains("secure digital") ||
-               outputLower.contains("sd card") ||
-               outputLower.contains("protocol type:") && outputLower.contains("mmc") {
-                fputs("[STORAGE] SD Card detected via diskutil: \(volumeName)\n", stderr)
+            // 볼륨 이름으로 추가 SD카드 힌트 확인
+            let volName = (resourceValues.volumeName ?? volumeName).lowercased()
+            if sdHints.contains(where: { volName.contains($0) }) {
+                fputs("[STORAGE] SD Card detected via volumeName: \(volumeName)\n", stderr)
                 return .sdCard
             }
 
-            // USB 메모리 (작은 용량)
-            if outputLower.contains("protocol type:") && outputLower.contains("usb") {
-                // USB SSD vs USB 메모리 판별: Solid State 여부
-                if outputLower.contains("solid state: yes") || outputLower.contains("is ssd: yes") {
-                    fputs("[STORAGE] USB SSD detected via diskutil: \(volumeName)\n", stderr)
-                    return .externalSSD
+            // 용량 기반 판별: 256GB 이하이면 SD카드/USB 메모리로 취급
+            if let totalBytes = resourceValues.volumeTotalCapacity {
+                let gb = Double(totalBytes) / 1_000_000_000
+                if gb <= 256 {
+                    fputs("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n", stderr)
+                    return .sdCard
+                } else {
+                    fputs("[STORAGE] Large volume (\(String(format: "%.0f", gb))GB) treated as externalHDD: \(volumeName)\n", stderr)
+                    return .externalHDD
                 }
-                // USB 연결인데 SSD 아님
-                // 작은 용량이면 USB 메모리(SD 취급), 큰 용량이면 HDD
-                if let sizeRange = output.range(of: "Disk Size:", options: .caseInsensitive) {
-                    let sizeLine = output[sizeRange.upperBound...].prefix(100)
-                    if sizeLine.contains("GB") {
-                        if let numStr = sizeLine.split(separator: " ").first(where: { Double($0) != nil }),
-                           let gb = Double(numStr), gb <= 256 {
-                            fputs("[STORAGE] USB flash/SD via diskutil: \(volumeName) (\(gb)GB)\n", stderr)
-                            return .sdCard
-                        }
-                    }
-                }
-                fputs("[STORAGE] USB HDD via diskutil: \(volumeName)\n", stderr)
-                return .externalHDD
-            }
-
-            // Thunderbolt/Apple Fabric = fast external
-            if outputLower.contains("thunderbolt") || outputLower.contains("apple fabric") {
-                fputs("[STORAGE] Thunderbolt SSD via diskutil: \(volumeName)\n", stderr)
-                return .externalSSD
             }
         } catch {
-            // diskutil 실패 → nil 반환, 다른 방법으로 판별
+            // URLResourceValues 실패 → nil 반환, 다른 방법으로 판별
         }
 
         return nil

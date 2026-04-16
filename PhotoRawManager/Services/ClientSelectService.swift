@@ -504,19 +504,8 @@ class ClientSelectService: ObservableObject {
     // MARK: - GitHub Pages에 manifest 업로드
 
     private func uploadManifestToGitHub(sessionId: String, data: Data) {
-        // macOS Keychain에서 GitHub 토큰
-        let ghToken: String? = {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            proc.arguments = ["find-internet-password", "-s", "github.com", "-w"]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-            try? proc.run()
-            proc.waitUntilExit()
-            let out = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: out, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }()
+        // 앱 Keychain에서 GitHub 토큰 (App Sandbox 호환)
+        let ghToken: String? = KeychainService.read(key: "github_token")
 
         guard let ghToken = ghToken, !ghToken.isEmpty else {
             fputs("[CLIENT] GitHub 토큰 없음 — manifest GitHub 업로드 스킵\n", stderr)

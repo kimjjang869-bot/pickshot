@@ -441,9 +441,23 @@ class PhotoStore: ObservableObject {
         }
 
         // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
-        if let lastPath = defaults.string(forKey: lastFolderKey),
-           !lastPath.isEmpty,
-           FileManager.default.fileExists(atPath: lastPath) {
+        // Try security-scoped bookmark first, then fall back to path string
+        let hasLastFolder: Bool = {
+            if SandboxBookmarkService.resolveBookmark(key: "lastFolder") != nil {
+                // Stop accessing immediately — restoreLastSession will re-resolve
+                if let url = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
+                    SandboxBookmarkService.stopAccessing(url)
+                }
+                return true
+            }
+            if let lastPath = defaults.string(forKey: lastFolderKey),
+               !lastPath.isEmpty,
+               FileManager.default.fileExists(atPath: lastPath) {
+                return true
+            }
+            return false
+        }()
+        if hasLastFolder {
             startupMode = .viewer
             shouldOpenFolderBrowser = true
             DispatchQueue.main.async {
@@ -758,13 +772,16 @@ class PhotoStore: ObservableObject {
     /// AVAudioPlayer 사용 → NSSound 대비 레이턴시 낮음 (pre-loaded buffer)
     /// 연타 대비 플레이어 풀 사용 (stop() 간섭 방지)
     private static let _deleteSoundPool: [AVAudioPlayer] = {
-        let path = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/finder/empty trash.aif"
-        let url = URL(fileURLWithPath: path)
+        // Sandbox에서 /System/Library 직접 접근 불가 → 번들 사운드 또는 NSSound 기반 대체
+        // macOS는 NSSound(named:) 으로 시스템 사운드에 안전하게 접근 가능
+        // AVAudioPlayer 풀은 번들에 사운드 파일이 있을 때만 생성
         var pool: [AVAudioPlayer] = []
-        for _ in 0..<4 {
-            if let p = try? AVAudioPlayer(contentsOf: url) {
-                p.prepareToPlay()  // 디코더 워밍업 → 첫 재생 레이턴시 감소
-                pool.append(p)
+        if let soundURL = Bundle.main.url(forResource: "delete", withExtension: "aif") {
+            for _ in 0..<4 {
+                if let p = try? AVAudioPlayer(contentsOf: soundURL) {
+                    p.prepareToPlay()
+                    pool.append(p)
+                }
             }
         }
         return pool
@@ -773,7 +790,11 @@ class PhotoStore: ObservableObject {
     private static let _deleteSoundDuration: TimeInterval = 0.28  // 짧게 자르기
 
     static func playDeleteSound() {
-        guard !_deleteSoundPool.isEmpty else { return }
+        guard !_deleteSoundPool.isEmpty else {
+            // 번들 사운드 없을 때 시스템 사운드 폴백
+            NSSound(named: "Funk")?.play()
+            return
+        }
         // 라운드 로빈: 다음 가용 플레이어 선택 (연타 시 겹치지 않게)
         _deleteSoundIndex = (_deleteSoundIndex + 1) % _deleteSoundPool.count
         let player = _deleteSoundPool[_deleteSoundIndex]

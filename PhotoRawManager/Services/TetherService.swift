@@ -19,6 +19,7 @@ class TetherService: NSObject, ObservableObject {
     @Published var outputFolder: URL {
         didSet {
             UserDefaults.standard.set(outputFolder.path, forKey: "tetherOutputFolder")
+            SandboxBookmarkService.saveBookmark(for: outputFolder, key: "tetherOutputFolder")
         }
     }
 
@@ -33,7 +34,10 @@ class TetherService: NSObject, ObservableObject {
 
     override init() {
         // Restore saved output folder or default to Desktop/PickShot_Tethered
-        if let saved = UserDefaults.standard.string(forKey: "tetherOutputFolder") {
+        // Try security-scoped bookmark first (App Sandbox)
+        if let bookmarked = SandboxBookmarkService.resolveBookmark(key: "tetherOutputFolder") {
+            outputFolder = bookmarked
+        } else if let saved = UserDefaults.standard.string(forKey: "tetherOutputFolder") {
             outputFolder = URL(fileURLWithPath: saved)
         } else {
             let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")

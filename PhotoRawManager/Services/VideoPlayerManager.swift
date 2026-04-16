@@ -414,9 +414,23 @@ class VideoPlayerManager: ObservableObject {
     private func saveRecentLUTs() {
         let urls = recentLUTs.map { $0.url.path }
         UserDefaults.standard.set(urls, forKey: Self.recentLUTsKey)
+        SandboxBookmarkService.saveBookmarks(for: recentLUTs.map { $0.url }, keyPrefix: "recentLUTs")
     }
 
     private func loadRecentLUTs() {
+        // Try security-scoped bookmarks first (App Sandbox)
+        let bookmarkedURLs = SandboxBookmarkService.resolveBookmarks(keyPrefix: "recentLUTs")
+        if !bookmarkedURLs.isEmpty {
+            var loaded: [LUTService.LUTData] = []
+            for url in bookmarkedURLs.prefix(3) {
+                guard let lut = LUTService.parseLUT(url: url) else { continue }
+                loaded.append(lut)
+            }
+            recentLUTs = loaded
+            activeLUT = loaded.first
+            return
+        }
+        // Fallback to path strings (backward compat)
         guard let paths = UserDefaults.standard.stringArray(forKey: Self.recentLUTsKey) else { return }
         var loaded: [LUTService.LUTData] = []
         for path in paths.prefix(3) {  // 초기화 시 최대 3개만 파싱 (메모리/속도)

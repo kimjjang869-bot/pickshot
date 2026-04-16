@@ -388,12 +388,13 @@ class MemoryCardBackupService: ObservableObject {
 
     private func ejectVolume(_ url: URL, completion: (() -> Void)? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-            proc.arguments = ["eject", url.path]
-            try? proc.run()
-            proc.waitUntilExit()
-            let success = proc.terminationStatus == 0
+            var success = false
+            do {
+                try NSWorkspace.shared.unmountAndEjectDevice(at: url)
+                success = true
+            } catch {
+                fputs("[BACKUP] eject error: \(error)\n", stderr)
+            }
             fputs("[BACKUP] eject \(url.lastPathComponent): \(success ? "성공" : "실패")\n", stderr)
             completion?()
         }
