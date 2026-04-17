@@ -44,16 +44,36 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             if store.startupMode == .tethering {
-                // Tethering mode - Coming Soon placeholder
-                VStack(spacing: 16) {
-                    Image(systemName: "cable.connector")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    Text("테더링").font(.title2.bold())
-                    Text("카메라 연결 · 실시간 촬영").foregroundColor(.secondary)
-                    Text("Coming Soon").font(.caption).foregroundColor(.orange)
-                    Button("돌아가기") { store.startupMode = nil }
-                        .buttonStyle(.borderedProminent)
+                // Tethering mode
+                VStack(spacing: 0) {
+                    HStack {
+                        Button(action: { store.startupMode = nil }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.left")
+                                Text("돌아가기")
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+
+                        Spacer()
+
+                        Text("테더링")
+                            .font(.system(size: 14, weight: .semibold))
+
+                        Spacer()
+                        Color.clear.frame(width: 80)
+                    }
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    Divider()
+
+                    // AppConfig 플래그로 Debug(개발자 테스트) vs Release(Coming Soon) 분기
+                    if AppConfig.enableTethering {
+                        TetherView()
+                    } else {
+                        TetherComingSoonView()
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if store.startupMode == nil && store.photos.isEmpty && !store.isLoading {
@@ -337,9 +357,14 @@ struct ContentView: View {
                 ForEach(memoryCardService.sessions.filter { !$0.isComplete }) { session in
                     BackupProgressBar(session: session, service: memoryCardService)
                 }
-                // 백그라운드 내보내기 진행률
+                // 백그라운드 내보내기/붙여넣기 진행률
                 if store.bgExportActive {
-                    ExportProgressBar(store: store)
+                    // 붙여넣기(복사/잘라내기)는 상세 정보 포함 전용 창
+                    if store.bgExportLabel == "붙여넣기" || store.bgExportLabel == "잘라내기" {
+                        TransferProgressView(store: store)
+                    } else {
+                        ExportProgressBar(store: store)
+                    }
                 }
                 // AI 분류 진행률
                 if store.isAIClassifying {

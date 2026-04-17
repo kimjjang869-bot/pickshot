@@ -20,6 +20,47 @@ extension PhotoStore {
     }
 
     func undo() {
+        // 1) Paste undo 먼저 확인 (복사/잘라내기 붙여넣기는 별도 스택)
+        if let pasteRecord = pasteUndoStack.popLast() {
+            let fm = FileManager.default
+            var restored = 0
+            for (origSrc, destURL) in pasteRecord.items.reversed() {
+                if pasteRecord.kind == "cut" {
+                    // cut 이었으면 dest → orig 로 원복
+                    if !fm.fileExists(atPath: origSrc.path) {
+                        do {
+                            try fm.moveItem(at: destURL, to: origSrc)
+                            restored += 1
+                        } catch {
+                            AppLogger.log(.general, "Paste undo (cut) failed: \(destURL.lastPathComponent) → \(error)")
+                        }
+                    } else {
+                        // 원본 자리에 뭔가 생겼으면 dest 는 삭제
+                        try? fm.removeItem(at: destURL)
+                    }
+                } else {
+                    // copy 였으면 dest 파일만 삭제
+                    do {
+                        try fm.removeItem(at: destURL)
+                        restored += 1
+                    } catch {
+                        AppLogger.log(.general, "Paste undo (copy) failed: \(destURL.lastPathComponent) → \(error)")
+                    }
+                }
+            }
+            fputs("[UNDO] Paste \(pasteRecord.kind): \(restored)/\(pasteRecord.items.count)개 원위치\n", stderr)
+            // 대상 폴더 리로드
+            if folderURL == pasteRecord.destFolder {
+                loadFolder(pasteRecord.destFolder, restoreRatings: true)
+            } else {
+                FolderPreviewCache.shared.invalidateAll()
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
+            }
+            let verb = pasteRecord.kind == "cut" ? "이동" : "복사"
+            showToastMessage("↩️ \(verb) 되돌리기 — \(restored)개 파일")
+            return
+        }
+
         guard let last = undoStack.popLast() else {
             showToastMessage("되돌릴 항목이 없습니다")
             return

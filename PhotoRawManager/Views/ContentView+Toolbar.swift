@@ -24,6 +24,11 @@ extension ContentView {
                 }
                 .help("시작 화면으로 돌아가기")
 
+                iconButton("cable.connector", active: false) {
+                    store.startupMode = .tethering
+                }
+                .help("테더링 (카메라 연결)")
+
                 iconButton("sidebar.leading", active: store.showFolderBrowser) {
                     store.showFolderBrowser.toggle()
                 }

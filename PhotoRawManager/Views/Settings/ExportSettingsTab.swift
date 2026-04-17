@@ -20,7 +20,7 @@ struct ExportSettingsTab: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("내보내기 설정")
                     .font(.title3.bold())
-                Text("사진 내보내기의 기본 동작을 설정합니다.")
+                Text("사진/영상 내보내기의 기본 동작을 설정합니다.")
                     .font(.callout)
                     .foregroundColor(.secondary)
 

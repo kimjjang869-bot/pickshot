@@ -117,25 +117,18 @@ struct StartupView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("테더링")
                                     .font(.system(size: 14, weight: .bold))
-                                HStack(spacing: 4) {
-                                    Text("카메라 연결 · 실시간 촬영")
-                                        .font(.system(size: 10))
-                                    Text("Soon")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Color.white.opacity(0.2))
-                                        .cornerRadius(3)
-                                }
-                                .foregroundColor(.white.opacity(0.5))
+                                Text("카메라 연결 · 실시간 촬영")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white.opacity(0.7))
                             }
                         }
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.white)
                         .frame(width: 182, height: 56)
                         .background(
-                            LinearGradient(colors: [Color.gray.opacity(0.4), Color.gray.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(color: .orange.opacity(0.25), radius: 6, y: 3)
                     }
                     .buttonStyle(.plain)
                 }

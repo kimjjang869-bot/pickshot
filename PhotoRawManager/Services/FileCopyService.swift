@@ -175,7 +175,7 @@ struct FileCopyService {
         }
 
         // Build list of all copy operations (source → dest, type)
-        enum CopyType { case jpg, raw }
+        enum CopyType { case jpg, raw, xmp }
         struct CopyOp {
             let source: URL
             let dest: URL
@@ -223,6 +223,28 @@ struct FileCopyService {
             ops.append(CopyOp(source: rawURL, dest: destURL, type: .raw, fileName: photo.fileName, skip: shouldSkip))
         }
 
+        // XMP sidecar copies — 영상 파일에 IN/OUT 마커 XMP 있으면 함께 이동
+        // (photo.jpgURL.xmp 형식: MVI_0042.MOV.xmp)
+        for photo in photos where photo.isVideoFile {
+            let xmpSource = photo.jpgURL.appendingPathExtension("xmp")
+            guard fileManager.fileExists(atPath: xmpSource.path) else { continue }
+            // 영상 원본이 복사될 폴더에 동일 basename 으로 xmp 도 복사
+            let targetFolder = jpgFolder  // 영상은 JPG 폴더 쪽으로 감 (photo.jpgURL 이 영상 원본)
+            var xmpDest = targetFolder.appendingPathComponent(xmpSource.lastPathComponent)
+            var shouldSkip = false
+            if fileManager.fileExists(atPath: xmpDest.path) {
+                switch duplicateHandling {
+                case .skip:
+                    shouldSkip = true
+                case .rename:
+                    xmpDest = uniqueURL(for: xmpDest)
+                case .overwrite:
+                    try? fileManager.removeItem(at: xmpDest)
+                }
+            }
+            ops.append(CopyOp(source: xmpSource, dest: xmpDest, type: .xmp, fileName: xmpSource.lastPathComponent, skip: shouldSkip))
+        }
+
         let totalOperations = ops.count
         result.totalFiles = totalOperations
 
@@ -266,13 +288,19 @@ struct FileCopyService {
                     switch op.type {
                     case .jpg: result.copiedJPG += 1
                     case .raw: result.copiedRAW += 1
+                    case .xmp: result.copiedJPG += 1  // XMP 도 JPG 카운터에 합산 (별도 UI 필요 없으면)
                     }
                     completed += 1
                     let c = completed
                     lock.unlock()
                     DispatchQueue.main.async { progress(c, totalOperations) }
                 } catch {
-                    let msg = op.type == .jpg ? "JPG 복사 실패: \(op.fileName)" : "RAW 복사 실패: \(op.fileName)"
+                    let msg: String
+                    switch op.type {
+                    case .jpg: msg = "JPG 복사 실패: \(op.fileName)"
+                    case .raw: msg = "RAW 복사 실패: \(op.fileName)"
+                    case .xmp: msg = "XMP 복사 실패: \(op.fileName)"
+                    }
                     lock.lock()
                     result.failedFiles.append(msg)
                     completed += 1

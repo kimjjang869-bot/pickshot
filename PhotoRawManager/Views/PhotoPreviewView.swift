@@ -6,6 +6,9 @@ extension Notification.Name {
     static let zoomIn = Notification.Name("zoomIn")
     static let zoomOut = Notification.Name("zoomOut")
     static let toggleHistogram = Notification.Name("toggleHistogram")
+    /// 영상 IN/OUT 마커가 바뀌었을 때 발송됨. object 는 영상 URL.
+    /// 썸네일 그리드 / 클라이언트 전달 UI 가 수신하여 갱신.
+    static let videoMarkersChanged = Notification.Name("videoMarkersChanged")
 }
 
 // MARK: - Zoom Presets
@@ -1104,12 +1107,13 @@ struct PhotoPreviewView: View {
             }
 
             // hi-res 로딩 (방향키 꾹 누르면 cancel)
+            // 200ms → 800ms: RAW 풀 디코드가 CPU 137%/400ms 걸리므로, 사용자가 명확히 멈춘 뒤 발화
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }

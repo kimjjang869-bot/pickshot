@@ -13,4 +13,15 @@ enum AppConfig {
     ///
     /// 출시 후 AI 기능이 안정화되면 `false` 로 바꿔 전체 기능을 다시 노출.
     static let hideAIFeatures: Bool = true
+
+    /// 테더링 기능 공개 여부 (Sony/Canon/Nikon SDK 통합).
+    /// - Debug 빌드 → 항상 ON (개발자 테스트용)
+    /// - Release 빌드 → OFF (UI 에 "Coming Soon" 표시) — SDK 승인 + 안정화 후 true 로 변경
+    static let enableTethering: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
 }

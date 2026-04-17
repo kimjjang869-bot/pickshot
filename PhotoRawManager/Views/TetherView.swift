@@ -6,6 +6,7 @@ struct TetherView: View {
     @EnvironmentObject var store: PhotoStore
     @StateObject private var tether = TetherService()
     @State private var previewImage: NSImage? = nil
+    @State private var pulseScale: CGFloat = 0.8
 
     var body: some View {
         HSplitView {
@@ -20,6 +21,10 @@ struct TetherView: View {
         .onAppear {
             tether.onNewPhoto = { [weak store] url in
                 handleNewPhoto(url, store: store)
+            }
+            // 진입 즉시 카메라 검색 시작 — 연결되면 자동 촬영 준비
+            if !tether.isActive {
+                tether.startBrowsing()
             }
         }
         .onDisappear {
@@ -57,12 +62,29 @@ struct TetherView: View {
                     if tether.isConnected {
                         cameraInfoSection
                         Divider().padding(.horizontal, AppTheme.space4)
+
+                        // PC Remote 모드 아니면 안내 표시
+                        if !tether.canTriggerShutter {
+                            tetheringModeHelpBanner
+                            Divider().padding(.horizontal, AppTheme.space4)
+                        }
                     }
 
                     // Output Folder
                     outputFolderSection
 
                     Divider().padding(.horizontal, AppTheme.space4)
+
+                    // Filename Template (prefix + sequence)
+                    filenameTemplateSection
+
+                    Divider().padding(.horizontal, AppTheme.space4)
+
+                    // Remote Shutter (if camera supports)
+                    if tether.isConnected && tether.canTriggerShutter {
+                        remoteShutterSection
+                        Divider().padding(.horizontal, AppTheme.space4)
+                    }
 
                     // Capture Stats
                     captureStatsSection
@@ -72,11 +94,7 @@ struct TetherView: View {
                 .padding(AppTheme.space16)
             }
 
-            Divider()
-
-            // Start/Stop Button
-            startStopButton
-                .padding(AppTheme.space16)
+            // Start/Stop 버튼 제거 — 진입 시 자동 브라우징
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -90,16 +108,45 @@ struct TetherView: View {
                 .foregroundColor(.secondary)
 
             HStack(spacing: AppTheme.space8) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
+                // 연결 상태 시각화 — 초록=연결됨, 펄스 주황=검색중, 회색=연결안됨
+                ZStack {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 10, height: 10)
+                    if tether.isActive && !tether.isConnected {
+                        // 검색 중 펄스 애니메이션
+                        Circle()
+                            .stroke(statusColor, lineWidth: 2)
+                            .frame(width: 18, height: 18)
+                            .opacity(0.5)
+                            .scaleEffect(pulseScale)
+                            .onAppear { pulseScale = 1.0 }
+                            .animation(
+                                .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                                value: pulseScale
+                            )
+                    }
+                }
+                .frame(width: 18, height: 18)
 
-                Text(tether.statusMessage)
-                    .font(.system(size: AppTheme.fontBody))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text(tether.statusMessage)
+                        .font(.system(size: AppTheme.fontCaption))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
             }
+            .padding(.vertical, 4)
         }
+    }
+
+    private var statusTitle: String {
+        if tether.isConnected { return "연결됨" }
+        if tether.isActive { return "카메라 검색 중" }
+        return "연결 끊김"
     }
 
     private var statusColor: Color {
@@ -109,6 +156,58 @@ struct TetherView: View {
             return AppTheme.warning
         } else {
             return Color.gray
+        }
+    }
+
+    // MARK: - PC Remote 모드 안내 배너
+
+    private var tetheringModeHelpBanner: some View {
+        VStack(alignment: .leading, spacing: AppTheme.space8) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.system(size: 14))
+                Text("USB 모드 변경 필요")
+                    .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                    .foregroundColor(.orange)
+            }
+
+            Text("카메라가 현재 파일 전송 모드(MTP/Mass Storage)로 연결되어 있어서 촬영 이벤트를 받을 수 없습니다.")
+                .font(.system(size: AppTheme.fontCaption))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("카메라 메뉴에서 USB 연결 모드 변경:")
+                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
+                    .foregroundColor(.primary)
+                    .padding(.top, 4)
+
+                helpLine(brand: "Sony", steps: "메뉴 → 네트워크 → USB 연결 → PC Remote")
+                helpLine(brand: "Canon", steps: "MENU → Communication → 통신 방식 → EOS Utility")
+                helpLine(brand: "Nikon", steps: "SETUP → USB → MTP/PTP → Camera Control")
+                helpLine(brand: "Fujifilm", steps: "MENU → CONNECT → USB → PC Shoot")
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func helpLine(brand: String, steps: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(brand)
+                .font(.system(size: AppTheme.fontCaption, weight: .semibold, design: .monospaced))
+                .foregroundColor(.orange)
+                .frame(width: 58, alignment: .leading)
+            Text(steps)
+                .font(.system(size: AppTheme.fontCaption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -195,6 +294,94 @@ struct TetherView: View {
                 .foregroundColor(.secondary.opacity(0.7))
                 .lineLimit(2)
                 .truncationMode(.middle)
+        }
+    }
+
+    // MARK: - Filename Template
+
+    private var filenameTemplateSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.space8) {
+            HStack {
+                Text("파일명 템플릿")
+                    .font(.system(size: AppTheme.fontCaption, weight: .medium))
+                    .foregroundColor(.secondary)
+                Spacer()
+                if !tether.filenamePrefix.isEmpty {
+                    Text("\(tether.filenamePrefix)\(String(format: "%04d", tether.sequenceNumber))")
+                        .font(.system(size: AppTheme.fontMicro, design: .monospaced))
+                        .foregroundColor(.orange)
+                }
+            }
+
+            HStack(spacing: AppTheme.space8) {
+                Text("접두어")
+                    .font(.system(size: AppTheme.fontCaption))
+                    .foregroundColor(.secondary)
+                    .frame(width: 44, alignment: .leading)
+
+                TextField("비워두면 원본 이름 유지", text: $tether.filenamePrefix)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: AppTheme.fontBody, design: .monospaced))
+            }
+
+            HStack(spacing: AppTheme.space8) {
+                Text("시작 #")
+                    .font(.system(size: AppTheme.fontCaption))
+                    .foregroundColor(.secondary)
+                    .frame(width: 44, alignment: .leading)
+
+                Stepper(value: $tether.sequenceNumber, in: 1...99999) {
+                    Text("\(tether.sequenceNumber)")
+                        .font(.system(size: AppTheme.fontBody, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .controlSize(.small)
+
+                Button(action: { tether.sequenceNumber = 1 }) {
+                    Text("리셋")
+                        .font(.system(size: AppTheme.fontCaption))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            if !tether.filenamePrefix.isEmpty {
+                Text("예: IMG_1234.CR3 → \(tether.filenamePrefix)\(String(format: "%04d", tether.sequenceNumber)).CR3")
+                    .font(.system(size: AppTheme.fontMicro, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+    }
+
+    // MARK: - Remote Shutter
+
+    private var remoteShutterSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.space8) {
+            Text("원격 촬영")
+                .font(.system(size: AppTheme.fontCaption, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Button(action: { tether.triggerShutter() }) {
+                HStack(spacing: AppTheme.space8) {
+                    Image(systemName: "camera.shutter.button")
+                        .font(.system(size: 16))
+                    Text("촬영 (Enter)")
+                        .font(.system(size: AppTheme.fontBody, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.red.opacity(0.15))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.red.opacity(0.4), lineWidth: 1)
+                )
+                .foregroundColor(.red)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.return, modifiers: [])
         }
     }
 

@@ -29,14 +29,22 @@ struct VideoPlayerView: View {
                 }
             }
 
-            // 재생/일시정지 중앙 인디케이터
-            if !manager.isPlaying && manager.isReady && !isScrubbing {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 72))
-                    .foregroundColor(.white.opacity(0.75))
-                    .shadow(color: .black.opacity(0.4), radius: 8)
+            // JKL 속도 오버레이 — 배속 표시 (x1/x2/x3/x4, 역재생 포함)
+            // 1.0x 외 속도거나 JKL 역재생 중일 때 표시
+            if shouldShowSpeedOverlay {
+                Text(speedOverlayText)
+                    .font(.system(size: 88, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: isReverse ? [.orange, .red] : [.cyan, .blue],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.6), radius: 10, y: 4)
+                    .transition(.scale.combined(with: .opacity))
                     .allowsHitTesting(false)
             }
+            // 재생 버튼은 숨김 (사용자 요구)
         }
         .onAppear {
             manager.loadVideo(url: url)
@@ -66,10 +74,40 @@ struct VideoPlayerView: View {
         }
     }
 
+    // MARK: - 속도 오버레이
+
+    private var isReverse: Bool {
+        // JKL 역재생 중 (jklReverseLevel > 0) 또는 player.rate 가 음수
+        manager.player.rate < 0 || (manager.playbackRate > 0 && manager.player.rate == 0 &&
+                                    (manager.player.currentItem?.canPlayReverse ?? false) == false)
+    }
+
+    private var shouldShowSpeedOverlay: Bool {
+        // 1x 정상 재생/정지 상태일 땐 숨김
+        // 2x 이상이거나 역재생 중일 때만 표시
+        let rate = abs(manager.player.rate)
+        if rate > 0 && abs(rate - 1.0) > 0.01 { return true }
+        // JKL 역재생 중 (rate=0 이지만 타이머로 움직이는 상태)
+        if manager.playbackRate > 1 { return true }
+        return false
+    }
+
+    private var speedOverlayText: String {
+        let n = max(Int(round(manager.playbackRate)), 2)
+        let arrow = isReverse ? "◀" : "▶"
+        return "\(arrow)\(arrow) x\(n)"
+    }
+
     // MARK: - 컨트롤바
 
     private var controlBar: some View {
         VStack(spacing: 8) {
+            // IN/OUT 마커 상태 라인 (마커 있을 때만)
+            if !manager.markers.isEmpty {
+                markerStatusLine
+                    .padding(.horizontal, 16)
+            }
+
             // 시크바
             scrubber
                 .padding(.horizontal, 16)
@@ -145,12 +183,104 @@ struct VideoPlayerView: View {
         )
     }
 
+    // MARK: - IN/OUT 마커 상태 라인
+
+    private var markerStatusLine: some View {
+        HStack(spacing: 10) {
+            // IN
+            if let i = manager.markers.inSeconds {
+                Button(action: { manager.jumpToIn() }) {
+                    HStack(spacing: 4) {
+                        Text("IN")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.green)
+                        Text(Self.format(i))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.15))
+                    .overlay(Capsule().stroke(Color.green.opacity(0.4), lineWidth: 0.5))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("IN 포인트로 점프 (Shift+I)")
+            }
+
+            // 중간 화살표
+            if manager.markers.hasRange {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            // OUT
+            if let o = manager.markers.outSeconds {
+                Button(action: { manager.jumpToOut() }) {
+                    HStack(spacing: 4) {
+                        Text("OUT")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.red)
+                        Text(Self.format(o))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.red.opacity(0.15))
+                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 0.5))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("OUT 포인트로 점프 (Shift+O)")
+            }
+
+            // 구간 길이
+            if let dur = manager.markers.duration {
+                Text("· \(Self.format(dur))")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.65))
+            }
+
+            Spacer()
+
+            // 클리어 버튼
+            Button(action: { manager.clearMarkers() }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9))
+                    Text("클리어")
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(.white.opacity(0.6))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("마커 전체 클리어 (X)")
+        }
+    }
+
+    /// 초 → "m:ss.fr" 포맷 (예: 12.456 → "0:12.45")
+    private static func format(_ seconds: Double) -> String {
+        let m = Int(seconds) / 60
+        let s = Int(seconds) % 60
+        let cs = Int((seconds - floor(seconds)) * 100)
+        return String(format: "%d:%02d.%02d", m, s, cs)
+    }
+
     // MARK: - 시크바
 
     private var scrubber: some View {
         GeometryReader { geo in
             let width = geo.size.width
             let progress = manager.progress
+            let duration = max(manager.duration, 0.001)
+            let inFrac = manager.markers.inSeconds.map { max(0, min(1, $0 / duration)) }
+            let outFrac = manager.markers.outSeconds.map { max(0, min(1, $0 / duration)) }
 
             ZStack(alignment: .leading) {
                 // 배경 트랙
@@ -158,12 +288,35 @@ struct VideoPlayerView: View {
                     .fill(Color.white.opacity(0.2))
                     .frame(height: 6)
 
+                // IN/OUT 구간 하이라이트 (둘 다 있을 때)
+                if let i = inFrac, let o = outFrac, o > i {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(LinearGradient(
+                            colors: [Color(red: 0.2, green: 0.85, blue: 0.4), Color(red: 0.2, green: 0.6, blue: 1.0)],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .frame(width: max(0, width * (o - i)), height: 6)
+                        .offset(x: width * i)
+                        .opacity(0.5)
+                }
+
                 // 진행 바
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color.white)
                     .frame(width: max(0, width * progress), height: 6)
 
-                // 핸들
+                // IN 마커 (초록 세로선 + 하단 삼각형)
+                if let i = inFrac {
+                    markerGlyph(color: .green, isIn: true)
+                        .offset(x: max(0, min(width - 8, width * i - 4)))
+                }
+                // OUT 마커 (빨간 세로선 + 하단 삼각형)
+                if let o = outFrac {
+                    markerGlyph(color: .red, isIn: false)
+                        .offset(x: max(0, min(width - 8, width * o - 4)))
+                }
+
+                // 재생 헤드 핸들 (마커 위에 표시)
                 Circle()
                     .fill(Color.white)
                     .frame(width: isScrubbing ? 18 : 14, height: isScrubbing ? 18 : 14)
@@ -184,6 +337,34 @@ struct VideoPlayerView: View {
             )
         }
         .frame(height: 22)
+    }
+
+    /// IN 또는 OUT 마커 글리프 (세로 바 + 상단 삼각형 깃발).
+    @ViewBuilder
+    private func markerGlyph(color: Color, isIn: Bool) -> some View {
+        ZStack(alignment: isIn ? .topLeading : .topTrailing) {
+            // 세로 바
+            Rectangle()
+                .fill(color)
+                .frame(width: 2, height: 14)
+                .offset(x: 3, y: 0)
+            // 깃발
+            Path { p in
+                if isIn {
+                    p.move(to: CGPoint(x: 5, y: 0))
+                    p.addLine(to: CGPoint(x: 14, y: 0))
+                    p.addLine(to: CGPoint(x: 5, y: 8))
+                } else {
+                    p.move(to: CGPoint(x: 5, y: 0))
+                    p.addLine(to: CGPoint(x: -4, y: 0))
+                    p.addLine(to: CGPoint(x: 5, y: 8))
+                }
+                p.closeSubpath()
+            }
+            .fill(color)
+            .frame(width: 14, height: 10)
+        }
+        .frame(width: 8, height: 14)
     }
 
     // MARK: - LUT 버튼

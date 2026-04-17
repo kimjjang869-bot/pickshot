@@ -48,7 +48,16 @@ struct ThumbnailGridView: View {
                                 return true
                             }
                             .contextMenu {
-                                // 빈 영역 우클릭 — 정렬 + 새 폴더
+                                // 빈 영역 우클릭 — 붙여넣기 + 정렬 + 새 폴더
+                                Button(action: {
+                                    pasteFilesFromPasteboard(store: store)
+                                }) {
+                                    Label("붙여넣기  ⌘V", systemImage: "doc.on.clipboard")
+                                }
+                                .disabled(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
+
+                                Divider()
+
                                 Menu("정렬") {
                                     Button("이름순") { store.sortMode = .nameAsc }
                                     Button("이름순 (역순)") { store.sortMode = .nameDesc }
@@ -768,6 +777,17 @@ struct LazyThumbnailWrapper: View {
                     .stroke(isSelected ? AppTheme.selectionBorder : Color.clear, lineWidth: AppTheme.cellBorderWidth)
             )
             .contentShape(Rectangle())
+            // 폴더 자체 드래그 — SwiftUI 네이티브 .onDrag (커스텀 NSView 보다 이벤트 관리 안정적)
+            .onDrag {
+                let provider = NSItemProvider(object: photo.jpgURL as NSURL)
+                provider.suggestedName = photo.jpgURL.lastPathComponent
+                return provider
+            }
+            // 다른 폴더/파일을 이 폴더 안으로 드롭 받기
+            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
+                return true
+            }
             .onTapGesture {
                 if NSApp.currentEvent?.clickCount == 2 {
                     store.loadFolder(photo.jpgURL)
@@ -776,14 +796,12 @@ struct LazyThumbnailWrapper: View {
                     store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
                 }
             }
-            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
-                handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
-                return true
-            }
             .contextMenu {
                 Button("Finder에서 열기") {
                     NSWorkspace.shared.open(photo.jpgURL)
                 }
+                Divider()
+                copyCutPasteMenu(for: photo, store: store)
                 Divider()
                 Button(role: .destructive) {
                     store.requestDeleteOriginal(ids: [photo.id])
@@ -817,6 +835,8 @@ struct LazyThumbnailWrapper: View {
                     }
                     if photo.isFolder {
                         Divider()
+                        copyCutPasteMenu(for: photo, store: store)
+                        Divider()
                         Button(role: .destructive) {
                             store.requestDeleteOriginal(ids: [photo.id])
                         } label: {
@@ -830,19 +850,95 @@ struct LazyThumbnailWrapper: View {
         }
     }
 
-    /// 폴더 썸네일에 드래그 드롭 시 선택된 사진을 해당 폴더로 이동
+    /// 폴더 썸네일에 드래그 드롭 시:
+    /// - 사진 드래그 → 해당 폴더로 이동
+    /// - 폴더 드래그 → 대상 폴더 안으로 이동 (자기 자신/자식으로 이동 방지)
+    /// 동시 드롭 방지 (같은 드롭이 두 번 fire 되지 않도록)
     private func handleDropOnFolder(providers: [NSItemProvider], folderURL: URL) {
-        // 선택된 사진의 파일 URL 수집
-        var fileURLs: [URL] = []
-        for id in store.selectedPhotoIDs {
-            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
-            let p = store.photos[idx]
-            guard !p.isFolder && !p.isParentFolder else { continue }
-            fileURLs.append(p.jpgURL)
-            if let rawURL = p.rawURL, rawURL != p.jpgURL { fileURLs.append(rawURL) }
+        // 빠른 연속 드롭 방지 — 현재 진행 중이면 무시
+        let now = CFAbsoluteTimeGetCurrent()
+        if let last = Self.lastDropFolderTime, now - last < 0.3,
+           Self.lastDropFolderURL == folderURL {
+            return
         }
-        guard !fileURLs.isEmpty else { return }
-        store.movePhotosToFolder(fileURLs: fileURLs, destination: folderURL)
+        Self.lastDropFolderTime = now
+        Self.lastDropFolderURL = folderURL
+        // 이후 오리지널 로직 이어짐 — inner impl 호출
+        handleDropOnFolderImpl(providers: providers, folderURL: folderURL)
+    }
+    private static var lastDropFolderTime: CFAbsoluteTime?
+    private static var lastDropFolderURL: URL?
+
+    private func handleDropOnFolderImpl(providers: [NSItemProvider], folderURL: URL) {
+        // providers 에서 파일 URL 추출 (drag overlay 가 pasteboard 로 전달한 경우 대비)
+        var droppedURLs: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier("public.file-url") else { continue }
+            group.enter()
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                defer { group.leave() }
+                if let data = item as? Data, let u = URL(dataRepresentation: data, relativeTo: nil) {
+                    droppedURLs.append(u)
+                } else if let u = item as? URL {
+                    droppedURLs.append(u)
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            // 외부 소스(providers) 에서 못 받은 경우 → 현재 선택 기준으로 폴백
+            var fileURLs: [URL] = droppedURLs.isEmpty ? [] : droppedURLs
+            var folderURLs: [URL] = []
+
+            if fileURLs.isEmpty {
+                // 그리드 내부 선택 기반 (기존 로직)
+                for id in store.selectedPhotoIDs {
+                    guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+                    let p = store.photos[idx]
+                    if p.isParentFolder { continue }
+                    if p.isFolder {
+                        folderURLs.append(p.jpgURL)
+                    } else {
+                        fileURLs.append(p.jpgURL)
+                        if let raw = p.rawURL, raw != p.jpgURL { fileURLs.append(raw) }
+                    }
+                }
+            } else {
+                // Provider 기반: URL 타입별 분류
+                var files: [URL] = []
+                for u in fileURLs {
+                    // 자기 자신이나 부모로 드롭 방지
+                    if u == folderURL || folderURL.path.hasPrefix(u.path + "/") { continue }
+                    if u.hasDirectoryPath {
+                        folderURLs.append(u)
+                    } else {
+                        files.append(u)
+                    }
+                }
+                fileURLs = files
+            }
+
+            // 파일 이동
+            if !fileURLs.isEmpty {
+                store.movePhotosToFolder(fileURLs: fileURLs, destination: folderURL)
+            }
+            // 폴더 이동
+            for src in folderURLs {
+                let dest = folderURL.appendingPathComponent(src.lastPathComponent)
+                do {
+                    try FileManager.default.moveItem(at: src, to: dest)
+                    store.showToastMessage("📁 '\(src.lastPathComponent)' → '\(folderURL.lastPathComponent)' 이동")
+                } catch {
+                    store.showToastMessage("⚠️ 폴더 이동 실패: \(error.localizedDescription)")
+                }
+            }
+            if !folderURLs.isEmpty {
+                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
+                if let current = store.folderURL {
+                    store.loadFolder(current, restoreRatings: true)
+                }
+            }
+        }
     }
 }
 
@@ -902,6 +998,36 @@ struct LazyListRowWrapper: View {
 }
 
 // MARK: - Photo Context Menu (Right-click)
+
+/// 폴더/사진 공통: 복사/잘라내기/붙여넣기 컨텍스트 메뉴 3줄.
+@ViewBuilder
+func copyCutPasteMenu(for photo: PhotoItem, store: PhotoStore) -> some View {
+    Button(action: {
+        // 선택 안돼있으면 현재 사진만 선택하고 복사
+        if !store.selectedPhotoIDs.contains(photo.id) {
+            store.selectedPhotoIDs = [photo.id]
+            store.selectedPhotoID = photo.id
+        }
+        copySelectionToPasteboard(store: store)
+    }) {
+        Label("복사  ⌘C", systemImage: "doc.on.doc")
+    }
+    Button(action: {
+        if !store.selectedPhotoIDs.contains(photo.id) {
+            store.selectedPhotoIDs = [photo.id]
+            store.selectedPhotoID = photo.id
+        }
+        cutSelectionToPasteboard(store: store)
+    }) {
+        Label("잘라내기  ⌘X", systemImage: "scissors")
+    }
+    Button(action: {
+        pasteFilesFromPasteboard(store: store)
+    }) {
+        Label("붙여넣기  ⌘V", systemImage: "doc.on.clipboard")
+    }
+    .disabled(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
+}
 
 struct PhotoContextMenu: View {
     let photo: PhotoItem
@@ -975,6 +1101,20 @@ struct PhotoContextMenu: View {
     }
 
     var body: some View {
+        // 복사 / 잘라내기 / 붙여넣기
+        Button(action: { copySelectionToPasteboard(store: store) }) {
+            Label("복사  ⌘C", systemImage: "doc.on.doc")
+        }
+        Button(action: { cutSelectionToPasteboard(store: store) }) {
+            Label("잘라내기  ⌘X", systemImage: "scissors")
+        }
+        Button(action: { pasteFilesFromPasteboard(store: store) }) {
+            Label("붙여넣기  ⌘V", systemImage: "doc.on.clipboard")
+        }
+        .disabled(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
+
+        Divider()
+
         // 새 폴더로 이동 (최상단)
         Button(action: {
             let alert = NSAlert()
@@ -1253,6 +1393,7 @@ struct ThumbnailCell: View, Equatable {
         lhs.photo.colorLabel == rhs.photo.colorLabel &&
         lhs.photo.isSpacePicked == rhs.photo.isSpacePicked &&
         lhs.photo.isGSelected == rhs.photo.isGSelected
+        // ⚠️ pendingCut 은 Equatable 에 포함 X — @EnvironmentObject 자체 변화로 body 재호출됨
     }
 
     private var badgeFont: Font { .system(size: max(8, size * 0.065), weight: .bold) }
@@ -1286,6 +1427,8 @@ struct ThumbnailCell: View, Equatable {
         .background(cellBackground)
         .overlay(cellBorder)
         .overlay(selectionRing)
+        // 잘라내기 상태면 opacity 낮춤 (시각 피드백)
+        .opacity(store.pendingCutPhotoIDs.contains(photo.id) ? 0.45 : 1.0)
         .onHover { isHovered = $0 }
     }
 
@@ -2545,34 +2688,57 @@ struct MultiFileDragView: NSViewRepresentable {
             mouseDownPoint = nil
 
             guard let store = store, let photo = photo else { return }
-            guard !photo.isFolder && !photo.isParentFolder else { return }
+            // parentFolder(상위 폴더 네비게이션) 만 제외. 일반 폴더는 드래그 허용.
+            guard !photo.isParentFolder else { return }
 
-            // Collect all selected file URLs
+            // Collect all selected file/folder URLs
+            // ⚠️ 영상 .xmp 사이드카는 드래그에 포함 안 함 — 편집툴이 별도 파일로 오해해서 import 실패
             let ids = store.selectedPhotoIDs.contains(photo.id) ? store.selectedPhotoIDs : [photo.id]
             var fileURLs: [URL] = []
             for id in ids {
                 guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
                 let p = store.photos[idx]
-                guard !p.isFolder && !p.isParentFolder else { continue }
-                fileURLs.append(p.jpgURL)
-                if let rawURL = p.rawURL, rawURL != p.jpgURL { fileURLs.append(rawURL) }
+                if p.isParentFolder { continue }
+                if p.isFolder {
+                    // 폴더 자체 드래그 (이동)
+                    fileURLs.append(p.jpgURL)
+                } else {
+                    fileURLs.append(p.jpgURL)
+                    if let rawURL = p.rawURL, rawURL != p.jpgURL { fileURLs.append(rawURL) }
+                }
             }
             guard !fileURLs.isEmpty else { return }
 
-            // Create dragging items — 파일 URL + photo ID (리오더용)
+            // 드래그 아이템 — 파일마다 독립 pasteboard item 으로 추가
+            // (한 item 에 하나의 fileURL 만 가능 → 여러 파일은 items 배열로)
             var items: [NSDraggingItem] = []
-            let pbItem = NSPasteboardItem()
-            if let firstURL = fileURLs.first {
-                pbItem.setString(firstURL.absoluteString, forType: .fileURL)
+            for (index, url) in fileURLs.enumerated() {
+                let pb = NSPasteboardItem()
+                pb.setString(url.absoluteString, forType: .fileURL)
+                // photo ID 는 첫 번째 item 에만 (내부 리오더용)
+                if index == 0 {
+                    pb.setString(photo.id.uuidString, forType: .string)
+                }
+                let di = NSDraggingItem(pasteboardWriter: pb)
+                items.append(di)
             }
-            pbItem.setString(photo.id.uuidString, forType: .string)
-            let dragItem = NSDraggingItem(pasteboardWriter: pbItem)
+            // 드래그 프리뷰는 첫 번째 아이템에 붙이기 위해 인용
+            let dragItem = items[0]
 
             // 드래그 미리보기: 썸네일 이미지 (80x80) + 선택 개수 배지
             let previewSize: CGFloat = 80
             let dragImage: NSImage
-            if let thumbImage = DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
-                ?? NSImage(contentsOf: photo.jpgURL) {
+            // ⚠️ 영상 파일엔 NSImage(contentsOf:) 쓰지 말 것 — main 에서 전체 디코딩 시도 → 무한 멈춤
+            // 영상은 DiskThumbnailCache 또는 메모리 ThumbnailCache 만 사용
+            let loadedThumb: NSImage? = {
+                if photo.isVideoFile {
+                    return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
+                        ?? ThumbnailCache.shared.get(photo.jpgURL)
+                }
+                return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
+                    ?? NSImage(contentsOf: photo.jpgURL)
+            }()
+            if let thumbImage = loadedThumb {
                 // 리사이즈
                 let resized = NSImage(size: NSSize(width: previewSize, height: previewSize))
                 resized.lockFocus()
@@ -2605,11 +2771,20 @@ struct MultiFileDragView: NSViewRepresentable {
                 dragImage = NSWorkspace.shared.icon(forFile: fileURLs.first?.path ?? "")
             }
 
+            // ⚠️ 모든 NSDraggingItem 에 draggingFrame 필수 — 없으면 크래시
+            // 첫 번째 아이템만 실제 썸네일 이미지, 나머지(.xmp, RAW 등)는 1x1 투명 프레임
             dragItem.setDraggingFrame(
                 NSRect(x: 0, y: 0, width: previewSize, height: previewSize),
                 contents: dragImage
             )
-            items.append(dragItem)
+            // 나머지 아이템: 같은 이미지로 설정하되 offset 을 다르게 (시각적 중복 최소화)
+            // contents 는 NSImage 공유해도 ARC 로 관리됨.
+            for i in 1..<items.count {
+                items[i].setDraggingFrame(
+                    NSRect(x: 0, y: 0, width: previewSize, height: previewSize),
+                    contents: nil  // 추가 파일은 프리뷰 없이 빈 프레임
+                )
+            }
 
             beginDraggingSession(with: items, event: event, source: self)
         }
@@ -2696,11 +2871,15 @@ struct TileGridView: NSViewRepresentable {
 
         // 선택 변경 — 가벼운 업데이트만
         let selChanged = tileView.selectedID != store.selectedPhotoID ||
-                         tileView.selectedIDs != store.selectedPhotoIDs
+                         tileView.selectedIDs != store.selectedPhotoIDs ||
+                         tileView.pendingCutPhotoIDs != store.pendingCutPhotoIDs
         if selChanged {
             tileView.selectedID = store.selectedPhotoID
             tileView.selectedIDs = store.selectedPhotoIDs
+            tileView.pendingCutPhotoIDs = store.pendingCutPhotoIDs
             tileView.updateSelectionOnly()
+            // cut 상태 변화 반영 — visibleTiles opacity 일괄 갱신
+            tileView.updateVisibleTiles()
         }
 
         // 스크롤 트리거
@@ -2722,6 +2901,8 @@ struct TileGridView: NSViewRepresentable {
 class TileDocumentView: NSView {
     var store: PhotoStore?
     var photos: [PhotoItem] = []
+    /// 잘라내기 대기 중인 사진 ID — 타일 opacity 낮춰 표시
+    var pendingCutPhotoIDs: Set<UUID> = []
     var photosVersion: Int = -1
     var thumbSize: CGFloat = 100
     var selectedID: UUID?
@@ -2792,6 +2973,7 @@ class TileDocumentView: NSView {
             let y = inset + CGFloat(row) * (cellH + lineSpacing)
             let tileFrame = CGRect(x: x, y: y, width: cellW, height: cellH)
 
+            let cutFlag = pendingCutPhotoIDs.contains(photo.id)
             if let tile = visibleTiles[idx] {
                 // 위치만 업데이트
                 if tile.frame != tileFrame {
@@ -2804,15 +2986,23 @@ class TileDocumentView: NSView {
                     isSelected: selectedIDs.contains(photo.id),
                     isFocused: selectedID == photo.id
                 )
+                // cut 상태 변화 반영
+                let targetOpacity: Float = cutFlag ? 0.45 : 1.0
+                if abs(tile.opacity - targetOpacity) > 0.01 {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    tile.opacity = targetOpacity
+                    CATransaction.commit()
+                }
             } else {
-                // 새 타일
                 let tile = recyclePool.popLast() ?? TileLayer()
                 tile.frame = tileFrame
                 tile.configure(
                     photo: photo,
                     size: thumbSize,
                     isSelected: selectedIDs.contains(photo.id),
-                    isFocused: selectedID == photo.id
+                    isFocused: selectedID == photo.id,
+                    isPendingCut: cutFlag
                 )
                 layer?.addSublayer(tile)
                 visibleTiles[idx] = tile
@@ -3033,6 +3223,9 @@ class TileLayer: CALayer {
     private let textLayer = CATextLayer()
     private let borderLayer = CALayer()
     private let badgeLayer = CATextLayer()
+    // IN/OUT 마커 바 (영상 썸네일 하단)
+    private let markerTrack = CALayer()
+    private let markerFill = CALayer()
     private var currentURL: URL?
 
     override init() {
@@ -3066,14 +3259,29 @@ class TileLayer: CALayer {
         badgeLayer.masksToBounds = true
         badgeLayer.isHidden = true
         addSublayer(badgeLayer)
+
+        // IN/OUT 마커 트랙 (얇은 선)
+        markerTrack.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        markerTrack.cornerRadius = 1
+        markerTrack.isHidden = true
+        addSublayer(markerTrack)
+
+        // 선택 구간 채우기 (초록→파랑 그라데이션 대신 단색 민트)
+        markerFill.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.9).cgColor
+        markerFill.cornerRadius = 1
+        markerFill.isHidden = true
+        markerTrack.addSublayer(markerFill)
     }
 
     required init?(coder: NSCoder) { fatalError() }
     override init(layer: Any) { super.init(layer: layer) }
 
-    func configure(photo: PhotoItem, size: CGFloat, isSelected: Bool, isFocused: Bool) {
+    func configure(photo: PhotoItem, size: CGFloat, isSelected: Bool, isFocused: Bool, isPendingCut: Bool = false) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+
+        // 잘라내기 대기 상태 시각 피드백 — opacity 낮춤
+        self.opacity = isPendingCut ? 0.45 : 1.0
 
         let imgH = size * 0.75
         imageLayer.frame = CGRect(x: 5, y: 2, width: size, height: imgH)
@@ -3096,6 +3304,37 @@ class TileLayer: CALayer {
         }
 
         updateSelection(isSelected: isSelected, isFocused: isFocused)
+
+        // 영상 파일이면 IN/OUT 마커 바 표시
+        if photo.isVideoFile {
+            let markers = VideoMarkerService.shared.markers(for: photo.jpgURL)
+            if !markers.isEmpty {
+                // 트랙: 이미지 영역 하단에 2px 두께 바
+                let barY = imgH - 4
+                markerTrack.frame = CGRect(x: 8, y: barY, width: size - 6, height: 2)
+                markerTrack.isHidden = false
+
+                // 채우기: IN/OUT 둘 다 있을 때만, 영상 길이 대비 비율로
+                if let i = markers.inSeconds, let o = markers.outSeconds,
+                   let dur = photo.videoDuration, dur > 0, o > i {
+                    let startFrac = max(0, min(1, i / dur))
+                    let endFrac = max(0, min(1, o / dur))
+                    let trackW = size - 6
+                    markerFill.frame = CGRect(x: trackW * startFrac, y: 0,
+                                              width: trackW * (endFrac - startFrac), height: 2)
+                    markerFill.isHidden = false
+                } else {
+                    // 한쪽만 있을 때 — 작은 점 표시
+                    markerFill.isHidden = true
+                }
+            } else {
+                markerTrack.isHidden = true
+                markerFill.isHidden = true
+            }
+        } else {
+            markerTrack.isHidden = true
+            markerFill.isHidden = true
+        }
 
         // 썸네일 로딩
         let url = photo.jpgURL

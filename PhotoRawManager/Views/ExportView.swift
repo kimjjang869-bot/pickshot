@@ -53,7 +53,7 @@ struct ExportView: View {
     var body: some View {
         VStack(spacing: 16) {
             // Header
-            Text("사진 내보내기")
+            Text("사진/영상 내보내기")
                 .font(.system(size: 18, weight: .bold))
 
             // Export target tabs — full width
@@ -210,7 +210,7 @@ struct ExportView: View {
             if exportTarget == .folder {
                 HStack(spacing: 16) {
                     Toggle(isOn: $exportJPG) {
-                        Text("JPG 내보내기")
+                        Text("사진/영상 내보내기")
                             .font(.system(size: 12))
                     }
                     .toggleStyle(.checkbox)
@@ -234,10 +234,10 @@ struct ExportView: View {
                     HStack(spacing: 12) {
                         if exportJPG {
                             HStack(spacing: 4) {
-                                Text("JPG 폴더명")
+                                Text("사진/영상 폴더명")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                    .frame(width: 65, alignment: .trailing)
+                                    .frame(width: 95, alignment: .trailing)
                                 TextField("JPG", text: $jpgFolderName)
                                     .textFieldStyle(.roundedBorder)
                                     .font(.system(size: 12, design: .monospaced))
@@ -262,13 +262,20 @@ struct ExportView: View {
 
             // Summary — 단일 루프로 통계 계산
             let photos = photosToExport
-            let (withRAW, ratedCount): (Int, Int) = {
-                var raw = 0, rated = 0
+            let (withRAW, ratedCount, videoCount, photoCount, videoMarkerCount): (Int, Int, Int, Int, Int) = {
+                var raw = 0, rated = 0, video = 0, photo = 0, videoMarker = 0
                 for p in photos {
                     if p.hasRAW { raw += 1 }
                     if p.rating > 0 { rated += 1 }
+                    if p.isVideoFile {
+                        video += 1
+                        let xmpPath = p.jpgURL.appendingPathExtension("xmp").path
+                        if FileManager.default.fileExists(atPath: xmpPath) { videoMarker += 1 }
+                    } else if !p.isRawOnly {
+                        photo += 1
+                    }
                 }
-                return (raw, rated)
+                return (raw, rated, video, photo, videoMarker)
             }()
 
             VStack(alignment: .leading, spacing: 4) {
@@ -286,7 +293,18 @@ struct ExportView: View {
                             .foregroundColor(.orange)
                     }
                 } else {
-                    Text("JPG: \(photos.count)장")
+                    if photoCount > 0 {
+                        Text("사진: \(photoCount)장")
+                    }
+                    if videoCount > 0 {
+                        Text("영상: \(videoCount)개")
+                            .foregroundColor(.purple)
+                    }
+                    if videoMarkerCount > 0 {
+                        Text("영상 마커(IN/OUT) XMP: \(videoMarkerCount)개 동반")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
                     Text("RAW: \(withRAW)장 (매칭됨)")
                         .foregroundColor(withRAW > 0 ? .green : .secondary)
                 }

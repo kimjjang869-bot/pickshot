@@ -24,128 +24,139 @@
 		89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */; };
 		901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */; };
 		939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997C658F4814B05A202D514 /* MatchingView.swift */; };
-		A10001 /* PhotoRawManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* PhotoRawManagerApp.swift */; };
-		A10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* ContentView.swift */; };
-		A10003 /* PhotoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* PhotoItem.swift */; };
-		A10004 /* PhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004 /* PhotoStore.swift */; };
-		A10005 /* FileMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* FileMatchingService.swift */; };
-		A10006 /* ExifService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* ExifService.swift */; };
-		A10007 /* FileCopyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* FileCopyService.swift */; };
-		A10008 /* ThumbnailGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* ThumbnailGridView.swift */; };
-		A10009 /* PhotoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* PhotoPreviewView.swift */; };
-		A10010 /* StarRatingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* StarRatingView.swift */; };
-		A10011 /* ExifInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ExifInfoView.swift */; };
-		A10012 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* ExportView.swift */; };
-		A10013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10013 /* Assets.xcassets */; };
-		L10001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = L10002 /* Localizable.xcstrings */; };
-		A10014 /* ImageAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ImageAnalysisService.swift */; };
-		A10015 /* ImageCorrectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* ImageCorrectionService.swift */; };
-		A10017 /* AIAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* AIAnalysisView.swift */; };
-		A10018 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10018 /* SubscriptionManager.swift */; };
-		A10019 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10019 /* PaywallView.swift */; };
-		A10020 /* ShortcutHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020 /* ShortcutHelpView.swift */; };
-		A10021 /* HistogramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021 /* HistogramView.swift */; };
-		A10022 /* CompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* CompareView.swift */; };
-		A10023 /* SlideshowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* SlideshowView.swift */; };
-		A10024 /* TouchBarProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* TouchBarProvider.swift */; };
-		A10025 /* FolderWatcherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10025 /* FolderWatcherService.swift */; };
-		A10026 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* AppTheme.swift */; };
-		A10027 /* FilmstripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027 /* FilmstripView.swift */; };
-		A10028 /* BatchRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028 /* BatchRenameView.swift */; };
-		A10029 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029 /* MapView.swift */; };
-		A10030 /* FaceGroupingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10030 /* FaceGroupingService.swift */; };
-		A10032 /* GoogleDriveUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10032 /* GoogleDriveUploadView.swift */; };
-		A10033 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033 /* AboutView.swift */; };
-		A10056 /* NSThumbnailCollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10056 /* NSThumbnailCollectionView.swift */; };
-		AE10001 /* AIEnhanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE10002 /* AIEnhanceService.swift */; };
-		AF10001 /* AdaFaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF10002 /* AdaFaceService.swift */; };
-		AF10003 /* AdaFaceR18.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = AF10004 /* AdaFaceR18.mlpackage */; };
-		AI20001 /* APIUsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AI20002 /* APIUsageTracker.swift */; };
-		AI20003 /* ClaudeVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AI20004 /* ClaudeVisionService.swift */; };
-		AI20005 /* GeminiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AI20006 /* GeminiService.swift */; };
-		B20034 /* GSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20034 /* GSelectService.swift */; };
-		B20035 /* GSelectSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20035 /* GSelectSetupView.swift */; };
-		B20036 /* GSelectQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20036 /* GSelectQRView.swift */; };
-		B20037 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20037 /* Logger.swift */; };
-		B20038 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20038 /* KeychainService.swift */; };
-		B20039 /* PickshotFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20039 /* PickshotFileService.swift */; };
-		B20042 /* PerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20042 /* PerformanceMonitor.swift */; };
-		BP10001 /* BatchProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10002 /* BatchProcessService.swift */; };
-		BP10003 /* BatchProcessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP10004 /* BatchProcessView.swift */; };
-		CFG10001 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFG10002 /* AppConfig.swift */; };
-		CL20001 /* LocalOAuthServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL20002 /* LocalOAuthServer.swift */; };
-		CL20003 /* GoogleDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL20004 /* GoogleDriveService.swift */; };
-		CR10001 /* CropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CR10002 /* CropView.swift */; };
-		CS10001 /* ClientSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS10003 /* ClientSelectService.swift */; };
-		CS10002 /* ClientSelectSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS10004 /* ClientSelectSetupView.swift */; };
-		CV10001 /* ContentView+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CV10002 /* ContentView+Toolbar.swift */; };
-		CV10003 /* ContentView+FolderBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CV10004 /* ContentView+FolderBrowser.swift */; };
-		CV20001 /* MultiPreviewGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = CV20002 /* MultiPreviewGrid.swift */; };
-		CV20003 /* DualViewerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CV20004 /* DualViewerContent.swift */; };
-		CV20005 /* CustomPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CV20006 /* CustomPromptView.swift */; };
-		DC10002 /* DiskThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC10001 /* DiskThumbnailCache.swift */; };
+		'A10001' = {isa = PBXBuildFile; fileRef = B10001; };
+		'A10002' = {isa = PBXBuildFile; fileRef = B10002; };
+		'A10003' = {isa = PBXBuildFile; fileRef = B10003; };
+		'A10004' = {isa = PBXBuildFile; fileRef = B10004; };
+		'A10005' = {isa = PBXBuildFile; fileRef = B10005; };
+		'A10006' = {isa = PBXBuildFile; fileRef = B10006; };
+		'A10007' = {isa = PBXBuildFile; fileRef = B10007; };
+		'A10008' = {isa = PBXBuildFile; fileRef = B10008; };
+		'A10009' = {isa = PBXBuildFile; fileRef = B10009; };
+		'A10010' = {isa = PBXBuildFile; fileRef = B10010; };
+		'A10011' = {isa = PBXBuildFile; fileRef = B10011; };
+		'A10012' = {isa = PBXBuildFile; fileRef = B10012; };
+		'A10013' = {isa = PBXBuildFile; fileRef = B10013; };
+		'A10014' = {isa = PBXBuildFile; fileRef = B10014; };
+		'A10015' = {isa = PBXBuildFile; fileRef = B10015; };
+		'A10017' = {isa = PBXBuildFile; fileRef = B10017; };
+		'A10018' = {isa = PBXBuildFile; fileRef = B10018; };
+		'A10019' = {isa = PBXBuildFile; fileRef = B10019; };
+		'A10020' = {isa = PBXBuildFile; fileRef = B10020; };
+		'A10021' = {isa = PBXBuildFile; fileRef = B10021; };
+		'A10022' = {isa = PBXBuildFile; fileRef = B10022; };
+		'A10023' = {isa = PBXBuildFile; fileRef = B10023; };
+		'A10024' = {isa = PBXBuildFile; fileRef = B10024; };
+		'A10025' = {isa = PBXBuildFile; fileRef = B10025; };
+		'A10026' = {isa = PBXBuildFile; fileRef = B10026; };
+		'A10027' = {isa = PBXBuildFile; fileRef = B10027; };
+		'A10028' = {isa = PBXBuildFile; fileRef = B10028; };
+		'A10029' = {isa = PBXBuildFile; fileRef = B10029; };
+		'A10030' = {isa = PBXBuildFile; fileRef = B10030; };
+		'A10032' = {isa = PBXBuildFile; fileRef = B10032; };
+		'A10033' = {isa = PBXBuildFile; fileRef = B10033; };
+		'A10056' = {isa = PBXBuildFile; fileRef = B10056; };
+		AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */; };
+		FCR10001 /* FileConflictResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCR10002 /* FileConflictResolver.swift */; };
+		'AE10001' = {isa = PBXBuildFile; fileRef = AE10002; };
+		'AF10001' = {isa = PBXBuildFile; fileRef = AF10002; };
+		'AF10003' = {isa = PBXBuildFile; fileRef = AF10004; };
+		'AI20001' = {isa = PBXBuildFile; fileRef = AI20002; };
+		'AI20003' = {isa = PBXBuildFile; fileRef = AI20004; };
+		'AI20005' = {isa = PBXBuildFile; fileRef = AI20006; };
+		'B20034' = {isa = PBXBuildFile; fileRef = A20034; };
+		'B20035' = {isa = PBXBuildFile; fileRef = A20035; };
+		'B20036' = {isa = PBXBuildFile; fileRef = A20036; };
+		'B20037' = {isa = PBXBuildFile; fileRef = A20037; };
+		'B20038' = {isa = PBXBuildFile; fileRef = A20038; };
+		'B20039' = {isa = PBXBuildFile; fileRef = A20039; };
+		'B20042' = {isa = PBXBuildFile; fileRef = A20042; };
+		'BP10001' = {isa = PBXBuildFile; fileRef = BP10002; };
+		'BP10003' = {isa = PBXBuildFile; fileRef = BP10004; };
+		'CFG10001' = {isa = PBXBuildFile; fileRef = CFG10002; };
+		'CL20001' = {isa = PBXBuildFile; fileRef = CL20002; };
+		'CL20003' = {isa = PBXBuildFile; fileRef = CL20004; };
+		'CR10001' = {isa = PBXBuildFile; fileRef = CR10002; };
+		'CS10001' = {isa = PBXBuildFile; fileRef = CS10003; };
+		'CS10002' = {isa = PBXBuildFile; fileRef = CS10004; };
+		'CV10001' = {isa = PBXBuildFile; fileRef = CV10002; };
+		'CV10003' = {isa = PBXBuildFile; fileRef = CV10004; };
+		'CV20001' = {isa = PBXBuildFile; fileRef = CV20002; };
+		'CV20003' = {isa = PBXBuildFile; fileRef = CV20004; };
+		'CV20005' = {isa = PBXBuildFile; fileRef = CV20006; };
+		'DC10002' = {isa = PBXBuildFile; fileRef = DC10001; };
 		DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */; };
 		F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C8DC3227F94E990E2676A /* AutoCullView.swift */; };
 		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
 		F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */; };
-		FC10001 /* FaceCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10002 /* FaceCompareView.swift */; };
-		FPK10001 /* FocusPeakingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPK10002 /* FocusPeakingOverlay.swift */; };
-		HW10001 /* HWJPEGDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10002 /* HWJPEGDecoder.swift */; };
-		NR10001 /* NASOptimizedReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = NR10002 /* NASOptimizedReader.swift */; };
-		HW10003 /* MetalImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10004 /* MetalImageProcessor.swift */; };
-		HW10005 /* ParallelFFD8Scanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10006 /* ParallelFFD8Scanner.swift */; };
-		HW10007 /* AggressiveImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10008 /* AggressiveImageCache.swift */; };
-		KWT10001 /* KeywordTaggingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KWT10002 /* KeywordTaggingService.swift */; };
-		LUT10001 /* LUTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = LUT10002 /* LUTService.swift */; };
-		PB20001 /* BackupProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20002 /* BackupProgressBar.swift */; };
-		PB20003 /* ExportProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20004 /* ExportProgressBar.swift */; };
-		PB20005 /* ClientUploadProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20006 /* ClientUploadProgressBar.swift */; };
-		PB20007 /* FileMoveProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20008 /* FileMoveProgressBar.swift */; };
-		PB20009 /* AIClassifyProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20010 /* AIClassifyProgressBar.swift */; };
-		PB20011 /* VisionAnalysisProgressPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = PB20012 /* VisionAnalysisProgressPanel.swift */; };
-		PS10001 /* PictureStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10002 /* PictureStyleService.swift */; };
-		PS10003 /* PictureStylePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS10004 /* PictureStylePreviewView.swift */; };
-		PSA20001 /* PhotoStore+Analysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSA20002 /* PhotoStore+Analysis.swift */; };
-		PSC20001 /* PhotoStore+Collections.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSC20002 /* PhotoStore+Collections.swift */; };
-		PSE20001 /* PhotoStore+Exif.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSE20002 /* PhotoStore+Exif.swift */; };
-		PSF20001 /* PhotoStore+Folder.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSF20002 /* PhotoStore+Folder.swift */; };
-		PSM20001 /* PhotoStore+Move.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSM20002 /* PhotoStore+Move.swift */; };
-		PSR20001 /* PhotoStore+Rating.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSR20002 /* PhotoStore+Rating.swift */; };
-		PSS20001 /* PhotoStore+Selection.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSS20002 /* PhotoStore+Selection.swift */; };
-		PSU20001 /* PhotoStore+UI.swift in Sources */ = {isa = PBXBuildFile; fileRef = PSU20002 /* PhotoStore+UI.swift */; };
-		SBS10001 /* SandboxBookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SBS10002 /* SandboxBookmarkService.swift */; };
-		SC10001 /* SmartCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SC10002 /* SmartCropService.swift */; };
-		SE20001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20002 /* SettingsView.swift */; };
-		SE20003 /* GeneralSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20004 /* GeneralSettingsTab.swift */; };
-		SE20005 /* PreviewSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20006 /* PreviewSettingsTab.swift */; };
-		SE20007 /* ExportSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20008 /* ExportSettingsTab.swift */; };
-		SE20009 /* AIEngineSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20010 /* AIEngineSettingsTab.swift */; };
-		SE20011 /* PerformanceSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20012 /* PerformanceSettingsTab.swift */; };
-		SE20013 /* ShortcutsSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20014 /* ShortcutsSettingsTab.swift */; };
-		SE20015 /* CacheSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20016 /* CacheSettingsTab.swift */; };
-		SE20017 /* PerformanceOptimizeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE20018 /* PerformanceOptimizeTab.swift */; };
-		SMC10001 /* SmartCullService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10002 /* SmartCullService.swift */; };
-		SMC10003 /* SmartCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMC10004 /* SmartCullView.swift */; };
-		SSP10001 /* SystemSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = SSP10002 /* SystemSpec.swift */; };
-		STL10001 /* StyleLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = STL10002 /* StyleLearner.swift */; };
-		SV20001 /* APIUsageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20002 /* APIUsageViews.swift */; };
-		SV20003 /* AnalysisOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20004 /* AnalysisOptionsView.swift */; };
-		SV20005 /* SelectionInfoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20006 /* SelectionInfoBadge.swift */; };
-		SV20007 /* DragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20008 /* DragHandle.swift */; };
-		SV20009 /* KeyEventHandling.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20010 /* KeyEventHandling.swift */; };
-		SV20011 /* DisabledGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20012 /* DisabledGuide.swift */; };
-		SV20013 /* StartupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20014 /* StartupView.swift */; };
-		SV20015 /* FileSyncPopupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20016 /* FileSyncPopupView.swift */; };
-		SV20017 /* RawMatchResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20018 /* RawMatchResultView.swift */; };
-		SV20019 /* FullscreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20020 /* FullscreenView.swift */; };
-		SV20021 /* PickshotImportResultSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV20022 /* PickshotImportResultSheet.swift */; };
-		TKS10001 /* TesterKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = TKS10002 /* TesterKeyService.swift */; };
-		UG10001 /* UprightGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = UG10002 /* UprightGuideView.swift */; };
-		VPM10001 /* VideoPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPM10002 /* VideoPlayerManager.swift */; };
-		VPV10001 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VPV10002 /* VideoPlayerView.swift */; };
-		WMP10001 /* WatermarkPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WMP10002 /* WatermarkPreviewView.swift */; };
-		XMP10001 /* XMPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = XMP10002 /* XMPService.swift */; };
-		ZEB10001 /* ZebraWarningOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = ZEB10002 /* ZebraWarningOverlay.swift */; };
+		'FC10001' = {isa = PBXBuildFile; fileRef = FC10002; };
+		'FPK10001' = {isa = PBXBuildFile; fileRef = FPK10002; };
+		'HW10001' = {isa = PBXBuildFile; fileRef = HW10002; };
+		'HW10003' = {isa = PBXBuildFile; fileRef = HW10004; };
+		'HW10005' = {isa = PBXBuildFile; fileRef = HW10006; };
+		'HW10007' = {isa = PBXBuildFile; fileRef = HW10008; };
+		'KWT10001' = {isa = PBXBuildFile; fileRef = KWT10002; };
+		'L10001' = {isa = PBXBuildFile; fileRef = L10002; };
+		'LUT10001' = {isa = PBXBuildFile; fileRef = LUT10002; };
+		'NR10001' = {isa = PBXBuildFile; fileRef = NR10002; };
+		'PB20001' = {isa = PBXBuildFile; fileRef = PB20002; };
+		'PB20003' = {isa = PBXBuildFile; fileRef = PB20004; };
+		'PB20005' = {isa = PBXBuildFile; fileRef = PB20006; };
+		'PB20007' = {isa = PBXBuildFile; fileRef = PB20008; };
+		'PBTRV10001' = {isa = PBXBuildFile; fileRef = PBTRV10002; };
+		'PB20009' = {isa = PBXBuildFile; fileRef = PB20010; };
+		'PB20011' = {isa = PBXBuildFile; fileRef = PB20012; };
+		'PS10001' = {isa = PBXBuildFile; fileRef = PS10002; };
+		'PS10003' = {isa = PBXBuildFile; fileRef = PS10004; };
+		'PSA20001' = {isa = PBXBuildFile; fileRef = PSA20002; };
+		'PSC20001' = {isa = PBXBuildFile; fileRef = PSC20002; };
+		'PSE20001' = {isa = PBXBuildFile; fileRef = PSE20002; };
+		'PSF20001' = {isa = PBXBuildFile; fileRef = PSF20002; };
+		'PSM20001' = {isa = PBXBuildFile; fileRef = PSM20002; };
+		'PSR20001' = {isa = PBXBuildFile; fileRef = PSR20002; };
+		'PSS20001' = {isa = PBXBuildFile; fileRef = PSS20002; };
+		'PSU20001' = {isa = PBXBuildFile; fileRef = PSU20002; };
+		'SBS10001' = {isa = PBXBuildFile; fileRef = SBS10002; };
+		'SC10001' = {isa = PBXBuildFile; fileRef = SC10002; };
+		'SE20001' = {isa = PBXBuildFile; fileRef = SE20002; };
+		'SE20003' = {isa = PBXBuildFile; fileRef = SE20004; };
+		'SE20005' = {isa = PBXBuildFile; fileRef = SE20006; };
+		'SE20007' = {isa = PBXBuildFile; fileRef = SE20008; };
+		'SE20009' = {isa = PBXBuildFile; fileRef = SE20010; };
+		'SE20011' = {isa = PBXBuildFile; fileRef = SE20012; };
+		'SE20013' = {isa = PBXBuildFile; fileRef = SE20014; };
+		'SE20015' = {isa = PBXBuildFile; fileRef = SE20016; };
+		'SE20017' = {isa = PBXBuildFile; fileRef = SE20018; };
+		'SMC10001' = {isa = PBXBuildFile; fileRef = SMC10002; };
+		'SMC10003' = {isa = PBXBuildFile; fileRef = SMC10004; };
+		'SSP10001' = {isa = PBXBuildFile; fileRef = SSP10002; };
+		'STL10001' = {isa = PBXBuildFile; fileRef = STL10002; };
+		'SV20001' = {isa = PBXBuildFile; fileRef = SV20002; };
+		'SV20003' = {isa = PBXBuildFile; fileRef = SV20004; };
+		'SV20005' = {isa = PBXBuildFile; fileRef = SV20006; };
+		'SV20007' = {isa = PBXBuildFile; fileRef = SV20008; };
+		'SV20009' = {isa = PBXBuildFile; fileRef = SV20010; };
+		'SV20011' = {isa = PBXBuildFile; fileRef = SV20012; };
+		'SV20013' = {isa = PBXBuildFile; fileRef = SV20014; };
+		'SV20015' = {isa = PBXBuildFile; fileRef = SV20016; };
+		'SV20017' = {isa = PBXBuildFile; fileRef = SV20018; };
+		'SV20019' = {isa = PBXBuildFile; fileRef = SV20020; };
+		'SV20021' = {isa = PBXBuildFile; fileRef = SV20022; };
+		'TKS10001' = {isa = PBXBuildFile; fileRef = TKS10002; };
+		'UG10001' = {isa = PBXBuildFile; fileRef = UG10002; };
+		'VPM10001' = {isa = PBXBuildFile; fileRef = VPM10002; };
+		'VPV10001' = {isa = PBXBuildFile; fileRef = VPV10002; };
+		'TET10001' = {isa = PBXBuildFile; fileRef = TET10002; };
+		'TETV10001' = {isa = PBXBuildFile; fileRef = TETV10002; };
+		'TETCMSN10001' = {isa = PBXBuildFile; fileRef = TETCMSN10002; };
+		'CAMCTRL10001' = {isa = PBXBuildFile; fileRef = CAMCTRL10002; };
+		'SONYADPT10001' = {isa = PBXBuildFile; fileRef = SONYADPT10002; };
+		'CANONADPT10001' = {isa = PBXBuildFile; fileRef = CANONADPT10002; };
+		'NIKONADPT10001' = {isa = PBXBuildFile; fileRef = NIKONADPT10002; };
+		'TETCOORD10001' = {isa = PBXBuildFile; fileRef = TETCOORD10002; };
+		'WMP10001' = {isa = PBXBuildFile; fileRef = WMP10002; };
+		'XMP10001' = {isa = PBXBuildFile; fileRef = XMP10002; };
+		'ZEB10001' = {isa = PBXBuildFile; fileRef = ZEB10002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -161,138 +172,150 @@
 		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
 		915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupView.swift; sourceTree = "<group>"; };
 		94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateView.swift; path = PhotoRawManager/Views/UpdateView.swift; sourceTree = SOURCE_ROOT; };
-		A20034 /* GSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectService.swift; sourceTree = "<group>"; };
-		A20035 /* GSelectSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectSetupView.swift; sourceTree = "<group>"; };
-		A20036 /* GSelectQRView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectQRView.swift; sourceTree = "<group>"; };
-		A20037 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
-		A20038 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
-		A20039 /* PickshotFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickshotFileService.swift; sourceTree = "<group>"; };
-		A20042 /* PerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PerformanceMonitor.swift; path = PhotoRawManager/Services/PerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
+		'A20034' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectService.swift; sourceTree = "<group>"; };
+		'A20035' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectSetupView.swift; sourceTree = "<group>"; };
+		'A20036' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSelectQRView.swift; sourceTree = "<group>"; };
+		'A20037' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		'A20038' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		'A20039' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickshotFileService.swift; sourceTree = "<group>"; };
+		'A20042' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PerformanceMonitor.swift; path = PhotoRawManager/Services/PerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
 		A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSheetView.swift; sourceTree = "<group>"; };
 		A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsDashboardView.swift; sourceTree = "<group>"; };
-		AE10002 /* AIEnhanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEnhanceService.swift; sourceTree = "<group>"; };
-		AF10002 /* AdaFaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaFaceService.swift; sourceTree = "<group>"; };
-		AF10004 /* AdaFaceR18.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = AdaFaceR18.mlpackage; sourceTree = "<group>"; };
-		AI20002 /* APIUsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageTracker.swift; sourceTree = "<group>"; };
-		AI20004 /* ClaudeVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeVisionService.swift; sourceTree = "<group>"; };
-		AI20006 /* GeminiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
-		B10000 /* PickShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B10001 /* PhotoRawManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRawManagerApp.swift; sourceTree = "<group>"; };
-		B10002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		B10003 /* PhotoItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoItem.swift; sourceTree = "<group>"; };
-		B10004 /* PhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
-		B10005 /* FileMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMatchingService.swift; sourceTree = "<group>"; };
-		B10006 /* ExifService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
-		B10007 /* FileCopyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
-		B10008 /* ThumbnailGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGridView.swift; sourceTree = "<group>"; };
-		B10009 /* PhotoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
-		B10010 /* StarRatingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
-		B10011 /* ExifInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
-		B10012 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
-		B10013 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		L10002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
-		B10014 /* ImageAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAnalysisService.swift; sourceTree = "<group>"; };
-		B10015 /* ImageCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCorrectionService.swift; sourceTree = "<group>"; };
-		B10017 /* AIAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisView.swift; sourceTree = "<group>"; };
-		B10018 /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
-		B10019 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
-		B10020 /* ShortcutHelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutHelpView.swift; sourceTree = "<group>"; };
-		B10021 /* HistogramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistogramView.swift; sourceTree = "<group>"; };
-		B10022 /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
-		B10023 /* SlideshowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowView.swift; sourceTree = "<group>"; };
-		B10024 /* TouchBarProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchBarProvider.swift; sourceTree = "<group>"; };
-		B10025 /* FolderWatcherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcherService.swift; sourceTree = "<group>"; };
-		B10026 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
-		B10027 /* FilmstripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmstripView.swift; sourceTree = "<group>"; };
-		B10028 /* BatchRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameView.swift; sourceTree = "<group>"; };
-		B10029 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
-		B10030 /* FaceGroupingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceGroupingService.swift; sourceTree = "<group>"; };
-		B10032 /* GoogleDriveUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveUploadView.swift; sourceTree = "<group>"; };
-		B10033 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
-		B10056 /* NSThumbnailCollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSThumbnailCollectionView.swift; sourceTree = "<group>"; };
+		'AE10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEnhanceService.swift; sourceTree = "<group>"; };
+		'AF10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaFaceService.swift; sourceTree = "<group>"; };
+		'AF10004' = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = AdaFaceR18.mlpackage; sourceTree = "<group>"; };
+		'AI20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageTracker.swift; sourceTree = "<group>"; };
+		'AI20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeVisionService.swift; sourceTree = "<group>"; };
+		'AI20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
+		'B10000' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		'B10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRawManagerApp.swift; sourceTree = "<group>"; };
+		'B10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		'B10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoItem.swift; sourceTree = "<group>"; };
+		'B10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
+		'B10005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMatchingService.swift; sourceTree = "<group>"; };
+		'B10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
+		'B10007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
+		'B10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGridView.swift; sourceTree = "<group>"; };
+		'B10009' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
+		'B10010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
+		'B10011' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
+		'B10012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
+		'B10013' = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		'B10014' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAnalysisService.swift; sourceTree = "<group>"; };
+		'B10015' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCorrectionService.swift; sourceTree = "<group>"; };
+		'B10017' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisView.swift; sourceTree = "<group>"; };
+		'B10018' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		'B10019' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		'B10020' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutHelpView.swift; sourceTree = "<group>"; };
+		'B10021' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistogramView.swift; sourceTree = "<group>"; };
+		'B10022' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
+		'B10023' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowView.swift; sourceTree = "<group>"; };
+		'B10024' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchBarProvider.swift; sourceTree = "<group>"; };
+		'B10025' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcherService.swift; sourceTree = "<group>"; };
+		'B10026' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		'B10027' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmstripView.swift; sourceTree = "<group>"; };
+		'B10028' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameView.swift; sourceTree = "<group>"; };
+		'B10029' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		'B10030' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceGroupingService.swift; sourceTree = "<group>"; };
+		'B10032' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveUploadView.swift; sourceTree = "<group>"; };
+		'B10033' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		'B10056' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSThumbnailCollectionView.swift; sourceTree = "<group>"; };
 		B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilenameMatchingService.swift; sourceTree = "<group>"; };
-		BP10002 /* BatchProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessService.swift; sourceTree = "<group>"; };
-		BP10004 /* BatchProcessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessView.swift; sourceTree = "<group>"; };
+		'BP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessService.swift; sourceTree = "<group>"; };
+		'BP10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchProcessView.swift; sourceTree = "<group>"; };
 		C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAWConversionService.swift; sourceTree = "<group>"; };
 		C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupService.swift; sourceTree = "<group>"; };
-		CFG10002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
-		CL20002 /* LocalOAuthServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalOAuthServer.swift; sourceTree = "<group>"; };
-		CL20004 /* GoogleDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveService.swift; sourceTree = "<group>"; };
-		CR10002 /* CropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropView.swift; sourceTree = "<group>"; };
-		CS10003 /* ClientSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectService.swift; sourceTree = "<group>"; };
-		CS10004 /* ClientSelectSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectSetupView.swift; sourceTree = "<group>"; };
-		CV10002 /* ContentView+Toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Toolbar.swift"; sourceTree = "<group>"; };
-		CV10004 /* ContentView+FolderBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+FolderBrowser.swift"; sourceTree = "<group>"; };
-		CV20002 /* MultiPreviewGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPreviewGrid.swift; sourceTree = "<group>"; };
-		CV20004 /* DualViewerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualViewerContent.swift; sourceTree = "<group>"; };
-		CV20006 /* CustomPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomPromptView.swift; sourceTree = "<group>"; };
+		'CFG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		'CL20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalOAuthServer.swift; sourceTree = "<group>"; };
+		'CL20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveService.swift; sourceTree = "<group>"; };
+		'CR10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropView.swift; sourceTree = "<group>"; };
+		'CS10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectService.swift; sourceTree = "<group>"; };
+		'CS10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientSelectSetupView.swift; sourceTree = "<group>"; };
+		'CV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Toolbar.swift"; sourceTree = "<group>"; };
+		'CV10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+FolderBrowser.swift"; sourceTree = "<group>"; };
+		'CV20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPreviewGrid.swift; sourceTree = "<group>"; };
+		'CV20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualViewerContent.swift; sourceTree = "<group>"; };
+		'CV20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomPromptView.swift; sourceTree = "<group>"; };
 		DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectService.swift; sourceTree = "<group>"; };
-		DC10001 /* DiskThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
+		'DC10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
+		E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoMarkerService.swift; path = PhotoRawManager/Services/VideoMarkerService.swift; sourceTree = SOURCE_ROOT; };
+		FCR10002 /* FileConflictResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileConflictResolver.swift; path = PhotoRawManager/Services/FileConflictResolver.swift; sourceTree = SOURCE_ROOT; };
 		F0AD92142A284546BD2E0466 /* AISimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISimilarityService.swift; sourceTree = "<group>"; };
 		F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JPGReturnMatchingService.swift; sourceTree = "<group>"; };
-		FC10002 /* FaceCompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCompareView.swift; sourceTree = "<group>"; };
+		'FC10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCompareView.swift; sourceTree = "<group>"; };
 		FE4B8111B82E42D81DC67D2E /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
-		FPK10002 /* FocusPeakingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPeakingOverlay.swift; sourceTree = "<group>"; };
-		HW10002 /* HWJPEGDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HWJPEGDecoder.swift; sourceTree = "<group>"; };
-		NR10002 /* NASOptimizedReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
-		HW10004 /* MetalImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalImageProcessor.swift; sourceTree = "<group>"; };
-		HW10006 /* ParallelFFD8Scanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelFFD8Scanner.swift; sourceTree = "<group>"; };
-		HW10008 /* AggressiveImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggressiveImageCache.swift; sourceTree = "<group>"; };
-		KWT10002 /* KeywordTaggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeywordTaggingService.swift; sourceTree = "<group>"; };
-		LUT10002 /* LUTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LUTService.swift; sourceTree = "<group>"; };
-		PB20002 /* BackupProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupProgressBar.swift; sourceTree = "<group>"; };
-		PB20004 /* ExportProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportProgressBar.swift; sourceTree = "<group>"; };
-		PB20006 /* ClientUploadProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientUploadProgressBar.swift; sourceTree = "<group>"; };
-		PB20008 /* FileMoveProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMoveProgressBar.swift; sourceTree = "<group>"; };
-		PB20010 /* AIClassifyProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClassifyProgressBar.swift; sourceTree = "<group>"; };
-		PB20012 /* VisionAnalysisProgressPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAnalysisProgressPanel.swift; sourceTree = "<group>"; };
-		PS10002 /* PictureStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStyleService.swift; sourceTree = "<group>"; };
-		PS10004 /* PictureStylePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStylePreviewView.swift; sourceTree = "<group>"; };
-		PSA20002 /* PhotoStore+Analysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Analysis.swift"; sourceTree = "<group>"; };
-		PSC20002 /* PhotoStore+Collections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Collections.swift"; sourceTree = "<group>"; };
-		PSE20002 /* PhotoStore+Exif.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Exif.swift"; sourceTree = "<group>"; };
-		PSF20002 /* PhotoStore+Folder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Folder.swift"; sourceTree = "<group>"; };
-		PSM20002 /* PhotoStore+Move.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Move.swift"; sourceTree = "<group>"; };
-		PSR20002 /* PhotoStore+Rating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Rating.swift"; sourceTree = "<group>"; };
-		PSS20002 /* PhotoStore+Selection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Selection.swift"; sourceTree = "<group>"; };
-		PSU20002 /* PhotoStore+UI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+UI.swift"; sourceTree = "<group>"; };
-		SBS10002 /* SandboxBookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxBookmarkService.swift; sourceTree = "<group>"; };
-		SC10002 /* SmartCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCropService.swift; sourceTree = "<group>"; };
-		SE20002 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		SE20004 /* GeneralSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsTab.swift; sourceTree = "<group>"; };
-		SE20006 /* PreviewSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSettingsTab.swift; sourceTree = "<group>"; };
-		SE20008 /* ExportSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSettingsTab.swift; sourceTree = "<group>"; };
-		SE20010 /* AIEngineSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineSettingsTab.swift; sourceTree = "<group>"; };
-		SE20012 /* PerformanceSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSettingsTab.swift; sourceTree = "<group>"; };
-		SE20014 /* ShortcutsSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsTab.swift; sourceTree = "<group>"; };
-		SE20016 /* CacheSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsTab.swift; sourceTree = "<group>"; };
-		SE20018 /* PerformanceOptimizeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizeTab.swift; sourceTree = "<group>"; };
-		SMC10002 /* SmartCullService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullService.swift; sourceTree = "<group>"; };
-		SMC10004 /* SmartCullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullView.swift; sourceTree = "<group>"; };
-		SSP10002 /* SystemSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSpec.swift; sourceTree = "<group>"; };
-		STL10002 /* StyleLearner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
-		SV20002 /* APIUsageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageViews.swift; sourceTree = "<group>"; };
-		SV20004 /* AnalysisOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisOptionsView.swift; sourceTree = "<group>"; };
-		SV20006 /* SelectionInfoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionInfoBadge.swift; sourceTree = "<group>"; };
-		SV20008 /* DragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandle.swift; sourceTree = "<group>"; };
-		SV20010 /* KeyEventHandling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyEventHandling.swift; sourceTree = "<group>"; };
-		SV20012 /* DisabledGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisabledGuide.swift; sourceTree = "<group>"; };
-		SV20014 /* StartupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupView.swift; sourceTree = "<group>"; };
-		SV20016 /* FileSyncPopupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSyncPopupView.swift; sourceTree = "<group>"; };
-		SV20018 /* RawMatchResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawMatchResultView.swift; sourceTree = "<group>"; };
-		SV20020 /* FullscreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenView.swift; sourceTree = "<group>"; };
-		SV20022 /* PickshotImportResultSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickshotImportResultSheet.swift; sourceTree = "<group>"; };
-		TKS10002 /* TesterKeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TesterKeyService.swift; sourceTree = "<group>"; };
-		UG10002 /* UprightGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
-		VPM10002 /* VideoPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerManager.swift; sourceTree = "<group>"; };
-		VPV10002 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
-		WMP10002 /* WatermarkPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkPreviewView.swift; sourceTree = "<group>"; };
-		XMP10002 /* XMPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XMPService.swift; sourceTree = "<group>"; };
-		ZEB10002 /* ZebraWarningOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZebraWarningOverlay.swift; sourceTree = "<group>"; };
+		'FPK10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPeakingOverlay.swift; sourceTree = "<group>"; };
+		'HW10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HWJPEGDecoder.swift; sourceTree = "<group>"; };
+		'HW10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalImageProcessor.swift; sourceTree = "<group>"; };
+		'HW10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelFFD8Scanner.swift; sourceTree = "<group>"; };
+		'HW10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggressiveImageCache.swift; sourceTree = "<group>"; };
+		'KWT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeywordTaggingService.swift; sourceTree = "<group>"; };
+		'L10002' = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		'LUT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LUTService.swift; sourceTree = "<group>"; };
+		'NR10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
+		'PB20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupProgressBar.swift; sourceTree = "<group>"; };
+		'PB20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportProgressBar.swift; sourceTree = "<group>"; };
+		'PB20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientUploadProgressBar.swift; sourceTree = "<group>"; };
+		'PB20008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMoveProgressBar.swift; sourceTree = "<group>"; };
+		'PBTRV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferProgressView.swift; sourceTree = "<group>"; };
+		'PB20010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClassifyProgressBar.swift; sourceTree = "<group>"; };
+		'PB20012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAnalysisProgressPanel.swift; sourceTree = "<group>"; };
+		'PS10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStyleService.swift; sourceTree = "<group>"; };
+		'PS10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureStylePreviewView.swift; sourceTree = "<group>"; };
+		'PSA20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Analysis.swift"; sourceTree = "<group>"; };
+		'PSC20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Collections.swift"; sourceTree = "<group>"; };
+		'PSE20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Exif.swift"; sourceTree = "<group>"; };
+		'PSF20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Folder.swift"; sourceTree = "<group>"; };
+		'PSM20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Move.swift"; sourceTree = "<group>"; };
+		'PSR20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Rating.swift"; sourceTree = "<group>"; };
+		'PSS20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+Selection.swift"; sourceTree = "<group>"; };
+		'PSU20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotoStore+UI.swift"; sourceTree = "<group>"; };
+		'SBS10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxBookmarkService.swift; sourceTree = "<group>"; };
+		'SC10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCropService.swift; sourceTree = "<group>"; };
+		'SE20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		'SE20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20014' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20016' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsTab.swift; sourceTree = "<group>"; };
+		'SE20018' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizeTab.swift; sourceTree = "<group>"; };
+		'SMC10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullService.swift; sourceTree = "<group>"; };
+		'SMC10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullView.swift; sourceTree = "<group>"; };
+		'SSP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSpec.swift; sourceTree = "<group>"; };
+		'STL10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
+		'SV20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageViews.swift; sourceTree = "<group>"; };
+		'SV20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisOptionsView.swift; sourceTree = "<group>"; };
+		'SV20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionInfoBadge.swift; sourceTree = "<group>"; };
+		'SV20008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandle.swift; sourceTree = "<group>"; };
+		'SV20010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyEventHandling.swift; sourceTree = "<group>"; };
+		'SV20012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisabledGuide.swift; sourceTree = "<group>"; };
+		'SV20014' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupView.swift; sourceTree = "<group>"; };
+		'SV20016' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSyncPopupView.swift; sourceTree = "<group>"; };
+		'SV20018' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawMatchResultView.swift; sourceTree = "<group>"; };
+		'SV20020' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenView.swift; sourceTree = "<group>"; };
+		'SV20022' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickshotImportResultSheet.swift; sourceTree = "<group>"; };
+		'TKS10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TesterKeyService.swift; sourceTree = "<group>"; };
+		'UG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
+		'VPM10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerManager.swift; sourceTree = "<group>"; };
+		'VPV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		'TET10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherService.swift; sourceTree = "<group>"; };
+		'TETV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherView.swift; sourceTree = "<group>"; };
+		'TETCMSN10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherComingSoonView.swift; sourceTree = "<group>"; };
+		'CAMCTRL10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
+		'SONYADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonyCameraAdapter.swift; sourceTree = "<group>"; };
+		'CANONADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanonCameraAdapter.swift; sourceTree = "<group>"; };
+		'NIKONADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NikonCameraAdapter.swift; sourceTree = "<group>"; };
+		'TETCOORD10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherCoordinator.swift; sourceTree = "<group>"; };
+		'TETHERGROUP' = {isa = PBXGroup; children = (CAMCTRL10002, SONYADPT10002, CANONADPT10002, NIKONADPT10002, TETCOORD10002); path = Tether; sourceTree = "<group>"; };
+		'WMP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkPreviewView.swift; sourceTree = "<group>"; };
+		'XMP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XMPService.swift; sourceTree = "<group>"; };
+		'ZEB10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZebraWarningOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		C10001 /* Frameworks */ = {
+		'C10001' = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -305,161 +328,163 @@
 		6624231F2F906CCD00E689AC /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				A20042 /* PerformanceMonitor.swift */,
+				A20042,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
 		};
-		AI20000 /* AI */ = {
+		'AI20000' = {
 			isa = PBXGroup;
 			children = (
-				AI20002 /* APIUsageTracker.swift */,
-				AI20004 /* ClaudeVisionService.swift */,
-				AI20006 /* GeminiService.swift */,
+				AI20002,
+				AI20004,
+				AI20006,
 			);
 			path = AI;
 			sourceTree = "<group>";
 		};
-		CL20000 /* Cloud */ = {
+		'CL20000' = {
 			isa = PBXGroup;
 			children = (
-				CL20002 /* LocalOAuthServer.swift */,
-				CL20004 /* GoogleDriveService.swift */,
+				CL20002,
+				CL20004,
 			);
 			path = Cloud;
 			sourceTree = "<group>";
 		};
-		D10000 = {
+		'D10000' = {
 			isa = PBXGroup;
 			children = (
-				D10001 /* PhotoRawManager */,
-				D10005 /* Products */,
+				D10001,
+				D10005,
 				832E4A569DDF734271ED6268 /* UpdateService.swift */,
 				94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */,
 				6624231F2F906CCD00E689AC /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
-		D10001 /* PhotoRawManager */ = {
+		'D10001' = {
 			isa = PBXGroup;
 			children = (
-				B10001 /* PhotoRawManagerApp.swift */,
-				D10002 /* Models */,
-				D10003 /* Views */,
-				D10004 /* Services */,
-				B10013 /* Assets.xcassets */,
-				L10002 /* Localizable.xcstrings */,
+				B10001,
+				D10002,
+				D10003,
+				D10004,
+				B10013,
+				L10002,
 			);
 			path = PhotoRawManager;
 			sourceTree = "<group>";
 		};
-		D10002 /* Models */ = {
+		'D10002' = {
 			isa = PBXGroup;
 			children = (
-				B10003 /* PhotoItem.swift */,
-				B10004 /* PhotoStore.swift */,
-				PSC20002 /* PhotoStore+Collections.swift */,
-				PSU20002 /* PhotoStore+UI.swift */,
-				PSE20002 /* PhotoStore+Exif.swift */,
-				PSR20002 /* PhotoStore+Rating.swift */,
-				PSS20002 /* PhotoStore+Selection.swift */,
-				PSF20002 /* PhotoStore+Folder.swift */,
-				PSM20002 /* PhotoStore+Move.swift */,
-				PSA20002 /* PhotoStore+Analysis.swift */,
-				CFG10002 /* AppConfig.swift */,
+				B10003,
+				B10004,
+				PSC20002,
+				PSU20002,
+				PSE20002,
+				PSR20002,
+				PSS20002,
+				PSF20002,
+				PSM20002,
+				PSA20002,
+				CFG10002,
 				81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */,
-				AF10004 /* AdaFaceR18.mlpackage */,
+				AF10004,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
-		D10003 /* Views */ = {
+		'D10003' = {
 			isa = PBXGroup;
 			children = (
-				B10002 /* ContentView.swift */,
-				CV10002 /* ContentView+Toolbar.swift */,
-				CV10004 /* ContentView+FolderBrowser.swift */,
-				SV20002 /* APIUsageViews.swift */,
-				SV20004 /* AnalysisOptionsView.swift */,
-				SV20006 /* SelectionInfoBadge.swift */,
-				SV20008 /* DragHandle.swift */,
-				SV20010 /* KeyEventHandling.swift */,
-				SV20012 /* DisabledGuide.swift */,
-				SV20014 /* StartupView.swift */,
-				SV20016 /* FileSyncPopupView.swift */,
-				SV20018 /* RawMatchResultView.swift */,
-				SV20020 /* FullscreenView.swift */,
-				SV20022 /* PickshotImportResultSheet.swift */,
-				B10008 /* ThumbnailGridView.swift */,
-				B10056 /* NSThumbnailCollectionView.swift */,
-				B10009 /* PhotoPreviewView.swift */,
-				B10010 /* StarRatingView.swift */,
-				B10011 /* ExifInfoView.swift */,
-				B10012 /* ExportView.swift */,
-				B10017 /* AIAnalysisView.swift */,
-				B10019 /* PaywallView.swift */,
-				B10020 /* ShortcutHelpView.swift */,
-				B10021 /* HistogramView.swift */,
-				B10022 /* CompareView.swift */,
-				B10023 /* SlideshowView.swift */,
-				B10024 /* TouchBarProvider.swift */,
-				B10026 /* AppTheme.swift */,
-				B10027 /* FilmstripView.swift */,
-				B10028 /* BatchRenameView.swift */,
-				B10029 /* MapView.swift */,
-				B10032 /* GoogleDriveUploadView.swift */,
-				B10033 /* AboutView.swift */,
-				A20035 /* GSelectSetupView.swift */,
-				A20036 /* GSelectQRView.swift */,
-				CS10004 /* ClientSelectSetupView.swift */,
-				SE20000 /* Settings */,
-				PB20000 /* ProgressBars */,
-				CV20002 /* MultiPreviewGrid.swift */,
-				CV20004 /* DualViewerContent.swift */,
-				CV20006 /* CustomPromptView.swift */,
+				B10002,
+				CV10002,
+				CV10004,
+				SV20002,
+				SV20004,
+				SV20006,
+				SV20008,
+				SV20010,
+				SV20012,
+				SV20014,
+				SV20016,
+				SV20018,
+				SV20020,
+				SV20022,
+				B10008,
+				B10056,
+				B10009,
+				B10010,
+				B10011,
+				B10012,
+				B10017,
+				B10019,
+				B10020,
+				B10021,
+				B10022,
+				B10023,
+				B10024,
+				B10026,
+				B10027,
+				B10028,
+				B10029,
+				B10032,
+				B10033,
+				A20035,
+				A20036,
+				CS10004,
+				SE20000,
+				PB20000,
+				CV20002,
+				CV20004,
+				CV20006,
 				5997C658F4814B05A202D514 /* MatchingView.swift */,
 				52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */,
 				A3CF055E61383353C2CCA322 /* StatsDashboardView.swift */,
 				4E8C8DC3227F94E990E2676A /* AutoCullView.swift */,
 				FE4B8111B82E42D81DC67D2E /* TimelineView.swift */,
 				915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */,
-				FC10002 /* FaceCompareView.swift */,
-				UG10002 /* UprightGuideView.swift */,
-				CR10002 /* CropView.swift */,
-				BP10004 /* BatchProcessView.swift */,
-				PS10004 /* PictureStylePreviewView.swift */,
-				SMC10004 /* SmartCullView.swift */,
-				ZEB10002 /* ZebraWarningOverlay.swift */,
-				WMP10002 /* WatermarkPreviewView.swift */,
-				FPK10002 /* FocusPeakingOverlay.swift */,
+				FC10002,
+				UG10002,
+				CR10002,
+				BP10004,
+				PS10004,
+				SMC10004,
+				ZEB10002,
+				WMP10002,
+				FPK10002,
 				62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */,
 				A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */,
-				VPV10002 /* VideoPlayerView.swift */,
+				VPV10002,
+				TETV10002,
+				TETCMSN10002,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		D10004 /* Services */ = {
+		'D10004' = {
 			isa = PBXGroup;
 			children = (
-				B10005 /* FileMatchingService.swift */,
-				B10006 /* ExifService.swift */,
-				B10007 /* FileCopyService.swift */,
-				B10014 /* ImageAnalysisService.swift */,
-				B10015 /* ImageCorrectionService.swift */,
-				AI20000 /* AI */,
-				B10018 /* SubscriptionManager.swift */,
-				TKS10002 /* TesterKeyService.swift */,
-				SBS10002 /* SandboxBookmarkService.swift */,
-				B10025 /* FolderWatcherService.swift */,
-				B10030 /* FaceGroupingService.swift */,
-				CL20000 /* Cloud */,
-				A20034 /* GSelectService.swift */,
-				CS10003 /* ClientSelectService.swift */,
-				A20037 /* Logger.swift */,
-				A20038 /* KeychainService.swift */,
-				A20039 /* PickshotFileService.swift */,
-				DC10001 /* DiskThumbnailCache.swift */,
+				B10005,
+				B10006,
+				B10007,
+				B10014,
+				B10015,
+				AI20000,
+				B10018,
+				TKS10002,
+				SBS10002,
+				B10025,
+				B10030,
+				CL20000,
+				A20034,
+				CS10003,
+				A20037,
+				A20038,
+				A20039,
+				DC10001,
 				B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */,
 				F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */,
 				F0AD92142A284546BD2E0466 /* AISimilarityService.swift */,
@@ -467,71 +492,76 @@
 				DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */,
 				C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */,
 				18B9AD88F78788103034A9CD /* NIMAService.swift */,
-				AF10002 /* AdaFaceService.swift */,
+				AF10002,
 				1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */,
-				XMP10002 /* XMPService.swift */,
-				KWT10002 /* KeywordTaggingService.swift */,
-				BP10002 /* BatchProcessService.swift */,
-				SC10002 /* SmartCropService.swift */,
-				AE10002 /* AIEnhanceService.swift */,
-				PS10002 /* PictureStyleService.swift */,
-				SMC10002 /* SmartCullService.swift */,
-				STL10002 /* StyleLearner.swift */,
+				XMP10002,
+				KWT10002,
+				BP10002,
+				SC10002,
+				AE10002,
+				PS10002,
+				SMC10002,
+				STL10002,
 				4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */,
 				0F49722BE76942B09BE50E23 /* AdvancedClassificationService.swift */,
-				VPM10002 /* VideoPlayerManager.swift */,
-				LUT10002 /* LUTService.swift */,
-				SSP10002 /* SystemSpec.swift */,
-				HW10000 /* Hardware */,
+				VPM10002,
+				TET10002,
+				TETHERGROUP,
+				LUT10002,
+				SSP10002,
+				HW10000,
+				E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */,
+				FCR10002 /* FileConflictResolver.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		D10005 /* Products */ = {
+		'D10005' = {
 			isa = PBXGroup;
 			children = (
-				B10000 /* PickShot.app */,
+				B10000,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		HW10000 /* Hardware */ = {
+		'HW10000' = {
 			isa = PBXGroup;
 			children = (
-				HW10002 /* HWJPEGDecoder.swift */,
-				HW10004 /* MetalImageProcessor.swift */,
-				NR10002 /* NASOptimizedReader.swift */,
-				HW10006 /* ParallelFFD8Scanner.swift */,
-				HW10008 /* AggressiveImageCache.swift */,
+				HW10002,
+				HW10004,
+				NR10002,
+				HW10006,
+				HW10008,
 			);
 			path = Hardware;
 			sourceTree = "<group>";
 		};
-		PB20000 /* ProgressBars */ = {
+		'PB20000' = {
 			isa = PBXGroup;
 			children = (
-				PB20002 /* BackupProgressBar.swift */,
-				PB20004 /* ExportProgressBar.swift */,
-				PB20006 /* ClientUploadProgressBar.swift */,
-				PB20008 /* FileMoveProgressBar.swift */,
-				PB20010 /* AIClassifyProgressBar.swift */,
-				PB20012 /* VisionAnalysisProgressPanel.swift */,
+				PB20002,
+				PB20004,
+				PB20006,
+				PB20008,
+				PBTRV10002,
+				PB20010,
+				PB20012,
 			);
 			path = ProgressBars;
 			sourceTree = "<group>";
 		};
-		SE20000 /* Settings */ = {
+		'SE20000' = {
 			isa = PBXGroup;
 			children = (
-				SE20002 /* SettingsView.swift */,
-				SE20004 /* GeneralSettingsTab.swift */,
-				SE20006 /* PreviewSettingsTab.swift */,
-				SE20008 /* ExportSettingsTab.swift */,
-				SE20010 /* AIEngineSettingsTab.swift */,
-				SE20012 /* PerformanceSettingsTab.swift */,
-				SE20014 /* ShortcutsSettingsTab.swift */,
-				SE20016 /* CacheSettingsTab.swift */,
-				SE20018 /* PerformanceOptimizeTab.swift */,
+				SE20002,
+				SE20004,
+				SE20006,
+				SE20008,
+				SE20010,
+				SE20012,
+				SE20014,
+				SE20016,
+				SE20018,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -539,13 +569,13 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		E10001 /* PhotoRawManager */ = {
+		'E10001' = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F10003 /* Build configuration list for PBXNativeTarget "PhotoRawManager" */;
+			buildConfigurationList = F10003;
 			buildPhases = (
-				C10002 /* Sources */,
-				C10001 /* Frameworks */,
-				C10003 /* Resources */,
+				C10002,
+				C10001,
+				C10003,
 			);
 			buildRules = (
 			);
@@ -553,13 +583,13 @@
 			);
 			name = PhotoRawManager;
 			productName = PhotoRawManager;
-			productReference = B10000 /* PickShot.app */;
+			productReference = B10000;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		E10000 /* Project object */ = {
+		'E10000' = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
@@ -571,7 +601,7 @@
 					};
 				};
 			};
-			buildConfigurationList = F10001 /* Build configuration list for PBXProject "PhotoRawManager" */;
+			buildConfigurationList = F10001;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = ko;
 			hasScannedForEncodings = 0;
@@ -581,31 +611,31 @@
 				Base,
 			);
 			mainGroup = D10000;
-			productRefGroup = D10005 /* Products */;
+			productRefGroup = D10005;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				E10001 /* PhotoRawManager */,
+				E10001,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		C10003 /* Resources */ = {
+		'C10003' = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10013 /* Assets.xcassets in Resources */,
-				L10001 /* Localizable.xcstrings in Resources */,
+				A10013,
+				L10001,
 				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
-				AF10003 /* AdaFaceR18.mlpackage in Resources */,
+				AF10003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		C10002 /* Sources */ = {
+		'C10002' = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -616,141 +646,152 @@
 				80D5EC1226D34B2F86E1DDBF /* RAWConversionService.swift in Sources */,
 				901A3228D9323CDAAA68F85F /* PerspectiveCorrectionService.swift in Sources */,
 				F51432D703E705F9D22F165C /* NIMAService.swift in Sources */,
-				AF10001 /* AdaFaceService.swift in Sources */,
+				AF10001,
 				89FA514B7D900AA27EBE8B0B /* MemoryCardBackupView.swift in Sources */,
 				6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */,
 				939BDC2C189B4A2F8DBCE187 /* MatchingView.swift in Sources */,
 				60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */,
 				73661F58D4124E00ACAA3CC6 /* JPGReturnMatchingService.swift in Sources */,
 				49509F6E57E24C42A069B239 /* FilenameMatchingService.swift in Sources */,
-				XMP10001 /* XMPService.swift in Sources */,
-				VPM10001 /* VideoPlayerManager.swift in Sources */,
-				LUT10001 /* LUTService.swift in Sources */,
-				VPV10001 /* VideoPlayerView.swift in Sources */,
-				A10001 /* PhotoRawManagerApp.swift in Sources */,
-				A10002 /* ContentView.swift in Sources */,
-				A10003 /* PhotoItem.swift in Sources */,
-				A10004 /* PhotoStore.swift in Sources */,
-				PSC20001 /* PhotoStore+Collections.swift in Sources */,
-				PSU20001 /* PhotoStore+UI.swift in Sources */,
-				PSE20001 /* PhotoStore+Exif.swift in Sources */,
-				PSR20001 /* PhotoStore+Rating.swift in Sources */,
-				PSS20001 /* PhotoStore+Selection.swift in Sources */,
-				PSF20001 /* PhotoStore+Folder.swift in Sources */,
-				PSM20001 /* PhotoStore+Move.swift in Sources */,
-				PSA20001 /* PhotoStore+Analysis.swift in Sources */,
-				CFG10001 /* AppConfig.swift in Sources */,
-				TKS10001 /* TesterKeyService.swift in Sources */,
-				SBS10001 /* SandboxBookmarkService.swift in Sources */,
-				A10005 /* FileMatchingService.swift in Sources */,
-				A10006 /* ExifService.swift in Sources */,
-				A10007 /* FileCopyService.swift in Sources */,
-				A10008 /* ThumbnailGridView.swift in Sources */,
-				A10009 /* PhotoPreviewView.swift in Sources */,
-				A10010 /* StarRatingView.swift in Sources */,
-				A10011 /* ExifInfoView.swift in Sources */,
-				A10012 /* ExportView.swift in Sources */,
-				A10014 /* ImageAnalysisService.swift in Sources */,
-				A10015 /* ImageCorrectionService.swift in Sources */,
-				AI20001 /* APIUsageTracker.swift in Sources */,
-				AI20003 /* ClaudeVisionService.swift in Sources */,
-				AI20005 /* GeminiService.swift in Sources */,
-				A10017 /* AIAnalysisView.swift in Sources */,
-				A10018 /* SubscriptionManager.swift in Sources */,
-				A10019 /* PaywallView.swift in Sources */,
-				A10020 /* ShortcutHelpView.swift in Sources */,
-				A10021 /* HistogramView.swift in Sources */,
-				A10022 /* CompareView.swift in Sources */,
-				A10023 /* SlideshowView.swift in Sources */,
-				A10024 /* TouchBarProvider.swift in Sources */,
-				A10025 /* FolderWatcherService.swift in Sources */,
-				A10026 /* AppTheme.swift in Sources */,
-				A10027 /* FilmstripView.swift in Sources */,
-				A10028 /* BatchRenameView.swift in Sources */,
-				A10029 /* MapView.swift in Sources */,
-				A10030 /* FaceGroupingService.swift in Sources */,
-				CL20001 /* LocalOAuthServer.swift in Sources */,
-				CL20003 /* GoogleDriveService.swift in Sources */,
-				B20036 /* GSelectQRView.swift in Sources */,
-				B20035 /* GSelectSetupView.swift in Sources */,
-				B20034 /* GSelectService.swift in Sources */,
-				B20037 /* Logger.swift in Sources */,
-				B20038 /* KeychainService.swift in Sources */,
-				B20039 /* PickshotFileService.swift in Sources */,
-				B20042 /* PerformanceMonitor.swift in Sources */,
-				DC10002 /* DiskThumbnailCache.swift in Sources */,
-				CV10001 /* ContentView+Toolbar.swift in Sources */,
-				CV10003 /* ContentView+FolderBrowser.swift in Sources */,
-				SV20001 /* APIUsageViews.swift in Sources */,
-				SV20003 /* AnalysisOptionsView.swift in Sources */,
-				SV20005 /* SelectionInfoBadge.swift in Sources */,
-				SV20007 /* DragHandle.swift in Sources */,
-				SV20009 /* KeyEventHandling.swift in Sources */,
-				SV20011 /* DisabledGuide.swift in Sources */,
-				SV20013 /* StartupView.swift in Sources */,
-				SV20015 /* FileSyncPopupView.swift in Sources */,
-				SV20017 /* RawMatchResultView.swift in Sources */,
-				SV20019 /* FullscreenView.swift in Sources */,
-				SV20021 /* PickshotImportResultSheet.swift in Sources */,
-				A10032 /* GoogleDriveUploadView.swift in Sources */,
-				A10033 /* AboutView.swift in Sources */,
-				SE20001 /* SettingsView.swift in Sources */,
-				SE20003 /* GeneralSettingsTab.swift in Sources */,
-				SE20005 /* PreviewSettingsTab.swift in Sources */,
-				SE20007 /* ExportSettingsTab.swift in Sources */,
-				SE20009 /* AIEngineSettingsTab.swift in Sources */,
-				SE20011 /* PerformanceSettingsTab.swift in Sources */,
-				SE20013 /* ShortcutsSettingsTab.swift in Sources */,
-				SE20015 /* CacheSettingsTab.swift in Sources */,
-				SE20017 /* PerformanceOptimizeTab.swift in Sources */,
-				CV20001 /* MultiPreviewGrid.swift in Sources */,
-				CV20003 /* DualViewerContent.swift in Sources */,
-				CV20005 /* CustomPromptView.swift in Sources */,
-				PB20001 /* BackupProgressBar.swift in Sources */,
-				PB20003 /* ExportProgressBar.swift in Sources */,
-				PB20005 /* ClientUploadProgressBar.swift in Sources */,
-				PB20007 /* FileMoveProgressBar.swift in Sources */,
-				PB20009 /* AIClassifyProgressBar.swift in Sources */,
-				PB20011 /* VisionAnalysisProgressPanel.swift in Sources */,
+				XMP10001,
+				VPM10001,
+				LUT10001,
+				VPV10001,
+				TET10001,
+				TETV10001,
+				TETCMSN10001,
+				CAMCTRL10001,
+				SONYADPT10001,
+				CANONADPT10001,
+				NIKONADPT10001,
+				TETCOORD10001,
+				A10001,
+				A10002,
+				A10003,
+				A10004,
+				PSC20001,
+				PSU20001,
+				PSE20001,
+				PSR20001,
+				PSS20001,
+				PSF20001,
+				PSM20001,
+				PSA20001,
+				CFG10001,
+				TKS10001,
+				SBS10001,
+				A10005,
+				A10006,
+				A10007,
+				A10008,
+				A10009,
+				A10010,
+				A10011,
+				A10012,
+				A10014,
+				A10015,
+				AI20001,
+				AI20003,
+				AI20005,
+				A10017,
+				A10018,
+				A10019,
+				A10020,
+				A10021,
+				A10022,
+				A10023,
+				A10024,
+				A10025,
+				A10026,
+				A10027,
+				A10028,
+				A10029,
+				A10030,
+				CL20001,
+				CL20003,
+				B20036,
+				B20035,
+				B20034,
+				B20037,
+				B20038,
+				B20039,
+				B20042,
+				DC10002,
+				CV10001,
+				CV10003,
+				SV20001,
+				SV20003,
+				SV20005,
+				SV20007,
+				SV20009,
+				SV20011,
+				SV20013,
+				SV20015,
+				SV20017,
+				SV20019,
+				SV20021,
+				A10032,
+				A10033,
+				SE20001,
+				SE20003,
+				SE20005,
+				SE20007,
+				SE20009,
+				SE20011,
+				SE20013,
+				SE20015,
+				SE20017,
+				CV20001,
+				CV20003,
+				CV20005,
+				PB20001,
+				PB20003,
+				PB20005,
+				PB20007,
+				PBTRV10001,
+				PB20009,
+				PB20011,
 				61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */,
 				1F05414884699B73642AF15D /* UpdateView.swift in Sources */,
-				A10056 /* NSThumbnailCollectionView.swift in Sources */,
+				A10056,
 				F92FB64D28A4E00ABB31BAEC /* SmartSelectService.swift in Sources */,
 				DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */,
 				2AFCCDB6F3124685F4658A9E /* StatsDashboardView.swift in Sources */,
 				F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */,
 				3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */,
-				FC10001 /* FaceCompareView.swift in Sources */,
-				UG10001 /* UprightGuideView.swift in Sources */,
-				KWT10001 /* KeywordTaggingService.swift in Sources */,
-				BP10001 /* BatchProcessService.swift in Sources */,
-				BP10003 /* BatchProcessView.swift in Sources */,
-				CR10001 /* CropView.swift in Sources */,
-				SC10001 /* SmartCropService.swift in Sources */,
-				AE10001 /* AIEnhanceService.swift in Sources */,
-				PS10001 /* PictureStyleService.swift in Sources */,
-				PS10003 /* PictureStylePreviewView.swift in Sources */,
-				SMC10001 /* SmartCullService.swift in Sources */,
-				SMC10003 /* SmartCullView.swift in Sources */,
-				STL10001 /* StyleLearner.swift in Sources */,
-				ZEB10001 /* ZebraWarningOverlay.swift in Sources */,
-				WMP10001 /* WatermarkPreviewView.swift in Sources */,
-				FPK10001 /* FocusPeakingOverlay.swift in Sources */,
-				CS10001 /* ClientSelectService.swift in Sources */,
-				CS10002 /* ClientSelectSetupView.swift in Sources */,
-				SSP10001 /* SystemSpec.swift in Sources */,
-				HW10001 /* HWJPEGDecoder.swift in Sources */,
-				NR10001 /* NASOptimizedReader.swift in Sources */,
-				HW10003 /* MetalImageProcessor.swift in Sources */,
-				HW10005 /* ParallelFFD8Scanner.swift in Sources */,
-				HW10007 /* AggressiveImageCache.swift in Sources */,
+				FC10001,
+				UG10001,
+				KWT10001,
+				BP10001,
+				BP10003,
+				CR10001,
+				SC10001,
+				AE10001,
+				PS10001,
+				PS10003,
+				SMC10001,
+				SMC10003,
+				STL10001,
+				ZEB10001,
+				WMP10001,
+				FPK10001,
+				CS10001,
+				CS10002,
+				SSP10001,
+				HW10001,
+				NR10001,
+				HW10003,
+				HW10005,
+				HW10007,
+				AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */,
+				FCR10001 /* FileConflictResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		F10010 /* Debug */ = {
+		'F10010' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -804,7 +845,7 @@
 			};
 			name = Debug;
 		};
-		F10011 /* Release */ = {
+		'F10011' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -857,7 +898,7 @@
 			};
 			name = Release;
 		};
-		F10020 /* Debug */ = {
+		'F10020' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -866,11 +907,10 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -879,15 +919,17 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
-				MARKETING_VERSION = 8.2.1;
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
+				MARKETING_VERSION = 8.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		F10021 /* Release */ = {
+		'F10021' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -896,11 +938,10 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PickShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -909,9 +950,11 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "사진 폴더를 열고 미리보기하기 위해 다운로드 폴더 접근이 필요합니다.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
-				MARKETING_VERSION = 8.2.1;
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
+				MARKETING_VERSION = 8.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -920,25 +963,25 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		F10001 /* Build configuration list for PBXProject "PhotoRawManager" */ = {
+		'F10001' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F10010 /* Debug */,
-				F10011 /* Release */,
+				F10010,
+				F10011,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F10003 /* Build configuration list for PBXNativeTarget "PhotoRawManager" */ = {
+		'F10003' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F10020 /* Debug */,
-				F10021 /* Release */,
+				F10020,
+				F10021,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = E10000 /* Project object */;
+	rootObject = E10000;
 }

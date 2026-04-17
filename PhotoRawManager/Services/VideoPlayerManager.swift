@@ -34,6 +34,10 @@ class VideoPlayerManager: ObservableObject {
     @Published var activeLUT: LUTService.LUTData?   // 현재 적용 중인 LUT
     @Published var autoApplyLUT: Bool = true          // LOG 영상에 자동 적용
 
+    // MARK: - IN/OUT 마커
+    /// 현재 영상의 IN/OUT 마커 (XMP 사이드카 에 저장됨).
+    @Published var markers: VideoMarkers = VideoMarkers()
+
     // MARK: - AVPlayer
     let player = AVPlayer()
     private var timeObserver: Any?
@@ -112,8 +116,13 @@ class VideoPlayerManager: ObservableObject {
 
     func loadVideo(url: URL) {
         guard url != currentURL else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        fputs("[Video] ▶️ loadVideo \(url.lastPathComponent)\n", stderr)
         cleanup()
         currentURL = url
+
+        // IN/OUT 마커 XMP 사이드카에서 로드
+        markers = VideoMarkerService.shared.markers(for: url)
 
         let asset = AVURLAsset(url: url, options: [
             AVURLAssetPreferPreciseDurationAndTimingKey: true
@@ -132,12 +141,38 @@ class VideoPlayerManager: ObservableObject {
                     self.isReady = true
                     self.duration = CMTimeGetSeconds(item.duration)
                     self.durationText = Self.formatTime(CMTimeGetSeconds(item.duration))
+                    let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                    fputs("[Video] ✅ readyToPlay \(url.lastPathComponent) dur=\(String(format: "%.1f", self.duration))s loadTime=\(ms)ms\n", stderr)
                 case .failed:
                     self.isReady = false
-                    fputs("[Video] 로드 실패: \(item.error?.localizedDescription ?? "unknown")\n", stderr)
-                default: break
+                    let err = item.error?.localizedDescription ?? "unknown"
+                    let code = (item.error as NSError?)?.code ?? 0
+                    fputs("[Video] ❌ 로드 실패 \(url.lastPathComponent) err=\(err) code=\(code)\n", stderr)
+                case .unknown:
+                    fputs("[Video] ⏳ unknown status \(url.lastPathComponent)\n", stderr)
+                @unknown default: break
                 }
             }
+        }
+
+        // 재생 중 에러 감지 (버퍼 고갈, 디코딩 실패 등)
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+        ) { notification in
+            let err = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            fputs("[Video] ❌ 재생 중 실패: \(err?.localizedDescription ?? "unknown")\n", stderr)
+        }
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
+        ) { _ in
+            fputs("[Video] ⚠️ 재생 정체 (버퍼 고갈 또는 디코딩 지연)\n", stderr)
+        }
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemNewErrorLogEntry, object: item, queue: .main
+        ) { [weak self] _ in
+            guard let self, let log = self.player.currentItem?.errorLog(),
+                  let entry = log.events.last else { return }
+            fputs("[Video] ⚠️ errorLog: \(entry.errorStatusCode) \(entry.errorComment ?? "")\n", stderr)
         }
 
         // 재생 끝 감지 → 처음으로 리와인드
@@ -170,56 +205,182 @@ class VideoPlayerManager: ObservableObject {
     }
 
     func play() {
+        // playbackRate 가 0 이면 정상 속도 1.0 으로 복원 (JKL 후 상태 보정)
+        if playbackRate <= 0 { playbackRate = 1.0 }
+        // JKL 역재생 타이머가 살아있으면 정지 (정방향 재생 전환)
+        stopJklReverseTimer()
+        jklReverseLevel = 0
         player.rate = playbackRate
     }
 
     func pause() {
         player.pause()
+        // JKL 타이머도 함께 정지 (pause 는 모든 재생 중지)
+        stopJklReverseTimer()
+        jklReverseLevel = 0
     }
 
     func togglePlayPause() {
-        isPlaying ? pause() : play()
+        // JKL 타이머가 돌고 있으면 "재생 중" 으로 간주 (rate=0 이지만 실제로 움직이는 중)
+        let effectivelyPlaying = isPlaying || jklReverseLevel > 0
+        effectivelyPlaying ? pause() : play()
     }
 
     // MARK: - 시킹 (chase-time 패턴)
 
     private var isSeekInProgress = false
     private var chaseTime = CMTime.zero
+    /// 마지막 seek 이후 정밀 재seek 예약 (스크러빙 끝나면 정확한 위치로 보정)
+    private var preciseRefineWork: DispatchWorkItem?
+    /// 스크러빙 중 재생 상태 기억 (완료 후 복원)
+    private var wasPlayingBeforeSeek: Bool = false
+    /// 마지막 실제 seek 발사 시각 (throttle 용)
+    private var lastSeekFiredAt: CFAbsoluteTime = 0
+    /// 스로틀 예약 워크 (최신 chaseTime 으로 0.1초 후 seek)
+    private var throttleWork: DispatchWorkItem?
 
     func seek(to progress: Double) {
-        guard let dur = player.currentItem?.duration, dur.isNumeric else { return }
-        let target = CMTimeMultiplyByFloat64(dur, multiplier: max(0, min(1, progress)))
-        seekPrecise(to: target)
+        // 아직 준비되지 않은 item 에 seek 시도하면 FigFilePlayer err=-12860 발생
+        guard isReady,
+              let item = player.currentItem,
+              item.status == .readyToPlay,
+              item.duration.isNumeric else { return }
+        let target = CMTimeMultiplyByFloat64(item.duration, multiplier: max(0, min(1, progress)))
+        seekCoarse(to: target)
     }
 
     func seekRelative(seconds: Double) {
+        guard isReady, player.currentItem?.status == .readyToPlay else { return }
         let current = player.currentTime()
         let target = CMTimeAdd(current, CMTime(seconds: seconds, preferredTimescale: 600))
-        seekPrecise(to: target)
+        seekCoarse(to: target)
     }
 
-    private func seekPrecise(to time: CMTime) {
+    /// 통합 seek — 한 번의 정밀 seek. 튐/바운스 없음.
+    /// 드래그 중에도 throttle(100ms) 로 제한하지만, 매번 정확한 위치로 이동.
+    private func seekCoarse(to time: CMTime) {
         chaseTime = time
-        if !isSeekInProgress {
-            performSeek()
+
+        // Throttle: 마지막 seek 이후 100ms 내면 예약만 업데이트, 실제 seek 은 지연
+        let now = CFAbsoluteTimeGetCurrent()
+        let elapsed = now - lastSeekFiredAt
+        let throttleInterval: Double = 0.1
+
+        if elapsed >= throttleInterval && !isSeekInProgress {
+            performPreciseSeek()
+            lastSeekFiredAt = now
+        } else {
+            throttleWork?.cancel()
+            let delay = max(throttleInterval - elapsed, 0.01)
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, !self.isSeekInProgress else { return }
+                self.performPreciseSeek()
+                self.lastSeekFiredAt = CFAbsoluteTimeGetCurrent()
+            }
+            throttleWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 
-    private func performSeek() {
+    private func performPreciseSeek() {
         guard player.currentItem?.status == .readyToPlay else { return }
         isSeekInProgress = true
         let target = chaseTime
+        // tolerance zero → 한 번에 정확한 위치로 이동 (바운스 없음)
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if CMTimeCompare(target, self.chaseTime) == 0 {
-                    self.isSeekInProgress = false
-                } else {
-                    self.performSeek()
+                self.isSeekInProgress = false
+                // chaseTime 이 더 최신이면 후속 seek 필요
+                if CMTimeCompare(target, self.chaseTime) != 0 {
+                    let now = CFAbsoluteTimeGetCurrent()
+                    let elapsed = now - self.lastSeekFiredAt
+                    if elapsed >= 0.1 {
+                        self.performPreciseSeek()
+                        self.lastSeekFiredAt = now
+                    }
+                    // 아니면 throttleWork 가 곧 fire 할 것
                 }
             }
         }
     }
+
+    // refine 함수 제거됨 — performPreciseSeek 가 이미 정확한 위치로 이동하므로 보정 불필요
+
+    // MARK: - IN/OUT 마커 조작
+
+    /// 현재 재생 위치를 IN 포인트로 마킹.
+    /// - IN 이 OUT 보다 크면 OUT 을 초기화.
+    func markInAtCurrent() {
+        guard let url = currentURL, isReady, duration > 0 else { return }
+        let now = currentTime
+        var m = markers
+        m.inSeconds = now
+        // in > out 이면 out 무효화
+        if let o = m.outSeconds, now >= o {
+            m.outSeconds = nil
+        }
+        markers = m
+        VideoMarkerService.shared.save(m, for: url)
+        NotificationCenter.default.post(name: .videoMarkersChanged, object: url)
+    }
+
+    /// 현재 재생 위치를 OUT 포인트로 마킹.
+    /// - OUT 이 IN 보다 작으면 IN 을 초기화.
+    func markOutAtCurrent() {
+        guard let url = currentURL, isReady, duration > 0 else { return }
+        let now = currentTime
+        var m = markers
+        m.outSeconds = now
+        if let i = m.inSeconds, now <= i {
+            m.inSeconds = nil
+        }
+        markers = m
+        VideoMarkerService.shared.save(m, for: url)
+        NotificationCenter.default.post(name: .videoMarkersChanged, object: url)
+    }
+
+    /// IN 포인트로 재생헤드 점프.
+    func jumpToIn() {
+        guard let t = markers.inSeconds, isReady, duration > 0 else { return }
+        seek(to: t / duration)
+    }
+
+    /// OUT 포인트로 재생헤드 점프.
+    func jumpToOut() {
+        guard let t = markers.outSeconds, isReady, duration > 0 else { return }
+        seek(to: t / duration)
+    }
+
+    /// 모든 마커 제거 (XMP 사이드카 삭제).
+    func clearMarkers() {
+        guard let url = currentURL else { return }
+        markers = VideoMarkers()
+        VideoMarkerService.shared.save(markers, for: url)
+        NotificationCenter.default.post(name: .videoMarkersChanged, object: url)
+    }
+
+    /// IN 포인트만 제거.
+    func clearInMarker() {
+        guard let url = currentURL else { return }
+        var m = markers
+        m.inSeconds = nil
+        markers = m
+        VideoMarkerService.shared.save(m, for: url)
+        NotificationCenter.default.post(name: .videoMarkersChanged, object: url)
+    }
+
+    /// OUT 포인트만 제거.
+    func clearOutMarker() {
+        guard let url = currentURL else { return }
+        var m = markers
+        m.outSeconds = nil
+        markers = m
+        VideoMarkerService.shared.save(m, for: url)
+        NotificationCenter.default.post(name: .videoMarkersChanged, object: url)
+    }
+
+    // seekPrecise / performSeek 는 seekCoarse + refineToExact 로 교체됨 (위쪽 참조)
 
     // MARK: - 프레임 스텝
 
@@ -279,21 +440,104 @@ class VideoPlayerManager: ObservableObject {
 
     // MARK: - J/K/L 스크러빙
 
+    /// JKL 스크러빙 — 편집 툴 표준.
+    /// H.264/H.265 는 역방향 디코딩이 극히 느림 → rate 기반 대신 seek 점프로 fast reverse 구현.
+    private var jklReverseTimer: DispatchSourceTimer?
+    private var jklReverseLevel: Int = 0  // 1~4 단계 (J 누른 횟수)
+
     func jklScrub(key: Character) {
         switch key {
         case "j":
-            let newRate = player.rate <= 0 ? player.rate - 1.0 : -1.0
-            player.rate = max(newRate, -4.0)
+            // 역재생 — 최대 2x (3x 이상은 H.264/H.265 에서 프레임 드롭 심함)
+            stopJklReverseTimer()
+            jklReverseLevel = min(jklReverseLevel + 1, 2)
+
+            // LUT composition 이 켜져있으면 역재생 중엔 임시 비활성화 (에러 폭발 + 렉 방지)
+            // 사용자가 K 또는 L 누르면 복원
+            if lutApplied {
+                suspendLUTForJKL()
+            }
+
+            let canPlayReverseNative = player.currentItem?.canPlayReverse ?? false
+            let canFastReverse = player.currentItem?.canPlayFastReverse ?? false
+
+            // 오디오 음소거 (역재생 중 FAQ 에러 폭발 방지)
+            player.isMuted = true
+
+            if jklReverseLevel == 1 && canPlayReverseNative {
+                player.rate = -1.0
+            } else if jklReverseLevel == 2 && canFastReverse {
+                player.rate = -2.0
+            } else {
+                // 네이티브 미지원 → seek 기반 micro-jump
+                player.rate = 0
+                startJklReverseTimer(interval: 0.06)
+            }
         case "k":
             player.rate = 0
+            stopJklReverseTimer()
+            jklReverseLevel = 0
+            // 음소거 복원 + LUT 복원
+            player.isMuted = isMuted
+            restoreLUTAfterJKL()
         case "l":
+            stopJklReverseTimer()
+            jklReverseLevel = 0
+            // 음소거 복원 + LUT 복원
+            player.isMuted = isMuted
+            restoreLUTAfterJKL()
             let newRate = player.rate >= 0 ? player.rate + 1.0 : 1.0
             player.rate = min(newRate, 4.0)
         default: break
         }
         DispatchQueue.main.async {
-            self.playbackRate = abs(self.player.rate)
+            // UI 표시용: 역재생일 때 음수가 아닌 절대값 표시, 단계 정보 반영
+            if self.jklReverseLevel > 0 {
+                self.playbackRate = Float(self.jklReverseLevel)
+            } else {
+                self.playbackRate = abs(self.player.rate)
+            }
         }
+    }
+
+    private func startJklReverseTimer(interval: Double) {
+        // 부드러운 역재생: 작은 간격으로 작은 점프 (프레임 드롭 최소화)
+        // interval 파라미터 대신 고정 60ms, 점프 거리로 속도 조절
+        let tickInterval: Double = 0.06  // ~16 ticks/sec
+        let jumpDistance: Double = Double(jklReverseLevel) * 0.06  // 1x=60ms, 2x=120ms, 3x=180ms, 4x=240ms jumps
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + tickInterval, repeating: tickInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self = self,
+                  let item = self.player.currentItem,
+                  item.status == .readyToPlay,
+                  !self.isSeekInProgress else { return }  // 이전 seek 완료 대기
+            let current = self.player.currentTime()
+            let target = CMTimeSubtract(current, CMTime(seconds: jumpDistance, preferredTimescale: 600))
+            if CMTimeGetSeconds(target) < 0 {
+                self.stopJklReverseTimer()
+                self.jklReverseLevel = 0
+                self.player.seek(to: .zero)
+                return
+            }
+            // 작은 jump 는 tolerance 도 작게 → 키프레임 약간 벗어나도 정확도 유지
+            self.isSeekInProgress = true
+            self.player.seek(to: target,
+                             toleranceBefore: CMTime(seconds: 0.05, preferredTimescale: 600),
+                             toleranceAfter: CMTime(seconds: 0.05, preferredTimescale: 600)) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.isSeekInProgress = false
+                }
+            }
+        }
+        timer.resume()
+        jklReverseTimer = timer
+    }
+
+    private func stopJklReverseTimer() {
+        jklReverseTimer?.cancel()
+        jklReverseTimer = nil
     }
 
     // MARK: - 속도 조절
@@ -374,6 +618,30 @@ class VideoPlayerManager: ObservableObject {
         player.currentItem?.videoComposition = nil
         lutApplied = false
         activeLUT = nil
+    }
+
+    // MARK: - JKL 역재생 중 LUT 임시 보류/복원
+    /// JKL 역재생 전 적용 중이던 composition 과 LUT 상태 기억
+    private var _jklSuspendedComposition: AVVideoComposition?
+    private var _jklSuspendedLUT: LUTService.LUTData?
+
+    /// LUT composition 을 임시 제거 (역재생 시 seek 성능 + 에러 방지)
+    private func suspendLUTForJKL() {
+        guard let item = player.currentItem, item.videoComposition != nil else { return }
+        _jklSuspendedComposition = item.videoComposition
+        _jklSuspendedLUT = activeLUT
+        item.videoComposition = nil
+        // lutApplied 는 UI 상 false 로 반영하지 않음 — 사용자 관점에서 계속 적용 상태
+        fputs("[Video] LUT suspended (JKL reverse)\n", stderr)
+    }
+
+    /// 역재생 끝나면 LUT composition 복원
+    private func restoreLUTAfterJKL() {
+        guard let item = player.currentItem, let comp = _jklSuspendedComposition else { return }
+        item.videoComposition = comp
+        _jklSuspendedComposition = nil
+        _jklSuspendedLUT = nil
+        fputs("[Video] LUT restored\n", stderr)
     }
 
     /// LUT 켜기/끄기 토글 (마지막 적용 LUT 기억)
@@ -521,12 +789,32 @@ class VideoPlayerManager: ObservableObject {
         meta.isLOG = detectLOGProfile(meta: meta, url: url)
         meta.isRAWVideo = detectRAWVideo(meta: meta)
 
-        self.videoMetadata = meta
-        self.isLOGVideo = meta.isLOG || meta.isRAWVideo
+        // 디버그 로그 — LOG 감지 실패 시 어떤 정보가 있었는지 확인용
+        fputs("[LUT detect] \(url.lastPathComponent) codec=\(meta.codec) " +
+              "primaries=\(meta.colorPrimaries ?? "-") " +
+              "transfer=\(meta.transferFunction ?? "-") " +
+              "gamma=\(meta.captureGamma ?? "-") " +
+              "bitrate=\(Int(meta.bitrate))Mbps " +
+              "→ isLOG=\(meta.isLOG) isRAW=\(meta.isRAWVideo)\n", stderr)
 
-        // LOG 영상 + 저장된 LUT 있으면 자동 적용
-        if (meta.isLOG || meta.isRAWVideo) && autoApplyLUT, let lut = activeLUT {
-            applyLUT(lut.data, dimension: lut.dimension)
+        self.videoMetadata = meta
+        let isLOGish = meta.isLOG || meta.isRAWVideo
+        self.isLOGVideo = isLOGish
+
+        // LOG 자동 LUT 토글:
+        //  - LOG/RAW 영상 → 저장된 activeLUT 있으면 자동 ON
+        //  - 일반 영상 → autoApplyLUT 활성화 상태면 LUT 자동 OFF
+        if autoApplyLUT {
+            if isLOGish, let lut = activeLUT {
+                if !lutApplied {
+                    fputs("[LUT] LOG 영상 감지 → LUT 자동 적용: \(lut.name)\n", stderr)
+                    applyLUT(lut.data, dimension: lut.dimension)
+                }
+            } else if !isLOGish && lutApplied {
+                // 일반 영상으로 전환 → LUT 꺼서 원본 감마 유지
+                fputs("[LUT] 일반 영상 감지 → LUT 자동 해제\n", stderr)
+                removeLUT()
+            }
         }
     }
 
@@ -552,6 +840,14 @@ class VideoPlayerManager: ObservableObject {
                            "BRAW", "BMPCC", "RED", "ARRI"]
         if logPatterns.contains(where: { fileName.contains($0) }) { return true }
 
+        // Sony XAVC 네이밍 패턴 (C####.MP4) — FX3/FX6/α7S III/α1 등
+        // C0001~C9999.MP4 또는 Cxxxx.MXF 규약 (Sony SxS/XQD/CFexpress)
+        // 이 경우 대부분 XAVC-S 10bit 또는 XAVC HS 로 S-Log3 가능성 매우 높음
+        if fileName.range(of: #"^C\d{4}\.(MP4|MXF)$"#, options: .regularExpression) != nil {
+            // Sony XAVC 클립 + 10bit 이상 (bitrate > 40Mbps) → S-Log3/HLG 강력 추정
+            if meta.bitrate > 40 { return true }
+        }
+
         // 3) 폴더명 기반 감지 (카메라에서 복사 시 폴더명에 LOG 포함)
         let parentFolder = url.deletingLastPathComponent().lastPathComponent.uppercased()
         if logPatterns.contains(where: { parentFolder.contains($0) }) { return true }
@@ -572,12 +868,16 @@ class VideoPlayerManager: ObservableObject {
         // 6) ProRes 4444 이상은 보통 LOG/RAW
         if meta.codec == "ap4h" || meta.codec == "ap4x" { return true }
 
-        // 7) Sony XAVC S 파일 구조 감지: 파일 경로에 PRIVATE/M4ROOT 포함 (Sony 카메라 폴더 구조)
+        // 7) Sony XAVC S 파일 구조 감지
         let path = url.path.uppercased()
-        if path.contains("M4ROOT") || path.contains("CLIP") {
-            // Sony 카메라 폴더 구조 → PP 설정에 따라 LOG일 수 있음
-            // 10bit 이상이면 LOG 가능성 높음
-            if meta.bitrate > 50 { return true }  // 고비트레이트 = LOG 가능성
+        if path.contains("M4ROOT") || path.contains("CLIP") || path.contains("PRIVATE") {
+            if meta.bitrate > 50 { return true }
+        }
+
+        // 8) 고비트레이트 HEVC 10bit + 넓은 색역 → LOG 강력 추정
+        // HEVC Main10 에서 S-Log3 는 보통 100Mbps+
+        if (meta.codec == "hvc1" || meta.codec == "hev1") && meta.bitrate > 80 {
+            return true
         }
 
         return false
@@ -591,7 +891,14 @@ class VideoPlayerManager: ObservableObject {
 
     /// Sony/Canon/Panasonic 카메라 독점 메타데이터에서 감마/색역 정보 추출
     private func extractCaptureGamma(asset: AVURLAsset) async -> String? {
-        guard let metadata = try? await asset.load(.metadata) else { return nil }
+        // 1. Asset 레벨 metadata (Sony MXF/XAVC 는 주로 여기에)
+        let assetMeta = (try? await asset.load(.metadata)) ?? []
+        // 2. Video track 레벨 metadata (일부 Sony MP4 는 트랙에만 있음)
+        var trackMeta: [AVMetadataItem] = []
+        if let videoTrack = try? await asset.loadTracks(withMediaType: .video).first {
+            trackMeta = (try? await videoTrack.load(.metadata)) ?? []
+        }
+        let metadata = assetMeta + trackMeta
 
         for item in metadata {
             guard let value = try? await item.load(.value) as? String else { continue }
@@ -603,7 +910,8 @@ class VideoPlayerManager: ObservableObject {
             if let key = item.key as? String {
                 let keyLower = key.lowercased()
                 if keyLower.contains("gamma") || keyLower.contains("gamut") ||
-                   keyLower.contains("colorprofile") || keyLower.contains("pictureprofile") {
+                   keyLower.contains("colorprofile") || keyLower.contains("pictureprofile") ||
+                   keyLower.contains("creativelook") || keyLower.contains("picprofile") {
                     if valueLower.contains("log") || valueLower.contains("gamut") ||
                        valueLower.contains("film") || valueLower.contains("flat") ||
                        valueLower.contains("cine") || valueLower.contains("hlg") {
@@ -615,13 +923,23 @@ class VideoPlayerManager: ObservableObject {
             // 일반 identifier 기반 검색
             if let id = item.identifier {
                 let idStr = id.rawValue.lowercased()
-                if idStr.contains("gamma") || idStr.contains("gamut") || idStr.contains("color") {
+                if idStr.contains("gamma") || idStr.contains("gamut") || idStr.contains("color") ||
+                   idStr.contains("profile") {
                     if valueLower.contains("log") || valueLower.contains("gamut") ||
                        valueLower.contains("film") || valueLower.contains("flat") ||
                        valueLower.contains("cine") {
                         return value
                     }
                 }
+            }
+
+            // 값 자체에 log 문자열 들어있으면 — 키 무관하게 감지
+            if valueLower.contains("s-log") || valueLower.contains("slog") ||
+               valueLower.contains("c-log") || valueLower.contains("clog") ||
+               valueLower.contains("v-log") || valueLower.contains("vlog") ||
+               valueLower.contains("n-log") || valueLower.contains("f-log") ||
+               valueLower.contains("log-c") || valueLower.contains("s-gamut") {
+                return value
             }
         }
 
@@ -649,6 +967,18 @@ class VideoPlayerManager: ObservableObject {
         metadataTask = nil
         lutTask?.cancel()
         lutTask = nil
+        // seek refine / throttle / JKL 역재생 timer 정리
+        preciseRefineWork?.cancel()
+        preciseRefineWork = nil
+        throttleWork?.cancel()
+        throttleWork = nil
+        stopJklReverseTimer()
+        jklReverseLevel = 0
+        wasPlayingBeforeSeek = false
+        isSeekInProgress = false
+        lastSeekFiredAt = 0
+        _jklSuspendedComposition = nil
+        _jklSuspendedLUT = nil
         if let observer = timeObserver {
             player.removeTimeObserver(observer)
             timeObserver = nil

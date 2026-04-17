@@ -118,6 +118,8 @@ class PhotoStore: ObservableObject {
     var scrollAnchor: UnitPoint = .bottom
     /// true when key is held down (OS key repeat), false for actual press
     var isKeyRepeat: Bool = false
+    /// Cmd+X 로 잘라낸 사진 ID — 썸네일 흐리게 표시용 (paste 완료 시 clear)
+    @Published var pendingCutPhotoIDs: Set<UUID> = []
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
     @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
@@ -232,6 +234,17 @@ class PhotoStore: ObservableObject {
     @Published var bgExportCancelled = false
     @Published var bgExportLabel: String = ""  // "폴더 내보내기" / "Lightroom 내보내기" / "RAW → JPG 변환"
     var bgExportDestination: URL?
+
+    // 전송 세부 정보 (복사/잘라내기 진행 팝업용)
+    @Published var bgTransferCurrentFile: String = ""      // 현재 처리 중인 파일명
+    @Published var bgTransferSourcePath: String = ""       // 원본 경로
+    @Published var bgTransferDestPath: String = ""         // 대상 경로
+    @Published var bgTransferBytesDone: Int64 = 0          // 누적 전송 바이트
+    @Published var bgTransferBytesTotal: Int64 = 0         // 전체 바이트
+    @Published var bgTransferSpeed: Double = 0             // 초당 바이트 (즉시 속도)
+    @Published var bgTransferETA: TimeInterval = 0         // 남은 시간 (초)
+    @Published var bgTransferSpeedHistory: [Double] = []   // 최근 30개 샘플 (그래프)
+    var bgTransferStartedAt: Date?
     @Published var conversionProgress: Double = 0
     @Published var conversionTotal: Int = 0
     @Published var conversionDone: Int = 0
@@ -395,6 +408,15 @@ class PhotoStore: ObservableObject {
 
     // MARK: - Undo Stack
     struct FileMove { let sourceURL: URL; let destURL: URL }
+    /// Undo 가능한 paste 기록 (별도 스택). Rating undo 와 섞이지 않음.
+    /// - kind: "copy" or "cut"
+    /// - items: (source, dest) 쌍 목록. Cut 시 source→dest 이동, Copy 시 dest 만 기록.
+    struct PasteUndoRecord {
+        let kind: String  // "copy" or "cut"
+        let items: [(source: URL, dest: URL)]
+        let destFolder: URL
+    }
+    var pasteUndoStack: [PasteUndoRecord] = []
     /// 삭제 되돌리기용: 삭제된 PhotoItem + 원래 인덱스
     struct RemovedPhoto { let photo: PhotoItem; let originalIndex: Int }
     var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove], removedPhotos: [RemovedPhoto])] = []

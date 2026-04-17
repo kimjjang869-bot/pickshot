@@ -142,15 +142,30 @@ struct MultiPreviewCell: View {
 
     private func loadHiRes() {
         let url = photo.jpgURL
-        // PreviewImageCache에 있으면 즉시
-        let cacheKey = url.appendingPathExtension("orig")
+        // 셀 실제 표시 크기 × Retina 2배 — 최소 1600px 확보해서 선명도 유지
+        // (이전 800px 는 Retina 에서 업스케일되어 뭉개짐)
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let targetPx = max(1600, Int(max(cellW, cellH) * scale))
+
+        // 전역 PreviewImageCache 에 동일 해상도 키가 있으면 재사용
+        let cacheKey = url.appendingPathExtension("r\(targetPx)")
         if let cached = PreviewImageCache.shared.get(cacheKey) {
             hiResImage = cached
             return
         }
-        // 백그라운드 로딩
+        // orig 키(원본) 있으면 그것도 OK — 이미 고화질
+        let origKey = url.appendingPathExtension("orig")
+        if let cached = PreviewImageCache.shared.get(origKey) {
+            hiResImage = cached
+            return
+        }
+
+        // 백그라운드 로딩 + 캐시 저장
         DispatchQueue.global(qos: .userInitiated).async {
-            let img = PreviewImageCache.loadOptimized(url: url, maxPixel: 800)
+            let img = PreviewImageCache.loadOptimized(url: url, maxPixel: CGFloat(targetPx))
+            if let img = img {
+                PreviewImageCache.shared.set(cacheKey, image: img)
+            }
             DispatchQueue.main.async {
                 hiResImage = img
             }

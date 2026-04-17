@@ -628,6 +628,8 @@ struct FolderBrowserView: View {
                             NSWorkspace.shared.open(url)
                         }
                         Divider()
+                        folderTreeCopyCutPasteMenu(url, store: store)
+                        Divider()
                         Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
@@ -692,6 +694,8 @@ struct FolderBrowserView: View {
                             NSWorkspace.shared.open(url)
                         }
                         Divider()
+                        folderTreeCopyCutPasteMenu(url, store: store)
+                        Divider()
                         Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
                     .help(url.path)
@@ -748,6 +752,8 @@ struct FolderBrowserView: View {
                         Button("Finder에서 열기") {
                             NSWorkspace.shared.open(url)
                         }
+                        Divider()
+                        folderTreeCopyCutPasteMenu(url, store: store)
                         Divider()
                         Button("새 폴더 만들기") { createNewSubfolder(in: url) }
                     }
@@ -895,6 +901,8 @@ struct FolderBrowserView: View {
                                 Button("Finder에서 열기") {
                                     NSWorkspace.shared.open(item.url)
                                 }
+                                Divider()
+                                folderTreeCopyCutPasteMenu(item.url, store: store)
                                 Divider()
                                 Button("새 폴더 만들기") { createNewSubfolder(in: item.url) }
                             }
@@ -1190,6 +1198,8 @@ struct FolderRowView: View {
             .contextMenu {
                 Button("즐겨찾기에 추가") { onAddFavorite(item.url) }
                 Button("Finder에서 열기") { NSWorkspace.shared.open(item.url) }
+                Divider()
+                folderTreeCopyCutPasteMenu(item.url, store: store)
                 Divider()
                 Button("폴더 이름 변경") {
                     startRenaming()
@@ -1544,24 +1554,17 @@ struct FolderDropDelegate: DropDelegate {
         }
 
         group.notify(queue: .main) {
-            // 파일 이동
-            if !fileURLs.isEmpty {
-                store.movePhotosToFolder(fileURLs: fileURLs, destination: destination)
-            }
-            // 폴더 이동
-            for folderURL in folderURLs {
-                let destURL = destination.appendingPathComponent(folderURL.lastPathComponent)
-                do {
-                    try FileManager.default.moveItem(at: folderURL, to: destURL)
-                    store.showToastMessage("📁 '\(folderURL.lastPathComponent)' → '\(destination.lastPathComponent)'로 이동")
-                } catch {
-                    store.showToastMessage("⚠️ 폴더 이동 실패: \(error.localizedDescription)")
-                }
-            }
-            // 폴더 트리 새로고침
-            if !folderURLs.isEmpty {
-                NotificationCenter.default.post(name: .init("FolderTreeNeedsRefresh"), object: nil)
-            }
+            let allSources = fileURLs + folderURLs
+            guard !allSources.isEmpty else { return }
+
+            // 공용 엔트리포인트 호출 — 충돌 다이얼로그 + 백그라운드 전송 + 진행률 창 + 언두
+            performFileTransferToFolder(
+                urls: allSources,
+                destFolder: destination,
+                isCut: true,               // 드래그 드롭은 항상 이동 동작
+                store: store,
+                clearClipboardOnSuccess: false
+            )
         }
         return true
     }
