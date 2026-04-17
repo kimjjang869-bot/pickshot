@@ -164,6 +164,8 @@ final class NavigationPerformanceMonitor: ObservableObject {
     }
 
     /// 이동 완료 (동기 처리 끝난 뒤, 예: scrollTrigger 증가 직후)
+    /// - 핵심: 이 함수가 main thread 를 블록하면 측정 자체가 관찰 대상을 왜곡.
+    ///         그래서 RAM/cache 같은 무거운 호출은 꾹 누르기 중엔 스킵.
     func notifyMoveCompleted() {
         guard isEnabled, let startTime = currentMoveStartTime else { return }
         let now = Date()
@@ -181,36 +183,45 @@ final class NavigationPerformanceMonitor: ObservableObject {
         // burst 판정
         let isRepeat = intervalMs > 0 && intervalMs < burstThresholdMs
 
+        // 꾹 누르기 중엔 무거운 metrics 는 N 번에 한 번만 샘플링 (RAM/cache 조회 최소화)
+        // 매 이동마다 mach_task_basic_info + lock 조회는 main thread 에 10ms+ 비용 발생
+        let shouldSampleHeavy = !isRepeat || (currentMoveIndex % 10 == 0)
+        let ramMB = shouldSampleHeavy ? currentRamMB() : lastSampledRam
+        let cacheCount = shouldSampleHeavy ? PreviewImageCache.shared.count : lastSampledCacheCount
+        let cacheMB = shouldSampleHeavy ? PreviewImageCache.shared.currentBytesMB : lastSampledCacheMB
+        if shouldSampleHeavy {
+            lastSampledRam = ramMB
+            lastSampledCacheCount = cacheCount
+            lastSampledCacheMB = cacheMB
+        }
+        currentMoveIndex &+= 1
+
         let event = MoveEvent(
-            index: (session.map { _ in allBursts.reduce(0) { $0 + $1.movesCount } }) ?? 0 + recentMoves.count,
+            index: currentMoveIndex,
             photoIndex: currentMovePhotoIndex,
             direction: currentMoveDirection,
             intervalMs: intervalMs,
             processingMs: processingMs,
             isRepeat: isRepeat,
-            ramUsageMB: currentRamMB(),
-            previewCacheCount: PreviewImageCache.shared.count,
-            previewCacheMB: PreviewImageCache.shared.currentBytesMB,
+            ramUsageMB: ramMB,
+            previewCacheCount: cacheCount,
+            previewCacheMB: cacheMB,
             timestamp: startTime
         )
 
-        // burst 업데이트
-        if isRepeat, var current = activeBurst {
-            current.moves.append(event)
-            activeBurst = current
-        } else if isRepeat, activeBurst == nil {
-            // 직전 non-repeat 이동을 burst 시작으로 승격 (이벤트 2개째부터 인지됨)
+        // burst 업데이트 (경량)
+        if isRepeat, activeBurst != nil {
+            activeBurst!.moves.append(event)
+        } else if isRepeat {
             var newBurst = BurstInfo(startedAt: event.timestamp)
             newBurst.moves.append(event)
             activeBurst = newBurst
         } else {
-            // non-repeat: 기존 burst 종료 + 독립 이동
-            if var current = activeBurst {
-                current.endedAt = now
-                current.moves.append(event)
-                finalizeBurst(current)
+            if activeBurst != nil {
+                activeBurst!.endedAt = now
+                activeBurst!.moves.append(event)
+                finalizeBurst(activeBurst!)
             } else {
-                // 독립 이동도 1-event burst 로 기록
                 var single = BurstInfo(startedAt: event.timestamp)
                 single.endedAt = now
                 single.moves.append(event)
@@ -218,18 +229,26 @@ final class NavigationPerformanceMonitor: ObservableObject {
             }
         }
 
-        // 링 버퍼
+        // 링 버퍼 (append 만 — @Published 변경 감지는 메인 스레드 end-of-runloop coalescing)
         recentMoves.append(event)
         if recentMoves.count > maxRecent {
             recentMoves.removeFirst(recentMoves.count - maxRecent)
         }
 
-        // burst 종료 타이머 (타이머 내에 다음 이동 없으면 burst 마감)
-        scheduleBurstEndCheck()
-
         currentMoveStartTime = nil
-        updateStats()
+
+        // 꾹 누르기 중엔 stats 업데이트/burst end 체크도 드물게 — main thread 보호
+        if shouldSampleHeavy {
+            scheduleBurstEndCheck()
+            updateStats()
+        }
     }
+
+    // 경량 샘플링용 캐시
+    private var currentMoveIndex: Int = 0
+    private var lastSampledRam: Int = 0
+    private var lastSampledCacheCount: Int = 0
+    private var lastSampledCacheMB: Int = 0
 
     // MARK: - Session / Export
 
