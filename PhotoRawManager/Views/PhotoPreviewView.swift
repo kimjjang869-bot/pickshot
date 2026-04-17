@@ -1599,15 +1599,21 @@ struct PhotoPreviewView: View {
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch
     private func scheduleSmartPreload(currentID: UUID, resolution: Int) {
-        // Cancel previous preload batch when selection changes rapidly
-        preloadWork?.cancel()
+        // 키 꾹 누르기 중엔 preload 예약 안 함 — 키 놓았을 때 한 번만 실행
+        // 꾹 누르기 시 매 이동마다 20장 로드 요청이 쌓이면 키 놓은 후 수백 개가 한꺼번에
+        // 실행되어 10초+ 블록 (실측 12.2초 렉)
+        if store.isKeyRepeat {
+            preloadWork?.cancel()
+            return
+        }
 
+        preloadWork?.cancel()
         let work = DispatchWorkItem {
             self.preloadNeighborsBatch(currentID: currentID, resolution: resolution)
         }
         preloadWork = work
-        // Small delay so rapid arrow-key navigation cancels stale batches
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.15, execute: work)
+        // 150→500ms 로 증가 — 꾹 누르기 직후 IO 경합 줄이고 Main RunLoop 안정화 대기
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     /// Preload ±20 neighbors into PreviewImageCache with smart resolution selection

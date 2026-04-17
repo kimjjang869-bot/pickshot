@@ -105,9 +105,15 @@ class PhotoStore: ObservableObject {
     @Published var cachedFolderSizeText: String = ""
     @Published var selectedPhotoID: UUID? {
         didSet {
-            // 프리페치는 키 연타 중에도 실행 (내부 디바운스로 마지막 한 번만 작동)
-            // → 빠른 탐색 시 다음 셀이 즉시 캐시 HIT으로 표시됨
-            prefetchNearbyThumbnails()
+            // 키 꾹 누르기 중에는 prefetch 스킵 — 매 이동마다 60장 concurrent async 를 큐에 쌓으면
+            // 키 놓았을 때 수천 개 작업이 한꺼번에 실행되며 10초+ 렉 발생
+            // 키가 떨어진 순간에 마지막 한 번만 prefetch (디바운스 1초)
+            if isKeyRepeat {
+                // 연속 이동 중: 이전 예약만 취소하고 새로 예약하지 않음
+                prefetchWorkItem?.cancel()
+            } else {
+                prefetchNearbyThumbnails()
+            }
             // 지오코딩은 키 떼는 순간에만
             if !isKeyRepeat, let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
         }
