@@ -1988,6 +1988,10 @@ class ThumbnailLoader {
 
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
+            // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
+            // 없으면 ThumbnailCache 가 evict 해도 CGImageSource/NSImage 가 thread-local pool 에 누적되어
+            // key repeat 꾹 누르기 중 RAM 이 GB 단위로 증가함
+            autoreleasepool {
             guard let op = op, !op.isCancelled else { return }
             let isNAS = ThumbnailLoader.shared.isNetworkMode
             let isHDD = ThumbnailLoader.shared.isExternalHDD
@@ -2064,6 +2068,7 @@ class ThumbnailLoader {
             DispatchQueue.main.async {
                 for cb in callbacks { cb(image) }
             }
+            } // autoreleasepool 닫기
         }
         queue.addOperation(op)
         lock.unlock()

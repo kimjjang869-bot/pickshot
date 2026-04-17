@@ -291,6 +291,15 @@ class PreviewImageCache {
     }
 
     static func loadOptimized(url: URL, maxPixel: CGFloat) -> NSImage? {
+        // 전체 로드 경로를 autoreleasepool 로 감싸서 CGImageSource + 중간 NSImage/CGImage
+        // 임시 객체를 즉시 해제. key repeat 꾹 누르기 시 autorelease pool 이 main loop 블록되면
+        // 못 비워지는 문제 방지.
+        return autoreleasepool { () -> NSImage? in
+            _loadOptimizedImpl(url: url, maxPixel: maxPixel)
+        }
+    }
+
+    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat) -> NSImage? {
         let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
 
@@ -1629,31 +1638,33 @@ struct PhotoPreviewView: View {
 
         let cache = PreviewImageCache.shared
         for entry in entries {
-            // Check cancellation between each load (selection changed = abort)
-            if self.pendingPhotoID != currentID {
-                return
-            }
+            // autoreleasepool 로 엔트리마다 CGImageSource/NSImage 임시 객체 즉시 해제
+            // 이게 없으면 key repeat 꾹 누르기 시 preview 객체가 쌓여 RAM 폭발 (이동당 ~20MB)
+            autoreleasepool {
+                // Check cancellation between each load (selection changed = abort)
+                if self.pendingPhotoID != currentID { return }
 
-            // RAW files: preload at 1200px (fast embedded preview)
-            // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
-            let preloadRes: Int
-            if entry.isRAW {
-                preloadRes = 1200
-            } else {
-                preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
-            }
+                // RAW files: preload at 1200px (fast embedded preview)
+                // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
+                let preloadRes: Int
+                if entry.isRAW {
+                    preloadRes = 1200
+                } else {
+                    preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
+                }
 
-            // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
-            let suffix = ".__cache_r\(preloadRes)"
-            let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
+                // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
+                let suffix = ".__cache_r\(preloadRes)"
+                let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
 
-            // Skip if already cached (RAM or disk)
-            if cache.has(cacheKey) { continue }
+                // Skip if already cached (RAM or disk)
+                if cache.has(cacheKey) { return }
 
-            // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
-            let maxPx = CGFloat(preloadRes)
-            if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
-                cache.set(cacheKey, image: img)
+                // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
+                let maxPx = CGFloat(preloadRes)
+                if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
+                    cache.set(cacheKey, image: img)
+                }
             }
         }
     }

@@ -34,15 +34,17 @@ extension PhotoStore {
             let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .userInitiated, attributes: .concurrent)
             for url in toLoad.prefix(60) {
                 concurrentQueue.async {
-                    if ThumbnailCache.shared.get(url) != nil { return }
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                            kCGImageSourceThumbnailMaxPixelSize: 400,
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true
-                          ] as CFDictionary) else { return }
-                    let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                    ThumbnailCache.shared.set(url, image: img)
+                    autoreleasepool {
+                        if ThumbnailCache.shared.get(url) != nil { return }
+                        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                              let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                                kCGImageSourceThumbnailMaxPixelSize: 400,
+                                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                                kCGImageSourceCreateThumbnailWithTransform: true
+                              ] as CFDictionary) else { return }
+                        let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                        ThumbnailCache.shared.set(url, image: img)
+                    }
                 }
             }
         }
@@ -220,16 +222,20 @@ extension PhotoStore {
             concurrentQueue.async { [weak self] in
                 sem.wait()
                 defer { sem.signal() }
-                guard self?.idlePrefetchGeneration == gen else { return }
-                if ThumbnailCache.shared.get(url) != nil { return }  // 이미 캐시됨
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                        kCGImageSourceThumbnailMaxPixelSize: 400,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                      ] as CFDictionary) else { return }
-                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                ThumbnailCache.shared.set(url, image: img)
+                // background queue 는 main RunLoop 의 autorelease pool 과 독립적
+                // key repeat 꾹 누르기 시 이미지 객체가 GCD worker thread pool 에 누적되는 것을 막기 위해 명시적 pool
+                autoreleasepool {
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    if ThumbnailCache.shared.get(url) != nil { return }  // 이미 캐시됨
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceThumbnailMaxPixelSize: 400,
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                            kCGImageSourceCreateThumbnailWithTransform: true
+                          ] as CFDictionary) else { return }
+                    let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                    ThumbnailCache.shared.set(url, image: img)
+                }
             }
         }
     }
@@ -272,19 +278,23 @@ extension PhotoStore {
             let end = min(startIdx + batchSize, sorted.count)
             DispatchQueue.global(qos: .background).async { [weak self] in
                 for i in startIdx..<end {
-                    guard self?.idlePrefetchGeneration == gen else { return }
-                    let photo = list[sorted[i]]
-                    let url = photo.jpgURL
-                    let cacheKey = url.appendingPathExtension("orig")
+                    // 각 preview 로드마다 autoreleasepool — background queue 의 worker thread 는
+                    // main autorelease pool 과 독립이라 누적 방지 필수
+                    autoreleasepool {
+                        guard self?.idlePrefetchGeneration == gen else { return }
+                        let photo = list[sorted[i]]
+                        let url = photo.jpgURL
+                        let cacheKey = url.appendingPathExtension("orig")
 
-                    // 이미 캐시에 있으면 스킵
-                    if PreviewImageCache.shared.get(cacheKey) != nil { continue }
+                        // 이미 캐시에 있으면 스킵
+                        if PreviewImageCache.shared.get(cacheKey) != nil { return }
 
-                    // 고화질 로딩 → 캐시에 저장
-                    if let img = PreviewImageCache.loadOptimized(url: url, maxPixel: PreviewImageCache.optimalPreviewSize()) {
-                        PreviewImageCache.shared.set(cacheKey, image: img)
-                        // 썸네일 캐시에도
-                        ThumbnailCache.shared.set(url, image: img)
+                        // 고화질 로딩 → 캐시에 저장
+                        if let img = PreviewImageCache.loadOptimized(url: url, maxPixel: PreviewImageCache.optimalPreviewSize()) {
+                            PreviewImageCache.shared.set(cacheKey, image: img)
+                            // 썸네일 캐시에도
+                            ThumbnailCache.shared.set(url, image: img)
+                        }
                     }
                 }
 
@@ -372,15 +382,17 @@ extension PhotoStore {
             let url = list[i].jpgURL
             if ThumbnailCache.shared.get(url) != nil { continue }
             let op = BlockOperation {
-                let opts: [NSString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: 1200,
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                ]
-                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                      let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
-                let ns = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-                ThumbnailCache.shared.set(url, image: ns)
+                autoreleasepool {
+                    let opts: [NSString: Any] = [
+                        kCGImageSourceThumbnailMaxPixelSize: 1200,
+                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                        kCGImageSourceCreateThumbnailWithTransform: true
+                    ]
+                    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
+                    let ns = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    ThumbnailCache.shared.set(url, image: ns)
+                }
             }
             Self.thumbPrefetchQueue.addOperation(op)
         }
