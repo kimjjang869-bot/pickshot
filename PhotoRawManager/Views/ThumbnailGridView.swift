@@ -1878,19 +1878,19 @@ class ThumbnailLoader {
             return .externalSSD
         }
 
-        // 3. 용량 기반 추정: 작은 볼륨(≤256GB)은 SD카드 가능성 높음
+        // 3. 용량 기반 추정: 64GB 이하만 SD카드/USB stick 확정
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
             let sizeGB = totalSize / (1024 * 1024 * 1024)
-            if sizeGB <= 256 {
-                // 소용량 외장: SD카드 또는 USB 메모리
+            if sizeGB <= 64 {
                 return .sdCard
             }
         }
 
-        // 4. 대용량 외장: HDD로 가정 (SSD면 이름에 힌트 있는 경우가 많음)
-        return .externalHDD
+        // 4. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
+        fputs("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n", stderr)
+        return .externalSSD
     }
 
     /// SD카드 / USB 메모리 감지 — URLResourceValues로 볼륨 속성 확인
@@ -1919,16 +1919,15 @@ class ThumbnailLoader {
                 return .sdCard
             }
 
-            // 용량 기반 판별: 256GB 이하이면 SD카드/USB 메모리로 취급
+            // 용량 기반: 64GB 이하만 SD카드/USB stick 확정
+            // (≤256GB 는 SSD 가능성 충분 → nil 반환해서 caller 가 SSD 힌트/벤치마크로 판정)
             if let totalBytes = resourceValues.volumeTotalCapacity {
                 let gb = Double(totalBytes) / 1_000_000_000
-                if gb <= 256 {
+                if gb <= 64 {
                     fputs("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n", stderr)
                     return .sdCard
-                } else {
-                    fputs("[STORAGE] Large volume (\(String(format: "%.0f", gb))GB) treated as externalHDD: \(volumeName)\n", stderr)
-                    return .externalHDD
                 }
+                // 65GB~ → nil (외장 SSD 가능성 → caller 가 SSD 힌트 검사)
             }
         } catch {
             // URLResourceValues 실패 → nil 반환, 다른 방법으로 판별
@@ -2876,10 +2875,20 @@ class TileDocumentView: NSView {
         }
     }
 
+    /// id → index 캐시 (O(N) firstIndex 매 이동마다 실행 방지)
+    private var _idIndexCache: [UUID: Int] = [:]
+    private var _idIndexCacheVersion: Int = -1
+
     func scrollToSelected() {
         guard let selID = selectedID,
-              let idx = photos.firstIndex(where: { $0.id == selID }),
               let scrollView = enclosingScrollView else { return }
+        // 캐시된 index 우선 사용 (photos 가 바뀌었으면 재빌드)
+        if _idIndexCacheVersion != photosVersion {
+            _idIndexCache.removeAll(keepingCapacity: true)
+            for (i, p) in photos.enumerated() { _idIndexCache[p.id] = i }
+            _idIndexCacheVersion = photosVersion
+        }
+        guard let idx = _idIndexCache[selID] else { return }
 
         let row = idx / cols
         let y = inset + CGFloat(row) * (cellH + lineSpacing)
