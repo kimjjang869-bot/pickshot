@@ -93,6 +93,7 @@
 		HW10001 /* HWJPEGDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10002 /* HWJPEGDecoder.swift */; };
 		NR10001 /* NASOptimizedReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = NR10002 /* NASOptimizedReader.swift */; };
 		NP10001 /* NavigationPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10002 /* NavigationPerformanceMonitor.swift */; };
+		MG10001 /* MemoryGuardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MG10002 /* MemoryGuardService.swift */; };
 		NP10003 /* NavigationPerformanceHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10004 /* NavigationPerformanceHUD.swift */; };
 		HW10003 /* MetalImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10004 /* MetalImageProcessor.swift */; };
 		HW10005 /* ParallelFFD8Scanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = HW10006 /* ParallelFFD8Scanner.swift */; };
@@ -238,6 +239,7 @@
 		HW10002 /* HWJPEGDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HWJPEGDecoder.swift; sourceTree = "<group>"; };
 		NR10002 /* NASOptimizedReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
 		NP10002 /* NavigationPerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPerformanceMonitor.swift; sourceTree = "<group>"; };
+		MG10002 /* MemoryGuardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryGuardService.swift; sourceTree = "<group>"; };
 		NP10004 /* NavigationPerformanceHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPerformanceHUD.swift; sourceTree = "<group>"; };
 		HW10004 /* MetalImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalImageProcessor.swift; sourceTree = "<group>"; };
 		HW10006 /* ParallelFFD8Scanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelFFD8Scanner.swift; sourceTree = "<group>"; };
@@ -456,6 +458,7 @@
 				B10018 /* SubscriptionManager.swift */,
 				TKS10002 /* TesterKeyService.swift */,
 				NP10002 /* NavigationPerformanceMonitor.swift */,
+				MG10002 /* MemoryGuardService.swift */,
 				SBS10002 /* SandboxBookmarkService.swift */,
 				B10025 /* FolderWatcherService.swift */,
 				B10030 /* FaceGroupingService.swift */,
@@ -748,6 +751,7 @@
 				HW10001 /* HWJPEGDecoder.swift in Sources */,
 				NR10001 /* NASOptimizedReader.swift in Sources */,
 				NP10001 /* NavigationPerformanceMonitor.swift in Sources */,
+				MG10001 /* MemoryGuardService.swift in Sources */,
 				NP10003 /* NavigationPerformanceHUD.swift in Sources */,
 				HW10003 /* MetalImageProcessor.swift in Sources */,
 				HW10005 /* ParallelFFD8Scanner.swift in Sources */,

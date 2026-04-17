@@ -429,6 +429,9 @@ class PhotoStore: ObservableObject {
         }
         setupFolderWatcher()
 
+        // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제
+        MemoryGuardService.shared.start()
+
         // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화
         searchDebounce = $searchText
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)

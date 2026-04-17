@@ -941,20 +941,15 @@ struct PhotoPreviewView: View {
             loadImageDirect(for: photo.jpgURL, id: photo.id)
             viewState.magnifyBaseScale = viewState.customScale
 
-            // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
+            // 빠른 탐색 콜백: 캐시 히트 시에만 즉시 표시.
+            // 캐시 miss 시 동기 썸네일 추출은 main thread 에 5~15ms 비용 + NSImage 인스턴스 누적 →
+            // key repeat 꾹 누르기 시 이동당 interval 90ms → 200ms+ 로 저하. 미스면 비동기 경로에 맡김.
             store.onQuickPreview = { [self] url in
-                // 현재 선택된 사진인지 확인 (이전 사진 섞임 방지)
                 guard url == store.selectedPhoto?.jpgURL else { return }
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
-                } else if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
-                            kCGImageSourceThumbnailMaxPixelSize: 300,
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true
-                          ] as CFDictionary) {
-                    self.image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                 }
+                // cache miss: 비워두고 onChange(selectedPhotoID) 의 비동기 로드 대기
             }
 
             // Scroll wheel zoom monitor (only when mouse is over preview)

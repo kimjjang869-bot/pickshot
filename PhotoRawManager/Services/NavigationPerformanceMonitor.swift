@@ -241,8 +241,19 @@ final class NavigationPerformanceMonitor: ObservableObject {
         if shouldSampleHeavy {
             scheduleBurstEndCheck()
             updateStats()
+
+            // 자동 안전장치: 세션 시작 대비 RAM 이 2GB 이상 증가 시 강제 캐시 해제
+            // 꾹 누르기 중에도 주기적으로 (자동 방어선)
+            let growth = ramMB - sessionStartRam
+            if growth > 2000 && ramMB - lastAutoFlushRam > 1000 {
+                fputs("[NAVPERF] RAM 증가 \(growth)MB 초과 → 자동 캐시 해제\n", stderr)
+                _ = forceFlushAllCaches()
+                lastAutoFlushRam = ramMB
+            }
         }
     }
+
+    private var lastAutoFlushRam: Int = 0
 
     // 경량 샘플링용 캐시
     private var currentMoveIndex: Int = 0
