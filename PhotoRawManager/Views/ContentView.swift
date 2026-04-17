@@ -390,6 +390,12 @@ struct ContentView: View {
             .animation(.easeInOut, value: store.isClassifyingScenes)
             .animation(.easeInOut, value: store.isGroupingFaces)
         }
+        .overlay(alignment: .bottomTrailing) {
+            // Navigation Performance HUD (Cmd+Shift+D 로 토글)
+            NavigationPerformanceHUD()
+                .padding(.trailing, 16)
+                .padding(.bottom, 40)
+        }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
         } message: {
@@ -600,12 +606,11 @@ struct ContentView: View {
     private func installTesterKeyMonitor() {
         guard testerKeyMonitor == nil else { return }
         testerKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let required: NSEvent.ModifierFlags = [.command, .shift, .option]
             let masked = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            // K 키 keyCode = 40
-            if masked.contains(required) && event.keyCode == 40 {
+            // Cmd+Shift+Option+K (keyCode 40) — 테스터 키 시트
+            let fullMod: NSEvent.ModifierFlags = [.command, .shift, .option]
+            if masked.contains(fullMod) && event.keyCode == 40 {
                 DispatchQueue.main.async {
-                    // 이미 활성 상태면 현재 만료일 보여주고 초기 포커스
                     if TesterKeyService.isActive() {
                         let days = TesterKeyService.daysRemaining()
                         testerKeyAlertSuccess = true
@@ -615,6 +620,14 @@ struct ContentView: View {
                         testerKeyAlertSuccess = false
                     }
                     showTesterKeySheet = true
+                }
+                return nil
+            }
+            // Cmd+Shift+D (keyCode 2) — Navigation Performance HUD 토글
+            let cmdShift: NSEvent.ModifierFlags = [.command, .shift]
+            if masked == cmdShift && event.keyCode == 2 {
+                DispatchQueue.main.async {
+                    NavigationPerformanceMonitor.shared.isEnabled.toggle()
                 }
                 return nil
             }

@@ -1903,6 +1903,13 @@ class ThumbnailCache {
     func removeAll() {
         cache.removeAllObjects()
     }
+
+    /// 디버그용 — NSCache 는 총 bytes 를 직접 노출하지 않지만
+    /// countLimit 과 totalCostLimit 은 접근 가능 (bytes 는 추정)
+    func debugCountAndLimit() -> (count: Int, limitMB: Int) {
+        // NSCache.count 는 내부 private — 대신 limit 과 countLimit 만 확인 가능
+        return (0, cache.totalCostLimit / 1024 / 1024)  // KB → MB (cost 단위는 KB)
+    }
 }
 
 // MARK: - Concurrent Thumbnail Loader
@@ -2123,6 +2130,10 @@ class ThumbnailLoader {
 
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
+            // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
+            // 없으면 ThumbnailCache 가 evict 해도 CGImageSource/NSImage 가 thread-local pool 에 누적되어
+            // key repeat 꾹 누르기 중 RAM 이 GB 단위로 증가함
+            autoreleasepool {
             guard let op = op, !op.isCancelled else { return }
             let isNAS = ThumbnailLoader.shared.isNetworkMode
             let isHDD = ThumbnailLoader.shared.isExternalHDD
@@ -2199,6 +2210,7 @@ class ThumbnailLoader {
             DispatchQueue.main.async {
                 for cb in callbacks { cb(image) }
             }
+            } // autoreleasepool 닫기
         }
         queue.addOperation(op)
         lock.unlock()

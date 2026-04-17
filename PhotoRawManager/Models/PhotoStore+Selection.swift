@@ -184,6 +184,17 @@ extension PhotoStore {
             shiftAnchorIndex = nil
         }
 
+        // 성능 측정 시작 — scrollTrigger/selectedPhotoID 변경 직전에 측정 시작
+        // (SwiftUI body 재계산 + onChange 호출이 모두 동기 구간에 포함되도록)
+        let dirSymbol = offset == 1 ? "→" : offset == -1 ? "←" : (offset > 0 ? "↓" : "↑")
+        let capturedIndex = newIndex
+        let measuring = Thread.isMainThread
+        if measuring {
+            MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: capturedIndex, direction: dirSymbol)
+            }
+        }
+
         selectedPhotoID = newID
         scrollTrigger &+= 1
 
@@ -193,6 +204,12 @@ extension PhotoStore {
             onQuickPreview?(photo.jpgURL)
         }
 
+        // 측정 종료 — 동기 구간 끝난 직후
+        if measuring {
+            MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.notifyMoveCompleted()
+            }
+        }
     }
 
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }

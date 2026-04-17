@@ -923,7 +923,11 @@ class KeyCaptureView: NSView {
 
     override func keyUp(with event: NSEvent) {
         // 방향키/SP/Enter 등 release 시 isKeyRepeat 해제 — 미해제 시 단일 이동도 50ms 디바운스 타게 됨
+        let wasRepeat = store?.isKeyRepeat ?? false
         store?.isKeyRepeat = false
+        // 키 놓은 순간에 prefetch 한번만 수행 (꾹 누르기 중엔 스킵했음)
+        // wasRepeat == true 면 꾹 누르기 끝 → 이제 prefetch
+        if wasRepeat { store?.prefetchNearbyThumbnails() }
         super.keyUp(with: event)
     }
 

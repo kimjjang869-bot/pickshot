@@ -58,6 +58,9 @@
 		'A10056' = {isa = PBXBuildFile; fileRef = B10056; };
 		AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */; };
 		FCR10001 /* FileConflictResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCR10002 /* FileConflictResolver.swift */; };
+		NP10001 /* NavigationPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10002 /* NavigationPerformanceMonitor.swift */; };
+		NP10003 /* NavigationPerformanceHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10004 /* NavigationPerformanceHUD.swift */; };
+		MG10001 /* MemoryGuardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MG10002 /* MemoryGuardService.swift */; };
 		'AE10001' = {isa = PBXBuildFile; fileRef = AE10002; };
 		'AF10001' = {isa = PBXBuildFile; fileRef = AF10002; };
 		'AF10003' = {isa = PBXBuildFile; fileRef = AF10004; };
@@ -240,6 +243,9 @@
 		'DC10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
 		E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoMarkerService.swift; path = PhotoRawManager/Services/VideoMarkerService.swift; sourceTree = SOURCE_ROOT; };
 		FCR10002 /* FileConflictResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileConflictResolver.swift; path = PhotoRawManager/Services/FileConflictResolver.swift; sourceTree = SOURCE_ROOT; };
+		NP10002 /* NavigationPerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceMonitor.swift; path = PhotoRawManager/Services/NavigationPerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
+		NP10004 /* NavigationPerformanceHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceHUD.swift; path = PhotoRawManager/Views/NavigationPerformanceHUD.swift; sourceTree = SOURCE_ROOT; };
+		MG10002 /* MemoryGuardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MemoryGuardService.swift; path = PhotoRawManager/Services/MemoryGuardService.swift; sourceTree = SOURCE_ROOT; };
 		F0AD92142A284546BD2E0466 /* AISimilarityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISimilarityService.swift; sourceTree = "<group>"; };
 		F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JPGReturnMatchingService.swift; sourceTree = "<group>"; };
 		'FC10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCompareView.swift; sourceTree = "<group>"; };
@@ -512,6 +518,9 @@
 				HW10000,
 				E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */,
 				FCR10002 /* FileConflictResolver.swift */,
+				NP10002 /* NavigationPerformanceMonitor.swift */,
+				NP10004 /* NavigationPerformanceHUD.swift */,
+				MG10002 /* MemoryGuardService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -785,6 +794,9 @@
 				HW10007,
 				AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */,
 				FCR10001 /* FileConflictResolver.swift in Sources */,
+				NP10001 /* NavigationPerformanceMonitor.swift in Sources */,
+				NP10003 /* NavigationPerformanceHUD.swift in Sources */,
+				MG10001 /* MemoryGuardService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

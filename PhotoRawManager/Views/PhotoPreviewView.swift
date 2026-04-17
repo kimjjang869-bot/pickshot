@@ -61,6 +61,9 @@ class PreviewImageCache {
     private var maxEntries: Int
     private var memoryPressureSource: DispatchSourceMemoryPressure?
     private let diskCacheDir: URL
+    // 디스크 쓰기 serialization: evict 시 concurrent queue 로 뿌리면 누적 I/O 병목 → 직렬 큐로 변경
+    // 빠른 네비게이션 후반부에 속도 저하 주요 원인 (20장 이동 = 20개 JPEG 인코딩 병렬 → 디스크 경합)
+    private let diskEvictQueue = DispatchQueue(label: "previewcache.evict", qos: .utility)
 
     init() {
         // UserDefaults에 저장된 값 우선, 없으면 RAM 기반 자동 설정
@@ -118,12 +121,14 @@ class PreviewImageCache {
         }
         lock.unlock()
 
-        // Disk cache hit
+        // Disk cache hit — NSImage(contentsOf:) 는 lazy decoding 이라
+        // 다음 렌더 프레임에 스파이크가 나므로 즉시 bitmap 으로 디코딩
         let diskPath = diskKey(for: url)
-        if let img = NSImage(contentsOf: diskPath) {
-            // Promote back to RAM cache
-            set(url, image: img)
-            return img
+        if let data = try? Data(contentsOf: diskPath),
+           let cgImg = NSBitmapImageRep(data: data)?.cgImage {
+            let decoded = NSImage(cgImage: cgImg, size: NSSize(width: cgImg.width, height: cgImg.height))
+            set(url, image: decoded)
+            return decoded
         }
         return nil
     }
@@ -149,7 +154,11 @@ class PreviewImageCache {
                 accessTime.removeValue(forKey: key)
                 let diskPath = diskKey(for: key)
                 let capturedImg = evictedImg
-                DispatchQueue.global(qos: .utility).async {
+                // 직렬 큐로 뿌려서 동시 JPEG 인코딩/디스크 쓰기 경합 방지
+                // (빠른 네비게이션 시 누적되는 작업 수가 제한됨)
+                diskEvictQueue.async {
+                    // 이미 디스크에 있으면 쓰기 스킵 — 불필요한 I/O 제거
+                    if FileManager.default.fileExists(atPath: diskPath.path) { return }
                     if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                         let bitmap = NSBitmapImageRep(cgImage: cgImage)
                         if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
@@ -221,6 +230,15 @@ class PreviewImageCache {
         lock.unlock()
     }
 
+    /// 디버그용 — 현재 캐시 통계 (NavigationPerformanceMonitor 에서 사용)
+    func debugStats() -> (count: Int, bytes: Int) {
+        lock.lock()
+        let c = cache.count
+        let b = currentBytes
+        lock.unlock()
+        return (c, b)
+    }
+
     /// Prefetch previews at given resolution
     private static let prefetchQueue: OperationQueue = {
         let q = OperationQueue()
@@ -276,6 +294,15 @@ class PreviewImageCache {
     }
 
     static func loadOptimized(url: URL, maxPixel: CGFloat) -> NSImage? {
+        // 전체 로드 경로를 autoreleasepool 로 감싸서 CGImageSource + 중간 NSImage/CGImage
+        // 임시 객체를 즉시 해제. key repeat 꾹 누르기 시 autorelease pool 이 main loop 블록되면
+        // 못 비워지는 문제 방지.
+        return autoreleasepool { () -> NSImage? in
+            _loadOptimizedImpl(url: url, maxPixel: maxPixel)
+        }
+    }
+
+    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat) -> NSImage? {
         let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
 
@@ -917,20 +944,15 @@ struct PhotoPreviewView: View {
             loadImageDirect(for: photo.jpgURL, id: photo.id)
             viewState.magnifyBaseScale = viewState.customScale
 
-            // 빠른 탐색 콜백: 썸네일 즉시 표시 + 멈추면 0.5초 후 고화질 + hi-res
+            // 빠른 탐색 콜백: 캐시 히트 시에만 즉시 표시.
+            // 캐시 miss 시 동기 썸네일 추출은 main thread 에 5~15ms 비용 + NSImage 인스턴스 누적 →
+            // key repeat 꾹 누르기 시 이동당 interval 90ms → 200ms+ 로 저하. 미스면 비동기 경로에 맡김.
             store.onQuickPreview = { [self] url in
-                // 현재 선택된 사진인지 확인 (이전 사진 섞임 방지)
                 guard url == store.selectedPhoto?.jpgURL else { return }
                 if let thumb = ThumbnailCache.shared.get(url) {
                     self.image = thumb
-                } else if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
-                            kCGImageSourceThumbnailMaxPixelSize: 300,
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true
-                          ] as CFDictionary) {
-                    self.image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                 }
+                // cache miss: 비워두고 onChange(selectedPhotoID) 의 비동기 로드 대기
             }
 
             // Scroll wheel zoom monitor (only when mouse is over preview)
@@ -1576,15 +1598,21 @@ struct PhotoPreviewView: View {
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch
     private func scheduleSmartPreload(currentID: UUID, resolution: Int) {
-        // Cancel previous preload batch when selection changes rapidly
-        preloadWork?.cancel()
+        // 키 꾹 누르기 중엔 preload 예약 안 함 — 키 놓았을 때 한 번만 실행
+        // 꾹 누르기 시 매 이동마다 20장 로드 요청이 쌓이면 키 놓은 후 수백 개가 한꺼번에
+        // 실행되어 10초+ 블록 (실측 12.2초 렉)
+        if store.isKeyRepeat {
+            preloadWork?.cancel()
+            return
+        }
 
+        preloadWork?.cancel()
         let work = DispatchWorkItem {
             self.preloadNeighborsBatch(currentID: currentID, resolution: resolution)
         }
         preloadWork = work
-        // Small delay so rapid arrow-key navigation cancels stale batches
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.15, execute: work)
+        // 150→500ms 로 증가 — 꾹 누르기 직후 IO 경합 줄이고 Main RunLoop 안정화 대기
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     /// Preload ±20 neighbors into PreviewImageCache with smart resolution selection
@@ -1615,31 +1643,33 @@ struct PhotoPreviewView: View {
 
         let cache = PreviewImageCache.shared
         for entry in entries {
-            // Check cancellation between each load (selection changed = abort)
-            if self.pendingPhotoID != currentID {
-                return
-            }
+            // autoreleasepool 로 엔트리마다 CGImageSource/NSImage 임시 객체 즉시 해제
+            // 이게 없으면 key repeat 꾹 누르기 시 preview 객체가 쌓여 RAM 폭발 (이동당 ~20MB)
+            autoreleasepool {
+                // Check cancellation between each load (selection changed = abort)
+                if self.pendingPhotoID != currentID { return }
 
-            // RAW files: preload at 1200px (fast embedded preview)
-            // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
-            let preloadRes: Int
-            if entry.isRAW {
-                preloadRes = 1200
-            } else {
-                preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
-            }
+                // RAW files: preload at 1200px (fast embedded preview)
+                // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
+                let preloadRes: Int
+                if entry.isRAW {
+                    preloadRes = 1200
+                } else {
+                    preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
+                }
 
-            // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
-            let suffix = ".__cache_r\(preloadRes)"
-            let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
+                // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
+                let suffix = ".__cache_r\(preloadRes)"
+                let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
 
-            // Skip if already cached (RAM or disk)
-            if cache.has(cacheKey) { continue }
+                // Skip if already cached (RAM or disk)
+                if cache.has(cacheKey) { return }
 
-            // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
-            let maxPx = CGFloat(preloadRes)
-            if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
-                cache.set(cacheKey, image: img)
+                // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
+                let maxPx = CGFloat(preloadRes)
+                if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
+                    cache.set(cacheKey, image: img)
+                }
             }
         }
     }
@@ -1971,6 +2001,13 @@ struct PhotoPreviewView: View {
     }
 
     // MARK: - Hi-Res Cache (for zoom)
+    static func clearHiResCache() {
+        hiResCacheLock.lock()
+        hiResCache.removeAllObjects()
+        hiResCacheOrder.removeAll()
+        hiResCacheLock.unlock()
+    }
+
     private static var hiResCache = NSCache<NSURL, NSImage>()
     private static var hiResCacheInitialized = false
     private static var hiResMemorySource: DispatchSourceMemoryPressure?
