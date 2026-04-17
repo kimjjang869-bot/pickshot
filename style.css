@@ -1146,3 +1146,141 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   .container.split.reverse .split-image { order: 2; }
   .container.split.reverse .split-text { order: 1; }
 }
+
+/* ============ What's New (v8.3.0) ============ */
+.whatsnew {
+  background: linear-gradient(180deg, rgba(52,105,255,0.04), rgba(52,105,255,0.0));
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.whatsnew-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 40px;
+}
+.wn-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 22px;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.wn-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(52,105,255,0.4);
+  background: rgba(255,255,255,0.05);
+}
+.wn-card h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.01em;
+}
+.wn-card p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.75);
+  margin: 0 0 12px 0;
+}
+.wn-card p:last-child { margin-bottom: 0; }
+.wn-icon {
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+.wn-hero {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(52,105,255,0.12), rgba(52,105,255,0.04));
+  border-color: rgba(52,105,255,0.3);
+  padding: 28px;
+}
+.wn-hero h3 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+.wn-hero p {
+  font-size: 15px;
+  color: rgba(255,255,255,0.85);
+}
+.wn-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3469ff;
+  background: rgba(52,105,255,0.15);
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin-bottom: 14px;
+}
+.wn-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+.wn-list li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: rgba(255,255,255,0.7);
+}
+.wn-list li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #3469ff;
+  font-weight: 700;
+}
+.wn-list.compact li {
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 3px 0 3px 18px;
+}
+.wn-list li strong {
+  color: #fff;
+  font-weight: 600;
+}
+.wn-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 32px;
+}
+.wn-morelink {
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3469ff;
+  border: 1px solid rgba(52,105,255,0.4);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.wn-morelink:hover {
+  background: rgba(52,105,255,0.12);
+  border-color: #3469ff;
+}
+@media (max-width: 720px) {
+  .whatsnew-grid { grid-template-columns: 1fr; }
+  .wn-hero { padding: 22px; }
+  .wn-hero h3 { font-size: 19px; }
+}
+
+/* NEW 뱃지 (기능 카드) */
+.feature { position: relative; }
+.feat-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: linear-gradient(135deg, #3469ff, #5B8DFF);
+  padding: 3px 7px;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(52,105,255,0.4);
+}
