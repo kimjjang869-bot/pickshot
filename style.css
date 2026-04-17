@@ -1284,3 +1284,19 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   border-radius: 4px;
   box-shadow: 0 2px 6px rgba(52,105,255,0.4);
 }
+
+/* Apple 공증 뱃지 */
+.download-notarized {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #34c759;
+  background: rgba(52,199,89,0.1);
+  border: 1px solid rgba(52,199,89,0.3);
+  border-radius: 20px;
+}
+.download-notarized svg { flex-shrink: 0; }
