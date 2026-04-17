@@ -1760,6 +1760,13 @@ class ThumbnailCache {
     func removeAll() {
         cache.removeAllObjects()
     }
+
+    /// 디버그용 — NSCache 는 총 bytes 를 직접 노출하지 않지만
+    /// countLimit 과 totalCostLimit 은 접근 가능 (bytes 는 추정)
+    func debugCountAndLimit() -> (count: Int, limitMB: Int) {
+        // NSCache.count 는 내부 private — 대신 limit 과 countLimit 만 확인 가능
+        return (0, cache.totalCostLimit / 1024 / 1024)  // KB → MB (cost 단위는 KB)
+    }
 }
 
 // MARK: - Concurrent Thumbnail Loader

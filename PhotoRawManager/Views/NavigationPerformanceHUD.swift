@@ -15,6 +15,8 @@ struct NavigationPerformanceHUD: View {
     @ObservedObject var monitor = NavigationPerformanceMonitor.shared
     @State private var isCompact: Bool = false
 
+    @State private var flushResult: String = ""
+
     var body: some View {
         if monitor.isEnabled {
             VStack(alignment: .leading, spacing: 8) {
@@ -22,12 +24,13 @@ struct NavigationPerformanceHUD: View {
                 if !isCompact {
                     burstSection
                     statsSection
+                    memorySection
                     graph
                     recentMoves
                 }
             }
             .padding(10)
-            .frame(width: isCompact ? 300 : 400)
+            .frame(width: isCompact ? 300 : 440)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.black.opacity(0.88))
@@ -132,6 +135,49 @@ struct NavigationPerformanceHUD: View {
                          s.maxProcessingMs > 100 ? .red : .orange)
                 statCell("Worst", String(format: "%.2fx", s.worstBurstSlowdown),
                          slowdownColor(s.worstBurstSlowdown))
+            }
+        }
+    }
+
+    // 메모리 누수 추적 섹션
+    private var memorySection: some View {
+        let s = monitor.stats
+        let growthColor: Color = {
+            if s.ramGrowthMB > 1000 { return .red }
+            if s.ramGrowthMB > 300 { return .orange }
+            if s.ramGrowthMB > 100 { return .yellow }
+            return .green
+        }()
+        let perMoveColor: Color = {
+            if s.ramPerMoveKB > 1000 { return .red }    // 1MB/move
+            if s.ramPerMoveKB > 100 { return .orange }
+            return .green
+        }()
+        return VStack(alignment: .leading, spacing: 3) {
+            sectionLabel("메모리 누수 추적", color: .pink)
+            HStack(spacing: 12) {
+                statCell("Start", "\(s.sessionStartRamMB)M", .secondary)
+                statCell("Now", "\(s.currentRamMB)M", .white)
+                statCell("Δ", "+\(s.ramGrowthMB)M", growthColor)
+                statCell("/move", String(format: "%.0fKB", s.ramPerMoveKB), perMoveColor)
+            }
+            HStack(spacing: 8) {
+                Button(action: {
+                    flushResult = NavigationPerformanceMonitor.shared.forceFlushAllCaches()
+                }) {
+                    Text("Flush All Caches")
+                        .font(.system(size: 10, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.pink.opacity(0.3))
+                        .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                if !flushResult.isEmpty {
+                    Text(flushResult)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.yellow)
+                }
             }
         }
     }

@@ -114,6 +114,12 @@ final class NavigationPerformanceMonitor: ObservableObject {
         var lastBurstSlowdown: Double = 1.0
         var avgProcessingMs: Double = 0
         var maxProcessingMs: Double = 0
+
+        // 메모리 누수 추적
+        var sessionStartRamMB: Int = 0       // 세션 시작 시 RAM
+        var currentRamMB: Int = 0
+        var ramGrowthMB: Int = 0             // 시작 대비 증가량
+        var ramPerMoveKB: Double = 0         // 이동당 평균 RAM 증가 (KB)
     }
 
     // MARK: - 설정
@@ -235,7 +241,28 @@ final class NavigationPerformanceMonitor: ObservableObject {
         lastBurst = nil
         previousMoveStartTime = nil
         stats = Stats()
-        fputs("[NAVPERF] 세션 시작\n", stderr)
+        sessionStartRam = currentRamMB()
+        fputs("[NAVPERF] 세션 시작 — RAM \(sessionStartRam)MB\n", stderr)
+    }
+
+    private var sessionStartRam: Int = 0
+
+    /// 모든 이미지 캐시 강제 해제 — 누수가 캐시 내부인지 외부인지 판별용
+    /// 호출 후 RAM 이 크게 줄면 → 캐시 문제, 안 줄면 → 다른 곳 누수
+    func forceFlushAllCaches() -> String {
+        let before = currentRamMB()
+        PreviewImageCache.shared.clearCache()
+        ThumbnailCache.shared.removeAll()
+        AggressiveImageCache.shared.removeAll()
+        PhotoPreviewView.clearHiResCache()
+        // GC 유도: allocation 많이 해제되고 나면 malloc zone 가 OS 에 돌려주도록
+        DispatchQueue.global(qos: .utility).async {
+            autoreleasepool { }
+        }
+        let after = currentRamMB()
+        let msg = "캐시 해제: \(before)MB → \(after)MB (감소 \(before - after)MB)"
+        fputs("[NAVPERF] \(msg)\n", stderr)
+        return msg
     }
 
     func endSession() {
@@ -328,6 +355,14 @@ final class NavigationPerformanceMonitor: ObservableObject {
         if !allMoves.isEmpty {
             s.avgProcessingMs = allMoves.map(\.processingMs).reduce(0, +) / Double(allMoves.count)
             s.maxProcessingMs = allMoves.map(\.processingMs).max() ?? 0
+        }
+
+        // 메모리 누수 추적
+        s.sessionStartRamMB = sessionStartRam
+        s.currentRamMB = currentRamMB()
+        s.ramGrowthMB = s.currentRamMB - sessionStartRam
+        if !allMoves.isEmpty && s.ramGrowthMB > 0 {
+            s.ramPerMoveKB = Double(s.ramGrowthMB) * 1024.0 / Double(allMoves.count)
         }
         self.stats = s
     }

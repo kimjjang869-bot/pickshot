@@ -1985,6 +1985,13 @@ struct PhotoPreviewView: View {
     }
 
     // MARK: - Hi-Res Cache (for zoom)
+    static func clearHiResCache() {
+        hiResCacheLock.lock()
+        hiResCache.removeAllObjects()
+        hiResCacheOrder.removeAll()
+        hiResCacheLock.unlock()
+    }
+
     private static var hiResCache = NSCache<NSURL, NSImage>()
     private static var hiResCacheInitialized = false
     private static var hiResMemorySource: DispatchSourceMemoryPressure?
