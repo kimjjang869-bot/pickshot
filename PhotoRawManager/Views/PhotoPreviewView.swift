@@ -1731,28 +1731,46 @@ struct PhotoPreviewView: View {
     }
 
     private func cropModeLayer(vSize: CGSize, image: NSImage) -> some View {
+        // 리서치 에이전트 권고 패턴 3: 수동 계산 + topLeading + offset.
+        // SwiftUI aspect fit / overlay 자동 계산 전부 배제 → 픽셀 단위 수동 제어.
         let s = image.size
         let imgAR: CGFloat = (s.width > 0 && s.height > 0) ? s.width / s.height : 1
-        // 외곽 검정 배경 + 중앙에 Image 배치 + Image 에 Crop Overlay 직접 overlay
-        // → Overlay 가 Image view 의 실제 frame 을 그대로 받음 (SwiftUI 가 보장)
-        return Color.black
-            .frame(width: vSize.width, height: vSize.height)
-            .overlay(
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(imgAR, contentMode: .fit)
-                    .overlay(
-                        // Overlay 의 canvas = Image view 의 실제 frame
-                        // → 크롭 박스가 Image 경계와 픽셀 단위로 일치
-                        InlineCropOverlay(
-                            photoURL: photo.jpgURL,
-                            displaySize: .zero,  // Overlay 내부 GeometryReader 가 실제 크기 측정
-                            imageAspectRatio: imgAR,
-                            onDismiss: { isCroppingMode = false }
-                        )
-                    )
+        let viewAR = vSize.width / max(vSize.height, 1)
+        let fit: CGRect = {
+            if imgAR > viewAR {
+                // 이미지가 더 가로로 길다 → 가로 맞춤, 세로 여백
+                let h = vSize.width / imgAR
+                return CGRect(x: 0, y: (vSize.height - h) / 2, width: vSize.width, height: h)
+            } else {
+                // 이미지가 더 세로로 길다 → 세로 맞춤, 가로 여백
+                let w = vSize.height * imgAR
+                return CGRect(x: (vSize.width - w) / 2, y: 0, width: w, height: vSize.height)
+            }
+        }()
+        return ZStack {
+            Color.black
+                .frame(width: vSize.width, height: vSize.height)
+
+            // (1) 이미지를 fit rect 에 .position 으로 배치 — hit testing 도 함께 이동
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: fit.width, height: fit.height)
+                .clipped()
+                .position(x: fit.midX, y: fit.midY)
+
+            // (2) 크롭 오버레이도 동일 fit rect 에 .position 배치 — hit testing 정상 작동
+            InlineCropOverlay(
+                photoURL: photo.jpgURL,
+                displaySize: fit.size,
+                imageAspectRatio: imgAR,
+                onDismiss: { isCroppingMode = false }
             )
-            .allowsHitTesting(true)
+            .frame(width: fit.width, height: fit.height)
+            .position(x: fit.midX, y: fit.midY)
+        }
+        .frame(width: vSize.width, height: vSize.height)
+        .allowsHitTesting(true)
     }
 
     // MARK: - Non-Destructive Develop (v8.5)
