@@ -172,14 +172,14 @@ struct InlineCropOverlay: View {
 
     private func cropBox(rect: CGRect) -> some View {
         ZStack {
-            // 흰색 테두리 — strokeBorder 로 **내부 stroke** (이미지 경계 밖으로 안 튀어나감)
+            // 흰색 테두리 — stroke(center) 로 선 중앙이 rect 경계에 정확히 위치
+            // 얇은 1pt 라인으로 이미지 경계 위에 자연스럽게 걸침
             Rectangle()
-                .strokeBorder(Color.white.opacity(0.95), lineWidth: 1.5)
-                .frame(width: rect.width, height: rect.height)
-                .position(x: rect.midX, y: rect.midY)
+                .path(in: rect)
+                .stroke(Color.white.opacity(0.95), lineWidth: 1)
                 .allowsHitTesting(false)
 
-            // 9분할 (rule of thirds) — 항상 표시
+            // 9분할 (rule of thirds)
             Path { path in
                 for i in 1...2 {
                     let x = rect.minX + rect.width * CGFloat(i) / 3
