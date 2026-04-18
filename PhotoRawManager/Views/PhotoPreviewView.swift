@@ -600,11 +600,16 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
+                        // 명시적 aspect — view frame 이 실제 aspect fit 크기로 확정됨.
+                        // maxWidth/maxHeight 만 주면 view 가 그 영역 전체를 차지해서 PreferenceKey 가 부정확.
+                        let explicitAspect: CGFloat = {
+                            let s = (developedImage ?? rotatedImage ?? image).size
+                            return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
+                        }()
                         Image(nsImage: developedImage ?? rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
-                            .aspectRatio(contentMode: .fit)
-                            // isFitMode 에선 maxWidth/maxHeight 로 aspect 따라 실제 축소되게 (PreferenceKey 정확도 확보)
+                            .aspectRatio(explicitAspect, contentMode: .fit)
                             .frame(maxWidth: isFitMode ? vSize.width : scaledW,
                                    maxHeight: isFitMode ? vSize.height : scaledH)
                             .background(
