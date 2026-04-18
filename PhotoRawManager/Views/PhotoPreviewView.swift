@@ -806,27 +806,7 @@ struct PhotoPreviewView: View {
                         }
                     }
                     .overlay {
-                        // v8.5 — 인라인 크롭 오버레이 (C 키로 진입)
-                        if isCroppingMode, !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile {
-                            // NSImage.size 는 DPI 영향을 받을 수 있어 pixel 사이즈 직접 조회
-                            let pixW: CGFloat
-                            let pixH: CGFloat
-                            if let rep = image.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
-                                pixW = CGFloat(rep.pixelsWide)
-                                pixH = CGFloat(rep.pixelsHigh)
-                            } else {
-                                pixW = image.size.width
-                                pixH = image.size.height
-                            }
-                            let imageAspect: CGFloat? = (pixW > 0 && pixH > 0) ? pixW / pixH : nil
-                            InlineCropOverlay(
-                                photoURL: photo.jpgURL,
-                                displaySize: vSize,
-                                imageAspectRatio: imageAspect,
-                                onDismiss: { isCroppingMode = false }
-                            )
-                            .allowsHitTesting(true)
-                        }
+                        cropOverlayIfNeeded(image: image, vSize: vSize)
                     }
                     .overlay(alignment: .top) {
                         // v8.5 — 보정 토스트 (보정값 복사됨 등)
@@ -1703,6 +1683,32 @@ struct PhotoPreviewView: View {
 
     private func loadImage(for url: URL) {
         loadImageDirect(for: url, id: pendingPhotoID ?? UUID())
+    }
+
+    // MARK: - Crop overlay builder (type-checker 폭주 방지용 분리)
+
+    @ViewBuilder
+    private func cropOverlayIfNeeded(image: NSImage, vSize: CGSize) -> some View {
+        if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
+            InlineCropOverlay(
+                photoURL: photo.jpgURL,
+                displaySize: vSize,
+                imageAspectRatio: pixelAspectRatio(of: image),
+                onDismiss: { isCroppingMode = false }
+            )
+            .allowsHitTesting(true)
+        } else {
+            EmptyView()
+        }
+    }
+
+    private func pixelAspectRatio(of image: NSImage) -> CGFloat? {
+        if let rep = image.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            return CGFloat(rep.pixelsWide) / CGFloat(rep.pixelsHigh)
+        }
+        let size = image.size
+        guard size.width > 0 && size.height > 0 else { return nil }
+        return size.width / size.height
     }
 
     // MARK: - Non-Destructive Develop (v8.5)
