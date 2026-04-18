@@ -790,6 +790,14 @@ struct PhotoPreviewView: View {
                             .stroke(previewBorderColor, lineWidth: previewBorderWidth)
                             .allowsHitTesting(false)
                     )
+                    .overlay(alignment: .bottom) {
+                        // v8.5 — 비파괴 보정 플로팅 필
+                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
+                            FloatingAdjustmentPill(photoURL: photo.jpgURL)
+                                .padding(.bottom, 16)
+                                .allowsHitTesting(true)
+                        }
+                    }
                     .contextMenu { previewBgMenu }
                 } else {
                     // No image yet - show empty background

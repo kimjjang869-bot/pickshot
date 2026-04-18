@@ -166,6 +166,8 @@
 		DEV10002 = {isa = PBXBuildFile; fileRef = DEV10001; };
 		DEV10004 = {isa = PBXBuildFile; fileRef = DEV10003; };
 		DEV10006 = {isa = PBXBuildFile; fileRef = DEV10005; };
+		DEV20002 = {isa = PBXBuildFile; fileRef = DEV20001; };
+		DEV20004 = {isa = PBXBuildFile; fileRef = DEV20003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -330,6 +332,8 @@
 		'DEV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopSettings.swift; sourceTree = "<group>"; };
 		'DEV10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopStore.swift; sourceTree = "<group>"; };
 		'DEV10005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopPipeline.swift; sourceTree = "<group>"; };
+		'DEV20001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingAdjustmentPill.swift; sourceTree = "<group>"; };
+		'DEV20003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoubleClickResetSlider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -479,6 +483,8 @@
 				VPV10002,
 				TETV10002,
 				TETCMSN10002,
+				DEV20001,
+				DEV20003,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -821,6 +827,8 @@
 				DEV10002,
 				DEV10004,
 				DEV10006,
+				DEV20002,
+				DEV20004,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1049,6 +1049,77 @@ class KeyCaptureView: NSView {
             return
         }
 
+        // === v8.5 비파괴 보정 단축키 ===
+        // 현재 선택된 사진 URL 조회 (없으면 스킵)
+        if let selPhoto = store.selectedPhoto,
+           !selPhoto.isFolder, !selPhoto.isParentFolder, !selPhoto.isVideoFile {
+            let url = selPhoto.jpgURL
+            let hasOption = event.modifierFlags.contains(.option)
+
+            // [ / ] — 노출 ±0.1 EV, Shift+[/] → ±0.5 EV
+            if chars == "[" || chars == "{" || keyCode == 33 {
+                var s = DevelopStore.shared.get(for: url)
+                let delta = hasShift ? -0.5 : -0.1
+                s.exposure = max(-2.0, min(2.0, (s.exposure + delta * 10).rounded() / 10))
+                DevelopStore.shared.set(s, for: url)
+                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
+                return
+            }
+            if chars == "]" || chars == "}" || keyCode == 30 {
+                var s = DevelopStore.shared.get(for: url)
+                let delta = hasShift ? 0.5 : 0.1
+                s.exposure = max(-2.0, min(2.0, (s.exposure + delta * 10).rounded() / 10))
+                DevelopStore.shared.set(s, for: url)
+                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
+                return
+            }
+            // ; / ' — 색온도 ±1, Shift+; / ' → 틴트 ±1
+            if chars == ";" || chars == ":" || keyCode == 41 {
+                var s = DevelopStore.shared.get(for: url)
+                if hasShift {
+                    s.tint = max(-100, min(100, s.tint - 5))
+                } else {
+                    s.temperature = max(-100, min(100, s.temperature - 5))
+                }
+                DevelopStore.shared.set(s, for: url)
+                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
+                return
+            }
+            if chars == "'" || chars == "\"" || keyCode == 39 {
+                var s = DevelopStore.shared.get(for: url)
+                if hasShift {
+                    s.tint = max(-100, min(100, s.tint + 5))
+                } else {
+                    s.temperature = max(-100, min(100, s.temperature + 5))
+                }
+                DevelopStore.shared.set(s, for: url)
+                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
+                return
+            }
+            // Option+E → 자동 노출 토글
+            if hasOption && (charOrCode("e", 14)) {
+                var s = DevelopStore.shared.get(for: url)
+                s.exposureAuto.toggle()
+                DevelopStore.shared.set(s, for: url)
+                return
+            }
+            // Option+W → 자동 WB 토글
+            if hasOption && charOrCode("w", 13) {
+                var s = DevelopStore.shared.get(for: url)
+                s.wbAuto.toggle()
+                DevelopStore.shared.set(s, for: url)
+                return
+            }
+            // R — 현재 사진 보정 전체 리셋
+            if charOrCode("r", 15) && !hasCmd && !hasShift && !hasOption {
+                var s = DevelopStore.shared.get(for: url)
+                guard !s.isDefault else { return }
+                s.reset()
+                DevelopStore.shared.set(s, for: url)
+                return
+            }
+        }
+
         // === 비디오 재생 단축키 ===
         // 프리뷰가 보이는 레이아웃(gridPreview, filmstrip)에서만 비디오 단축키 활성화
         let videoPreviewVisible = store.layoutMode == .gridPreview || store.layoutMode == .filmstrip
