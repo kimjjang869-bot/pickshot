@@ -1585,7 +1585,6 @@ struct ThumbnailCell: View, Equatable {
         }
     }
 
-    @ViewBuilder
     /// v8.6 — 비파괴 보정 적용된 사진 하단 중앙에 표시되는 배지
     @ViewBuilder
     private var developBadge: some View {
