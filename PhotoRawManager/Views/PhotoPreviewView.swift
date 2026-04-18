@@ -517,6 +517,9 @@ struct PhotoPreviewView: View {
     private static let developPipelineShared = DevelopPipeline()
     /// 인라인 크롭 모드 활성화 여부 (C 키 토글).
     @State private var isCroppingMode: Bool = false
+    /// 보정 관련 토스트 메시지 ("보정값 복사됨" 등). 1.5초 후 사라짐.
+    @State private var adjustmentToast: String? = nil
+    @State private var adjustmentToastTask: Task<Void, Never>? = nil
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var hiResWorkItem: DispatchWorkItem? = nil
@@ -811,6 +814,26 @@ struct PhotoPreviewView: View {
                                 onDismiss: { isCroppingMode = false }
                             )
                             .allowsHitTesting(true)
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        // v8.5 — 보정 토스트 (보정값 복사됨 등)
+                        if let msg = adjustmentToast {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(Color(red: 1.0, green: 0.76, blue: 0.03))
+                                Text(msg).font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(Color.black.opacity(0.82))
+                                    .overlay(Capsule().stroke(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.35), lineWidth: 1))
+                            )
+                            .shadow(color: .black.opacity(0.5), radius: 10, y: 3)
+                            .padding(.top, 24)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .allowsHitTesting(false)
                         }
                     }
                     .contextMenu { previewBgMenu }
@@ -1204,6 +1227,19 @@ struct PhotoPreviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleCropMode)) { _ in
             guard !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile else { return }
             isCroppingMode.toggle()
+        }
+        // 보정 토스트 (object: String)
+        .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentToast)) { notif in
+            guard let msg = notif.object as? String else { return }
+            withAnimation(.easeOut(duration: 0.22)) { adjustmentToast = msg }
+            adjustmentToastTask?.cancel()
+            adjustmentToastTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    withAnimation(.easeIn(duration: 0.2)) { adjustmentToast = nil }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
         .sheet(isPresented: $showAIResult) {

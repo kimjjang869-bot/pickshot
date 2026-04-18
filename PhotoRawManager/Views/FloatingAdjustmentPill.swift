@@ -19,7 +19,7 @@ struct FloatingAdjustmentPill: View {
     @State private var fadeTask: Task<Void, Never>? = nil
 
     enum AdjustmentTool: String, Hashable {
-        case exposure, wb, curve, crop
+        case exposure, wb, curve, crop, preset
     }
 
     enum FadeState {
@@ -98,6 +98,12 @@ struct FloatingAdjustmentPill: View {
                 .frame(height: 26)
                 .padding(.horizontal, 4)
                 .opacity(0.3)
+            pillIcon(
+                tool: .preset,
+                symbol: "tag.fill",
+                badge: nil
+            )
+            copyPasteButtons
             resetButton
         }
     }
@@ -161,6 +167,8 @@ struct FloatingAdjustmentPill: View {
             wbExpanded
         case .curve:
             curveExpanded
+        case .preset:
+            presetExpanded
         case .crop:
             placeholderExpanded(title: "인라인 크롭 · Day 4 예정", subtitle: "C 키로 진입 예정")
         }
@@ -293,6 +301,60 @@ struct FloatingAdjustmentPill: View {
         }
     }
 
+    // 프리셋 패널
+    private var presetExpanded: some View {
+        HStack(spacing: 8) {
+            PresetPanelView(photoURL: photoURL, onDismiss: { expandedTool = nil })
+            closeButton
+        }
+    }
+
+    // 복사/붙여넣기 버튼 (작은 아이콘, collapsed 모드에서만)
+    private var copyPasteButtons: some View {
+        HStack(spacing: 2) {
+            Button(action: copyCurrentSettings) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12))
+                    .frame(width: 28, height: 32)
+                    .foregroundColor(.white.opacity(store.get(for: photoURL).isDefault ? 0.3 : 0.75))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.get(for: photoURL).isDefault)
+            .help("보정값 복사 (Cmd+Shift+C)")
+
+            Button(action: pasteSettings) {
+                Image(systemName: "doc.on.doc.fill")
+                    .font(.system(size: 12))
+                    .frame(width: 28, height: 32)
+                    .foregroundColor(store.clipboard == nil ? .white.opacity(0.3) : Color(red: 1.0, green: 0.76, blue: 0.03))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.clipboard == nil)
+            .help("보정값 붙여넣기 (Cmd+Shift+V)")
+        }
+    }
+
+    private func copyCurrentSettings() {
+        let s = store.get(for: photoURL)
+        guard !s.isDefault else { return }
+        store.copyToClipboard(s)
+        NotificationCenter.default.post(
+            name: .pickShotAdjustmentToast,
+            object: "보정값 복사됨"
+        )
+    }
+
+    private func pasteSettings() {
+        guard store.clipboard != nil else { return }
+        _ = store.pasteFromClipboard(to: [photoURL])
+        NotificationCenter.default.post(
+            name: .pickShotAdjustmentToast,
+            object: "보정값 적용됨"
+        )
+    }
+
     private func placeholderExpanded(title: String, subtitle: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "hammer.fill")
@@ -374,6 +436,7 @@ struct FloatingAdjustmentPill: View {
         case .wb: return .whiteBalance
         case .curve: return .curve
         case .crop: return .crop
+        case .preset: return .exposure  // 프리셋은 touched 판정 제외용 더미
         }
     }
 
@@ -381,8 +444,9 @@ struct FloatingAdjustmentPill: View {
         switch tool {
         case .exposure: return "노출 — [ / ] 로도 조정"
         case .wb: return "화이트 밸런스 — ; / ' 로도 조정"
-        case .curve: return "톤 커브 (K) — Day 3 예정"
-        case .crop: return "크롭 (C) — Day 4 예정"
+        case .curve: return "톤 커브 — Option+K 자동"
+        case .crop: return "인라인 크롭 (C)"
+        case .preset: return "프리셋 저장/불러오기"
         }
     }
 
@@ -407,4 +471,6 @@ struct FloatingAdjustmentPill: View {
 extension Notification.Name {
     /// 사용자 활동 (마우스 이동, 키 입력) 감지 → 플로팅 필 재등장.
     static let pickShotAdjustmentActivity = Notification.Name("pickShotAdjustmentActivity")
+    /// 사용자 피드백 토스트 (object 는 String 메시지).
+    static let pickShotAdjustmentToast = Notification.Name("pickShotAdjustmentToast")
 }

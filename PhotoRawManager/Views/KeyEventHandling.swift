@@ -981,6 +981,17 @@ class KeyCaptureView: NSView {
                 hideFullscreen?()
                 return
             } else if charOrCode("c", 8) {
+                if hasShift {
+                    // Cmd+Shift+C: v8.5 보정값 복사
+                    if let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder, !sel.isVideoFile {
+                        let s = DevelopStore.shared.get(for: sel.jpgURL)
+                        if !s.isDefault {
+                            DevelopStore.shared.copyToClipboard(s)
+                            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "보정값 복사됨")
+                        }
+                    }
+                    return
+                }
                 // Cmd+C: Copy selected files to clipboard (Finder-compatible)
                 copySelectedFilesToPasteboard(store: store)
                 return
@@ -989,6 +1000,21 @@ class KeyCaptureView: NSView {
                 cutSelectedFilesToPasteboard(store: store)
                 return
             } else if charOrCode("v", 9) {
+                if hasShift {
+                    // Cmd+Shift+V: v8.5 보정값 선택된 사진들에 일괄 적용
+                    guard DevelopStore.shared.clipboard != nil else { return }
+                    let targets: [URL]
+                    if store.selectionCount > 1 {
+                        targets = store.multiSelectedPhotos.filter { !$0.isFolder && !$0.isParentFolder && !$0.isVideoFile }.map { $0.jpgURL }
+                    } else if let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder, !sel.isVideoFile {
+                        targets = [sel.jpgURL]
+                    } else {
+                        targets = []
+                    }
+                    let applied = DevelopStore.shared.pasteFromClipboard(to: targets)
+                    NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "\(applied)장에 보정값 적용됨")
+                    return
+                }
                 // Cmd+V: Paste (copy or move based on cut marker)
                 pasteFilesFromPasteboard(store: store)
                 return
