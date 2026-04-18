@@ -821,8 +821,8 @@ struct PhotoPreviewView: View {
                             .allowsHitTesting(false)
                     )
                     .overlay(alignment: .bottom) {
-                        // v8.5 — 비파괴 보정 플로팅 필 (크롭 모드 중엔 숨김)
-                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode {
+                        // v8.5 — 비파괴 보정 플로팅 필 (크롭 모드 중 / 듀얼뷰어 chrome 숨김 시 비표시)
+                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode && !hideChrome {
                             FloatingAdjustmentPill(photoURL: photo.jpgURL)
                                 .padding(.bottom, 16)
                                 .allowsHitTesting(true)
