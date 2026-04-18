@@ -22,6 +22,10 @@ struct DoubleClickResetSlider: View {
     /// 트랙 배경 그라디언트. nil 이면 기본(회색 반투명).
     let trackGradient: LinearGradient?
 
+    /// 시각적 크기. `.regular` 기본, `.large` 는 큼직 (볼드 UI 전환용).
+    let sizeVariant: Size
+    enum Size { case regular, large }
+
     init(
         value: Binding<Double>,
         range: ClosedRange<Double>,
@@ -29,7 +33,8 @@ struct DoubleClickResetSlider: View {
         step: Double,
         bigStep: Double,
         format: @escaping (Double) -> String,
-        trackGradient: LinearGradient? = nil
+        trackGradient: LinearGradient? = nil,
+        sizeVariant: Size = .regular
     ) {
         self._value = value
         self.range = range
@@ -38,10 +43,11 @@ struct DoubleClickResetSlider: View {
         self.bigStep = bigStep
         self.format = format
         self.trackGradient = trackGradient
+        self.sizeVariant = sizeVariant
     }
 
-    private let trackHeight: CGFloat = 4
-    private let thumbDiameter: CGFloat = 14
+    private var trackHeight: CGFloat { sizeVariant == .large ? 6 : 4 }
+    private var thumbDiameter: CGFloat { sizeVariant == .large ? 18 : 14 }
 
     @State private var isDragging: Bool = false
 
@@ -92,6 +98,12 @@ struct DoubleClickResetSlider: View {
             }
             .frame(height: thumbDiameter + 4)
             .contentShape(Rectangle())
+            // 더블클릭 → 기본값 리셋. DragGesture 앞에 선언해서 더블탭 먼저 인식.
+            .onTapGesture(count: 2) {
+                withAnimation(.easeOut(duration: 0.15)) { value = defaultValue }
+                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
+            }
+            // 드래그 → 연속 값 변경 (minimumDistance 0 으로 즉각 반응, 싱글 클릭도 점프처럼 동작)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { v in
@@ -100,12 +112,6 @@ struct DoubleClickResetSlider: View {
                         NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                     }
                     .onEnded { _ in isDragging = false }
-            )
-            // macOS: 더블클릭 (SwiftUI 의 count:2 탭제스처)
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded {
-                    withAnimation(.easeOut(duration: 0.15)) { value = defaultValue }
-                }
             )
             .overlay(
                 ScrollCapture(onScroll: { deltaY, shift in

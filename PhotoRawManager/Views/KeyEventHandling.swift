@@ -1084,18 +1084,23 @@ class KeyCaptureView: NSView {
             let hasOption = event.modifierFlags.contains(.option)
 
             // [ / ] — 노출 (기본 ±0.1 EV, Shift+ 조합은 ±0.5 EV)
+            // Integer tenths 연산으로 누적 반올림 오차 방지
             if (chars == "[" || chars == "{" || keyCode == 33) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                let delta = hasShift ? -0.5 : -0.1
-                s.exposure = max(-3.0, min(3.0, ((s.exposure + delta) * 100).rounded() / 100))
+                let deltaTenths = hasShift ? -5 : -1
+                let curTenths = Int((s.exposure * 10).rounded())
+                let next = max(-30, min(30, curTenths + deltaTenths))
+                s.exposure = Double(next) / 10.0
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
             if (chars == "]" || chars == "}" || keyCode == 30) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                let delta = hasShift ? 0.5 : 0.1
-                s.exposure = max(-3.0, min(3.0, ((s.exposure + delta) * 100).rounded() / 100))
+                let deltaTenths = hasShift ? 5 : 1
+                let curTenths = Int((s.exposure * 10).rounded())
+                let next = max(-30, min(30, curTenths + deltaTenths))
+                s.exposure = Double(next) / 10.0
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return

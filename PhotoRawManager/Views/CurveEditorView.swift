@@ -256,21 +256,22 @@ struct CurveEditorView: View {
     // MARK: - Region Sliders
 
     private var regionSliders: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 8) {
             regionRow(label: "밝은 영역", binding: bindHighlights)
             regionRow(label: "밝음",     binding: bindLights)
             regionRow(label: "어두움",   binding: bindDarks)
             regionRow(label: "어두운 영역", binding: bindShadows)
         }
-        .padding(.top, 2)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
     }
 
     private func regionRow(label: String, binding: Binding<Double>) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-                .frame(width: 62, alignment: .trailing)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 70, alignment: .trailing)
             DoubleClickResetSlider(
                 value: binding,
                 range: -100...100,
@@ -280,11 +281,11 @@ struct CurveEditorView: View {
                 format: { _ in "" }
             )
             .frame(maxWidth: .infinity)
-            .frame(height: 16)
+            .frame(height: 20)
             Text(String(format: "%+.0f", binding.wrappedValue))
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
-                .frame(width: 32, alignment: .trailing)
+                .frame(width: 36, alignment: .trailing)
         }
     }
 

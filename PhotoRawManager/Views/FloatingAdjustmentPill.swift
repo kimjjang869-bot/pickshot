@@ -45,6 +45,7 @@ struct FloatingAdjustmentPill: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .fixedSize(horizontal: true, vertical: true)  // 내부 intrinsic 크기 유지 (stretch 방지)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black.opacity(0.82))
@@ -113,22 +114,36 @@ struct FloatingAdjustmentPill: View {
     }
 
     private var resetButton: some View {
-        Button(action: {
-            var s = store.get(for: photoURL)
-            guard !s.isDefault else { return }
-            s.reset()
-            store.set(s, for: photoURL)
-            kickFade()
-        }) {
-            Image(systemName: "arrow.uturn.backward.circle")
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: 32, height: 34)
-                .foregroundColor(.white.opacity(store.get(for: photoURL).isDefault ? 0.35 : 0.85))
-                .contentShape(Rectangle())
+        let isDefault = store.get(for: photoURL).isDefault
+        return HStack(spacing: 4) {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 11, weight: .bold))
+            Text("전체 초기화")
+                .font(.system(size: 10, weight: .bold))
         }
-        .buttonStyle(.plain)
-        .disabled(store.get(for: photoURL).isDefault)
-        .help("모두 리셋 (R)")
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .foregroundColor(isDefault ? .white.opacity(0.35) : .white)
+        .background(
+            Capsule().fill(isDefault ? Color.white.opacity(0.06) : Color.red.opacity(0.35))
+        )
+        .overlay(
+            Capsule().stroke(isDefault ? Color.clear : Color.red.opacity(0.5), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            guard !isDefault else { return }
+            performReset()
+        }
+        .help("모든 보정값 초기화 (R)")
+    }
+
+    private func performReset() {
+        var s = store.get(for: photoURL)
+        guard !s.isDefault else { return }
+        s.reset()
+        store.set(s, for: photoURL)
+        kickFade()
+        NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "전체 초기화됨")
     }
 
     private var copyPasteButtons: some View {
@@ -191,11 +206,19 @@ struct FloatingAdjustmentPill: View {
     // MARK: - Exposure Expanded
 
     private var exposureExpanded: some View {
-        let binding = Binding<Double>(
+        let expBinding = Binding<Double>(
             get: { store.get(for: photoURL).exposure },
             set: { newVal in
                 var s = store.get(for: photoURL)
                 s.exposure = max(-3.0, min(3.0, newVal))
+                store.set(s, for: photoURL)
+            }
+        )
+        let contrastBinding = Binding<Double>(
+            get: { store.get(for: photoURL).contrast },
+            set: { newVal in
+                var s = store.get(for: photoURL)
+                s.contrast = max(-100, min(100, newVal))
                 store.set(s, for: photoURL)
             }
         )
@@ -207,20 +230,46 @@ struct FloatingAdjustmentPill: View {
                 .foregroundColor(Color(red: 1.0, green: 0.76, blue: 0.03))
                 .frame(width: 24)
 
-            DoubleClickResetSlider(
-                value: binding,
-                range: -3.0...3.0,
-                defaultValue: 0,
-                step: 0.1,
-                bigStep: 0.5,
-                format: { String(format: "%+.1f EV", $0) }
-            )
-            .frame(width: 240)
-
-            Text(String(format: "%+.1f EV", settings.exposure))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white)
-                .frame(width: 58, alignment: .trailing)
+            VStack(spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("노출")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 28, alignment: .trailing)
+                    DoubleClickResetSlider(
+                        value: expBinding,
+                        range: -3.0...3.0,
+                        defaultValue: 0,
+                        step: 0.1,
+                        bigStep: 0.5,
+                        format: { String(format: "%+.1f EV", $0) }
+                    )
+                    .frame(width: 200)
+                    Text(String(format: "%+.1f EV", settings.exposure))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .frame(width: 52, alignment: .trailing)
+                }
+                HStack(spacing: 6) {
+                    Text("대비")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 28, alignment: .trailing)
+                    DoubleClickResetSlider(
+                        value: contrastBinding,
+                        range: -100...100,
+                        defaultValue: 0,
+                        step: 1,
+                        bigStep: 10,
+                        format: { _ in "" }
+                    )
+                    .frame(width: 200)
+                    Text(String(format: "%+.0f", settings.contrast))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .frame(width: 52, alignment: .trailing)
+                }
+            }
 
             autoComputeButton(label: "자동") {
                 applyAutoExposure()
@@ -231,13 +280,23 @@ struct FloatingAdjustmentPill: View {
     }
 
     private func applyAutoExposure() {
+        var s = store.get(for: photoURL)
+        var applied: [String] = []
+
         if let ev = Self.pipeline.computeAutoExposure(url: photoURL) {
-            var s = store.get(for: photoURL)
             s.exposure = ev
-            s.exposureAuto = false
-            store.set(s, for: photoURL)
-            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: String(format: "자동 노출: %+.1f EV", ev))
+            applied.append(String(format: "노출 %+.1fEV", ev))
         }
+        if let ct = Self.pipeline.computeAutoContrast(url: photoURL) {
+            s.contrast = ct
+            applied.append(String(format: "대비 %+.0f", ct))
+        }
+        s.exposureAuto = false
+        store.set(s, for: photoURL)
+        NotificationCenter.default.post(
+            name: .pickShotAdjustmentToast,
+            object: applied.isEmpty ? "자동 계산 실패" : "자동: " + applied.joined(separator: " · ")
+        )
     }
 
     // MARK: - WB Expanded (켈빈 표시 + 그라디언트)
@@ -351,7 +410,11 @@ struct FloatingAdjustmentPill: View {
             s.tint = tint
             s.wbAuto = false
             store.set(s, for: photoURL)
-            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "자동 WB 적용")
+            let kelvin = Int((5500.0 + temp * 45.0).rounded())
+            NotificationCenter.default.post(
+                name: .pickShotAdjustmentToast,
+                object: String(format: "자동 WB: %dK · 틴트 %+.0f", kelvin, tint)
+            )
         }
     }
 
@@ -362,7 +425,7 @@ struct FloatingAdjustmentPill: View {
             CurveEditorView(photoURL: photoURL, onAutoApply: {
                 applyAutoCurve()
             })
-            .frame(width: 340, height: 300)
+            .frame(width: 380, height: 420)
             closeButton
         }
     }

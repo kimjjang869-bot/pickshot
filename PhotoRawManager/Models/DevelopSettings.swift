@@ -38,8 +38,20 @@ struct DevelopSettings: Codable, Hashable {
     /// true 면 히스토그램 기반 자동 노출. exposure 는 추가 오프셋.
     var exposureAuto: Bool = false
 
-    /// 노출 보정: -2.0 ~ +2.0 EV (CIExposureAdjust 의 `inputEV` 와 동일 스케일)
+    /// 노출 보정: -3.0 ~ +3.0 EV (CIExposureAdjust 의 `inputEV` 와 동일 스케일)
     var exposure: Double = 0
+
+    /// 대비 (Contrast): -100 ~ +100. 0 = 변화 없음.
+    /// 내부적으로 CIColorControls.contrast (기본 1.0) 에 매핑: +100 → 1.5, -100 → 0.5
+    var contrast: Double = 0
+
+    // MARK: - Levels (검정점 / 흰점 / 감마)
+    /// 검정점 (0~1, 기본 0). 이 값 이하는 완전한 검정으로 clip.
+    var levelsBlack: Double = 0
+    /// 흰점 (0~1, 기본 1). 이 값 이상은 완전한 흰색으로 clip.
+    var levelsWhite: Double = 1
+    /// 감마 (0.5~2.0, 기본 1). <1 = 중간톤 어둡게, >1 = 밝게.
+    var levelsGamma: Double = 1
 
     // MARK: - Tone Curve
 
@@ -87,6 +99,8 @@ struct DevelopSettings: Codable, Hashable {
     var isDefault: Bool {
         !wbAuto && temperature == 0 && tint == 0 &&
         !exposureAuto && exposure == 0 &&
+        contrast == 0 &&
+        levelsBlack == 0 && levelsWhite == 1 && levelsGamma == 1 &&
         !curveAuto && curvePoints.isEmpty &&
         toneHighlights == 0 && toneLights == 0 && toneDarks == 0 && toneShadows == 0 &&
         cropRect == nil && cropRotation == 0
@@ -120,6 +134,10 @@ struct DevelopSettings: Codable, Hashable {
         if components.contains(.exposure) {
             exposureAuto = source.exposureAuto
             exposure = source.exposure
+            contrast = source.contrast
+            levelsBlack = source.levelsBlack
+            levelsWhite = source.levelsWhite
+            levelsGamma = source.levelsGamma
         }
         if components.contains(.curve) {
             curveAuto = source.curveAuto
@@ -140,7 +158,10 @@ struct DevelopSettings: Codable, Hashable {
     var touchedComponents: Set<ComponentMask> {
         var s: Set<ComponentMask> = []
         if wbAuto || temperature != 0 || tint != 0 { s.insert(.whiteBalance) }
-        if exposureAuto || exposure != 0 { s.insert(.exposure) }
+        if exposureAuto || exposure != 0 || contrast != 0 ||
+           levelsBlack != 0 || levelsWhite != 1 || levelsGamma != 1 {
+            s.insert(.exposure)
+        }
         if curveAuto || !curvePoints.isEmpty ||
            toneHighlights != 0 || toneLights != 0 || toneDarks != 0 || toneShadows != 0 {
             s.insert(.curve)

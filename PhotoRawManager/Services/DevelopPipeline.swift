@@ -127,6 +127,20 @@ final class DevelopPipeline {
             image = applyAutoExposure(to: image)
         }
 
+        // 3b) 컨트라스트 (CIColorControls)
+        if settings.contrast != 0 {
+            let f = CIFilter.colorControls()
+            f.inputImage = image
+            // -100 → 0.5, +100 → 1.5
+            f.contrast = Float(1.0 + settings.contrast / 200.0)
+            if let out = f.outputImage { image = out }
+        }
+
+        // 3c) 레벨 (검정점/흰점/감마) — CIToneCurve 5 포인트 근사
+        if settings.levelsBlack != 0 || settings.levelsWhite != 1 || settings.levelsGamma != 1 {
+            image = applyLevels(to: image, settings: settings)
+        }
+
         // 4) 톤 커브
         if settings.curveAuto {
             image = applyAutoCurve(to: image)
@@ -318,6 +332,29 @@ final class DevelopPipeline {
         return f.outputImage ?? image
     }
 
+    /// 레벨 조정 — 검정점(black)/흰점(white) clip + 감마(gamma) 중간톤.
+    /// CIToneCurve 5점으로 근사. 감마는 중간점 y = pow(0.5, 1/gamma) 로 매핑.
+    private func applyLevels(to image: CIImage, settings: DevelopSettings) -> CIImage {
+        let b = CGFloat(settings.levelsBlack).clamped(to: 0...0.9)
+        let w = CGFloat(settings.levelsWhite).clamped(to: max(b + 0.1, 0.1)...1.0)
+        let gamma = CGFloat(max(0.1, settings.levelsGamma))
+        // 입력 x 를 [b, w] 를 [0, 1] 로 선형 매핑 → 감마 → 출력 y
+        func mapY(_ x: CGFloat) -> CGFloat {
+            let range = w - b
+            guard range > 0.0001 else { return 0 }
+            let t = min(max((x - b) / range, 0), 1)
+            return pow(t, 1.0 / gamma)
+        }
+        let points = [
+            CGPoint(x: 0, y: mapY(0)),
+            CGPoint(x: 0.25, y: mapY(0.25)),
+            CGPoint(x: 0.5, y: mapY(0.5)),
+            CGPoint(x: 0.75, y: mapY(0.75)),
+            CGPoint(x: 1, y: mapY(1))
+        ]
+        return applyCurve(to: image, points: points)
+    }
+
     /// 4영역(shadows/darks/lights/highlights) 슬라이더를 5포인트 CIToneCurve 로 변환해 적용.
     /// 각 슬라이더 값 -100~+100 은 해당 영역 y 좌표를 약 ±0.12 만큼 이동.
     private func applyRegionTones(to image: CIImage, settings: DevelopSettings) -> CIImage {
@@ -477,11 +514,12 @@ final class DevelopPipeline {
         // 역산: rGain = g/r, bGain = g/b → rGain>1 이면 이미지 R 이 부족 → 따뜻하게 (온도 +)
         let rGain = (g / r).clamped(to: 0.5...2.0)
         let bGain = (g / b).clamped(to: 0.5...2.0)
-        // temperature ≈ (rGain 비율 - 1) * 스케일 (반대 부호 B)
-        // 간단 추정: temperature = (rGain - bGain) * 100 → clamp
+        // temperature: R vs B 차이
         let temperature = ((rGain - bGain) * 100).clamped(to: -100...100)
-        // tint 는 G 편향 — 게인이 1 에 가까우면 0, 그 외 적당한 추정
-        let tint: Double = 0  // 간단 버전. 추후 개선 가능.
+        // tint: R+B 평균과 G(=1) 차이 — rb 평균이 1보다 작으면 G 과다 → tint 음수(초록)
+        //       rb 평균이 1보다 크면 G 부족 → tint 양수(마젠타)
+        let rbMean = (rGain + bGain) / 2
+        let tint = ((rbMean - 1.0) * 100).clamped(to: -100...100)
         return (temperature, tint)
     }
 
@@ -508,6 +546,43 @@ final class DevelopPipeline {
         let ratio = target / max(luminance, 0.01)
         let ev = log2(ratio).clamped(to: -2.0...2.0)
         return (ev * 10).rounded() / 10
+    }
+
+    /// 자동 대비 — 히스토그램 유효 범위가 좁으면 대비 올림, 넓으면 유지/감소.
+    func computeAutoContrast(url: URL) -> Double? {
+        var settings = DevelopSettings()
+        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
+            return nil
+        }
+        let bins = extractLuminanceHistogram(from: input)
+        guard bins.count == 256 else { return nil }
+        let total = bins.reduce(0, +)
+        guard total > 0 else { return nil }
+
+        // 5% / 95% percentile 찾기
+        let threshold = Double(total) * 0.05
+        var acc = 0
+        var lowBin = 0
+        for i in 0..<256 {
+            acc += bins[i]
+            if Double(acc) >= threshold { lowBin = i; break }
+        }
+        acc = 0
+        var highBin = 255
+        for i in stride(from: 255, through: 0, by: -1) {
+            acc += bins[i]
+            if Double(acc) >= threshold { highBin = i; break }
+        }
+        let range = Double(highBin - lowBin) / 255.0  // 0~1
+        guard range > 0.05 else { return 0 }
+
+        // 이상적 range 0.85 목표. 현재 range 가 좁으면 대비 올림, 넓으면 살짝 내림.
+        let target = 0.85
+        let ratio = target / range
+        // ratio 1.0 → 0, ratio 1.5 → +50, ratio 2.0 → +100
+        // ratio < 1 → 음수 (이미 대비 강함 → 낮추기)
+        let contrast = (ratio - 1.0) * 100
+        return max(-40, min(100, contrast.rounded()))
     }
 
     /// 자동 커브 계산 — 히스토그램 기반 5포인트 반환.

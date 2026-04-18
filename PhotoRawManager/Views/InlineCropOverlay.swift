@@ -129,12 +129,15 @@ struct InlineCropOverlay: View {
     private func initializeDraft() {
         initialSettings = store.get(for: photoURL)
         if let existing = initialSettings.cropRect {
+            // 기존 크롭 있으면 그대로 불러옴
             draftRect = existing
+            draftAspectLabel = initialSettings.cropAspectLabel ?? "Original"
         } else {
-            draftRect = CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9)
+            // 라이트룸과 동일 기본값: 전체 이미지 + 원본 종횡비
+            draftRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            draftAspectLabel = "Original"
         }
         draftRotation = initialSettings.cropRotation
-        draftAspectLabel = initialSettings.cropAspectLabel
     }
 
     // MARK: - Mask Layer
@@ -146,7 +149,7 @@ struct InlineCropOverlay: View {
                 p.addRect(CGRect(origin: .zero, size: geo.size))
                 p.addRect(cropScreenRect)
             }
-            .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
+            .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
             .allowsHitTesting(false)
         }
     }
@@ -182,31 +185,29 @@ struct InlineCropOverlay: View {
 
     @ViewBuilder
     private func handleCorner(at pt: CGPoint, type: CropHandle, fit: CGRect) -> some View {
-        Rectangle()
-            .fill(Color.white)
-            .frame(width: 12, height: 12)
-            .overlay(Rectangle().stroke(Color.black.opacity(0.5), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.6), radius: 2)
+        // 라이트룸 스타일 L 자 코너 핸들
+        LCornerShape(corner: type)
+            .stroke(Color.white, lineWidth: 3)
+            .shadow(color: .black.opacity(0.65), radius: 2)
+            .frame(width: 16, height: 16)
             .position(pt)
             .contentShape(Rectangle())
             .frame(width: handleHitSize, height: handleHitSize)
             .position(pt)
-            .onHover { inside in
-                updateCursor(for: type, inside: inside)
-            }
+            .onHover { inside in updateCursor(for: type, inside: inside) }
             .gesture(handleDrag(type, fit: fit))
     }
 
     @ViewBuilder
     private func handleEdge(at pt: CGPoint, type: CropHandle, fit: CGRect, horizontal: Bool) -> some View {
+        // 라이트룸 스타일: 엣지 중앙에 짧은 바 (가로/세로 방향)
         Rectangle()
             .fill(Color.white)
             .frame(
-                width: horizontal ? 36 : 4,
-                height: horizontal ? 4 : 36
+                width: horizontal ? 28 : 3,
+                height: horizontal ? 3 : 28
             )
-            .overlay(Rectangle().stroke(Color.black.opacity(0.5), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.5), radius: 2)
+            .shadow(color: .black.opacity(0.6), radius: 1.5)
             .position(pt)
             .contentShape(Rectangle())
             .frame(
@@ -214,9 +215,7 @@ struct InlineCropOverlay: View {
                 height: horizontal ? handleHitSize : 44
             )
             .position(pt)
-            .onHover { inside in
-                updateCursor(for: type, inside: inside)
-            }
+            .onHover { inside in updateCursor(for: type, inside: inside) }
             .gesture(handleDrag(type, fit: fit))
     }
 
@@ -520,6 +519,40 @@ struct InlineCropOverlay: View {
     private func cancelCrop() {
         store.set(initialSettings, for: photoURL)
         onDismiss()
+    }
+}
+
+// MARK: - L-shaped Corner Handle (Lightroom-style)
+
+/// 크롭 박스 모서리의 L 자 핸들 모양. 각 모서리 방향에 맞게 선분 두 개 그림.
+private struct LCornerShape: Shape {
+    let corner: InlineCropOverlay.CropHandle
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let w = rect.width
+        let h = rect.height
+        switch corner {
+        case .topLeft:
+            p.move(to: CGPoint(x: 0, y: h))
+            p.addLine(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: w, y: 0))
+        case .topRight:
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: w, y: 0))
+            p.addLine(to: CGPoint(x: w, y: h))
+        case .bottomLeft:
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: 0, y: h))
+            p.addLine(to: CGPoint(x: w, y: h))
+        case .bottomRight:
+            p.move(to: CGPoint(x: w, y: 0))
+            p.addLine(to: CGPoint(x: w, y: h))
+            p.addLine(to: CGPoint(x: 0, y: h))
+        default:
+            break
+        }
+        return p
     }
 }
 
