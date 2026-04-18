@@ -160,7 +160,7 @@ struct FloatingAdjustmentPill: View {
         case .wb:
             wbExpanded
         case .curve:
-            placeholderExpanded(title: "커브 · Day 3 예정", subtitle: "K 키로 D 패널 예정")
+            curveExpanded
         case .crop:
             placeholderExpanded(title: "인라인 크롭 · Day 4 예정", subtitle: "C 키로 진입 예정")
         }
@@ -280,6 +280,15 @@ struct FloatingAdjustmentPill: View {
                 store.set(s, for: photoURL)
             }
 
+            closeButton
+        }
+    }
+
+    // 커브 에디터 (히스토그램 위에 포인트 드래그)
+    private var curveExpanded: some View {
+        HStack(spacing: 8) {
+            CurveEditorView(photoURL: photoURL)
+                .frame(width: 220, height: 210)
             closeButton
         }
     }

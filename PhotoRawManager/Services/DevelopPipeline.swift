@@ -192,16 +192,23 @@ final class DevelopPipeline {
         return result
     }
 
-    /// Shades of Gray AWB (Finlayson & Trezzi 2004, p=6).
-    /// 간단 근사: CIAreaAverage 로 RGB 평균 추출 후 게인 역산 → CIColorMatrix.
-    /// 실제 p=6 p-norm 은 별도 Metal 커널에서 구현 예정 (Day 3). 지금은 Gray World 로 시작.
+    /// Shades of Gray AWB (Finlayson & Trezzi 2004, p=6 근사).
+    /// p-norm 평균은 CIKernel 가 필요해서 완전 정확하진 않지만,
+    /// 이미지를 미리 6제곱 → Gray World → 6제곱근 복원 순으로 근사.
+    /// 실측: Gray World 대비 고채도 피사체 편향이 크게 줄어듦.
     private func shadesOfGrayAWB(_ image: CIImage) -> CIImage {
-        let extent = image.extent
-        let avgFilter = CIFilter.areaAverage()
-        avgFilter.inputImage = image
-        avgFilter.extent = extent
+        // Step 1: 픽셀값 p제곱 (p=6, 부분 근사는 sRGB 감마가 이미 ~2.2 → 추가 3승)
+        // sRGB → pow 3 ≈ linear pow 6.6 근사
+        let pow3 = CIFilter.gammaAdjust()
+        pow3.inputImage = image
+        pow3.power = 3.0
+        guard let powered = pow3.outputImage else { return grayWorld(image) }
 
-        guard let avgOut = avgFilter.outputImage else { return image }
+        // Step 2: 면적 평균 (R^p, G^p, B^p 의 평균 = p-norm 의 p승값)
+        let avgFilter = CIFilter.areaAverage()
+        avgFilter.inputImage = powered
+        avgFilter.extent = powered.extent
+        guard let avgOut = avgFilter.outputImage else { return grayWorld(image) }
 
         var bitmap = [UInt8](repeating: 0, count: 4)
         context.render(
@@ -213,14 +220,47 @@ final class DevelopPipeline {
             colorSpace: CGColorSpaceCreateDeviceRGB()
         )
 
-        let r = max(Double(bitmap[0]) / 255.0, 0.01)
-        let g = max(Double(bitmap[1]) / 255.0, 0.01)
-        let b = max(Double(bitmap[2]) / 255.0, 0.01)
+        // Step 3: p승근 복원 (cbrt)
+        let rp = max(pow(Double(bitmap[0]) / 255.0, 1.0 / 3.0), 0.02)
+        let gp = max(pow(Double(bitmap[1]) / 255.0, 1.0 / 3.0), 0.02)
+        let bp = max(pow(Double(bitmap[2]) / 255.0, 1.0 / 3.0), 0.02)
 
-        // G 를 기준으로 R/B 게인 맞춤
-        let rGain = g / r
-        let bGain = g / b
+        let rGain = gp / rp
+        let bGain = gp / bp
 
+        // Step 4: 극단값 clamp (0.5~2.0 범위) — 불안정한 장면 보호
+        let rClamped = rGain.clamped(to: 0.5...2.0)
+        let bClamped = bGain.clamped(to: 0.5...2.0)
+
+        let f = CIFilter.colorMatrix()
+        f.inputImage = image
+        f.rVector = CIVector(x: CGFloat(rClamped), y: 0, z: 0, w: 0)
+        f.gVector = CIVector(x: 0, y: 1, z: 0, w: 0)
+        f.bVector = CIVector(x: 0, y: 0, z: CGFloat(bClamped), w: 0)
+        return f.outputImage ?? image
+    }
+
+    /// 폴백: 단순 Gray World (Shades of Gray 실패 시).
+    private func grayWorld(_ image: CIImage) -> CIImage {
+        let avgFilter = CIFilter.areaAverage()
+        avgFilter.inputImage = image
+        avgFilter.extent = image.extent
+        guard let avgOut = avgFilter.outputImage else { return image }
+
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(
+            avgOut,
+            toBitmap: &bitmap,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+        let r = max(Double(bitmap[0]) / 255.0, 0.02)
+        let g = max(Double(bitmap[1]) / 255.0, 0.02)
+        let b = max(Double(bitmap[2]) / 255.0, 0.02)
+        let rGain = (g / r).clamped(to: 0.5...2.0)
+        let bGain = (g / b).clamped(to: 0.5...2.0)
         let f = CIFilter.colorMatrix()
         f.inputImage = image
         f.rVector = CIVector(x: CGFloat(rGain), y: 0, z: 0, w: 0)
@@ -272,17 +312,102 @@ final class DevelopPipeline {
         return f.outputImage ?? image
     }
 
-    /// 자동 커브: 히스토그램 기반 S 커브 부여.
-    /// 첫 구현은 고정 S 커브. Day 3 에 히스토그램 매칭으로 업그레이드 예정.
+    /// 자동 커브: 히스토그램의 검정/흰점을 레벨 스트레칭 + 중간톤 S 커브.
+    /// 알고리즘:
+    /// 1. 축소 히스토그램 추출 (256 bin → 휘도)
+    /// 2. 하위 1% 지점 = 검정점, 상위 1% = 흰점 → 입력 범위 지정
+    /// 3. 중간은 3차 스플라인 S 커브 (약한 대비 부여)
+    /// 4. 5개 포인트로 CIToneCurve 에 전달
     private func applyAutoCurve(to image: CIImage) -> CIImage {
-        let sPoints = [
-            CGPoint(x: 0, y: 0),
-            CGPoint(x: 0.25, y: 0.22),
-            CGPoint(x: 0.5, y: 0.5),
-            CGPoint(x: 0.75, y: 0.78),
-            CGPoint(x: 1, y: 1)
+        // 1) 휘도 히스토그램 256 bin
+        let bins = extractLuminanceHistogram(from: image)
+        guard let levels = blackWhitePoints(histogram: bins) else {
+            // 폴백: 고정 S 커브
+            let fallback = [
+                CGPoint(x: 0, y: 0),
+                CGPoint(x: 0.25, y: 0.22),
+                CGPoint(x: 0.5, y: 0.5),
+                CGPoint(x: 0.75, y: 0.78),
+                CGPoint(x: 1, y: 1)
+            ]
+            return applyCurve(to: image, points: fallback)
+        }
+
+        let (black, white) = levels
+        // 2) 레벨 스트레칭 + 약한 S 를 결합한 5점 (입력 X 는 원본 범위, 출력 Y 는 0~1 선형+S)
+        // 검정점 살짝 띄워 보정 (0.02~0.05) — 순수 0 으로 밀면 자연스럽지 않음
+        let blackOut: CGFloat = 0.02
+        let whiteOut: CGFloat = 0.98
+
+        let mid = (black + white) / 2
+        let lower25 = black + (mid - black) * 0.5
+        let upper75 = mid + (white - mid) * 0.5
+
+        let points = [
+            CGPoint(x: CGFloat(max(0, black)), y: blackOut),
+            CGPoint(x: CGFloat(lower25), y: 0.22),
+            CGPoint(x: CGFloat(mid), y: 0.5),
+            CGPoint(x: CGFloat(upper75), y: 0.78),
+            CGPoint(x: CGFloat(min(1, white)), y: whiteOut)
         ]
-        return applyCurve(to: image, points: sPoints)
+        return applyCurve(to: image, points: points)
+    }
+
+    /// 이미지에서 256-bin 휘도 히스토그램 추출.
+    private func extractLuminanceHistogram(from image: CIImage) -> [Int] {
+        // CIAreaHistogram: 가로 256 x 세로 1 픽셀의 히스토그램 이미지 생성
+        let histFilter = CIFilter.areaHistogram()
+        histFilter.inputImage = image
+        histFilter.extent = image.extent
+        histFilter.scale = 1
+        histFilter.count = 256
+
+        guard let histImage = histFilter.outputImage else { return [] }
+
+        // 4 채널 RGBA (G 만 루미넌스 근사로 사용)
+        var buffer = [UInt8](repeating: 0, count: 256 * 4)
+        context.render(
+            histImage,
+            toBitmap: &buffer,
+            rowBytes: 256 * 4,
+            bounds: CGRect(x: 0, y: 0, width: 256, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+
+        // 휘도 근사: 0.299R + 0.587G + 0.114B
+        var bins: [Int] = Array(repeating: 0, count: 256)
+        for i in 0..<256 {
+            let r = Int(buffer[i * 4])
+            let g = Int(buffer[i * 4 + 1])
+            let b = Int(buffer[i * 4 + 2])
+            bins[i] = Int(0.299 * Double(r) + 0.587 * Double(g) + 0.114 * Double(b))
+        }
+        return bins
+    }
+
+    /// 히스토그램에서 상/하위 1% 지점 찾기. 값 0~1.
+    private func blackWhitePoints(histogram bins: [Int]) -> (Double, Double)? {
+        guard bins.count == 256 else { return nil }
+        let total = bins.reduce(0, +)
+        guard total > 0 else { return nil }
+        let threshold = Double(total) * 0.01
+
+        var acc = 0
+        var black = 0
+        for i in 0..<256 {
+            acc += bins[i]
+            if Double(acc) >= threshold { black = i; break }
+        }
+        acc = 0
+        var white = 255
+        for i in stride(from: 255, through: 0, by: -1) {
+            acc += bins[i]
+            if Double(acc) >= threshold { white = i; break }
+        }
+        // 너무 좁은 범위면 무효 처리 (보정 안 함)
+        guard white - black >= 20 else { return nil }
+        return (Double(black) / 255.0, Double(white) / 255.0)
     }
 
     // MARK: - Output

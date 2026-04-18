@@ -1118,6 +1118,13 @@ class KeyCaptureView: NSView {
                 DevelopStore.shared.set(s, for: url)
                 return
             }
+            // Option+K — 자동 커브 토글 (K 키는 비디오 스크러빙 전용이라 Option 필수)
+            if hasOption && charOrCode("k", 40) {
+                var s = DevelopStore.shared.get(for: url)
+                s.curveAuto.toggle()
+                DevelopStore.shared.set(s, for: url)
+                return
+            }
         }
 
         // === 비디오 재생 단축키 ===
