@@ -839,7 +839,7 @@ struct PhotoPreviewView: View {
                         }
                     }
                     .overlay {
-                        cropOverlayIfNeeded(vSize: vSize)
+                        cropOverlayIfNeeded(vSize: vSize, image: image)
                     }
                     .overlay(alignment: .top) {
                         // v8.5 — 보정 토스트 (보정값 복사됨 등)
@@ -1723,12 +1723,16 @@ struct PhotoPreviewView: View {
     // MARK: - Crop overlay builder (type-checker 폭주 방지용 분리)
 
     @ViewBuilder
-    private func cropOverlayIfNeeded(vSize: CGSize) -> some View {
+    private func cropOverlayIfNeeded(vSize: CGSize, image: NSImage) -> some View {
         if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
+            let aspect: CGFloat = {
+                let s = image.size
+                return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
+            }()
             InlineCropOverlay(
                 photoURL: photo.jpgURL,
                 displaySize: vSize,
-                imageFrame: previewImageFrame,
+                imageAspectRatio: aspect,
                 onDismiss: { isCroppingMode = false }
             )
             .allowsHitTesting(true)

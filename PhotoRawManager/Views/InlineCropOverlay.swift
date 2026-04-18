@@ -13,9 +13,8 @@ import AppKit
 struct InlineCropOverlay: View {
     let photoURL: URL
     let displaySize: CGSize       // 프리뷰 컨테이너 전체 사이즈 (vSize)
-    /// 실제 렌더된 이미지의 frame (previewContainer 좌표계).
-    /// PreferenceKey 로 측정한 정확한 fit 영역. 비어 있으면 displaySize 전체 fallback.
-    let imageFrame: CGRect
+    /// 이미지의 원본 종횡비 (가로/세로). InlineCropOverlay 가 내부에서 fit 영역 직접 계산.
+    let imageAspectRatio: CGFloat
     let onDismiss: () -> Void
 
     @ObservedObject var store: DevelopStore = .shared
@@ -94,19 +93,29 @@ struct InlineCropOverlay: View {
 
     // MARK: - Fit Rect 계산
 
-    /// PreferenceKey 로 받은 실제 이미지 frame. 유효하면 그대로 사용, 비어있으면 displaySize 전체.
+    /// 이미지 aspect 와 캔버스 사이즈로 aspect fit 영역 직접 계산 (확실한 방법).
     private func fitRect(in canvasSize: CGSize) -> CGRect {
-        if imageFrame.width > 10 && imageFrame.height > 10 {
-            return imageFrame
+        guard imageAspectRatio > 0, canvasSize.width > 0, canvasSize.height > 0 else {
+            return CGRect(origin: .zero, size: canvasSize)
         }
-        return CGRect(origin: .zero, size: canvasSize)
+        let canvasAspect = canvasSize.width / canvasSize.height
+        let w: CGFloat
+        let h: CGFloat
+        if imageAspectRatio > canvasAspect {
+            // 이미지가 더 가로로 긴 경우 → 가로를 꽉 채우고 세로는 aspect 로
+            w = canvasSize.width
+            h = w / imageAspectRatio
+        } else {
+            h = canvasSize.height
+            w = h * imageAspectRatio
+        }
+        let x = (canvasSize.width - w) / 2
+        let y = (canvasSize.height - h) / 2
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    /// 이미지-공간 종횡비 (이미지 픽셀 W/H 환산). imageFrame 기반.
-    private var imageAspectFromFrame: CGFloat {
-        guard imageFrame.height > 0 else { return 1 }
-        return imageFrame.width / imageFrame.height
-    }
+    /// 이미지-공간 종횡비 — 전달받은 aspect 그대로 사용.
+    private var imageAspectFromFrame: CGFloat { imageAspectRatio }
 
     /// draftRect (이미지 공간 0~1) 를 화면 좌표로 변환.
     private func cropRectInScreen(fit: CGRect) -> CGRect {
