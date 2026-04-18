@@ -1733,37 +1733,24 @@ struct PhotoPreviewView: View {
     private func cropModeLayer(vSize: CGSize, image: NSImage) -> some View {
         let s = image.size
         let imgAR: CGFloat = (s.width > 0 && s.height > 0) ? s.width / s.height : 1
-        let canvasAR = vSize.width / max(vSize.height, 1)
-        let fitW: CGFloat
-        let fitH: CGFloat
-        if imgAR > canvasAR {
-            fitW = vSize.width
-            fitH = fitW / imgAR
-        } else {
-            fitH = vSize.height
-            fitW = fitH * imgAR
-        }
-        // 외곽 검정 배경 — 전체 컨테이너 덮기
+        // 외곽 검정 배경 + 중앙에 Image 배치 + Image 에 Crop Overlay 직접 overlay
+        // → Overlay 가 Image view 의 실제 frame 을 그대로 받음 (SwiftUI 가 보장)
         return Color.black
             .frame(width: vSize.width, height: vSize.height)
             .overlay(
-                // 이미지 + 크롭 박스를 **동일한 ZStack 컨테이너** 에 배치 (완전 일치 보장)
-                ZStack {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)  // aspect 유지 명시
-                        .frame(width: fitW, height: fitH)
-                    InlineCropOverlay(
-                        photoURL: photo.jpgURL,
-                        displaySize: CGSize(width: fitW, height: fitH),
-                        imageAspectRatio: imgAR,
-                        onDismiss: { isCroppingMode = false }
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(imgAR, contentMode: .fit)
+                    .overlay(
+                        // Overlay 의 canvas = Image view 의 실제 frame
+                        // → 크롭 박스가 Image 경계와 픽셀 단위로 일치
+                        InlineCropOverlay(
+                            photoURL: photo.jpgURL,
+                            displaySize: .zero,  // Overlay 내부 GeometryReader 가 실제 크기 측정
+                            imageAspectRatio: imgAR,
+                            onDismiss: { isCroppingMode = false }
+                        )
                     )
-                    .frame(width: fitW, height: fitH)
-                }
-                // ZStack 의 크기 = fitW×fitH 로 명시 → Image 와 Overlay 가 정확히 같은 공간
-                .frame(width: fitW, height: fitH)
-                // 외곽에서 중앙 정렬
             )
             .allowsHitTesting(true)
     }
