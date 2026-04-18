@@ -506,7 +506,7 @@ final class DevelopPipeline {
         let luminance = (0.299 * Double(bitmap[0]) + 0.587 * Double(bitmap[1]) + 0.114 * Double(bitmap[2])) / 255.0
         let target = 0.45
         let ratio = target / max(luminance, 0.01)
-        let ev = log2(ratio).clamped(to: -1.5...1.5)
+        let ev = log2(ratio).clamped(to: -2.0...2.0)
         return (ev * 10).rounded() / 10
     }
 

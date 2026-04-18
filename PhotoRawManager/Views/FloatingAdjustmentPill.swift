@@ -195,7 +195,7 @@ struct FloatingAdjustmentPill: View {
             get: { store.get(for: photoURL).exposure },
             set: { newVal in
                 var s = store.get(for: photoURL)
-                s.exposure = max(-2.0, min(2.0, newVal))
+                s.exposure = max(-3.0, min(3.0, newVal))
                 store.set(s, for: photoURL)
             }
         )
@@ -209,7 +209,7 @@ struct FloatingAdjustmentPill: View {
 
             DoubleClickResetSlider(
                 value: binding,
-                range: -2.0...2.0,
+                range: -3.0...3.0,
                 defaultValue: 0,
                 step: 0.1,
                 bigStep: 0.5,

@@ -1083,32 +1083,36 @@ class KeyCaptureView: NSView {
             let url = selPhoto.jpgURL
             let hasOption = event.modifierFlags.contains(.option)
 
-            // [ / ] — 노출 ±0.1 EV (단독 키만, Shift 조합 삭제)
-            if (chars == "[" || keyCode == 33) && !hasShift && !hasOption {
+            // [ / ] — 노출 (기본 ±0.1 EV, Shift+ 조합은 ±0.5 EV)
+            if (chars == "[" || chars == "{" || keyCode == 33) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                s.exposure = max(-2.0, min(2.0, ((s.exposure - 0.1) * 100).rounded() / 100))
+                let delta = hasShift ? -0.5 : -0.1
+                s.exposure = max(-3.0, min(3.0, ((s.exposure + delta) * 100).rounded() / 100))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            if (chars == "]" || keyCode == 30) && !hasShift && !hasOption {
+            if (chars == "]" || chars == "}" || keyCode == 30) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                s.exposure = max(-2.0, min(2.0, ((s.exposure + 0.1) * 100).rounded() / 100))
+                let delta = hasShift ? 0.5 : 0.1
+                s.exposure = max(-3.0, min(3.0, ((s.exposure + delta) * 100).rounded() / 100))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            // ; / ' — 색온도 ±5 (Shift 조합 삭제, 틴트는 슬라이더/자동으로만)
-            if (chars == ";" || keyCode == 41) && !hasShift && !hasOption {
+            // ; / ' — 색온도 (기본 ±5, Shift+ 조합은 ±25)
+            if (chars == ";" || chars == ":" || keyCode == 41) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                s.temperature = max(-100, min(100, s.temperature - 5))
+                let delta: Double = hasShift ? -25 : -5
+                s.temperature = max(-100, min(100, s.temperature + delta))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            if (chars == "'" || keyCode == 39) && !hasShift && !hasOption {
+            if (chars == "'" || chars == "\"" || keyCode == 39) && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                s.temperature = max(-100, min(100, s.temperature + 5))
+                let delta: Double = hasShift ? 25 : 5
+                s.temperature = max(-100, min(100, s.temperature + delta))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return

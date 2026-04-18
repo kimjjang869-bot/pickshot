@@ -171,6 +171,7 @@
 		DEV30002 = {isa = PBXBuildFile; fileRef = DEV30001; };
 		DEV40002 = {isa = PBXBuildFile; fileRef = DEV40001; };
 		DEV50002 = {isa = PBXBuildFile; fileRef = DEV50001; };
+		DEV60002 = {isa = PBXBuildFile; fileRef = DEV60001; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -340,6 +341,7 @@
 		'DEV30001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurveEditorView.swift; sourceTree = "<group>"; };
 		'DEV40001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineCropOverlay.swift; sourceTree = "<group>"; };
 		'DEV50001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetPanelView.swift; sourceTree = "<group>"; };
+		'DEV60001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBindingStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -554,6 +556,7 @@
 				MG10002 /* MemoryGuardService.swift */,
 				DEV10003,
 				DEV10005,
+				DEV60001,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -841,6 +844,7 @@
 				DEV30002,
 				DEV40002,
 				DEV50002,
+				DEV60002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

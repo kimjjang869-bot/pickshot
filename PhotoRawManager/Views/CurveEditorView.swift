@@ -48,6 +48,14 @@ struct CurveEditorView: View {
                 .help("커브 · 영역 슬라이더 전체 리셋")
             }
 
+            // 프리셋 버튼 3개 (플랫 / 중간 대비 / 강한 대비)
+            HStack(spacing: 6) {
+                curvePresetButton(label: "플랫", points: linearPoints, symbol: "line.diagonal")
+                curvePresetButton(label: "중간 대비", points: mediumContrastPoints, symbol: "waveform.path")
+                curvePresetButton(label: "강한 대비", points: strongContrastPoints, symbol: "waveform.path.ecg")
+                Spacer()
+            }
+
             // 히스토그램 + 커브 캔버스
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
@@ -288,6 +296,58 @@ struct CurveEditorView: View {
     private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         let dx = a.x - b.x; let dy = a.y - b.y
         return sqrt(dx * dx + dy * dy)
+    }
+
+    // MARK: - Curve Presets
+
+    private var linearPoints: [CGPoint] {
+        []  // 빈 배열 = 선형 (보정 없음)
+    }
+
+    private var mediumContrastPoints: [CGPoint] {
+        [
+            CGPoint(x: 0,     y: 0),
+            CGPoint(x: 0.25,  y: 0.20),
+            CGPoint(x: 0.5,   y: 0.5),
+            CGPoint(x: 0.75,  y: 0.80),
+            CGPoint(x: 1,     y: 1)
+        ]
+    }
+
+    private var strongContrastPoints: [CGPoint] {
+        [
+            CGPoint(x: 0,     y: 0),
+            CGPoint(x: 0.25,  y: 0.12),
+            CGPoint(x: 0.5,   y: 0.5),
+            CGPoint(x: 0.75,  y: 0.88),
+            CGPoint(x: 1,     y: 1)
+        ]
+    }
+
+    private func curvePresetButton(label: String, points: [CGPoint], symbol: String) -> some View {
+        let current = store.get(for: photoURL).curvePoints
+        let isSelected = (points.isEmpty && current.isEmpty) || (points.count == current.count && zip(points, current).allSatisfy { abs($0.x - $1.x) < 0.001 && abs($0.y - $1.y) < 0.001 })
+        return Button(action: {
+            var s = store.get(for: photoURL)
+            s.curvePoints = points
+            s.curveAuto = false
+            store.set(s, for: photoURL)
+        }) {
+            HStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 9))
+                Text(label).font(.system(size: 9, weight: .semibold))
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .foregroundColor(isSelected ? .black : .white.opacity(0.85))
+            .background(
+                Capsule().fill(
+                    isSelected
+                    ? Color(red: 1.0, green: 0.76, blue: 0.03)
+                    : Color.white.opacity(0.1)
+                )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func resetAll() {
