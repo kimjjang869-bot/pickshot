@@ -12,8 +12,10 @@ import AppKit
 /// - 핸들 위에 마우스 올리면 macOS 표준 리사이즈 커서
 struct InlineCropOverlay: View {
     let photoURL: URL
-    let displaySize: CGSize       // 프리뷰 GeometryReader 사이즈 (vSize)
-    let imageAspectRatio: CGFloat? // 원본 이미지 W/H. nil 이면 displaySize 전체 사용
+    let displaySize: CGSize       // 프리뷰 컨테이너 전체 사이즈 (vSize)
+    /// 실제 렌더된 이미지의 frame (previewContainer 좌표계).
+    /// PreferenceKey 로 측정한 정확한 fit 영역. 비어 있으면 displaySize 전체 fallback.
+    let imageFrame: CGRect
     let onDismiss: () -> Void
 
     @ObservedObject var store: DevelopStore = .shared
@@ -92,26 +94,18 @@ struct InlineCropOverlay: View {
 
     // MARK: - Fit Rect 계산
 
-    /// 이미지가 display 안에 fit 된 실제 사각형.
-    /// imageAspectRatio 가 nil 이면 display 전체 반환.
+    /// PreferenceKey 로 받은 실제 이미지 frame. 유효하면 그대로 사용, 비어있으면 displaySize 전체.
     private func fitRect(in canvasSize: CGSize) -> CGRect {
-        guard let aspect = imageAspectRatio, aspect > 0,
-              canvasSize.width > 0, canvasSize.height > 0 else {
-            return CGRect(origin: .zero, size: canvasSize)
+        if imageFrame.width > 10 && imageFrame.height > 10 {
+            return imageFrame
         }
-        let canvasAspect = canvasSize.width / canvasSize.height
-        var fitSize: CGSize
-        if aspect > canvasAspect {
-            // 이미지가 가로로 더 넓음 → 가로 맞춤
-            fitSize = CGSize(width: canvasSize.width, height: canvasSize.width / aspect)
-        } else {
-            fitSize = CGSize(width: canvasSize.height * aspect, height: canvasSize.height)
-        }
-        let origin = CGPoint(
-            x: (canvasSize.width - fitSize.width) / 2,
-            y: (canvasSize.height - fitSize.height) / 2
-        )
-        return CGRect(origin: origin, size: fitSize)
+        return CGRect(origin: .zero, size: canvasSize)
+    }
+
+    /// 이미지-공간 종횡비 (이미지 픽셀 W/H 환산). imageFrame 기반.
+    private var imageAspectFromFrame: CGFloat {
+        guard imageFrame.height > 0 else { return 1 }
+        return imageFrame.width / imageFrame.height
     }
 
     /// draftRect (이미지 공간 0~1) 를 화면 좌표로 변환.
@@ -351,13 +345,13 @@ struct InlineCropOverlay: View {
         // imageAspectRatio 를 곱해야 함.
         // (draftRect.width * imageW) / (draftRect.height * imageH)
         //   = (draftRect.width / draftRect.height) * imageAspectRatio
-        let imgAR = imageAspectRatio ?? 1
+        let imgAR = imageAspectFromFrame
         return (dragStartRect.width / dragStartRect.height) * imgAR
     }
 
     /// rect 를 지정한 **픽셀 공간 종횡비** 로 맞춤 (draft 는 image 공간 정규화이므로 변환 필요).
     private func adjustForAspect(_ rect: inout CGRect, handle: CropHandle, aspect pixelAspect: CGFloat) {
-        let imgAR = imageAspectRatio ?? 1
+        let imgAR = imageAspectFromFrame
         // image 공간 aspect = pixelAspect / imgAR
         let normalizedAspect = pixelAspect / imgAR
 
@@ -480,7 +474,7 @@ struct InlineCropOverlay: View {
         draftAspectLabel = preset.id
         if let ratio = preset.ratio {
             // 프리셋 비율(픽셀 공간) 을 이미지 공간으로 변환
-            let imgAR = imageAspectRatio ?? 1
+            let imgAR = imageAspectFromFrame
             let normalizedAspect = CGFloat(ratio) / imgAR
 
             let cx = draftRect.midX

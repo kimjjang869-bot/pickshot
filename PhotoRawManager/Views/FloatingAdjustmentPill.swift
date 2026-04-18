@@ -468,17 +468,16 @@ struct FloatingAdjustmentPill: View {
 
     /// 자동 계산 버튼 (토글 아님 — 누를 때마다 즉시 계산 후 값 반영)
     private func autoComputeButton(label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(
-                    Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85))
-                )
-                .foregroundColor(.black)
-        }
-        .buttonStyle(.plain)
-        .help("누르면 이미지 분석 후 자동값을 슬라이더에 반영")
+        Text(label)
+            .font(.system(size: 10, weight: .bold))
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(
+                Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85))
+            )
+            .foregroundColor(.black)
+            .contentShape(Capsule())
+            .onTapGesture(perform: action)
+            .help("누르면 이미지 분석 후 자동값을 슬라이더에 반영")
     }
 
     private var closeButton: some View {

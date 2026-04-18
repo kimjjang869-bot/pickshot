@@ -45,10 +45,12 @@ final class DevelopPipeline {
     /// 파일 URL 에서 설정을 적용해 NSImage 반환.
     /// - targetSize: 프록시 크기. .zero 면 풀해상도.
     func render(url: URL, settings: DevelopSettings, targetSize: CGSize = .zero) -> NSImage? {
+        let isRAW = isRAWFile(url: url)
         guard let ciImage = loadCIImage(url: url, settings: settings, targetSize: targetSize) else {
             return nil
         }
-        let processed = applyFilters(to: ciImage, settings: settings)
+        // RAW 경로는 load 단계에서 exposure/WB 가 이미 CIRAWFilter 에 적용됨 → 중복 방지
+        let processed = applyFilters(to: ciImage, settings: settings, skipExposureAndManualWB: isRAW)
         return makeNSImage(from: processed)
     }
 
@@ -106,16 +108,19 @@ final class DevelopPipeline {
 
     // MARK: - Filter Chain
 
-    private func applyFilters(to input: CIImage, settings: DevelopSettings) -> CIImage {
+    private func applyFilters(to input: CIImage, settings: DevelopSettings, skipExposureAndManualWB: Bool = false) -> CIImage {
         var image = input
 
         // 1) JPG 용 WB (RAW 는 load 단계에서 이미 처리됨)
-        if !isRAWPlaceholder(image: input) {
+        if !skipExposureAndManualWB {
             image = applyWhiteBalance(to: image, settings: settings)
+        } else if settings.wbAuto {
+            // RAW 라도 자동 WB 는 후단에서 추가 적용
+            image = shadesOfGrayAWB(image)
         }
 
         // 2) 노출 (JPG 전용 — RAW 는 load 단계에서 이미)
-        if !isRAWPlaceholder(image: input), settings.exposure != 0 {
+        if !skipExposureAndManualWB, settings.exposure != 0 {
             let f = CIFilter.exposureAdjust()
             f.inputImage = image
             f.ev = Float(settings.exposure)
@@ -626,10 +631,11 @@ final class DevelopPipeline {
         quality: CGFloat = 0.92
     ) -> Bool {
         // 풀해상도 로드
+        let isRAW = isRAWFile(url: url)
         guard let input = loadCIImage(url: url, settings: settings, targetSize: .zero) else {
             return false
         }
-        let processed = applyFilters(to: input, settings: settings)
+        let processed = applyFilters(to: input, settings: settings, skipExposureAndManualWB: isRAW)
         let extent = processed.extent
         guard extent.width > 0, extent.height > 0 else { return false }
 

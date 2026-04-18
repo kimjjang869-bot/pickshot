@@ -13,6 +13,15 @@ extension Notification.Name {
     static let toggleCropMode = Notification.Name("toggleCropMode")
 }
 
+/// 실제로 프리뷰에 렌더된 이미지의 frame(aspect-fit 후 결과) 을 전달하는 PreferenceKey.
+/// 크롭 오버레이가 이 프레임에 정확히 맞추기 위해 사용.
+struct PreviewImageFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Zoom Presets
 
 enum ZoomPreset: String, CaseIterable, Identifiable {
@@ -517,6 +526,8 @@ struct PhotoPreviewView: View {
     private static let developPipelineShared = DevelopPipeline()
     /// 인라인 크롭 모드 활성화 여부 (C 키 토글).
     @State private var isCroppingMode: Bool = false
+    /// 실제 프리뷰에 렌더된 이미지 frame (크롭 오버레이 정확 정렬용)
+    @State private var previewImageFrame: CGRect = .zero
     /// 보정 관련 토스트 메시지 ("보정값 복사됨" 등). 1.5초 후 사라짐.
     @State private var adjustmentToast: String? = nil
     @State private var adjustmentToastTask: Task<Void, Never>? = nil
@@ -593,6 +604,15 @@ struct PhotoPreviewView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
+                            .background(
+                                GeometryReader { imgGeo in
+                                    Color.clear
+                                        .preference(
+                                            key: PreviewImageFrameKey.self,
+                                            value: imgGeo.frame(in: .named("previewContainer"))
+                                        )
+                                }
+                            )
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0
@@ -792,6 +812,8 @@ struct PhotoPreviewView: View {
                     }
                     .frame(width: vSize.width, height: vSize.height)
                     .background(store.previewBackgroundColor)
+                    .coordinateSpace(name: "previewContainer")
+                    .onPreferenceChange(PreviewImageFrameKey.self) { previewImageFrame = $0 }
                     .overlay(
                         Rectangle()
                             .stroke(previewBorderColor, lineWidth: previewBorderWidth)
@@ -806,7 +828,7 @@ struct PhotoPreviewView: View {
                         }
                     }
                     .overlay {
-                        cropOverlayIfNeeded(image: image, vSize: vSize)
+                        cropOverlayIfNeeded(vSize: vSize)
                     }
                     .overlay(alignment: .top) {
                         // v8.5 — 보정 토스트 (보정값 복사됨 등)
@@ -1688,27 +1710,18 @@ struct PhotoPreviewView: View {
     // MARK: - Crop overlay builder (type-checker 폭주 방지용 분리)
 
     @ViewBuilder
-    private func cropOverlayIfNeeded(image: NSImage, vSize: CGSize) -> some View {
+    private func cropOverlayIfNeeded(vSize: CGSize) -> some View {
         if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
             InlineCropOverlay(
                 photoURL: photo.jpgURL,
                 displaySize: vSize,
-                imageAspectRatio: pixelAspectRatio(of: image),
+                imageFrame: previewImageFrame,
                 onDismiss: { isCroppingMode = false }
             )
             .allowsHitTesting(true)
         } else {
             EmptyView()
         }
-    }
-
-    private func pixelAspectRatio(of image: NSImage) -> CGFloat? {
-        if let rep = image.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
-            return CGFloat(rep.pixelsWide) / CGFloat(rep.pixelsHigh)
-        }
-        let size = image.size
-        guard size.width > 0 && size.height > 0 else { return nil }
-        return size.width / size.height
     }
 
     // MARK: - Non-Destructive Develop (v8.5)

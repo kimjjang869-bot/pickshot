@@ -28,15 +28,14 @@ struct CurveEditorView: View {
 
                 Spacer()
 
-                Button(action: { onAutoApply?() }) {
-                    Text("자동")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 10).padding(.vertical, 3)
-                        .background(Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85)))
-                        .foregroundColor(.black)
-                }
-                .buttonStyle(.plain)
-                .help("이미지 분석 후 자동 커브 적용")
+                Text("자동")
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 10).padding(.vertical, 3)
+                    .background(Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85)))
+                    .foregroundColor(.black)
+                    .contentShape(Capsule())
+                    .onTapGesture { onAutoApply?() }
+                    .help("이미지 분석 후 자동 커브 적용")
 
                 Button(action: resetAll) {
                     Image(systemName: "arrow.uturn.backward")
