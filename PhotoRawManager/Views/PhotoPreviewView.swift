@@ -600,8 +600,7 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
-                        // view frame 은 vSize/scaledSize 로 고정 — 내부에서만 aspect fit.
-                        // overlay GeometryReader 가 vSize 받고 동일 로직으로 fit 영역 재계산 → 일치.
+                        // view frame = vSize/scaledSize 고정, 이미지는 내부 aspect fit
                         Image(nsImage: developedImage ?? rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
@@ -1712,16 +1711,35 @@ struct PhotoPreviewView: View {
     @ViewBuilder
     private func cropOverlayIfNeeded(vSize: CGSize, image: NSImage) -> some View {
         if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
-            let aspect: CGFloat = {
+            let imgAR: CGFloat = {
                 let s = image.size
                 return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
             }()
+            // canvas 와 aspect 로 이미지 fit rect 를 여기서 직접 계산 → Image 렌더와 완전 동일 공식
+            let canvasAR = vSize.width / max(vSize.height, 1)
+            let fitW: CGFloat
+            let fitH: CGFloat
+            if imgAR > canvasAR {
+                fitW = vSize.width
+                fitH = fitW / imgAR
+            } else {
+                fitH = vSize.height
+                fitW = fitH * imgAR
+            }
+            let fitOriginX = (vSize.width - fitW) / 2
+            let fitOriginY = (vSize.height - fitH) / 2
+
             InlineCropOverlay(
                 photoURL: photo.jpgURL,
                 displaySize: vSize,
-                imageAspectRatio: aspect,
+                imageAspectRatio: imgAR,
                 onDismiss: { isCroppingMode = false }
             )
+            // overlay 자체를 정확한 fit rect 크기로 strict frame 지정
+            .frame(width: fitW, height: fitH)
+            .offset(x: fitOriginX - vSize.width / 2 + fitW / 2,
+                    y: fitOriginY - vSize.height / 2 + fitH / 2)
+            .frame(width: vSize.width, height: vSize.height)
             .allowsHitTesting(true)
         } else {
             EmptyView()

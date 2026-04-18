@@ -94,25 +94,9 @@ struct InlineCropOverlay: View {
 
     // MARK: - Fit Rect 계산
 
-    /// 이미지 aspect 와 캔버스 사이즈로 aspect fit 영역 직접 계산 (확실한 방법).
+    /// Overlay 가 이미 이미지 fit 영역에 strict frame 으로 배치되므로 전체 canvas 가 바로 fit rect.
     private func fitRect(in canvasSize: CGSize) -> CGRect {
-        guard imageAspectRatio > 0, canvasSize.width > 0, canvasSize.height > 0 else {
-            return CGRect(origin: .zero, size: canvasSize)
-        }
-        let canvasAspect = canvasSize.width / canvasSize.height
-        let w: CGFloat
-        let h: CGFloat
-        if imageAspectRatio > canvasAspect {
-            // 이미지가 더 가로로 긴 경우 → 가로를 꽉 채우고 세로는 aspect 로
-            w = canvasSize.width
-            h = w / imageAspectRatio
-        } else {
-            h = canvasSize.height
-            w = h * imageAspectRatio
-        }
-        let x = (canvasSize.width - w) / 2
-        let y = (canvasSize.height - h) / 2
-        return CGRect(x: x, y: y, width: w, height: h)
+        return CGRect(origin: .zero, size: canvasSize)
     }
 
     /// 이미지-공간 종횡비 — 전달받은 aspect 그대로 사용.
