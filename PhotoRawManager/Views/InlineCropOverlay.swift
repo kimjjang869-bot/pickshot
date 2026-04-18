@@ -123,11 +123,11 @@ struct InlineCropOverlay: View {
     private func initializeDraft() {
         initialSettings = store.get(for: photoURL)
         if let existing = initialSettings.cropRect {
-            // 기존 크롭 있으면 그대로 불러옴
             draftRect = existing
             draftAspectLabel = initialSettings.cropAspectLabel ?? "Original"
         } else {
-            // 라이트룸과 동일 기본값: 전체 이미지 + 원본 종횡비
+            // 라이트룸과 동일 기본: 전체 이미지 + 원본 종횡비.
+            // strokeBorder 로 선 자체가 안쪽에 그려지므로 0..1 값으로 충분.
             draftRect = CGRect(x: 0, y: 0, width: 1, height: 1)
             draftAspectLabel = "Original"
         }
@@ -152,9 +152,9 @@ struct InlineCropOverlay: View {
 
     private func cropBox(rect: CGRect) -> some View {
         ZStack {
-            // 흰색 테두리
+            // 흰색 테두리 — strokeBorder 로 **내부 stroke** (이미지 경계 밖으로 안 튀어나감)
             Rectangle()
-                .stroke(Color.white.opacity(0.95), lineWidth: 1.5)
+                .strokeBorder(Color.white.opacity(0.95), lineWidth: 1.5)
                 .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
                 .allowsHitTesting(false)
@@ -179,12 +179,23 @@ struct InlineCropOverlay: View {
 
     @ViewBuilder
     private func handleCorner(at pt: CGPoint, type: CropHandle, fit: CGRect) -> some View {
-        // 라이트룸 스타일 L 자 코너 핸들
+        // 라이트룸 스타일 L 자 코너 핸들 — bounding box 의 한 모서리를 박스 꼭짓점에 정확히 맞춤
+        //  → L 자 전체가 박스 **안쪽** 으로 들어감 (밖으로 튀어나가지 않음)
+        let half: CGFloat = 8  // 16pt box / 2
+        let offsetPt: CGPoint = {
+            switch type {
+            case .topLeft:     return CGPoint(x: pt.x + half, y: pt.y + half)
+            case .topRight:    return CGPoint(x: pt.x - half, y: pt.y + half)
+            case .bottomLeft:  return CGPoint(x: pt.x + half, y: pt.y - half)
+            case .bottomRight: return CGPoint(x: pt.x - half, y: pt.y - half)
+            default: return pt
+            }
+        }()
         LCornerShape(corner: type)
             .stroke(Color.white, lineWidth: 3)
             .shadow(color: .black.opacity(0.65), radius: 2)
             .frame(width: 16, height: 16)
-            .position(pt)
+            .position(offsetPt)
             .contentShape(Rectangle())
             .frame(width: handleHitSize, height: handleHitSize)
             .position(pt)

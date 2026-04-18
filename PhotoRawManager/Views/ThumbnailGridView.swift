@@ -1377,6 +1377,7 @@ struct PhotoContextMenu: View {
 
 struct ThumbnailCell: View, Equatable {
     @EnvironmentObject var store: PhotoStore
+    @ObservedObject private var developStore = DevelopStore.shared
     let photo: PhotoItem
     let isSelected: Bool
     let isFocused: Bool
@@ -1412,6 +1413,7 @@ struct ThumbnailCell: View, Equatable {
                 .overlay(pickOverlay, alignment: .topLeading)
                 .overlay(gradeOverlay, alignment: .bottomLeading)
                 .overlay(sceneOverlay, alignment: .bottomTrailing)
+                .overlay(developBadge, alignment: .bottom)
                 .overlay(videoOverlay, alignment: .center)
 
             // File name
@@ -1584,6 +1586,25 @@ struct ThumbnailCell: View, Equatable {
     }
 
     @ViewBuilder
+    /// v8.6 — 비파괴 보정 적용된 사진 하단 중앙에 표시되는 배지
+    @ViewBuilder
+    private var developBadge: some View {
+        let settings = developStore.get(for: photo.jpgURL)
+        if !settings.isDefault {
+            HStack(spacing: 3) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: max(8, size * 0.07), weight: .bold))
+            }
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .foregroundColor(.black)
+            .background(
+                Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03))
+            )
+            .shadow(color: .black.opacity(0.4), radius: 2)
+            .padding(.bottom, 4)
+        }
+    }
+
     private var sceneOverlay: some View {
         let tag = photo.aiCategory ?? photo.sceneTag
         if let tag = tag {

@@ -816,7 +816,10 @@ struct PhotoPreviewView: View {
                     .frame(width: vSize.width, height: vSize.height)
                     .background(store.previewBackgroundColor)
                     .coordinateSpace(name: "previewContainer")
-                    .onPreferenceChange(PreviewImageFrameKey.self) { previewImageFrame = $0 }
+                    .onPreferenceChange(PreviewImageFrameKey.self) { newFrame in
+                        previewImageFrame = newFrame
+                        fputs("[CROP-FIT] imageFrame=\(newFrame) vSize=\(vSize)\n", stderr)
+                    }
                     .overlay(
                         Rectangle()
                             .stroke(previewBorderColor, lineWidth: previewBorderWidth)
