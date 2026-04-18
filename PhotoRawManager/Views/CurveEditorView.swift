@@ -126,32 +126,50 @@ struct CurveEditorView: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            let points = currentPoints(in: CGSize(width: w, height: h))
+            let editPoints = currentPoints(in: CGSize(width: w, height: h))
+            let combined = combinedCurvePoints(in: CGSize(width: w, height: h))
+            let hasRegionTones = regionTonesActive()
+
             ZStack {
-                // 커브 라인 (cubic bezier 근사 부드러운 곡선)
+                // 합성 최종 커브 (포인트 드래그 + 4영역 슬라이더) — 항상 표시
                 Path { path in
-                    guard let first = points.first else { return }
+                    guard let first = combined.first else { return }
                     path.move(to: first)
-                    for i in 1..<points.count {
-                        let prev = points[i - 1]
-                        let curr = points[i]
-                        let cdx = (curr.x - prev.x) * 0.5
-                        path.addCurve(
-                            to: curr,
-                            control1: CGPoint(x: prev.x + cdx, y: prev.y),
-                            control2: CGPoint(x: curr.x - cdx, y: curr.y)
-                        )
+                    for pt in combined.dropFirst() {
+                        path.addLine(to: pt)
                     }
                 }
-                .stroke(Color.white, lineWidth: 1.5)
+                .stroke(Color.white, lineWidth: 2)
 
-                // 포인트 핸들
-                ForEach(0..<points.count, id: \.self) { i in
+                // 편집용 베이스 커브 (포인트 드래그만, 점선) — 4영역 변경됐을 때만 함께 표시
+                if hasRegionTones {
+                    Path { path in
+                        guard let first = editPoints.first else { return }
+                        path.move(to: first)
+                        for i in 1..<editPoints.count {
+                            let prev = editPoints[i - 1]
+                            let curr = editPoints[i]
+                            let cdx = (curr.x - prev.x) * 0.5
+                            path.addCurve(
+                                to: curr,
+                                control1: CGPoint(x: prev.x + cdx, y: prev.y),
+                                control2: CGPoint(x: curr.x - cdx, y: curr.y)
+                            )
+                        }
+                    }
+                    .stroke(
+                        Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                    )
+                }
+
+                // 포인트 편집 핸들
+                ForEach(0..<editPoints.count, id: \.self) { i in
                     Circle()
                         .fill(i == dragPointIndex ? Color(red: 1.0, green: 0.76, blue: 0.03) : Color.white)
                         .frame(width: 9, height: 9)
                         .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 1))
-                        .position(points[i])
+                        .position(editPoints[i])
                 }
             }
             .contentShape(Rectangle())
@@ -165,6 +183,74 @@ struct CurveEditorView: View {
             )
         }
         .padding(4)
+    }
+
+    // MARK: - Combined Curve (커브 포인트 + 4영역 슬라이더 합성 시각화)
+
+    /// 포인트 커브 + 4영역 톤을 합성한 최종 출력 y 값 (0~1).
+    /// 파이프라인 순서 동일: curvePoints 먼저 → regionTones 다음.
+    private func effectiveOutput(forInput x: Double, settings: DevelopSettings) -> Double {
+        // 1) 커브 포인트 적용 (선형 보간)
+        let afterCurve: Double
+        if settings.curvePoints.isEmpty {
+            afterCurve = x
+        } else {
+            afterCurve = Self.interpolate(x, through: settings.curvePoints.sorted { $0.x < $1.x }.map { (Double($0.x), Double($0.y)) })
+        }
+
+        // 2) 4영역 톤 (anchor 5개 보간)
+        let scale: Double = 0.0012
+        let sh = settings.toneShadows * scale
+        let dk = settings.toneDarks * scale
+        let lt = settings.toneLights * scale
+        let hl = settings.toneHighlights * scale
+        let anchors: [(Double, Double)] = [
+            (0.0,  0.0  + sh),
+            (0.25, 0.25 + (sh + dk) * 0.5),
+            (0.5,  0.5  + (dk + lt) * 0.5),
+            (0.75, 0.75 + (lt + hl) * 0.5),
+            (1.0,  1.0  + hl)
+        ]
+        let afterRegion = Self.interpolate(afterCurve, through: anchors)
+        return max(0, min(1, afterRegion))
+    }
+
+    /// 캔버스 크기에 맞춰 64점 합성 커브 생성.
+    private func combinedCurvePoints(in size: CGSize) -> [CGPoint] {
+        let settings = store.get(for: photoURL)
+        let samples = 64
+        var pts: [CGPoint] = []
+        for i in 0...samples {
+            let x = Double(i) / Double(samples)
+            let y = effectiveOutput(forInput: x, settings: settings)
+            pts.append(CGPoint(
+                x: CGFloat(x) * size.width,
+                y: CGFloat(1 - y) * size.height
+            ))
+        }
+        return pts
+    }
+
+    private func regionTonesActive() -> Bool {
+        let s = store.get(for: photoURL)
+        return s.toneHighlights != 0 || s.toneLights != 0 || s.toneDarks != 0 || s.toneShadows != 0
+    }
+
+    /// piecewise-linear 보간. points 는 x 오름차순.
+    private static func interpolate(_ x: Double, through points: [(Double, Double)]) -> Double {
+        guard !points.isEmpty else { return x }
+        if x <= points.first!.0 { return points.first!.1 }
+        if x >= points.last!.0 { return points.last!.1 }
+        for i in 0..<(points.count - 1) {
+            let p1 = points[i]
+            let p2 = points[i + 1]
+            if x >= p1.0 && x <= p2.0 {
+                let dx = p2.0 - p1.0
+                let t = dx > 0.0001 ? (x - p1.0) / dx : 0
+                return p1.1 + (p2.1 - p1.1) * t
+            }
+        }
+        return x
     }
 
     // MARK: - Region Sliders
