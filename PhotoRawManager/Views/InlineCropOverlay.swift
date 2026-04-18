@@ -199,15 +199,16 @@ struct InlineCropOverlay: View {
 
     @ViewBuilder
     private func handleCorner(at pt: CGPoint, type: CropHandle, fit: CGRect) -> some View {
-        // 라이트룸 스타일 L 자 코너 핸들 — bounding box 의 한 모서리를 박스 꼭짓점에 정확히 맞춤
-        //  → L 자 전체가 박스 **안쪽** 으로 들어감 (밖으로 튀어나가지 않음)
-        let half: CGFloat = 8  // 16pt box / 2
+        // 라이트룸 스타일 L 자 코너 — 선(stroke lineWidth=3) 의 절반(1.5pt) 이 bbox 밖으로 나가므로
+        // bbox 가 박스 꼭짓점에서 half+1.5pt 안쪽에 위치하도록 offset 설정 → L 자 선 전체가 안쪽
+        let half: CGFloat = 8                           // 16pt box / 2
+        let inset: CGFloat = half + 1.5                 // bbox half + stroke overflow
         let offsetPt: CGPoint = {
             switch type {
-            case .topLeft:     return CGPoint(x: pt.x + half, y: pt.y + half)
-            case .topRight:    return CGPoint(x: pt.x - half, y: pt.y + half)
-            case .bottomLeft:  return CGPoint(x: pt.x + half, y: pt.y - half)
-            case .bottomRight: return CGPoint(x: pt.x - half, y: pt.y - half)
+            case .topLeft:     return CGPoint(x: pt.x + inset, y: pt.y + inset)
+            case .topRight:    return CGPoint(x: pt.x - inset, y: pt.y + inset)
+            case .bottomLeft:  return CGPoint(x: pt.x + inset, y: pt.y - inset)
+            case .bottomRight: return CGPoint(x: pt.x - inset, y: pt.y - inset)
             default: return pt
             }
         }()
