@@ -1743,24 +1743,29 @@ struct PhotoPreviewView: View {
             fitH = vSize.height
             fitW = fitH * imgAR
         }
-        return ZStack {
-            // (1) 원본 이미지를 이 rect 에 수동 배치 — 아래 깔린 Image 를 덮어씀
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.medium)
+        // 외곽 검정 배경 — 전체 컨테이너 덮기
+        return Color.black
+            .frame(width: vSize.width, height: vSize.height)
+            .overlay(
+                // 이미지 + 크롭 박스를 **동일한 ZStack 컨테이너** 에 배치 (완전 일치 보장)
+                ZStack {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)  // aspect 유지 명시
+                        .frame(width: fitW, height: fitH)
+                    InlineCropOverlay(
+                        photoURL: photo.jpgURL,
+                        displaySize: CGSize(width: fitW, height: fitH),
+                        imageAspectRatio: imgAR,
+                        onDismiss: { isCroppingMode = false }
+                    )
+                    .frame(width: fitW, height: fitH)
+                }
+                // ZStack 의 크기 = fitW×fitH 로 명시 → Image 와 Overlay 가 정확히 같은 공간
                 .frame(width: fitW, height: fitH)
-            // (2) 크롭 오버레이 — 동일 rect 에 그대로
-            InlineCropOverlay(
-                photoURL: photo.jpgURL,
-                displaySize: CGSize(width: fitW, height: fitH),
-                imageAspectRatio: imgAR,
-                onDismiss: { isCroppingMode = false }
+                // 외곽에서 중앙 정렬
             )
-            .frame(width: fitW, height: fitH)
-        }
-        .frame(width: vSize.width, height: vSize.height)
-        .background(Color.black)
-        .allowsHitTesting(true)
+            .allowsHitTesting(true)
     }
 
     // MARK: - Non-Destructive Develop (v8.5)
