@@ -14,7 +14,7 @@ struct DualViewerContent: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let photo = store.selectedPhoto, !photo.isFolder, !photo.isParentFolder {
-                PhotoPreviewView(photo: photo)
+                PhotoPreviewView(photo: photo, hideChrome: true)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "display.2").font(.system(size: 48)).foregroundColor(.gray)

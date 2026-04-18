@@ -494,6 +494,8 @@ final class PreviewViewState: ObservableObject {
 
 struct PhotoPreviewView: View {
     let photo: PhotoItem
+    /// 듀얼 뷰어 등에서 별점/라벨/회전 버튼 등 하단 chrome 을 숨길 때 사용.
+    var hideChrome: Bool = false
     @EnvironmentObject var store: PhotoStore
     @StateObject private var viewState = PreviewViewState()
 
@@ -600,13 +602,15 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
-                        // view frame = vSize/scaledSize 고정, 이미지는 내부 aspect fit
+                        // view frame = vSize/scaledSize 고정, 이미지는 내부 aspect fit.
+                        // 크롭 모드 중엔 cropModeLayer 가 이 이미지를 대체하므로 투명 처리.
                         Image(nsImage: developedImage ?? rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
                             .aspectRatio(contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
+                            .opacity(isCroppingMode ? 0 : 1)
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0
@@ -866,7 +870,8 @@ struct PhotoPreviewView: View {
 
             Divider()
 
-            // Toolbar: Correction | Stars + SP | Zoom
+            // Toolbar: Correction | Stars + SP | Zoom — 듀얼뷰어에선 숨김 (zoomBar 는 별도 노출)
+            if !hideChrome {
             HStack(spacing: 6) {
                 correctionBar
 
@@ -930,6 +935,14 @@ struct PhotoPreviewView: View {
                 zoomBar
             }
             .padding(.horizontal, AppTheme.space8)
+            } else {
+                // 듀얼뷰어: zoomBar 만 우측 끝에 표시 (별점/라벨/회전 숨김)
+                HStack {
+                    Spacer()
+                    zoomBar
+                        .padding(.horizontal, AppTheme.space8)
+                }
+            }
         }
         .sheet(isPresented: $showUprightGuide) {
             UprightGuideView(photo: photo) { correctedImage in
