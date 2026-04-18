@@ -1711,11 +1711,13 @@ struct PhotoPreviewView: View {
     @ViewBuilder
     private func cropOverlayIfNeeded(vSize: CGSize, image: NSImage) -> some View {
         if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
+            // 기존 ZStack 안의 Image 는 무시하고,
+            // 크롭 모드 중엔 **완전 별개의 레이어** 로 이미지+크롭박스를 동일 rect 에 수동 배치.
+            // SwiftUI aspect-fit 자동 계산 의존 제거 → 픽셀 단위 일치 보장.
             let imgAR: CGFloat = {
                 let s = image.size
                 return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
             }()
-            // canvas 와 aspect 로 이미지 fit rect 를 여기서 직접 계산 → Image 렌더와 완전 동일 공식
             let canvasAR = vSize.width / max(vSize.height, 1)
             let fitW: CGFloat
             let fitH: CGFloat
@@ -1726,20 +1728,24 @@ struct PhotoPreviewView: View {
                 fitH = vSize.height
                 fitW = fitH * imgAR
             }
-            let fitOriginX = (vSize.width - fitW) / 2
-            let fitOriginY = (vSize.height - fitH) / 2
 
-            InlineCropOverlay(
-                photoURL: photo.jpgURL,
-                displaySize: vSize,
-                imageAspectRatio: imgAR,
-                onDismiss: { isCroppingMode = false }
-            )
-            // overlay 자체를 정확한 fit rect 크기로 strict frame 지정
-            .frame(width: fitW, height: fitH)
-            .offset(x: fitOriginX - vSize.width / 2 + fitW / 2,
-                    y: fitOriginY - vSize.height / 2 + fitH / 2)
-            .frame(width: vSize.width, height: vSize.height)
+            ZStack {
+                // (1) 원본 이미지를 이 rect 에 수동 배치 — 아래 깔린 Image 를 이 이미지로 덮어씀
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.medium)
+                    .frame(width: fitW, height: fitH)
+                // (2) 크롭 오버레이 — 동일 rect 에 그대로
+                InlineCropOverlay(
+                    photoURL: photo.jpgURL,
+                    displaySize: CGSize(width: fitW, height: fitH),
+                    imageAspectRatio: imgAR,
+                    onDismiss: { isCroppingMode = false }
+                )
+                .frame(width: fitW, height: fitH)
+            }
+            .frame(width: vSize.width, height: vSize.height)  // ZStack center → 이미지+오버레이가 같이 중앙 정렬
+            .background(Color.black)  // 원본 이미지 영역 밖은 검정 (프리뷰 배경 덮기)
             .allowsHitTesting(true)
         } else {
             EmptyView()
