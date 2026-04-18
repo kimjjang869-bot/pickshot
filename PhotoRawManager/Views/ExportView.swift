@@ -14,6 +14,9 @@ struct ExportView: View {
     @State private var exportJPG: Bool = true
     @State private var exportRAW: Bool = true
     @State private var singleFolder: Bool = false  // 한 폴더에 내보내기
+    // v8.6 — 비파괴 보정 실제 픽셀 적용
+    @State private var applyDevelopSettings: Bool = true
+    @State private var developJPEGQuality: Double = 0.92
 
     // 중복 처리 상태
     @State private var showDuplicateAlert = false
@@ -227,6 +230,37 @@ struct ExportView: View {
                                 .font(.system(size: 12))
                         }
                         .toggleStyle(.checkbox)
+                    }
+
+                    // v8.6 — 보정값 실제 적용 토글
+                    if exportJPG {
+                        Divider().padding(.vertical, 2)
+                        Toggle(isOn: $applyDevelopSettings) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "wand.and.stars")
+                                    .foregroundColor(Color(red: 1.0, green: 0.76, blue: 0.03))
+                                Text("보정값 적용해서 내보내기")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .help("노출·WB·커브·크롭이 설정된 사진들은 JPEG 로 렌더링되어 저장됩니다. 원본은 건드리지 않음.")
+
+                        if applyDevelopSettings {
+                            HStack(spacing: 8) {
+                                Text("JPEG 품질")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 65, alignment: .trailing)
+                                Slider(value: $developJPEGQuality, in: 0.5...1.0, step: 0.01)
+                                    .frame(width: 160)
+                                Text(String(format: "%.0f%%", developJPEGQuality * 100))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 42, alignment: .leading)
+                            }
+                            .padding(.leading, 18)
+                        }
                     }
                 }
 
@@ -619,7 +653,9 @@ struct ExportView: View {
                     duplicateHandling: duplicateHandling,
                     exportJPG: doJPG,
                     exportRAW: doRAW,
-                    singleFolder: isSingleFolder
+                    singleFolder: isSingleFolder,
+                    applyDevelopSettings: applyDevelopSettings,
+                    developJPEGQuality: CGFloat(developJPEGQuality)
                 ) { done, total in
                     DispatchQueue.main.async {
                         guard !store.bgExportCancelled else { return }

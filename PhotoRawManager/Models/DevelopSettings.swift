@@ -50,6 +50,16 @@ struct DevelopSettings: Codable, Hashable {
     /// 빈 배열 = 선형 (보정 없음). 5개 이하 권장 (CIToneCurve 는 5개까지).
     var curvePoints: [CGPoint] = []
 
+    // 라이트룸 스타일 4영역 톤 슬라이더 (-100 ~ +100)
+    /// 밝은 영역 (highlights, 75~100%)
+    var toneHighlights: Double = 0
+    /// 밝음 (lights, 50~75%)
+    var toneLights: Double = 0
+    /// 어두움 (darks, 25~50%)
+    var toneDarks: Double = 0
+    /// 어두운 영역 (shadows, 0~25%)
+    var toneShadows: Double = 0
+
     // MARK: - Crop
 
     /// 크롭 사각형 (정규화 0~1). nil = 크롭 안 함 (전체 프레임).
@@ -61,6 +71,16 @@ struct DevelopSettings: Codable, Hashable {
     /// 종횡비 프리셋 라벨 (UI 표시용, 예: "3:2"). nil = 자유.
     var cropAspectLabel: String? = nil
 
+    // MARK: - Perspective (v8.6)
+
+    /// 원근 보정 — 4점 정규화 좌표 [topLeft, topRight, bottomLeft, bottomRight].
+    /// nil 이면 원근 보정 안 함. 설정 시 CIPerspectiveCorrection 으로 출력 사각형을 매핑.
+    var perspectivePoints: [CGPoint]? = nil
+
+    /// 자동 수평 감지 (Vision VNDetectHorizonRequest) 결과가 cropRotation 에 들어가면 true.
+    /// 사용자가 수동으로 회전했을 때와 구분 UI 표시용.
+    var horizonAutoApplied: Bool = false
+
     // MARK: - Convenience
 
     /// 기본값(보정 안 한 상태)인지 검사. 히스토리/UI 분기에 사용.
@@ -68,6 +88,7 @@ struct DevelopSettings: Codable, Hashable {
         !wbAuto && temperature == 0 && tint == 0 &&
         !exposureAuto && exposure == 0 &&
         !curveAuto && curvePoints.isEmpty &&
+        toneHighlights == 0 && toneLights == 0 && toneDarks == 0 && toneShadows == 0 &&
         cropRect == nil && cropRotation == 0
     }
 
@@ -103,6 +124,10 @@ struct DevelopSettings: Codable, Hashable {
         if components.contains(.curve) {
             curveAuto = source.curveAuto
             curvePoints = source.curvePoints
+            toneHighlights = source.toneHighlights
+            toneLights = source.toneLights
+            toneDarks = source.toneDarks
+            toneShadows = source.toneShadows
         }
         if components.contains(.crop) {
             cropRect = source.cropRect
@@ -116,7 +141,10 @@ struct DevelopSettings: Codable, Hashable {
         var s: Set<ComponentMask> = []
         if wbAuto || temperature != 0 || tint != 0 { s.insert(.whiteBalance) }
         if exposureAuto || exposure != 0 { s.insert(.exposure) }
-        if curveAuto || !curvePoints.isEmpty { s.insert(.curve) }
+        if curveAuto || !curvePoints.isEmpty ||
+           toneHighlights != 0 || toneLights != 0 || toneDarks != 0 || toneShadows != 0 {
+            s.insert(.curve)
+        }
         if cropRect != nil || cropRotation != 0 { s.insert(.crop) }
         return s
     }

@@ -947,8 +947,9 @@ class KeyCaptureView: NSView {
             return chars == c || keyCode == code
         }
 
-        // Esc → 전체화면 닫기
+        // Esc → v8.5 플로팅 필 확장 패널 먼저 닫기, 그 다음 전체화면 닫기
         if keyCode == 53 {
+            NotificationCenter.default.post(name: .pickShotCollapseAdjustments, object: nil)
             hideFullscreen?()
             return
         }
@@ -1082,42 +1083,32 @@ class KeyCaptureView: NSView {
             let url = selPhoto.jpgURL
             let hasOption = event.modifierFlags.contains(.option)
 
-            // [ / ] — 노출 ±0.1 EV, Shift+[/] → ±0.5 EV
-            if chars == "[" || chars == "{" || keyCode == 33 {
+            // [ / ] — 노출 ±0.1 EV (단독 키만, Shift 조합 삭제)
+            if (chars == "[" || keyCode == 33) && !hasShift && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                let delta = hasShift ? -0.5 : -0.1
-                s.exposure = max(-2.0, min(2.0, (s.exposure + delta * 10).rounded() / 10))
+                s.exposure = max(-2.0, min(2.0, ((s.exposure - 0.1) * 100).rounded() / 100))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            if chars == "]" || chars == "}" || keyCode == 30 {
+            if (chars == "]" || keyCode == 30) && !hasShift && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                let delta = hasShift ? 0.5 : 0.1
-                s.exposure = max(-2.0, min(2.0, (s.exposure + delta * 10).rounded() / 10))
+                s.exposure = max(-2.0, min(2.0, ((s.exposure + 0.1) * 100).rounded() / 100))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            // ; / ' — 색온도 ±1, Shift+; / ' → 틴트 ±1
-            if chars == ";" || chars == ":" || keyCode == 41 {
+            // ; / ' — 색온도 ±5 (Shift 조합 삭제, 틴트는 슬라이더/자동으로만)
+            if (chars == ";" || keyCode == 41) && !hasShift && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                if hasShift {
-                    s.tint = max(-100, min(100, s.tint - 5))
-                } else {
-                    s.temperature = max(-100, min(100, s.temperature - 5))
-                }
+                s.temperature = max(-100, min(100, s.temperature - 5))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return
             }
-            if chars == "'" || chars == "\"" || keyCode == 39 {
+            if (chars == "'" || keyCode == 39) && !hasShift && !hasOption {
                 var s = DevelopStore.shared.get(for: url)
-                if hasShift {
-                    s.tint = max(-100, min(100, s.tint + 5))
-                } else {
-                    s.temperature = max(-100, min(100, s.temperature + 5))
-                }
+                s.temperature = max(-100, min(100, s.temperature + 5))
                 DevelopStore.shared.set(s, for: url)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
                 return

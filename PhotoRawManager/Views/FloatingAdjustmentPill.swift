@@ -1,15 +1,13 @@
 import SwiftUI
+import AppKit
 
-/// 프리뷰 하단에 떠 있는 비파괴 보정 컨트롤 필.
-///
-/// UI 상태:
-/// - `.collapsed`: 5개 아이콘 (노출 · WB · 커브 · 크롭 · 리셋). 각 아이콘 아래 현재 값 뱃지.
-/// - `.expanded(tool)`: 선택된 도구의 슬라이더가 필 자리를 차지.
-///
-/// 자동 숨김:
-/// - 마우스 움직임 or 키 입력 → 즉시 표시
-/// - 2초 무반응 → 불투명도 40%
-/// - 5초 무반응 → 완전히 숨김 (다시 마우스 이동 시 재등장)
+/// 프리뷰 하단 비파괴 보정 플로팅 필.
+/// v8.6 업데이트:
+/// - 온도 켈빈(K) 값 표시
+/// - 온도(파랑→노랑) · 틴트(초록→마젠타) 슬라이더 트랙 그라디언트
+/// - 자동 버튼 → 실제 계산값을 슬라이더에 반영
+/// - ESC → 확장 패널 닫기
+/// - 커브 에디터 크기 확대
 struct FloatingAdjustmentPill: View {
     let photoURL: URL
 
@@ -18,15 +16,14 @@ struct FloatingAdjustmentPill: View {
     @State private var fadeState: FadeState = .visible
     @State private var fadeTask: Task<Void, Never>? = nil
 
+    private static let pipeline = DevelopPipeline()
+
     enum AdjustmentTool: String, Hashable {
         case exposure, wb, curve, crop, preset
     }
 
     enum FadeState {
-        case visible          // opacity 1.0
-        case dim              // opacity 0.4 (2초 무반응 후)
-        case hidden           // opacity 0.0 (5초 무반응 후)
-
+        case visible, dim, hidden
         var opacity: Double {
             switch self {
             case .visible: return 1.0
@@ -50,59 +47,38 @@ struct FloatingAdjustmentPill: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.black.opacity(0.78))
+                .fill(Color.black.opacity(0.82))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.25), lineWidth: 1)
+                        .stroke(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.28), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.5), radius: 14, y: 4)
         )
         .opacity(fadeState.opacity)
         .animation(.easeOut(duration: 0.22), value: fadeState)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: expandedTool)
-        .onHover { inside in
-            if inside { kickFade() }
-        }
+        .onHover { inside in if inside { kickFade() } }
         .onAppear { kickFade() }
-        .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentActivity)) { _ in
-            kickFade()
+        .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentActivity)) { _ in kickFade() }
+        // ESC → 확장 패널 닫기
+        .onReceive(NotificationCenter.default.publisher(for: .pickShotCollapseAdjustments)) { _ in
+            if expandedTool != nil {
+                withAnimation { expandedTool = nil }
+            }
         }
         .contentShape(Rectangle())
     }
 
-    // MARK: - Collapsed (아이콘 5개)
+    // MARK: - Collapsed
 
     private var collapsedContent: some View {
         HStack(spacing: 4) {
-            pillIcon(
-                tool: .exposure,
-                symbol: "sun.max.fill",
-                badge: exposureBadge
-            )
-            pillIcon(
-                tool: .wb,
-                symbol: "thermometer.sun.fill",
-                badge: wbBadge
-            )
-            pillIcon(
-                tool: .curve,
-                symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
-                badge: curveBadge
-            )
-            pillIcon(
-                tool: .crop,
-                symbol: "crop",
-                badge: cropBadge
-            )
-            Divider()
-                .frame(height: 26)
-                .padding(.horizontal, 4)
-                .opacity(0.3)
-            pillIcon(
-                tool: .preset,
-                symbol: "tag.fill",
-                badge: nil
-            )
+            pillIcon(tool: .exposure, symbol: "sun.max.fill", badge: exposureBadge)
+            pillIcon(tool: .wb, symbol: "thermometer.sun.fill", badge: wbBadge)
+            pillIcon(tool: .curve, symbol: "point.bottomleft.forward.to.point.topright.scurvepath", badge: curveBadge)
+            pillIcon(tool: .crop, symbol: "crop", badge: cropBadge)
+            Divider().frame(height: 26).padding(.horizontal, 4).opacity(0.3)
+            pillIcon(tool: .preset, symbol: "tag.fill", badge: nil)
             copyPasteButtons
             resetButton
         }
@@ -110,8 +86,7 @@ struct FloatingAdjustmentPill: View {
 
     private func pillIcon(tool: AdjustmentTool, symbol: String, badge: String?) -> some View {
         let settings = store.get(for: photoURL)
-        let isTouched = settings.touchedComponents.contains(touchedMask(for: tool))
-
+        let isTouched = tool != .preset && settings.touchedComponents.contains(touchedMask(for: tool))
         return Button(action: {
             withAnimation { expandedTool = tool }
             kickFade()
@@ -156,6 +131,45 @@ struct FloatingAdjustmentPill: View {
         .help("모두 리셋 (R)")
     }
 
+    private var copyPasteButtons: some View {
+        HStack(spacing: 2) {
+            Button(action: copyCurrentSettings) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12))
+                    .frame(width: 28, height: 32)
+                    .foregroundColor(.white.opacity(store.get(for: photoURL).isDefault ? 0.3 : 0.75))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.get(for: photoURL).isDefault)
+            .help("보정값 복사 (Cmd+Shift+C)")
+
+            Button(action: pasteSettings) {
+                Image(systemName: "doc.on.doc.fill")
+                    .font(.system(size: 12))
+                    .frame(width: 28, height: 32)
+                    .foregroundColor(store.clipboard == nil ? .white.opacity(0.3) : Color(red: 1.0, green: 0.76, blue: 0.03))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.clipboard == nil)
+            .help("보정값 붙여넣기 (Cmd+Shift+V)")
+        }
+    }
+
+    private func copyCurrentSettings() {
+        let s = store.get(for: photoURL)
+        guard !s.isDefault else { return }
+        store.copyToClipboard(s)
+        NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "보정값 복사됨")
+    }
+
+    private func pasteSettings() {
+        guard store.clipboard != nil else { return }
+        _ = store.pasteFromClipboard(to: [photoURL])
+        NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "보정값 적용됨")
+    }
+
     // MARK: - Expanded
 
     @ViewBuilder
@@ -170,11 +184,12 @@ struct FloatingAdjustmentPill: View {
         case .preset:
             presetExpanded
         case .crop:
-            placeholderExpanded(title: "인라인 크롭 · Day 4 예정", subtitle: "C 키로 진입 예정")
+            placeholderExpanded(title: "크롭 (C 키)", subtitle: "프리뷰에서 C 를 눌러 진입하세요")
         }
     }
 
-    // 노출 슬라이더
+    // MARK: - Exposure Expanded
+
     private var exposureExpanded: some View {
         let binding = Binding<Double>(
             get: { store.get(for: photoURL).exposure },
@@ -207,20 +222,26 @@ struct FloatingAdjustmentPill: View {
                 .foregroundColor(.white)
                 .frame(width: 58, alignment: .trailing)
 
-            autoButton(
-                isOn: settings.exposureAuto,
-                label: "자동"
-            ) {
-                var s = store.get(for: photoURL)
-                s.exposureAuto.toggle()
-                store.set(s, for: photoURL)
+            autoComputeButton(label: "자동") {
+                applyAutoExposure()
             }
 
             closeButton
         }
     }
 
-    // 화이트밸런스 (온도 + 틴트)
+    private func applyAutoExposure() {
+        if let ev = Self.pipeline.computeAutoExposure(url: photoURL) {
+            var s = store.get(for: photoURL)
+            s.exposure = ev
+            s.exposureAuto = false
+            store.set(s, for: photoURL)
+            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: String(format: "자동 노출: %+.1f EV", ev))
+        }
+    }
+
+    // MARK: - WB Expanded (켈빈 표시 + 그라디언트)
+
     private var wbExpanded: some View {
         let tempBinding = Binding<Double>(
             get: { store.get(for: photoURL).temperature },
@@ -248,60 +269,116 @@ struct FloatingAdjustmentPill: View {
 
             VStack(spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("온도").font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.6)).frame(width: 24, alignment: .trailing)
+                    Text("온도")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 24, alignment: .trailing)
                     DoubleClickResetSlider(
                         value: tempBinding,
                         range: -100...100,
                         defaultValue: 0,
                         step: 1,
                         bigStep: 10,
-                        format: { String(format: "%+.0f", $0) }
-                    ).frame(width: 180)
-                    Text(String(format: "%+.0f", settings.temperature))
+                        format: { _ in "" },
+                        trackGradient: LinearGradient(
+                            colors: [
+                                Color(red: 0.12, green: 0.30, blue: 0.95),  // 진한 파랑
+                                Color(red: 0.50, green: 0.55, blue: 0.75),
+                                Color.white.opacity(0.2),
+                                Color(red: 0.85, green: 0.70, blue: 0.40),
+                                Color(red: 1.0, green: 0.70, blue: 0.10)   // 진한 노랑
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 200)
+                    Text(kelvinLabel(for: settings.temperature))
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(.white)
-                        .frame(width: 32, alignment: .trailing)
+                        .frame(width: 52, alignment: .trailing)
                 }
                 HStack(spacing: 6) {
-                    Text("틴트").font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.6)).frame(width: 24, alignment: .trailing)
+                    Text("틴트")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 24, alignment: .trailing)
                     DoubleClickResetSlider(
                         value: tintBinding,
                         range: -100...100,
                         defaultValue: 0,
                         step: 1,
                         bigStep: 10,
-                        format: { String(format: "%+.0f", $0) }
-                    ).frame(width: 180)
+                        format: { _ in "" },
+                        trackGradient: LinearGradient(
+                            colors: [
+                                Color(red: 0.15, green: 0.85, blue: 0.35),  // 진한 초록
+                                Color(red: 0.55, green: 0.70, blue: 0.55),
+                                Color.white.opacity(0.2),
+                                Color(red: 0.80, green: 0.45, blue: 0.75),
+                                Color(red: 0.95, green: 0.15, blue: 0.75)   // 진한 마젠타
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 200)
                     Text(String(format: "%+.0f", settings.tint))
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(.white)
-                        .frame(width: 32, alignment: .trailing)
+                        .frame(width: 52, alignment: .trailing)
                 }
             }
 
-            autoButton(
-                isOn: settings.wbAuto,
-                label: "자동"
-            ) {
-                var s = store.get(for: photoURL)
-                s.wbAuto.toggle()
-                store.set(s, for: photoURL)
+            autoComputeButton(label: "자동") {
+                applyAutoWB()
             }
 
             closeButton
         }
     }
 
-    // 커브 에디터 (히스토그램 위에 포인트 드래그)
+    /// temperature (-100~+100) 를 켈빈(K) 로 환산: 0 → 5500K, ±100 → ±4500K
+    private func kelvinLabel(for t: Double) -> String {
+        let k = Int((5500.0 + t * 45.0).rounded())
+        return "\(k)K"
+    }
+
+    private func applyAutoWB() {
+        if let (temp, tint) = Self.pipeline.computeAutoWB(url: photoURL) {
+            var s = store.get(for: photoURL)
+            s.temperature = temp
+            s.tint = tint
+            s.wbAuto = false
+            store.set(s, for: photoURL)
+            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "자동 WB 적용")
+        }
+    }
+
+    // MARK: - Curve Expanded (크기 확대)
+
     private var curveExpanded: some View {
         HStack(spacing: 8) {
-            CurveEditorView(photoURL: photoURL)
-                .frame(width: 220, height: 210)
+            CurveEditorView(photoURL: photoURL, onAutoApply: {
+                applyAutoCurve()
+            })
+            .frame(width: 340, height: 300)
             closeButton
         }
     }
 
-    // 프리셋 패널
+    private func applyAutoCurve() {
+        if let pts = Self.pipeline.computeAutoCurve(url: photoURL) {
+            var s = store.get(for: photoURL)
+            s.curvePoints = pts
+            s.curveAuto = false
+            store.set(s, for: photoURL)
+            NotificationCenter.default.post(name: .pickShotAdjustmentToast, object: "자동 커브 적용")
+        }
+    }
+
+    // MARK: - Preset Expanded
+
     private var presetExpanded: some View {
         HStack(spacing: 8) {
             PresetPanelView(photoURL: photoURL, onDismiss: { expandedTool = nil })
@@ -309,57 +386,11 @@ struct FloatingAdjustmentPill: View {
         }
     }
 
-    // 복사/붙여넣기 버튼 (작은 아이콘, collapsed 모드에서만)
-    private var copyPasteButtons: some View {
-        HStack(spacing: 2) {
-            Button(action: copyCurrentSettings) {
-                Image(systemName: "doc.on.clipboard")
-                    .font(.system(size: 12))
-                    .frame(width: 28, height: 32)
-                    .foregroundColor(.white.opacity(store.get(for: photoURL).isDefault ? 0.3 : 0.75))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(store.get(for: photoURL).isDefault)
-            .help("보정값 복사 (Cmd+Shift+C)")
-
-            Button(action: pasteSettings) {
-                Image(systemName: "doc.on.doc.fill")
-                    .font(.system(size: 12))
-                    .frame(width: 28, height: 32)
-                    .foregroundColor(store.clipboard == nil ? .white.opacity(0.3) : Color(red: 1.0, green: 0.76, blue: 0.03))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(store.clipboard == nil)
-            .help("보정값 붙여넣기 (Cmd+Shift+V)")
-        }
-    }
-
-    private func copyCurrentSettings() {
-        let s = store.get(for: photoURL)
-        guard !s.isDefault else { return }
-        store.copyToClipboard(s)
-        NotificationCenter.default.post(
-            name: .pickShotAdjustmentToast,
-            object: "보정값 복사됨"
-        )
-    }
-
-    private func pasteSettings() {
-        guard store.clipboard != nil else { return }
-        _ = store.pasteFromClipboard(to: [photoURL])
-        NotificationCenter.default.post(
-            name: .pickShotAdjustmentToast,
-            object: "보정값 적용됨"
-        )
-    }
-
     private func placeholderExpanded(title: String, subtitle: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "hammer.fill")
+            Image(systemName: "info.circle")
                 .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(.white.opacity(0.5))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.85))
                 Text(subtitle).font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
@@ -370,21 +401,21 @@ struct FloatingAdjustmentPill: View {
         .frame(minWidth: 260)
     }
 
-    // MARK: - Shared UI
+    // MARK: - Shared Buttons
 
-    private func autoButton(isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
+    /// 자동 계산 버튼 (토글 아님 — 누를 때마다 즉시 계산 후 값 반영)
+    private func autoComputeButton(label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 8).padding(.vertical, 4)
+                .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(
-                    Capsule()
-                        .fill(isOn ? Color(red: 1.0, green: 0.76, blue: 0.03) : Color.white.opacity(0.1))
+                    Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85))
                 )
-                .foregroundColor(isOn ? .black : .white.opacity(0.75))
+                .foregroundColor(.black)
         }
         .buttonStyle(.plain)
-        .help("자동 적용 (Option+\(label == "자동" ? "E/W" : ""))")
+        .help("누르면 이미지 분석 후 자동값을 슬라이더에 반영")
     }
 
     private var closeButton: some View {
@@ -404,22 +435,18 @@ struct FloatingAdjustmentPill: View {
 
     private var exposureBadge: String? {
         let s = store.get(for: photoURL)
-        if s.exposureAuto { return "A" }
         if s.exposure != 0 { return String(format: "%+.1f", s.exposure) }
         return nil
     }
     private var wbBadge: String? {
         let s = store.get(for: photoURL)
-        if s.wbAuto { return "A" }
         if s.temperature != 0 || s.tint != 0 {
-            let t = Int(s.temperature)
-            return t >= 0 ? "+\(t)" : "\(t)"
+            return kelvinLabel(for: s.temperature)
         }
         return nil
     }
     private var curveBadge: String? {
         let s = store.get(for: photoURL)
-        if s.curveAuto { return "A" }
         if !s.curvePoints.isEmpty { return "•" }
         return nil
     }
@@ -436,7 +463,7 @@ struct FloatingAdjustmentPill: View {
         case .wb: return .whiteBalance
         case .curve: return .curve
         case .crop: return .crop
-        case .preset: return .exposure  // 프리셋은 touched 판정 제외용 더미
+        case .preset: return .exposure
         }
     }
 
@@ -444,7 +471,7 @@ struct FloatingAdjustmentPill: View {
         switch tool {
         case .exposure: return "노출 — [ / ] 로도 조정"
         case .wb: return "화이트 밸런스 — ; / ' 로도 조정"
-        case .curve: return "톤 커브 — Option+K 자동"
+        case .curve: return "톤 커브"
         case .crop: return "인라인 크롭 (C)"
         case .preset: return "프리셋 저장/불러오기"
         }
@@ -466,11 +493,11 @@ struct FloatingAdjustmentPill: View {
     }
 }
 
-// MARK: - Notification
+// MARK: - Notifications
 
 extension Notification.Name {
-    /// 사용자 활동 (마우스 이동, 키 입력) 감지 → 플로팅 필 재등장.
     static let pickShotAdjustmentActivity = Notification.Name("pickShotAdjustmentActivity")
-    /// 사용자 피드백 토스트 (object 는 String 메시지).
     static let pickShotAdjustmentToast = Notification.Name("pickShotAdjustmentToast")
+    /// ESC 로 확장 패널 닫기 요청
+    static let pickShotCollapseAdjustments = Notification.Name("pickShotCollapseAdjustments")
 }

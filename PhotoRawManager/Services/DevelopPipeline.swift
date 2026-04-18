@@ -3,6 +3,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import AppKit
 import ImageIO
+import UniformTypeIdentifiers
 
 /// 비파괴 Core Image 렌더링 파이프라인.
 /// RAW/JPG 입력 → WB → Exposure → ToneCurve → Straighten → Crop 순으로 적용.
@@ -132,6 +133,11 @@ final class DevelopPipeline {
         }
         if !settings.curvePoints.isEmpty {
             image = applyCurve(to: image, points: settings.normalizedCurvePoints())
+        }
+        // 4b) 4영역 톤 슬라이더 (Lightroom-style parametric curve)
+        if settings.toneHighlights != 0 || settings.toneLights != 0 ||
+           settings.toneDarks != 0 || settings.toneShadows != 0 {
+            image = applyRegionTones(to: image, settings: settings)
         }
 
         // 5) 회전 (스트레이튼)
@@ -312,6 +318,24 @@ final class DevelopPipeline {
         return f.outputImage ?? image
     }
 
+    /// 4영역(shadows/darks/lights/highlights) 슬라이더를 5포인트 CIToneCurve 로 변환해 적용.
+    /// 각 슬라이더 값 -100~+100 은 해당 영역 y 좌표를 약 ±0.12 만큼 이동.
+    private func applyRegionTones(to image: CIImage, settings: DevelopSettings) -> CIImage {
+        let scale: CGFloat = 0.0012  // -100~+100 → ±0.12
+        let shY = CGFloat(settings.toneShadows) * scale
+        let dkY = CGFloat(settings.toneDarks) * scale
+        let ltY = CGFloat(settings.toneLights) * scale
+        let hlY = CGFloat(settings.toneHighlights) * scale
+        let points = [
+            CGPoint(x: 0.0,  y: max(0, min(1, 0.0  + shY))),
+            CGPoint(x: 0.25, y: max(0, min(1, 0.25 + (shY + dkY) * 0.5))),
+            CGPoint(x: 0.5,  y: max(0, min(1, 0.5  + (dkY + ltY) * 0.5))),
+            CGPoint(x: 0.75, y: max(0, min(1, 0.75 + (ltY + hlY) * 0.5))),
+            CGPoint(x: 1.0,  y: max(0, min(1, 1.0  + hlY)))
+        ]
+        return applyCurve(to: image, points: points)
+    }
+
     /// 자동 커브: 히스토그램의 검정/흰점을 레벨 스트레칭 + 중간톤 S 커브.
     /// 알고리즘:
     /// 1. 축소 히스토그램 추출 (256 bin → 휘도)
@@ -417,6 +441,141 @@ final class DevelopPipeline {
         guard extent.width > 0, extent.height > 0,
               let cg = context.createCGImage(ciImage, from: extent) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: extent.width, height: extent.height))
+    }
+
+    // MARK: - Auto-Value Computation (자동 버튼이 실제 값 반영용)
+
+    /// 이미지 분석 후 자동 WB 가 계산하는 온도/틴트 값(-100~+100).
+    /// 가벼운 썸네일로 계산 (수백 ms).
+    func computeAutoWB(url: URL) -> (temperature: Double, tint: Double)? {
+        // 썸네일 프록시로 로드 (512x512)
+        var settings = DevelopSettings()
+        settings.wbAuto = false  // 로드 단계에서 AWB 로직 안 타게
+        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
+            return nil
+        }
+
+        // Shades of Gray 와 동일 계산: pow 3 → area average → cbrt → 게인
+        let pow3 = CIFilter.gammaAdjust()
+        pow3.inputImage = input
+        pow3.power = 3.0
+        guard let powered = pow3.outputImage else { return nil }
+        let avg = CIFilter.areaAverage()
+        avg.inputImage = powered
+        avg.extent = powered.extent
+        guard let avgOut = avg.outputImage else { return nil }
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(
+            avgOut, toBitmap: &bitmap, rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+        let r = max(pow(Double(bitmap[0]) / 255.0, 1.0 / 3.0), 0.02)
+        let g = max(pow(Double(bitmap[1]) / 255.0, 1.0 / 3.0), 0.02)
+        let b = max(pow(Double(bitmap[2]) / 255.0, 1.0 / 3.0), 0.02)
+        // 역산: rGain = g/r, bGain = g/b → rGain>1 이면 이미지 R 이 부족 → 따뜻하게 (온도 +)
+        let rGain = (g / r).clamped(to: 0.5...2.0)
+        let bGain = (g / b).clamped(to: 0.5...2.0)
+        // temperature ≈ (rGain 비율 - 1) * 스케일 (반대 부호 B)
+        // 간단 추정: temperature = (rGain - bGain) * 100 → clamp
+        let temperature = ((rGain - bGain) * 100).clamped(to: -100...100)
+        // tint 는 G 편향 — 게인이 1 에 가까우면 0, 그 외 적당한 추정
+        let tint: Double = 0  // 간단 버전. 추후 개선 가능.
+        return (temperature, tint)
+    }
+
+    /// 자동 노출 계산: 휘도 중앙값 목표 0.45 기준 EV.
+    func computeAutoExposure(url: URL) -> Double? {
+        var settings = DevelopSettings()
+        settings.exposureAuto = false
+        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
+            return nil
+        }
+        let avg = CIFilter.areaAverage()
+        avg.inputImage = input
+        avg.extent = input.extent
+        guard let avgOut = avg.outputImage else { return nil }
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(
+            avgOut, toBitmap: &bitmap, rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+        let luminance = (0.299 * Double(bitmap[0]) + 0.587 * Double(bitmap[1]) + 0.114 * Double(bitmap[2])) / 255.0
+        let target = 0.45
+        let ratio = target / max(luminance, 0.01)
+        let ev = log2(ratio).clamped(to: -1.5...1.5)
+        return (ev * 10).rounded() / 10
+    }
+
+    /// 자동 커브 계산 — 히스토그램 기반 5포인트 반환.
+    func computeAutoCurve(url: URL) -> [CGPoint]? {
+        var settings = DevelopSettings()
+        settings.curveAuto = false
+        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
+            return nil
+        }
+        let bins = extractLuminanceHistogram(from: input)
+        guard let (black, white) = blackWhitePoints(histogram: bins) else {
+            return nil
+        }
+        let blackOut: CGFloat = 0.02
+        let whiteOut: CGFloat = 0.98
+        let mid = (black + white) / 2
+        let lower25 = black + (mid - black) * 0.5
+        let upper75 = mid + (white - mid) * 0.5
+        return [
+            CGPoint(x: CGFloat(max(0, black)), y: blackOut),
+            CGPoint(x: CGFloat(lower25), y: 0.22),
+            CGPoint(x: CGFloat(mid), y: 0.5),
+            CGPoint(x: CGFloat(upper75), y: 0.78),
+            CGPoint(x: CGFloat(min(1, white)), y: whiteOut)
+        ]
+    }
+
+    // MARK: - Export (실제 픽셀 저장)
+
+    /// 보정 적용된 풀해상도 JPEG 을 dest 경로에 저장.
+    /// - url: 원본 파일 (RAW/JPG)
+    /// - settings: DevelopSettings
+    /// - dest: 저장할 JPEG 파일 경로 (.jpg 권장)
+    /// - quality: 0.0~1.0 (기본 0.92)
+    /// - Returns: 성공 여부
+    @discardableResult
+    func renderToJPEG(
+        url: URL,
+        settings: DevelopSettings,
+        dest: URL,
+        quality: CGFloat = 0.92
+    ) -> Bool {
+        // 풀해상도 로드
+        guard let input = loadCIImage(url: url, settings: settings, targetSize: .zero) else {
+            return false
+        }
+        let processed = applyFilters(to: input, settings: settings)
+        let extent = processed.extent
+        guard extent.width > 0, extent.height > 0 else { return false }
+
+        // sRGB 색공간으로 CGImage 변환
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        guard let cgImage = context.createCGImage(processed, from: extent, format: .RGBA8, colorSpace: colorSpace) else {
+            return false
+        }
+
+        // CGImageDestination 으로 JPEG 저장
+        let uti = UTType.jpeg.identifier as CFString
+        guard let destination = CGImageDestinationCreateWithURL(dest as CFURL, uti, 1, nil) else {
+            return false
+        }
+        let options: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: quality,
+            kCGImagePropertyOrientation: 1
+        ]
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        let success = CGImageDestinationFinalize(destination)
+        return success
     }
 }
 

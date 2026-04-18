@@ -1,34 +1,33 @@
 import SwiftUI
 import AppKit
 
-/// 프리뷰 위에 오버레이되는 인라인 크롭 UI.
-/// Mantis / Photos.app 스타일.
+/// 프리뷰 위에 오버레이되는 인라인 크롭 UI — 이미지 실제 fit 영역에 정확히 정렬.
 ///
-/// 특징:
-/// - 드래그로 코너/엣지 핸들 이동
-/// - Shift+드래그: 종횡비 잠금
-/// - Option+드래그: 중심 기준 변형
-/// - 3x3 rule-of-thirds 격자 (드래그 중에만 진하게)
-/// - 하단 플로팅 툴바: 종횡비 프리셋 · 회전 다이얼 · 확정/취소
+/// 주요 동작:
+/// - 일반 드래그: **자유 조정** (종횡비 무시)
+/// - Shift+드래그: **현재 박스 종횡비 잠금**
+/// - Option+드래그: **중심 기준** 변형
+/// - 프리셋 선택: 박스를 그 비율로 한 번 세팅 (이후 드래그는 자유)
+/// - 9분할 그리드: **항상 표시** (드래그 중엔 더 진하게)
+/// - 핸들 위에 마우스 올리면 macOS 표준 리사이즈 커서
 struct InlineCropOverlay: View {
     let photoURL: URL
-    let displaySize: CGSize     // 프리뷰 화면에서 이미지가 차지하는 실제 크기 (fit)
-    /// 크롭 모드 종료 콜백 (저장 완료 or 취소)
+    let displaySize: CGSize       // 프리뷰 GeometryReader 사이즈 (vSize)
+    let imageAspectRatio: CGFloat? // 원본 이미지 W/H. nil 이면 displaySize 전체 사용
     let onDismiss: () -> Void
 
     @ObservedObject var store: DevelopStore = .shared
 
-    // 드래프트 상태 (확정 전까지 변경 중인 값)
-    @State private var draftRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)  // 정규화 0~1
+    // 드래프트 상태 (확정 전까지의 값). draftRect 는 **이미지 공간**의 정규화 좌표 (0~1)
+    @State private var draftRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     @State private var draftRotation: Double = 0
-    @State private var draftAspectLabel: String? = nil  // "3:2" 등
+    @State private var draftAspectLabel: String? = nil
     @State private var initialSettings: DevelopSettings = DevelopSettings()
 
     @State private var activeHandle: CropHandle? = nil
     @State private var dragStartRect: CGRect = .zero
 
-    private let handleSize: CGFloat = 20
-    private let edgeHandleLength: CGFloat = 36
+    private let handleHitSize: CGFloat = 22
 
     enum CropHandle {
         case topLeft, topRight, bottomLeft, bottomRight
@@ -37,88 +36,91 @@ struct InlineCropOverlay: View {
     }
 
     struct AspectPreset: Identifiable, Hashable {
-        let id: String  // "Free", "1:1" 등
+        let id: String
         let label: String
-        let ratio: Double?  // nil = Free / Original
+        let ratio: Double?     // nil = 자유
         let isOriginal: Bool
     }
 
     private let presets: [AspectPreset] = [
-        AspectPreset(id: "Free", label: "자유", ratio: nil, isOriginal: false),
-        AspectPreset(id: "1:1", label: "1:1", ratio: 1.0, isOriginal: false),
-        AspectPreset(id: "3:2", label: "3:2", ratio: 3.0 / 2.0, isOriginal: false),
-        AspectPreset(id: "4:5", label: "4:5", ratio: 4.0 / 5.0, isOriginal: false),
-        AspectPreset(id: "16:9", label: "16:9", ratio: 16.0 / 9.0, isOriginal: false),
-        AspectPreset(id: "Original", label: "원본", ratio: nil, isOriginal: true)
+        AspectPreset(id: "Free",     label: "자유",   ratio: nil, isOriginal: false),
+        AspectPreset(id: "1:1",      label: "1:1",    ratio: 1.0, isOriginal: false),
+        AspectPreset(id: "3:2",      label: "3:2",    ratio: 3.0 / 2.0, isOriginal: false),
+        AspectPreset(id: "2:3",      label: "2:3",    ratio: 2.0 / 3.0, isOriginal: false),
+        AspectPreset(id: "4:5",      label: "4:5",    ratio: 4.0 / 5.0, isOriginal: false),
+        AspectPreset(id: "16:9",     label: "16:9",   ratio: 16.0 / 9.0, isOriginal: false),
+        AspectPreset(id: "Original", label: "원본",   ratio: nil, isOriginal: true)
     ]
 
+    // MARK: - Body
+
     var body: some View {
-        ZStack {
-            // 어두운 배경 (크롭 박스 밖)
-            maskLayer
+        GeometryReader { geo in
+            let fit = fitRect(in: geo.size)
+            ZStack {
+                // 어두운 바깥 마스크 (이미지 fit 영역만 밝게)
+                maskLayer(fit: fit)
 
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                let rect = CGRect(
-                    x: draftRect.origin.x * w,
-                    y: draftRect.origin.y * h,
-                    width: draftRect.width * w,
-                    height: draftRect.height * h
-                )
+                // 실제 크롭 박스 (이미지 공간 좌표 → 캔버스 좌표)
+                let cropScreenRect = cropRectInScreen(fit: fit)
+                cropBox(rect: cropScreenRect)
 
-                ZStack {
-                    // 크롭 박스 보더 + 격자
-                    cropBox(rect: rect)
-                    // 코너 핸들
-                    handle(at: CGPoint(x: rect.minX, y: rect.minY), handle: .topLeft, w: w, h: h)
-                    handle(at: CGPoint(x: rect.maxX, y: rect.minY), handle: .topRight, w: w, h: h)
-                    handle(at: CGPoint(x: rect.minX, y: rect.maxY), handle: .bottomLeft, w: w, h: h)
-                    handle(at: CGPoint(x: rect.maxX, y: rect.maxY), handle: .bottomRight, w: w, h: h)
-                    // 엣지 핸들
-                    edgeHandle(at: CGPoint(x: rect.midX, y: rect.minY), handle: .top, w: w, h: h, isHorizontal: true)
-                    edgeHandle(at: CGPoint(x: rect.midX, y: rect.maxY), handle: .bottom, w: w, h: h, isHorizontal: true)
-                    edgeHandle(at: CGPoint(x: rect.minX, y: rect.midY), handle: .leading, w: w, h: h, isHorizontal: false)
-                    edgeHandle(at: CGPoint(x: rect.maxX, y: rect.midY), handle: .trailing, w: w, h: h, isHorizontal: false)
+                // 8개 핸들
+                handleCorner(at: CGPoint(x: cropScreenRect.minX, y: cropScreenRect.minY), type: .topLeft, fit: fit)
+                handleCorner(at: CGPoint(x: cropScreenRect.maxX, y: cropScreenRect.minY), type: .topRight, fit: fit)
+                handleCorner(at: CGPoint(x: cropScreenRect.minX, y: cropScreenRect.maxY), type: .bottomLeft, fit: fit)
+                handleCorner(at: CGPoint(x: cropScreenRect.maxX, y: cropScreenRect.maxY), type: .bottomRight, fit: fit)
+                handleEdge(at: CGPoint(x: cropScreenRect.midX, y: cropScreenRect.minY), type: .top, fit: fit, horizontal: true)
+                handleEdge(at: CGPoint(x: cropScreenRect.midX, y: cropScreenRect.maxY), type: .bottom, fit: fit, horizontal: true)
+                handleEdge(at: CGPoint(x: cropScreenRect.minX, y: cropScreenRect.midY), type: .leading, fit: fit, horizontal: false)
+                handleEdge(at: CGPoint(x: cropScreenRect.maxX, y: cropScreenRect.midY), type: .trailing, fit: fit, horizontal: false)
+
+                // 박스 내부 드래그 = 이동
+                moveArea(rect: cropScreenRect, fit: fit)
+
+                // 하단 툴바
+                VStack {
+                    Spacer()
+                    cropToolbar
+                        .padding(.bottom, 20)
                 }
-                // 박스 내부 클릭 시 이동
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            if activeHandle == nil {
-                                // 박스 내부 드래그 시작 → 이동
-                                let p = v.startLocation
-                                if rect.contains(p) {
-                                    activeHandle = .move
-                                    dragStartRect = draftRect
-                                }
-                            }
-                            if activeHandle == .move {
-                                let dx = v.translation.width / w
-                                let dy = v.translation.height / h
-                                var newRect = dragStartRect
-                                newRect.origin.x = (dragStartRect.origin.x + dx).clamped(to: 0...(1 - dragStartRect.width))
-                                newRect.origin.y = (dragStartRect.origin.y + dy).clamped(to: 0...(1 - dragStartRect.height))
-                                draftRect = newRect
-                                NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
-                            }
-                        }
-                        .onEnded { _ in activeHandle = nil }
-                )
-            }
-
-            // 하단 크롭 툴바
-            VStack {
-                Spacer()
-                cropToolbar
-                    .padding(.bottom, 20)
             }
         }
         .contentShape(Rectangle())
         .onAppear { initializeDraft() }
-        .background(
-            // ESC / Enter 키 처리 (KeyEventHandling 이 PhotoPreview 레벨에서 가로채므로 보완)
-            Color.clear
+    }
+
+    // MARK: - Fit Rect 계산
+
+    /// 이미지가 display 안에 fit 된 실제 사각형.
+    /// imageAspectRatio 가 nil 이면 display 전체 반환.
+    private func fitRect(in canvasSize: CGSize) -> CGRect {
+        guard let aspect = imageAspectRatio, aspect > 0,
+              canvasSize.width > 0, canvasSize.height > 0 else {
+            return CGRect(origin: .zero, size: canvasSize)
+        }
+        let canvasAspect = canvasSize.width / canvasSize.height
+        var fitSize: CGSize
+        if aspect > canvasAspect {
+            // 이미지가 가로로 더 넓음 → 가로 맞춤
+            fitSize = CGSize(width: canvasSize.width, height: canvasSize.width / aspect)
+        } else {
+            fitSize = CGSize(width: canvasSize.height * aspect, height: canvasSize.height)
+        }
+        let origin = CGPoint(
+            x: (canvasSize.width - fitSize.width) / 2,
+            y: (canvasSize.height - fitSize.height) / 2
+        )
+        return CGRect(origin: origin, size: fitSize)
+    }
+
+    /// draftRect (이미지 공간 0~1) 를 화면 좌표로 변환.
+    private func cropRectInScreen(fit: CGRect) -> CGRect {
+        return CGRect(
+            x: fit.origin.x + draftRect.origin.x * fit.width,
+            y: fit.origin.y + draftRect.origin.y * fit.height,
+            width: draftRect.width * fit.width,
+            height: draftRect.height * fit.height
         )
     }
 
@@ -137,19 +139,12 @@ struct InlineCropOverlay: View {
 
     // MARK: - Mask Layer
 
-    private var maskLayer: some View {
+    private func maskLayer(fit: CGRect) -> some View {
         GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let r = CGRect(
-                x: draftRect.origin.x * w,
-                y: draftRect.origin.y * h,
-                width: draftRect.width * w,
-                height: draftRect.height * h
-            )
+            let cropScreenRect = cropRectInScreen(fit: fit)
             Path { p in
-                p.addRect(CGRect(x: 0, y: 0, width: w, height: h))
-                p.addRect(r)
+                p.addRect(CGRect(origin: .zero, size: geo.size))
+                p.addRect(cropScreenRect)
             }
             .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
             .allowsHitTesting(false)
@@ -160,14 +155,14 @@ struct InlineCropOverlay: View {
 
     private func cropBox(rect: CGRect) -> some View {
         ZStack {
-            // 테두리
+            // 흰색 테두리
             Rectangle()
-                .stroke(Color.white.opacity(0.9), lineWidth: 1.5)
+                .stroke(Color.white.opacity(0.95), lineWidth: 1.5)
                 .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
                 .allowsHitTesting(false)
 
-            // 3x3 격자
+            // 9분할 (rule of thirds) — 항상 표시
             Path { path in
                 for i in 1...2 {
                     let x = rect.minX + rect.width * CGFloat(i) / 3
@@ -178,46 +173,87 @@ struct InlineCropOverlay: View {
                     path.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }
             }
-            .stroke(Color.white.opacity(activeHandle != nil ? 0.5 : 0.25), lineWidth: 0.5)
+            .stroke(Color.white.opacity(activeHandle != nil ? 0.7 : 0.45), lineWidth: 0.75)
             .allowsHitTesting(false)
         }
     }
 
-    // MARK: - Handles
+    // MARK: - Handles (with NSCursor)
 
-    private func handle(at pt: CGPoint, handle: CropHandle, w: CGFloat, h: CGFloat) -> some View {
+    @ViewBuilder
+    private func handleCorner(at pt: CGPoint, type: CropHandle, fit: CGRect) -> some View {
         Rectangle()
             .fill(Color.white)
-            .frame(width: 10, height: 10)
-            .overlay(Rectangle().stroke(Color.black.opacity(0.4), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.5), radius: 2)
+            .frame(width: 12, height: 12)
+            .overlay(Rectangle().stroke(Color.black.opacity(0.5), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.6), radius: 2)
             .position(pt)
-            .contentShape(Rectangle().inset(by: -handleSize / 2))
-            .frame(width: handleSize, height: handleSize)
+            .contentShape(Rectangle())
+            .frame(width: handleHitSize, height: handleHitSize)
             .position(pt)
-            .gesture(cornerDrag(handle: handle, w: w, h: h))
+            .onHover { inside in
+                updateCursor(for: type, inside: inside)
+            }
+            .gesture(handleDrag(type, fit: fit))
     }
 
-    private func edgeHandle(at pt: CGPoint, handle: CropHandle, w: CGFloat, h: CGFloat, isHorizontal: Bool) -> some View {
+    @ViewBuilder
+    private func handleEdge(at pt: CGPoint, type: CropHandle, fit: CGRect, horizontal: Bool) -> some View {
         Rectangle()
             .fill(Color.white)
             .frame(
-                width: isHorizontal ? edgeHandleLength : 4,
-                height: isHorizontal ? 4 : edgeHandleLength
+                width: horizontal ? 36 : 4,
+                height: horizontal ? 4 : 36
             )
-            .overlay(
-                Rectangle().stroke(Color.black.opacity(0.4), lineWidth: 0.5)
+            .overlay(Rectangle().stroke(Color.black.opacity(0.5), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.5), radius: 2)
+            .position(pt)
+            .contentShape(Rectangle())
+            .frame(
+                width: horizontal ? 44 : handleHitSize,
+                height: horizontal ? handleHitSize : 44
             )
-            .shadow(color: .black.opacity(0.4), radius: 2)
             .position(pt)
-            .contentShape(Rectangle().size(width: edgeHandleLength, height: 14))
-            .frame(width: isHorizontal ? edgeHandleLength : 14,
-                   height: isHorizontal ? 14 : edgeHandleLength)
-            .position(pt)
-            .gesture(cornerDrag(handle: handle, w: w, h: h))
+            .onHover { inside in
+                updateCursor(for: type, inside: inside)
+            }
+            .gesture(handleDrag(type, fit: fit))
     }
 
-    private func cornerDrag(handle: CropHandle, w: CGFloat, h: CGFloat) -> some Gesture {
+    private func moveArea(rect: CGRect, fit: CGRect) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: rect.width - 24, height: rect.height - 24)
+            .position(x: rect.midX, y: rect.midY)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    NSCursor.openHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
+            .gesture(handleDrag(.move, fit: fit))
+    }
+
+    private func updateCursor(for type: CropHandle, inside: Bool) {
+        guard inside else { NSCursor.arrow.set(); return }
+        switch type {
+        case .topLeft, .bottomRight, .topRight, .bottomLeft:
+            // macOS NSCursor 에 대각선 리사이즈가 공개 API 로 없어서 좌우로 폴백
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        case .leading, .trailing:
+            NSCursor.resizeLeftRight.set()
+        case .move:
+            NSCursor.openHand.set()
+        }
+    }
+
+    // MARK: - Drag Gesture
+
+    private func handleDrag(_ handle: CropHandle, fit: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { v in
                 if activeHandle == nil {
@@ -227,15 +263,19 @@ struct InlineCropOverlay: View {
                 guard activeHandle == handle else { return }
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 let option = NSEvent.modifierFlags.contains(.option)
-                let dx = v.translation.width / w
-                let dy = v.translation.height / h
+                // 이미지 공간 기준 normalized delta
+                let dxImg = v.translation.width / max(fit.width, 1)
+                let dyImg = v.translation.height / max(fit.height, 1)
 
                 var newRect = dragStartRect
-                applyHandleDrag(&newRect, handle: handle, dx: dx, dy: dy, shift: shift, option: option)
+                applyHandleDrag(&newRect, handle: handle, dx: dxImg, dy: dyImg, shift: shift, option: option)
                 draftRect = clampNormalized(newRect)
                 NotificationCenter.default.post(name: .pickShotAdjustmentActivity, object: nil)
             }
-            .onEnded { _ in activeHandle = nil }
+            .onEnded { _ in
+                activeHandle = nil
+                NSCursor.arrow.set()
+            }
     }
 
     private func applyHandleDrag(
@@ -244,6 +284,13 @@ struct InlineCropOverlay: View {
         dx: CGFloat, dy: CGFloat,
         shift: Bool, option: Bool
     ) {
+        // 이동은 단순
+        if handle == .move {
+            rect.origin.x = (dragStartRect.origin.x + dx).clamped(to: 0...(1 - dragStartRect.width))
+            rect.origin.y = (dragStartRect.origin.y + dy).clamped(to: 0...(1 - dragStartRect.height))
+            return
+        }
+
         let startCx = dragStartRect.midX
         let startCy = dragStartRect.midY
 
@@ -274,18 +321,19 @@ struct InlineCropOverlay: View {
             rect.size.width = dragStartRect.maxX - rect.origin.x
         case .trailing:
             rect.size.width = dragStartRect.width + dx
-        case .move:
-            return
+        default:
+            break
         }
 
-        // 최소 크기 0.05 보장
+        // 최소 크기
         rect.size.width = max(0.05, rect.size.width)
         rect.size.height = max(0.05, rect.size.height)
 
-        // 종횡비 잠금 (Shift 또는 프리셋 선택 시)
-        let aspectRatio = effectiveAspectRatio(shiftHeld: shift)
-        if let ar = aspectRatio {
-            adjustForAspect(&rect, handle: handle, aspect: ar)
+        // 🔑 Shift 눌렀을 때만 이미지 공간 비율 유지.
+        //    프리셋 선택된 경우에도 드래그 중에는 무시 — 프리셋은 "초기 세팅" 용도.
+        if shift {
+            let aspectImgSpace = imageSpaceAspect()
+            adjustForAspect(&rect, handle: handle, aspect: aspectImgSpace)
         }
 
         // 중심 기준 (Option)
@@ -297,38 +345,38 @@ struct InlineCropOverlay: View {
         }
     }
 
-    private func effectiveAspectRatio(shiftHeld: Bool) -> CGFloat? {
-        // Shift 누르면 현재 크롭 종횡비 유지
-        if shiftHeld {
-            guard draftRect.height > 0 else { return nil }
-            return draftRect.width / draftRect.height
-        }
-        if let label = draftAspectLabel,
-           let preset = presets.first(where: { $0.id == label }),
-           let ratio = preset.ratio {
-            return CGFloat(ratio)
-        }
-        return nil
+    /// 현재 크롭 박스의 이미지-공간 종횡비. Shift+드래그로 잠글 때 기준값.
+    private func imageSpaceAspect() -> CGFloat {
+        guard dragStartRect.height > 0 else { return 1 }
+        // draftRect 는 이미지 공간의 비율이므로, 실제 픽셀 비율로 변환하려면
+        // imageAspectRatio 를 곱해야 함.
+        // (draftRect.width * imageW) / (draftRect.height * imageH)
+        //   = (draftRect.width / draftRect.height) * imageAspectRatio
+        let imgAR = imageAspectRatio ?? 1
+        return (dragStartRect.width / dragStartRect.height) * imgAR
     }
 
-    private func adjustForAspect(_ rect: inout CGRect, handle: CropHandle, aspect: CGFloat) {
-        // 핸들에 따라 축 우선순위 선택
+    /// rect 를 지정한 **픽셀 공간 종횡비** 로 맞춤 (draft 는 image 공간 정규화이므로 변환 필요).
+    private func adjustForAspect(_ rect: inout CGRect, handle: CropHandle, aspect pixelAspect: CGFloat) {
+        let imgAR = imageAspectRatio ?? 1
+        // image 공간 aspect = pixelAspect / imgAR
+        let normalizedAspect = pixelAspect / imgAR
+
         switch handle {
         case .top, .bottom:
-            // 높이 우선 → 가로 맞춤
-            let newW = rect.height * aspect
+            let newW = rect.height * normalizedAspect
             let cx = (rect.minX + rect.maxX) / 2
             rect.origin.x = cx - newW / 2
             rect.size.width = newW
         case .leading, .trailing:
-            let newH = rect.width / aspect
+            let newH = rect.width / normalizedAspect
             let cy = (rect.minY + rect.maxY) / 2
             rect.origin.y = cy - newH / 2
             rect.size.height = newH
         default:
-            // 코너: 더 긴 변에 맞춤
-            let byWidth = rect.width / aspect
-            let byHeight = rect.height * aspect
+            // 코너: 더 긴 변 기준
+            let byWidth = rect.width / normalizedAspect
+            let byHeight = rect.height * normalizedAspect
             if byHeight > rect.width {
                 rect.size.width = byHeight
             } else {
@@ -343,6 +391,8 @@ struct InlineCropOverlay: View {
         r.origin.y = r.origin.y.clamped(to: 0...1)
         r.size.width = min(r.size.width, 1 - r.origin.x)
         r.size.height = min(r.size.height, 1 - r.origin.y)
+        r.size.width = max(0.05, r.size.width)
+        r.size.height = max(0.05, r.size.height)
         return r
     }
 
@@ -350,18 +400,15 @@ struct InlineCropOverlay: View {
 
     private var cropToolbar: some View {
         HStack(spacing: 10) {
-            // 종횡비 프리셋
             Menu {
                 ForEach(presets) { preset in
-                    Button(preset.label) {
-                        selectPreset(preset)
-                    }
+                    Button(preset.label) { selectPreset(preset) }
                 }
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "aspectratio")
                         .font(.system(size: 11))
-                    Text(aspectLabelDisplay)
+                    Text(draftAspectLabel ?? "자유")
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
@@ -369,10 +416,10 @@ struct InlineCropOverlay: View {
                 .foregroundColor(.white)
             }
             .menuStyle(.borderlessButton)
+            .frame(width: 88)
 
             Divider().frame(height: 18).opacity(0.3)
 
-            // 회전 슬라이더
             Image(systemName: "rotate.left")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.7))
@@ -392,7 +439,6 @@ struct InlineCropOverlay: View {
 
             Divider().frame(height: 18).opacity(0.3)
 
-            // 취소
             Button(action: cancelCrop) {
                 Text("취소")
                     .font(.system(size: 11, weight: .semibold))
@@ -403,7 +449,6 @@ struct InlineCropOverlay: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
 
-            // 확정
             Button(action: confirmCrop) {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark")
@@ -421,7 +466,7 @@ struct InlineCropOverlay: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.black.opacity(0.8))
+                .fill(Color.black.opacity(0.82))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
                         .stroke(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.3), lineWidth: 1)
@@ -430,38 +475,36 @@ struct InlineCropOverlay: View {
         )
     }
 
-    private var aspectLabelDisplay: String {
-        draftAspectLabel ?? "자유"
-    }
+    // MARK: - Preset / Confirm / Cancel
 
     private func selectPreset(_ preset: AspectPreset) {
         draftAspectLabel = preset.id
         if let ratio = preset.ratio {
-            // 중심 기준으로 종횡비 맞춤
+            // 프리셋 비율(픽셀 공간) 을 이미지 공간으로 변환
+            let imgAR = imageAspectRatio ?? 1
+            let normalizedAspect = CGFloat(ratio) / imgAR
+
             let cx = draftRect.midX
             let cy = draftRect.midY
-            let currentAspect = draftRect.width / draftRect.height
             var newRect = draftRect
-            if currentAspect > ratio {
-                // 가로가 더 김 → 가로 줄이기
-                newRect.size.width = draftRect.height * ratio
+            let currentNormalizedAR = draftRect.width / draftRect.height
+            if currentNormalizedAR > normalizedAspect {
+                newRect.size.width = draftRect.height * normalizedAspect
             } else {
-                newRect.size.height = draftRect.width / ratio
+                newRect.size.height = draftRect.width / normalizedAspect
             }
             newRect.origin.x = cx - newRect.width / 2
             newRect.origin.y = cy - newRect.height / 2
             draftRect = clampNormalized(newRect)
         } else if preset.isOriginal {
-            // 원본 복원
             draftRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        } else {
+            // 자유 — 현재 박스 유지
         }
     }
 
-    // MARK: - Confirm / Cancel
-
     private func confirmCrop() {
         var s = store.get(for: photoURL)
-        // 거의 전체 선택 = 크롭 제거
         if draftRect.width > 0.98 && draftRect.height > 0.98 && draftRect.origin.x < 0.01 && draftRect.origin.y < 0.01 {
             s.cropRect = nil
             s.cropAspectLabel = nil
@@ -475,7 +518,6 @@ struct InlineCropOverlay: View {
     }
 
     private func cancelCrop() {
-        // 원래 설정 복원 (혹시 슬라이더가 중간에 store 건드렸을 때 대비)
         store.set(initialSettings, for: photoURL)
         onDismiss()
     }

@@ -808,9 +808,15 @@ struct PhotoPreviewView: View {
                     .overlay {
                         // v8.5 — 인라인 크롭 오버레이 (C 키로 진입)
                         if isCroppingMode, !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile {
+                            // image 는 이 스코프에서 이미 non-optional (상위 if let 로 unwrap 됨)
+                            let imgSize = image.size
+                            let imageAspect: CGFloat? = (imgSize.width > 0 && imgSize.height > 0)
+                                ? imgSize.width / imgSize.height
+                                : nil
                             InlineCropOverlay(
                                 photoURL: photo.jpgURL,
                                 displaySize: vSize,
+                                imageAspectRatio: imageAspect,
                                 onDismiss: { isCroppingMode = false }
                             )
                             .allowsHitTesting(true)

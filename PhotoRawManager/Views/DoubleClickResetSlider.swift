@@ -19,6 +19,26 @@ struct DoubleClickResetSlider: View {
     let step: Double          // fine (스크롤)
     let bigStep: Double       // Shift+scroll
     let format: (Double) -> String
+    /// 트랙 배경 그라디언트. nil 이면 기본(회색 반투명).
+    let trackGradient: LinearGradient?
+
+    init(
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        defaultValue: Double,
+        step: Double,
+        bigStep: Double,
+        format: @escaping (Double) -> String,
+        trackGradient: LinearGradient? = nil
+    ) {
+        self._value = value
+        self.range = range
+        self.defaultValue = defaultValue
+        self.step = step
+        self.bigStep = bigStep
+        self.format = format
+        self.trackGradient = trackGradient
+    }
 
     private let trackHeight: CGFloat = 4
     private let thumbDiameter: CGFloat = 14
@@ -32,18 +52,24 @@ struct DoubleClickResetSlider: View {
             let currentRatio = ratio(for: value)
 
             ZStack(alignment: .leading) {
-                // 배경 트랙
-                Capsule()
-                    .fill(Color.white.opacity(0.15))
-                    .frame(height: trackHeight)
+                // 배경 트랙 — 그라디언트 있으면 사용, 없으면 기본 회색
+                Group {
+                    if let grad = trackGradient {
+                        Capsule().fill(grad).frame(height: trackHeight)
+                    } else {
+                        Capsule().fill(Color.white.opacity(0.15)).frame(height: trackHeight)
+                    }
+                }
 
-                // 기본값 → 현재값 구간 (노란 채움)
-                let minR = min(defaultRatio, currentRatio)
-                let maxR = max(defaultRatio, currentRatio)
-                Capsule()
-                    .fill(Color(red: 1.0, green: 0.76, blue: 0.03))
-                    .frame(width: max(0, (maxR - minR) * width), height: trackHeight)
-                    .offset(x: minR * width)
+                // 기본값 → 현재값 구간 (그라디언트 없을 때만 노란 채움)
+                if trackGradient == nil {
+                    let minR = min(defaultRatio, currentRatio)
+                    let maxR = max(defaultRatio, currentRatio)
+                    Capsule()
+                        .fill(Color(red: 1.0, green: 0.76, blue: 0.03))
+                        .frame(width: max(0, (maxR - minR) * width), height: trackHeight)
+                        .offset(x: minR * width)
+                }
 
                 // 기본값 틱
                 Rectangle()

@@ -154,6 +154,8 @@ struct FileCopyService {
         exportJPG: Bool = true,
         exportRAW: Bool = true,
         singleFolder: Bool = false,
+        applyDevelopSettings: Bool = true,   // v8.6 — 보정값 적용 여부
+        developJPEGQuality: CGFloat = 0.92,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
         let fileManager = FileManager.default
@@ -182,15 +184,35 @@ struct FileCopyService {
             let type: CopyType
             let fileName: String
             let skip: Bool
+            /// v8.6 — 보정값 있으면 렌더링 경로로 분기. nil 이면 일반 복사.
+            let developSettings: DevelopSettings?
         }
 
         var ops: [CopyOp] = []
+
+        // 파이프라인 하나를 공유 (Metal context 재활용)
+        let pipeline = DevelopPipeline()
 
         // JPG copies (skip RAW-only, skip if exportJPG=false)
         for photo in photos {
             if !exportJPG { break }
             if photo.isRawOnly { continue }
-            var destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+
+            // v8.6 — 보정 적용 여부 결정
+            let settings = applyDevelopSettings ? DevelopStore.shared.get(for: photo.jpgURL) : DevelopSettings()
+            let hasDevelopChanges = !settings.isDefault
+            let opSettings: DevelopSettings? = hasDevelopChanges ? settings : nil
+
+            // 보정 적용 시 항상 .jpg 확장자로 저장 (RAW-only photo 라도)
+            var destURL: URL
+            if hasDevelopChanges {
+                // 원본 JPG/RAW → "<basename>.jpg" 로 저장
+                let base = photo.jpgURL.deletingPathExtension().lastPathComponent
+                destURL = jpgFolder.appendingPathComponent(base + ".jpg")
+            } else {
+                destURL = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
+            }
+
             var shouldSkip = false
             if fileManager.fileExists(atPath: destURL.path) {
                 switch duplicateHandling {
@@ -202,7 +224,14 @@ struct FileCopyService {
                     try? fileManager.removeItem(at: destURL)
                 }
             }
-            ops.append(CopyOp(source: photo.jpgURL, dest: destURL, type: .jpg, fileName: photo.fileName, skip: shouldSkip))
+            ops.append(CopyOp(
+                source: photo.jpgURL,
+                dest: destURL,
+                type: .jpg,
+                fileName: photo.fileName,
+                skip: shouldSkip,
+                developSettings: opSettings
+            ))
         }
 
         // RAW copies (skip if exportRAW=false)
@@ -220,7 +249,7 @@ struct FileCopyService {
                     try? fileManager.removeItem(at: destURL)
                 }
             }
-            ops.append(CopyOp(source: rawURL, dest: destURL, type: .raw, fileName: photo.fileName, skip: shouldSkip))
+            ops.append(CopyOp(source: rawURL, dest: destURL, type: .raw, fileName: photo.fileName, skip: shouldSkip, developSettings: nil))
         }
 
         // XMP sidecar copies — 영상 파일에 IN/OUT 마커 XMP 있으면 함께 이동
@@ -242,7 +271,7 @@ struct FileCopyService {
                     try? fileManager.removeItem(at: xmpDest)
                 }
             }
-            ops.append(CopyOp(source: xmpSource, dest: xmpDest, type: .xmp, fileName: xmpSource.lastPathComponent, skip: shouldSkip))
+            ops.append(CopyOp(source: xmpSource, dest: xmpDest, type: .xmp, fileName: xmpSource.lastPathComponent, skip: shouldSkip, developSettings: nil))
         }
 
         let totalOperations = ops.count
@@ -282,22 +311,39 @@ struct FileCopyService {
                     return
                 }
 
-                do {
-                    try fastCopy(from: op.source, to: op.dest)
+                // v8.6 — 보정값 있으면 렌더링 경로로, 없으면 빠른 파일 복사
+                var succeeded = false
+                if let settings = op.developSettings, op.type == .jpg {
+                    succeeded = pipeline.renderToJPEG(
+                        url: op.source,
+                        settings: settings,
+                        dest: op.dest,
+                        quality: developJPEGQuality
+                    )
+                } else {
+                    do {
+                        try fastCopy(from: op.source, to: op.dest)
+                        succeeded = true
+                    } catch {
+                        succeeded = false
+                    }
+                }
+
+                if succeeded {
                     lock.lock()
                     switch op.type {
                     case .jpg: result.copiedJPG += 1
                     case .raw: result.copiedRAW += 1
-                    case .xmp: result.copiedJPG += 1  // XMP 도 JPG 카운터에 합산 (별도 UI 필요 없으면)
+                    case .xmp: result.copiedJPG += 1
                     }
                     completed += 1
                     let c = completed
                     lock.unlock()
                     DispatchQueue.main.async { progress(c, totalOperations) }
-                } catch {
+                } else {
                     let msg: String
                     switch op.type {
-                    case .jpg: msg = "JPG 복사 실패: \(op.fileName)"
+                    case .jpg: msg = op.developSettings != nil ? "JPG 보정 저장 실패: \(op.fileName)" : "JPG 복사 실패: \(op.fileName)"
                     case .raw: msg = "RAW 복사 실패: \(op.fileName)"
                     case .xmp: msg = "XMP 복사 실패: \(op.fileName)"
                     }
