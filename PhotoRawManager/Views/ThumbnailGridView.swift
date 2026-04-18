@@ -1604,6 +1604,7 @@ struct ThumbnailCell: View, Equatable {
         }
     }
 
+    @ViewBuilder
     private var sceneOverlay: some View {
         let tag = photo.aiCategory ?? photo.sceneTag
         if let tag = tag {
