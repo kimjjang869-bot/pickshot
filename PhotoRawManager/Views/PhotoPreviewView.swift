@@ -600,27 +600,14 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
-                        // 명시적 aspect — view frame 이 실제 aspect fit 크기로 확정됨.
-                        // maxWidth/maxHeight 만 주면 view 가 그 영역 전체를 차지해서 PreferenceKey 가 부정확.
-                        let explicitAspect: CGFloat = {
-                            let s = (developedImage ?? rotatedImage ?? image).size
-                            return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
-                        }()
+                        // view frame 은 vSize/scaledSize 로 고정 — 내부에서만 aspect fit.
+                        // overlay GeometryReader 가 vSize 받고 동일 로직으로 fit 영역 재계산 → 일치.
                         Image(nsImage: developedImage ?? rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
-                            .aspectRatio(explicitAspect, contentMode: .fit)
-                            .frame(maxWidth: isFitMode ? vSize.width : scaledW,
-                                   maxHeight: isFitMode ? vSize.height : scaledH)
-                            .background(
-                                GeometryReader { imgGeo in
-                                    Color.clear
-                                        .preference(
-                                            key: PreviewImageFrameKey.self,
-                                            value: imgGeo.frame(in: .named("previewContainer"))
-                                        )
-                                }
-                            )
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: isFitMode ? vSize.width : scaledW,
+                                   height: isFitMode ? vSize.height : scaledH)
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0

@@ -58,6 +58,7 @@ struct InlineCropOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let fit = fitRect(in: geo.size)
+            let _ = logOnce(geo: geo.size, fit: fit)
             ZStack {
                 // 어두운 바깥 마스크 (이미지 fit 영역만 밝게)
                 maskLayer(fit: fit)
@@ -116,6 +117,16 @@ struct InlineCropOverlay: View {
 
     /// 이미지-공간 종횡비 — 전달받은 aspect 그대로 사용.
     private var imageAspectFromFrame: CGFloat { imageAspectRatio }
+
+    /// 디버그 — 한 번만 로그 찍는 헬퍼
+    private func logOnce(geo: CGSize, fit: CGRect) {
+        struct Once { static var key: [String: Int] = [:] }
+        let k = "\(geo.width)x\(geo.height) asp=\(imageAspectRatio)"
+        if Once.key[k] == nil {
+            Once.key[k] = 1
+            fputs("[CROP] geo=\(geo) aspect=\(imageAspectRatio) fit=\(fit) draft=\(draftRect) label=\(draftAspectLabel ?? "nil")\n", stderr)
+        }
+    }
 
     /// draftRect (이미지 공간 0~1) 를 화면 좌표로 변환.
     private func cropRectInScreen(fit: CGRect) -> CGRect {
