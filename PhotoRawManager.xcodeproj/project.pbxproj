@@ -58,6 +58,9 @@
 		'A10056' = {isa = PBXBuildFile; fileRef = B10056; };
 		AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */; };
 		FCR10001 /* FileConflictResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCR10002 /* FileConflictResolver.swift */; };
+		CSL10001 /* ClientSessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CSL10002 /* ClientSessionListView.swift */; };
+		CPS10001 /* ClientProxySetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPS10002 /* ClientProxySetupView.swift */; };
+		CPO10001 /* ClientPenOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPO10002 /* ClientPenOverlayView.swift */; };
 		NP10001 /* NavigationPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10002 /* NavigationPerformanceMonitor.swift */; };
 		NP10003 /* NavigationPerformanceHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10004 /* NavigationPerformanceHUD.swift */; };
 		MG10001 /* MemoryGuardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MG10002 /* MemoryGuardService.swift */; };
@@ -243,6 +246,9 @@
 		'DC10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
 		E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoMarkerService.swift; path = PhotoRawManager/Services/VideoMarkerService.swift; sourceTree = SOURCE_ROOT; };
 		FCR10002 /* FileConflictResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileConflictResolver.swift; path = PhotoRawManager/Services/FileConflictResolver.swift; sourceTree = SOURCE_ROOT; };
+		CSL10002 /* ClientSessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClientSessionListView.swift; path = PhotoRawManager/Views/ClientSessionListView.swift; sourceTree = SOURCE_ROOT; };
+		CPS10002 /* ClientProxySetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClientProxySetupView.swift; path = PhotoRawManager/Views/ClientProxySetupView.swift; sourceTree = SOURCE_ROOT; };
+		CPO10002 /* ClientPenOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClientPenOverlayView.swift; path = PhotoRawManager/Views/ClientPenOverlayView.swift; sourceTree = SOURCE_ROOT; };
 		NP10002 /* NavigationPerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceMonitor.swift; path = PhotoRawManager/Services/NavigationPerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
 		NP10004 /* NavigationPerformanceHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceHUD.swift; path = PhotoRawManager/Views/NavigationPerformanceHUD.swift; sourceTree = SOURCE_ROOT; };
 		MG10002 /* MemoryGuardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MemoryGuardService.swift; path = PhotoRawManager/Services/MemoryGuardService.swift; sourceTree = SOURCE_ROOT; };
@@ -518,6 +524,9 @@
 				HW10000,
 				E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */,
 				FCR10002 /* FileConflictResolver.swift */,
+				CSL10002 /* ClientSessionListView.swift */,
+				CPS10002 /* ClientProxySetupView.swift */,
+				CPO10002 /* ClientPenOverlayView.swift */,
 				NP10002 /* NavigationPerformanceMonitor.swift */,
 				NP10004 /* NavigationPerformanceHUD.swift */,
 				MG10002 /* MemoryGuardService.swift */,
@@ -794,6 +803,9 @@
 				HW10007,
 				AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */,
 				FCR10001 /* FileConflictResolver.swift in Sources */,
+				CSL10001 /* ClientSessionListView.swift in Sources */,
+				CPS10001 /* ClientProxySetupView.swift in Sources */,
+				CPO10001 /* ClientPenOverlayView.swift in Sources */,
 				NP10001 /* NavigationPerformanceMonitor.swift in Sources */,
 				NP10003 /* NavigationPerformanceHUD.swift in Sources */,
 				MG10001 /* MemoryGuardService.swift in Sources */,
@@ -919,7 +931,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -932,7 +944,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.3.0;
+				MARKETING_VERSION = 8.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -950,7 +962,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -963,7 +975,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.3.0;
+				MARKETING_VERSION = 8.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

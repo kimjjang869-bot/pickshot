@@ -17,6 +17,12 @@ struct ClientSelectSetupView: View {
     @State private var uploadOriginal = false
     @State private var originalResolution = 2000
     @State private var filePrefix = ""
+    // 고객 최대 선택 수
+    @State private var selectionLimit: Int = 0  // 0 = 무제한
+    @State private var customPresets: [Int] = []
+    @State private var limitInputText: String = ""
+    // 업로드 범위: false = 전체, true = 선택한 썸네일만
+    @State private var uploadOnlySelected: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -190,6 +196,12 @@ struct ClientSelectSetupView: View {
                     .padding(4)
                 }
 
+                // 업로드 범위 (다중 선택 시 — 전체 vs 선택한 것만)
+                uploadScopeSection
+
+                // 최대 선택 수 (하드 캡)
+                selectionLimitSection
+
                 // 원본 업로드
                 GroupBox {
                     VStack(spacing: 8) {
@@ -356,6 +368,29 @@ struct ClientSelectSetupView: View {
                     .buttonStyle(.plain)
                     .foregroundColor(.blue)
                 }
+
+                Divider().padding(.vertical, 6)
+
+                // 새 세션 시작 (다른 폴더 업로드)
+                Button(action: {
+                    service.resetForNewSession()
+                    sessionName = defaultSessionName
+                    clientName = ""
+                    clientEmail = ""
+                    filePrefix = ""
+                }) {
+                    Label("새 세션 시작 (다른 폴더 업로드)", systemImage: "plus.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            LinearGradient(colors: [.purple, .blue],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 16)
@@ -382,10 +417,19 @@ struct ClientSelectSetupView: View {
 
     private func startUpload() {
         let name = sessionName.isEmpty ? defaultSessionName : sessionName
-        let photos = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        let allPhotos = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        // 업로드 범위: 사용자가 "선택한 것만" 골랐고 다중 선택 상태면 선택 항목만 필터
+        let photos: [PhotoItem]
+        if uploadOnlySelected && store.selectedPhotoIDs.count >= 2 {
+            let selectedIDs = store.selectedPhotoIDs
+            photos = allPhotos.filter { selectedIDs.contains($0.id) }
+        } else {
+            photos = allPhotos
+        }
         service.filePrefix = filePrefix
         service.uploadOriginal = uploadOriginal
         service.originalResolution = originalResolution
+        service.selectionLimit = selectionLimit
         service.startSession(
             name: name,
             client: clientName,
@@ -393,6 +437,180 @@ struct ClientSelectSetupView: View {
             photos: photos,
             accessMode: accessMode
         )
+    }
+
+    // MARK: - 업로드 범위 선택 섹션 (전체 vs 선택한 썸네일만)
+
+    private var uploadScopeSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo.stack.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                    Text("업로드 범위")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                }
+
+                let totalCount = store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count
+                let selectedCount = store.selectedPhotoIDs.count
+                let hasMultiSelection = selectedCount >= 2
+
+                // 전체
+                Button(action: { uploadOnlySelected = false }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: uploadOnlySelected ? "circle" : "largecircle.fill.circle")
+                            .font(.system(size: 14))
+                            .foregroundColor(uploadOnlySelected ? .secondary : .accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("전체 사진")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("\(totalCount)장 전부 업로드 (기본)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+
+                // 선택한 것만
+                Button(action: {
+                    if hasMultiSelection { uploadOnlySelected = true }
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: uploadOnlySelected ? "largecircle.fill.circle" : "circle")
+                            .font(.system(size: 14))
+                            .foregroundColor(uploadOnlySelected ? .accentColor : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("선택한 썸네일만")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(hasMultiSelection ? .primary : .secondary)
+                            if hasMultiSelection {
+                                Text("\(selectedCount)장만 업로드")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.accentColor)
+                            } else {
+                                Text("썸네일 2장 이상 선택 후 다시 열어주세요")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasMultiSelection)
+            }
+            .padding(4)
+        }
+        .onAppear {
+            // 다중 선택이 있으면 기본값을 "선택한 것만" 으로 자동 설정 (직관적)
+            if store.selectedPhotoIDs.count >= 2 { uploadOnlySelected = true }
+        }
+    }
+
+    // MARK: - 최대 선택 수 (하드 캡) 섹션
+
+    private var selectionLimitSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                    Text("고객 최대 선택 수")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text(selectionLimit == 0 ? "무제한" : "\(selectionLimit)장")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(selectionLimit == 0 ? .secondary : .accentColor)
+                }
+
+                // 프리셋 버튼들 (기본 + 커스텀)
+                FlowLayout(spacing: 6) {
+                    ForEach(ClientSelectService.defaultSelectionPresets, id: \.self) { value in
+                        presetButton(value: value, isCustom: false)
+                    }
+                    ForEach(customPresets, id: \.self) { value in
+                        presetButton(value: value, isCustom: true)
+                    }
+                }
+
+                // 직접 입력 + 프리셋 저장
+                HStack(spacing: 8) {
+                    Text("직접 입력")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    TextField("0 = 무제한", text: $limitInputText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                        .onChange(of: limitInputText) { newValue in
+                            if let v = Int(newValue.trimmingCharacters(in: .whitespaces)), v >= 0 {
+                                selectionLimit = v
+                            }
+                        }
+                    Text("장")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button(action: saveCurrentPreset) {
+                        Label("프리셋 저장", systemImage: "plus.circle")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(selectionLimit == 0 || ClientSelectService.defaultSelectionPresets.contains(selectionLimit) || customPresets.contains(selectionLimit))
+                }
+            }
+            .padding(4)
+        }
+        .onAppear {
+            selectionLimit = service.selectionLimit
+            customPresets = service.loadCustomSelectionPresets()
+            limitInputText = selectionLimit == 0 ? "" : "\(selectionLimit)"
+        }
+    }
+
+    @ViewBuilder
+    private func presetButton(value: Int, isCustom: Bool) -> some View {
+        let isSelected = selectionLimit == value
+        let label = value == 0 ? "무제한" : "\(value)장"
+        HStack(spacing: 3) {
+            Button(action: {
+                selectionLimit = value
+                limitInputText = value == 0 ? "" : "\(value)"
+            }) {
+                Text(label)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(isSelected ? Color.accentColor : Color.gray.opacity(0.15))
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+
+            // 커스텀 프리셋은 삭제 버튼 제공
+            if isCustom {
+                Button(action: {
+                    customPresets = service.removeCustomPreset(value)
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func saveCurrentPreset() {
+        service.selectionLimit = selectionLimit
+        customPresets = service.saveCurrentAsCustomPreset()
     }
 
     private func infoRow(icon: String, color: Color, text: String) -> some View {

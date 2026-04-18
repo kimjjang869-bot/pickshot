@@ -21,25 +21,21 @@ struct FolderItem: Identifiable {
     static func loadChildren(of url: URL) -> [FolderItem] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
-        // 1회 스캔으로 디렉토리 필터 + 하위폴더 존재 여부까지 판별
         var dirs: [URL] = []
-        var childDirSet: Set<String> = []  // 각 폴더의 하위폴더 존재 여부 판별용
         dirs.reserveCapacity(contents.count / 4)
         for item in contents {
             if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 dirs.append(item)
-                childDirSet.insert(item.deletingLastPathComponent().path)
             }
         }
         dirs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        return dirs.map { dirURL in
-            // 실제 하위 폴더 존재 여부를 빠르게 확인 (enumerator early exit)
-            let hasChild = checkHasSubfolders(dirURL)
-            return FolderItem(url: dirURL, name: dirURL.lastPathComponent, hasSubfolders: hasChild)
-        }
+        // hasSubfolders 는 기본값 true (펼칠 때 실제 확인하고 비어있으면 hide).
+        // HDD 에서 N+1 enumerator 호출로 수 초 프리즈 발생 → 제거.
+        return dirs.map { FolderItem(url: $0, name: $0.lastPathComponent, hasSubfolders: true) }
     }
 
-    /// 하위 폴더 존재 여부 — enumerator early exit (전체 목록 안 읽음)
+    /// 하위 폴더 존재 여부 — enumerator early exit (전체 목록 안 읽음).
+    /// 지연 확인용 — hot path 에서는 부르지 말 것.
     static func checkHasSubfolders(_ url: URL) -> Bool {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { return false }

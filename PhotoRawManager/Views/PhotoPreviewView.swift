@@ -760,6 +760,18 @@ struct PhotoPreviewView: View {
                             MetadataOverlayView(photo: photo)
                                 .allowsHitTesting(false)
                         }
+
+                        // MARK: - 🎨 고객 펜 오버레이 (F 키로 토글, 기본 ON)
+                        if store.showClientPenOverlay,
+                           let penJSON = photo.clientPenDrawingsJSON,
+                           !penJSON.isEmpty {
+                            ClientPenOverlayView(
+                                penDrawingsJSON: penJSON,
+                                imageSize: CGSize(width: 1000, height: 1000),
+                                displaySize: vSize
+                            )
+                            .frame(width: vSize.width, height: vSize.height)
+                        }
                     }
                     .frame(width: vSize.width, height: vSize.height)
                     .background(store.previewBackgroundColor)
@@ -2574,33 +2586,116 @@ struct MetadataOverlayView: View {
 
             Spacer()
 
-            // Bottom row
-            HStack(alignment: .bottom) {
-                // Bottom-left: Filename + Rating stars
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(photo.fileName)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            // Bottom row — 좌: 파일 정보 + 고객 피드백 카드, 우: 여유 공간
+            HStack(alignment: .bottom, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    // 파일명 + 레이팅 + 씬 태그
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(photo.fileName)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
 
-                    StarDisplayView(rating: photo.rating, size: 10, compact: false)
+                        StarDisplayView(rating: photo.rating, size: 10, compact: false)
 
-                    if let tag = photo.sceneTag {
-                        Text(tag)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.7))
-                            .cornerRadius(3)
+                        if let tag = photo.sceneTag {
+                            Text(tag)
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.7))
+                                .cornerRadius(3)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(Color.black.opacity(0.75))
+                    .cornerRadius(6)
+
+                    // 🆕 고객 피드백 카드 — 고객 셀렉/코멘트/펜 있을 때만 표시
+                    if photo.clientSelected || !photo.clientComments.isEmpty || photo.clientPenDrawingsJSON != nil {
+                        clientFeedbackCard
                     }
                 }
-                .foregroundColor(.white)
-                .padding(8)
-                .background(Color.black.opacity(0.75))
-                .cornerRadius(6)
 
                 Spacer()
             }
             .padding(10)
         }
+    }
+
+    // MARK: - 고객 피드백 카드 (조건부 표시)
+
+    @ViewBuilder
+    private var clientFeedbackCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 헤더: 고객 이름 + 뱃지
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.pink, .purple, .blue], startPoint: .leading, endPoint: .trailing)
+                    )
+                let clientLabel = photo.clientName?.isEmpty == false ? (photo.clientName ?? "고객") : "고객"
+                Text("\(clientLabel) 피드백")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.pink, .purple, .blue], startPoint: .leading, endPoint: .trailing)
+                    )
+
+                if photo.clientSelected {
+                    Text("✓ 셀렉")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Color.green.opacity(0.35))
+                        .foregroundColor(.green)
+                        .cornerRadius(3)
+                }
+                if photo.clientPenDrawingsJSON != nil {
+                    Text("✏️ 펜")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Color.orange.opacity(0.35))
+                        .foregroundColor(.orange)
+                        .cornerRadius(3)
+                }
+            }
+
+            // 코멘트 목록
+            if !photo.clientComments.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(photo.clientComments.enumerated()), id: \.offset) { _, comment in
+                        HStack(alignment: .top, spacing: 5) {
+                            Text("💬")
+                                .font(.system(size: 10))
+                            Text(comment)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .frame(maxWidth: 320, alignment: .leading)
+            }
+        }
+        .padding(8)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.78), Color.purple.opacity(0.25)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.pink.opacity(0.6), .purple.opacity(0.6), .blue.opacity(0.6)],
+                        startPoint: .leading, endPoint: .trailing
+                    ),
+                    lineWidth: 1.2
+                )
+        )
+        .cornerRadius(6)
     }
 }
 

@@ -1137,6 +1137,13 @@ class KeyCaptureView: NSView {
             return
         }
 
+        // F: 고객 펜 오버레이 토글 (클라이언트가 그린 펜 그림 표시/숨김)
+        if charOrCode("f", 3) && !hasCmd {
+            store.showClientPenOverlay.toggle()
+            store.showToastMessage(store.showClientPenOverlay ? "✏️ 고객 펜 표시" : "✏️ 고객 펜 숨김")
+            return
+        }
+
         // D: Dual viewer toggle
         if charOrCode("d", 2) && !hasCmd {
             store.showDualViewer.toggle()

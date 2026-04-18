@@ -243,8 +243,15 @@ struct PhotoItem: Identifiable, Hashable {
     // Video
     var videoDuration: Double? = nil   // 비디오 재생 시간 (초)
 
-    // Client Comments
+    // Client Comments (레거시 — 내 메모 + 클라이언트 코멘트 섞여 있음)
     var comments: [String] = []        // 코멘트 (pickshot 파일에서 가져옴)
+
+    // MARK: - Client Feedback (웹 뷰어에서 가져온 고객 셀렉 데이터, 내 셀렉과 분리 저장)
+    var clientSelected: Bool = false            // 고객이 SP 픽으로 선택
+    var clientName: String? = nil               // 고객 이름 (예: "경순") — 배지/필터용
+    var clientComments: [String] = []           // 고객 코멘트 (내 메모와 분리)
+    var clientPenDrawingsJSON: String? = nil    // 펜 그림 원본 JSON (Phase 3 에서 파싱)
+    var clientRating: Int = 0                   // 고객이 뷰어에서 매긴 별점 (0~5)
 
     // IPTC/XMP Metadata (user-editable)
     var iptcTitle: String = ""           // IPTC Object Name / XMP dc:title

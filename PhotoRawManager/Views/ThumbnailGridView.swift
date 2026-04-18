@@ -1392,7 +1392,10 @@ struct ThumbnailCell: View, Equatable {
         lhs.photo.rating == rhs.photo.rating &&
         lhs.photo.colorLabel == rhs.photo.colorLabel &&
         lhs.photo.isSpacePicked == rhs.photo.isSpacePicked &&
-        lhs.photo.isGSelected == rhs.photo.isGSelected
+        lhs.photo.isGSelected == rhs.photo.isGSelected &&
+        lhs.photo.clientSelected == rhs.photo.clientSelected &&
+        lhs.photo.clientComments.count == rhs.photo.clientComments.count &&
+        (lhs.photo.clientPenDrawingsJSON != nil) == (rhs.photo.clientPenDrawingsJSON != nil)
         // ⚠️ pendingCut 은 Equatable 에 포함 X — @EnvironmentObject 자체 변화로 body 재호출됨
     }
 
@@ -1492,6 +1495,29 @@ struct ThumbnailCell: View, Equatable {
             }
             if photo.isAIPick {
                 badgeText("PICK", color: AppTheme.pickBadge)
+            }
+            // 🆕 고객 피드백 배지 — 셀렉/코멘트/펜 중 하나라도 있으면 표시
+            if photo.clientSelected || !photo.clientComments.isEmpty || photo.clientPenDrawingsJSON != nil {
+                HStack(spacing: 2) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: max(7, size * 0.06)))
+                    Text(photo.clientName?.isEmpty == false ? (photo.clientName ?? "고객") : "고객")
+                        .font(.system(size: max(7, size * 0.06), weight: .bold))
+                    if photo.clientPenDrawingsJSON != nil {
+                        Image(systemName: "pencil.tip")
+                            .font(.system(size: max(7, size * 0.055)))
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    LinearGradient(
+                        colors: [.pink, .purple, .blue],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                )
+                .clipShape(Capsule())
             }
             if let fgID = photo.faceGroupID {
                 HStack(spacing: 2) {
@@ -1612,6 +1638,20 @@ struct ThumbnailCell: View, Equatable {
     }
 
     private var cellBorder: some View {
+        // 고객 셀렉된 사진은 무지개 보더 (최우선). 기존 내 보더는 inner ring 으로 유지.
+        if photo.clientSelected {
+            return AnyView(
+                RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.pink, .purple, .blue, .cyan, .green, .yellow, .orange, .red],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2.2
+                    )
+            )
+        }
+
         let borderColor: Color = {
             if let labelColor = photo.colorLabel.color { return labelColor }
             if photo.rating == 5 { return AppTheme.starGold }
@@ -1621,8 +1661,10 @@ struct ThumbnailCell: View, Equatable {
         }()
         let borderWidth: CGFloat = hasStateBorder || isFocused
             ? AppTheme.focusBorderWidth : AppTheme.cellBorderWidth
-        return RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
-            .stroke(borderColor, lineWidth: borderWidth)
+        return AnyView(
+            RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius + 2, style: .continuous)
+                .stroke(borderColor, lineWidth: borderWidth)
+        )
     }
 
     /// 별점/컬러라벨 보더가 이미 있는 경우, 그 안쪽에 선택/포커스 하이라이트 링을 추가 표시.

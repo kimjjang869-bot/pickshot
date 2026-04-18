@@ -29,11 +29,31 @@ class LocalOAuthServer {
                 return
             }
             listener = try NWListener(using: .tcp, on: nwPort)
+            listener?.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    fputs("[OAUTH-SRV] ✅ listener ready on port \(self?.port ?? 0)\n", stderr)
+                case .failed(let err):
+                    fputs("[OAUTH-SRV] ❌ listener failed: \(err.localizedDescription)\n", stderr)
+                    DispatchQueue.main.async {
+                        self?.completion(nil, err)
+                    }
+                case .cancelled:
+                    fputs("[OAUTH-SRV] listener cancelled\n", stderr)
+                case .waiting(let err):
+                    fputs("[OAUTH-SRV] ⚠️ listener waiting: \(err.localizedDescription)\n", stderr)
+                default:
+                    fputs("[OAUTH-SRV] listener state: \(state)\n", stderr)
+                }
+            }
             listener?.newConnectionHandler = { [weak self] connection in
+                fputs("[OAUTH-SRV] 📥 incoming connection\n", stderr)
                 self?.handleConnection(connection)
             }
             listener?.start(queue: .global(qos: .userInitiated))
+            fputs("[OAUTH-SRV] start() called, port=\(port)\n", stderr)
         } catch {
+            fputs("[OAUTH-SRV] ❌ start() threw: \(error.localizedDescription)\n", stderr)
             completion(nil, error)
         }
     }

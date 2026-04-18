@@ -463,12 +463,13 @@ extension PhotoStore {
         }
     }
 
-    /// photos 배열의 comments를 clientComments 딕셔너리로 복사
+    /// photos 배열의 고객 코멘트(clientComments)를 dict 로 복사 (preview 오버레이 표시용)
+    /// ⚠️ `photo.comments` (내 메모) 가 아니라 `photo.clientComments` (고객 피드백) 를 읽어야 함.
     func buildClientComments() {
         var dict: [UUID: String] = [:]
         for photo in photos {
-            if !photo.comments.isEmpty {
-                dict[photo.id] = photo.comments.joined(separator: " / ")
+            if !photo.clientComments.isEmpty {
+                dict[photo.id] = photo.clientComments.joined(separator: " / ")
             }
         }
         clientComments = dict

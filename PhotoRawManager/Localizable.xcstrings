@@ -34,6 +34,9 @@
     "... 외 %lld개" : {
 
     },
+    "… 외 %lld개" : {
+
+    },
     "... 외 %lld개 그룹" : {
 
     },
@@ -153,6 +156,9 @@
     "%@ 중..." : {
 
     },
+    "%@ 피드백" : {
+
+    },
     "%@: %@" : {
       "localizations" : {
         "ko" : {
@@ -228,6 +234,16 @@
         }
       }
     },
+    "%lld/%lld 개" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld 개"
+          }
+        }
+      }
+    },
     "%lld/%lld장" : {
       "localizations" : {
         "ko" : {
@@ -253,6 +269,16 @@
     },
     "%lldbit" : {
 
+    },
+    "%lldM · C%lld" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lldM · C%2$lld"
+          }
+        }
+      }
     },
     "%lldmm" : {
 
@@ -362,6 +388,12 @@
     "%lld장 이상" : {
 
     },
+    "%lld장 전부 업로드 (기본)" : {
+
+    },
+    "%lld장만 업로드" : {
+
+    },
     "%lld장의 사진을 분석합니다" : {
 
     },
@@ -397,6 +429,12 @@
         }
       }
     },
+    "• URL 비워두고 저장 → 프록시 미사용 (URL 내장 방식 폴백)" : {
+
+    },
+    "• 무료 플랜: 하루 100,000회 요청 (소규모 스튜디오엔 넉넉)" : {
+
+    },
     "• 사용자의 다른 Google Drive 파일은 보지 않습니다" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -407,6 +445,9 @@
           }
         }
       }
+    },
+    "• 코드 업데이트 하려면 같은 Worker 에 코드 다시 저장하면 됨" : {
+
     },
     "• 토큰은 Mac Keychain 에만 저장되며 외부로 전송되지 않습니다" : {
       "extractionState" : "manual",
@@ -442,6 +483,15 @@
         }
       }
     },
+    "◆" : {
+
+    },
+    "○" : {
+
+    },
+    "● LIVE" : {
+
+    },
     "⚠️ JSON 출력 형식을 포함해야 결과가 정상적으로 파싱됩니다" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -476,6 +526,18 @@
       }
     },
     "⚠️%lld" : {
+
+    },
+    "✏️ 펜" : {
+
+    },
+    "✓ 셀렉" : {
+
+    },
+    "✨ 피드백 %lld장" : {
+
+    },
+    "💬" : {
 
     },
     "📂 카테고리" : {
@@ -532,6 +594,9 @@
 
     },
     "$%@ 사용" : {
+
+    },
+    "0 = 무제한" : {
 
     },
     "2GB" : {
@@ -897,6 +962,9 @@
         }
       }
     },
+    "Apps Script 프록시 설정" : {
+
+    },
     "A컷" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -983,10 +1051,16 @@
     "client@gmail.com" : {
 
     },
+    "Cloudflare Worker 프록시" : {
+
+    },
     "Coming Soon" : {
 
     },
     "Copyright 2026. All rights reserved." : {
+
+    },
+    "CSV 리포트 저장" : {
 
     },
     "Display P3" : {
@@ -1088,6 +1162,9 @@
           }
         }
       }
+    },
+    "Flush All Caches" : {
+
     },
     "G" : {
 
@@ -1367,6 +1444,9 @@
         }
       }
     },
+    "https://pickshot-proxy.xxx.workers.dev" : {
+
+    },
     "IN" : {
 
     },
@@ -1579,6 +1659,9 @@
     "Mac" : {
 
     },
+    "Navigation Debug" : {
+
+    },
     "Neural Engine 기반 자동 화질 향상" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1691,6 +1774,9 @@
     "PickShot v%@" : {
 
     },
+    "PickShot 에서 클라이언트 셀렉 업로드 후 이 목록에서 확인할 수 있습니다." : {
+
+    },
     "PickShot 이 요청하는 권한" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1701,6 +1787,9 @@
           }
         }
       }
+    },
+    "PickShot 이 제공하는 Cloudflare Worker 가 자동 연결되어 있어 별도 설정 없이 모든 세션이 바로 작동합니다. 무료 tier (10만 req/day) 로 수백 세션까지 무리 없이 처리." : {
+
     },
     "PickShot 정보" : {
       "extractionState" : "manual",
@@ -1952,6 +2041,9 @@
         }
       }
     },
+    "Worker 화면에서 'Edit code' → 기본 코드 전부 지우고 아래 코드 붙여넣기 → 'Deploy'" : {
+
+    },
     "X" : {
 
     },
@@ -2038,6 +2130,17 @@
     "개인정보 처리방침" : {
 
     },
+    "건너뜀" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "건너뜀"
+          }
+        }
+      }
+    },
     "건너뛰기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2062,17 +2165,6 @@
     },
     "건너뛴 파일: %lld개" : {
 
-    },
-    "건너뜀" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "건너뜀"
-          }
-        }
-      }
     },
     "검색" : {
       "extractionState" : "manual",
@@ -2179,7 +2271,13 @@
         }
       }
     },
+    "고객 최대 선택 수" : {
+
+    },
     "고객이 QR 스캔 → 사진 셀렉 → 완료\n결과가 Google Drive에 자동 저장됩니다" : {
+
+    },
+    "고급 — 내 Cloudflare Worker 사용하기" : {
 
     },
     "곧 찾아뵙겠습니다. 업데이트 공지를 기다려주세요." : {
@@ -2359,6 +2457,12 @@
         }
       }
     },
+    "기본 프록시 자동 적용 중" : {
+
+    },
+    "기본 프록시로 복원" : {
+
+    },
     "기준 %lld점 이상 %lld장 셀렉 완료" : {
       "localizations" : {
         "ko" : {
@@ -2471,6 +2575,9 @@
     "남은 시간: %@" : {
 
     },
+    "내 세션 목록" : {
+
+    },
     "내 취향 기반 점수" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2481,6 +2588,9 @@
           }
         }
       }
+    },
+    "내 클라이언트 세션" : {
+
     },
     "내보내기" : {
       "extractionState" : "manual",
@@ -2719,7 +2829,16 @@
         }
       }
     },
+    "대상 위치에 동일한 이름이 있습니다" : {
+
+    },
     "대상 폴더에 이미 존재하는 파일 %lld개:" : {
+
+    },
+    "대시보드 열기" : {
+
+    },
+    "대시보드에서: 'Workers & Pages' → 'Create' → 'Worker' → 이름 (예: pickshot-proxy) → 'Deploy'" : {
 
     },
     "더보기" : {
@@ -2820,6 +2939,9 @@
           }
         }
       }
+    },
+    "드래그해서 창 이동" : {
+
     },
     "디노이즈" : {
       "extractionState" : "manual",
@@ -3041,6 +3163,9 @@
           }
         }
       }
+    },
+    "매니페스트 로딩 속도 향상 + 공유 URL 짧게" : {
+
     },
     "매월 ₩1,250 (34% 할인)" : {
 
@@ -3329,6 +3454,9 @@
         }
       }
     },
+    "무료 한도 & 유지보수" : {
+
+    },
     "무료로 제공되는 기능" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3339,6 +3467,9 @@
           }
         }
       }
+    },
+    "무제한" : {
+
     },
     "문제 있음" : {
       "extractionState" : "manual",
@@ -3550,6 +3681,9 @@
         }
       }
     },
+    "배포 후 표시되는 URL (예: https://pickshot-proxy.xxx.workers.dev) 복사 → 아래에 붙여넣기" : {
+
+    },
     "백그라운드 분석 CPU 제한: %lld%%" : {
 
     },
@@ -3715,6 +3849,9 @@
           }
         }
       }
+    },
+    "병합 / 덮어쓰기" : {
+
     },
     "보기 모드" : {
       "extractionState" : "manual",
@@ -4274,6 +4411,9 @@
         }
       }
     },
+    "새 세션 시작 (다른 폴더 업로드)" : {
+
+    },
     "새 파일 이름" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4446,6 +4586,9 @@
         }
       }
     },
+    "선택한 썸네일만" : {
+
+    },
     "선택한 옵션으로 보정 적용" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4556,6 +4699,9 @@
           }
         }
       }
+    },
+    "세션명 / 고객명 검색" : {
+
     },
     "셀렉" : {
       "extractionState" : "manual",
@@ -4920,6 +5066,9 @@
         }
       }
     },
+    "썸네일 2장 이상 선택 후 다시 열어주세요" : {
+
+    },
     "썸네일 캐시 최대" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4956,6 +5105,9 @@
         }
       }
     },
+    "아래 버튼으로 Cloudflare Workers 대시보드 열기 → 로그인 또는 가입(무료)" : {
+
+    },
     "아무 키나 누르면 닫힘" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4966,6 +5118,9 @@
           }
         }
       }
+    },
+    "아직 업로드한 세션이 없습니다" : {
+
     },
     "알림 표시 (내보내기 완료, 분석 완료 등)" : {
       "extractionState" : "manual",
@@ -5124,6 +5279,9 @@
         }
       }
     },
+    "업로드 범위" : {
+
+    },
     "업로드 시작" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5214,6 +5372,9 @@
         }
       }
     },
+    "여기에 붙여넣기  ⌘V" : {
+
+    },
     "연간" : {
 
     },
@@ -5227,6 +5388,9 @@
           }
         }
       }
+    },
+    "연결 테스트" : {
+
     },
     "연결 프로그램으로 열기" : {
       "extractionState" : "manual",
@@ -5868,17 +6032,6 @@
         }
       }
     },
-    "자동" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동"
-          }
-        }
-      }
-    },
     "자동 노출 보정" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5886,6 +6039,20 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "자동 노출 보정"
+          }
+        }
+      }
+    },
+    "장" : {
+
+    },
+    "자동" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동"
           }
         }
       }
@@ -5946,6 +6113,9 @@
       }
     },
     "자동보정/%@" : {
+
+    },
+    "자체 도메인/리미트를 원하는 고급 사용자 전용. 아래 3단계로 본인 Cloudflare 계정에 Worker 배포 후 URL 입력. 비워두면 기본 프록시 자동 사용." : {
 
     },
     "작가, 저작권, 사용조건이 저장됩니다." : {
@@ -6091,6 +6261,9 @@
           }
         }
       }
+    },
+    "전체 사진" : {
+
     },
     "전체 삭제" : {
       "extractionState" : "manual",
@@ -6329,6 +6502,12 @@
         }
       }
     },
+    "직접 Worker 를 운영하고 싶다면" : {
+
+    },
+    "직접 입력" : {
+
+    },
     "진단" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6339,6 +6518,9 @@
           }
         }
       }
+    },
+    "처리 방법" : {
+
     },
     "처리 성능" : {
 
@@ -6378,6 +6560,9 @@
           }
         }
       }
+    },
+    "총 %lld개 세션" : {
+
     },
     "총 용량: %@" : {
 
@@ -6516,6 +6701,9 @@
           }
         }
       }
+    },
+    "최대 %lld장" : {
+
     },
     "최대화" : {
       "extractionState" : "manual",
@@ -6775,6 +6963,9 @@
         }
       }
     },
+    "커스텀 Worker URL 을 지우고 PickShot 기본 프록시 사용" : {
+
+    },
     "커스텀 배경색" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6873,6 +7064,15 @@
           }
         }
       }
+    },
+    "코드 보기" : {
+
+    },
+    "코드 복사" : {
+
+    },
+    "코드 숨기기" : {
+
     },
     "코멘트" : {
       "extractionState" : "manual",
@@ -7106,6 +7306,9 @@
           }
         }
       }
+    },
+    "테스트 중..." : {
+
     },
     "텍스트 + 번호" : {
       "extractionState" : "manual",
@@ -7656,6 +7859,9 @@
         }
       }
     },
+    "프리셋 저장" : {
+
+    },
     "프리셋:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7877,9 +8083,6 @@
         }
       }
     },
-    "해상도 및 캐시" : {
-
-    },
     "행" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7901,6 +8104,9 @@
           }
         }
       }
+    },
+    "해상도 및 캐시" : {
+
     },
     "현재 JPG만 있으면 → RAW 폴더에서 같은 이름 RAW 연결" : {
       "extractionState" : "manual",
@@ -7980,6 +8186,9 @@
     "현재 폴더에서 랜덤 사진 6장을 보여줍니다.\n마음에 드는 사진을 선택하세요." : {
 
     },
+    "현재 프록시: %@" : {
+
+    },
     "현재 필터 기준 전체 사진을 업로드합니다" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8040,6 +8249,9 @@
           }
         }
       }
+    },
+    "화살표 키를 꾹 눌러 burst 를 시작하세요" : {
+
     },
     "화질 우선" : {
       "extractionState" : "manual",

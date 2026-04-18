@@ -305,15 +305,15 @@ struct VideoPlayerView: View {
                     .fill(Color.white)
                     .frame(width: max(0, width * progress), height: 6)
 
-                // IN 마커 (초록 세로선 + 하단 삼각형)
+                // IN 마커 (초록 깃발, 오른쪽으로 펄럭)
                 if let i = inFrac {
-                    markerGlyph(color: .green, isIn: true)
-                        .offset(x: max(0, min(width - 8, width * i - 4)))
+                    markerGlyph(color: Color(red: 0.2, green: 0.85, blue: 0.35), isIn: true)
+                        .offset(x: max(0, min(width - 2, width * i - 1)), y: -12)
                 }
-                // OUT 마커 (빨간 세로선 + 하단 삼각형)
+                // OUT 마커 (빨간 깃발, 왼쪽으로 펄럭)
                 if let o = outFrac {
-                    markerGlyph(color: .red, isIn: false)
-                        .offset(x: max(0, min(width - 8, width * o - 4)))
+                    markerGlyph(color: Color(red: 1.0, green: 0.3, blue: 0.3), isIn: false)
+                        .offset(x: max(0, min(width - 2, width * o - 1)), y: -12)
                 }
 
                 // 재생 헤드 핸들 (마커 위에 표시)
@@ -339,32 +339,45 @@ struct VideoPlayerView: View {
         .frame(height: 22)
     }
 
-    /// IN 또는 OUT 마커 글리프 (세로 바 + 상단 삼각형 깃발).
+    /// IN 또는 OUT 마커 글리프 — 깃발 (폴대 + 삼각 깃발 + 스크러버까지 이어지는 수직선).
+    /// 글리프 좌표: x=0 에 폴대가 위치, 높이 30pt (상단 깃발 12pt + 폴대 18pt)
     @ViewBuilder
     private func markerGlyph(color: Color, isIn: Bool) -> some View {
-        ZStack(alignment: isIn ? .topLeading : .topTrailing) {
-            // 세로 바
-            Rectangle()
-                .fill(color)
-                .frame(width: 2, height: 14)
-                .offset(x: 3, y: 0)
-            // 깃발
+        let flagW: CGFloat = 14
+        let flagH: CGFloat = 11
+        let poleH: CGFloat = 28
+        ZStack(alignment: .topLeading) {
+            // 깃발 (폴대 꼭대기에서 isIn → 오른쪽, else → 왼쪽으로 휘날림)
             Path { p in
                 if isIn {
-                    p.move(to: CGPoint(x: 5, y: 0))
-                    p.addLine(to: CGPoint(x: 14, y: 0))
-                    p.addLine(to: CGPoint(x: 5, y: 8))
+                    // 폴대 오른쪽으로 뻗는 삼각 깃발
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: flagW, y: flagH * 0.4))
+                    p.addLine(to: CGPoint(x: 0, y: flagH))
                 } else {
-                    p.move(to: CGPoint(x: 5, y: 0))
-                    p.addLine(to: CGPoint(x: -4, y: 0))
-                    p.addLine(to: CGPoint(x: 5, y: 8))
+                    // 폴대 왼쪽으로 뻗는 삼각 깃발
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: -flagW, y: flagH * 0.4))
+                    p.addLine(to: CGPoint(x: 0, y: flagH))
                 }
                 p.closeSubpath()
             }
-            .fill(color)
-            .frame(width: 14, height: 10)
+            .fill(
+                LinearGradient(
+                    colors: [color, color.opacity(0.75)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            .shadow(color: color.opacity(0.5), radius: 2, y: 1)
+            .frame(width: flagW, height: flagH, alignment: .topLeading)
+
+            // 폴대 (수직선, 스크러버 트랙까지 닿음)
+            Rectangle()
+                .fill(color)
+                .frame(width: 2, height: poleH)
+                .offset(x: -1, y: 0)
         }
-        .frame(width: 8, height: 14)
+        .frame(width: 2, height: poleH, alignment: .topLeading)
     }
 
     // MARK: - LUT 버튼

@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CoreImage
+import Compression
 
 // MARK: - Client Select Service
 // 클라이언트 셀렉: 사진 리사이즈 → Google Drive 업로드 → QR/링크 생성
@@ -18,6 +19,8 @@ class ClientSelectService: ObservableObject {
     @Published var sessionName = ""
     @Published var clientName = ""
     @Published var clientEmail = ""
+    /// 고객 최대 선택 가능 수 (0 = 무제한). 업로드 시 manifest에 포함되어 뷰어에서 하드캡 적용.
+    @Published var selectionLimit: Int = 0
     @Published var shareLink: String?
     @Published var viewerLink: String?
     // 원본 업로드 옵션
@@ -30,10 +33,40 @@ class ClientSelectService: ObservableObject {
         UserDefaults.standard.string(forKey: "clientSelectViewerURL")
             ?? "https://kimjjang869-bot.github.io/pickshot-viewer"
     }
+
+    /// 기본 Cloudflare Worker 프록시 (PickShot 개발자가 운영 — 사용자 설정 불필요).
+    /// 이 URL 은 항상 살아 있도록 유지. 무료 tier 10만 req/day.
+    static let defaultCloudflareProxyURL = "https://pickshot-proxy.kimjjang8699.workers.dev"
+
+    /// 사용자 커스텀 프록시 URL (고급 사용자 전용. 빈 값이면 위 기본 사용).
+    /// UserDefaults 키는 구 Apps Script 시절 이름 유지 — 기존 설정 호환용.
+    var customProxyURL: String {
+        get { UserDefaults.standard.string(forKey: "cs_appsScriptProxyURL") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "cs_appsScriptProxyURL") }
+    }
+
+    /// 실제 사용될 프록시 URL — 커스텀이 있으면 커스텀, 없으면 기본 CF Worker.
+    var effectiveProxyURL: String {
+        let custom = customProxyURL.trimmingCharacters(in: .whitespaces)
+        return custom.isEmpty ? Self.defaultCloudflareProxyURL : custom
+    }
+
+    /// 하위 호환 — 기존 코드가 `appsScriptProxyURL` 참조할 때 effectiveProxyURL 반환.
+    var appsScriptProxyURL: String {
+        get { effectiveProxyURL }
+        set { customProxyURL = newValue }
+    }
+
+    /// URL embed 로 충분한 사진 수 임계값.
+    /// 이 수 이하는 `&g=` 로 매니페스트를 URL 에 내장 (Worker 요청 0회, is.gd 단축 OK).
+    /// 초과하면 Worker 프록시 사용 (manifest 를 Drive 에 업로드 후 중계).
+    static let urlEmbedPhotoThreshold = 500
     @Published var qrCodeImage: NSImage?
     @Published var driveFolderID: String?
     @Published var accessMode: AccessMode = .publicLink
     @Published var showSetup = false
+    @Published var showSessionList = false
+    @Published var showProxySetup = false
     @Published var errorMessage: String?
 
     enum AccessMode: String, CaseIterable {
@@ -53,7 +86,37 @@ class ClientSelectService: ObservableObject {
             GSelectService.shared.loginToGoogle()
             return
         }
-        showSetup = true
+        // 이전 세션 결과 화면 초기화 — 새 폴더/세션 시작 시 입력 화면으로 복귀
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.viewerLink = nil
+            self.shareLink = nil
+            self.qrCodeImage = nil
+            self.driveFolderID = nil
+            self.uploadDone = 0
+            self.uploadTotal = 0
+            self.isUploading = false
+            self.errorMessage = nil
+            self.showSetup = true
+        }
+    }
+
+    /// 완료 화면에서 "새 세션 시작" 누를 때 — 결과 상태 클리어 후 입력 화면으로.
+    func resetForNewSession() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.viewerLink = nil
+            self.shareLink = nil
+            self.qrCodeImage = nil
+            self.driveFolderID = nil
+            self.uploadDone = 0
+            self.uploadTotal = 0
+            self.sessionName = ""
+            self.clientName = ""
+            self.clientEmail = ""
+            self.isUploading = false
+            self.errorMessage = nil
+        }
     }
 
     // MARK: - 세션 시작
@@ -314,25 +377,49 @@ class ClientSelectService: ObservableObject {
 
         // 5. 링크 생성
         let linkSemaphore = DispatchSemaphore(value: 0)
-        GoogleDriveService.createShareLink(fileId: folderID, accessToken: token) { [weak self] link, _ in
+        // 클라이언트 셀렉 폴더는 writer 로 공유 — 클라이언트가 .pickshot 파일 업로드 가능해야 하므로
+        GoogleDriveService.createShareLink(fileId: folderID, accessToken: token, role: "writer") { [weak self] link, _ in
             DispatchQueue.main.async {
                 self?.shareLink = link
 
                 // 웹 뷰어 링크 생성
                 let encodedName = self?.sessionName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                 let encodedClient = self?.clientName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                // manifest를 Base64로 인코딩해서 URL 해시에 포함 (CORS 문제 완전 회피)
                 var viewerURL = "\(self?.viewerBaseURL ?? "https://kimjjang869-bot.github.io/pickshot-viewer")/?session=\(folderID)&name=\(encodedName)&client=\(encodedClient)"
                 if let mid = manifestId {
                     viewerURL += "&manifest=\(mid)"
                 }
-                // manifest를 GitHub Pages에 업로드 (CORS 없음 + 짧은 URL)
-                let sid = String(folderID.prefix(12))
-                if let manifestData = self?.getManifestJSON(photos: uploadedFiles) {
-                    self?.uploadManifestToGitHub(sessionId: sid, data: manifestData)
+
+                // 전략: 항상 CF Worker 프록시 사용 — URL 을 짧게 유지 (단축 전 ~200자, is.gd 단축 후 20자).
+                // URL embed 는 단축 실패 시 400자 넘어가므로 폐기.
+                let photoCount = uploadedFiles.count
+                if let mid = manifestId {
+                    let proxyURL = self?.effectiveProxyURL ?? Self.defaultCloudflareProxyURL
+                    if let encodedProxy = proxyURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                        viewerURL += "&proxy=\(encodedProxy)"
+                        fputs("[CLIENT] ✅ Worker 프록시 모드 (\(photoCount)장) \(proxyURL)?id=\(mid)\n", stderr)
+                    }
                 }
-                viewerURL += "&mid=\(sid)"
-                self?.viewerLink = viewerURL
+
+                let urlLen = viewerURL.count
+                fputs("[CLIENT] 원본 URL 길이: \(urlLen) chars\n", stderr)
+                self?.viewerLink = viewerURL  // 우선 원본 URL 로 표시
+
+                // is.gd URL 단축은 백그라운드에서 실행 후 UI 업데이트 (메인 블로킹 방지)
+                if urlLen > 150 {
+                    let urlToShorten = viewerURL
+                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                        guard let self = self else { return }
+                        let shortURL = self.shortenURL(urlToShorten)
+                        if shortURL != urlToShorten && shortURL.hasPrefix("https://is.gd/") {
+                            DispatchQueue.main.async {
+                                self.viewerLink = shortURL
+                                self.qrCodeImage = self.generateQRCode(from: shortURL)
+                                fputs("[CLIENT] 🔗 단축 URL 적용 (\(urlLen)자 → \(shortURL.count)자)\n", stderr)
+                            }
+                        }
+                    }
+                }
 
                 // QR 코드 생성
                 self?.qrCodeImage = self?.generateQRCode(from: viewerURL)
@@ -343,12 +430,27 @@ class ClientSelectService: ObservableObject {
 
         // 완료 → 결과 창 자동 열기
         DispatchQueue.main.async { [weak self] in
-            self?.isUploading = false
-            self?.uploadSpeed = "완료"
-            self?.showSetup = true
+            guard let self = self else { return }
+            self.isUploading = false
+            self.uploadSpeed = "완료"
+            self.showSetup = true
             // 세션 정보 저장 (재시작해도 Drive에서 가져오기 가능)
-            self?.saveLastSession()
-            fputs("[CLIENT] ✅ 업로드 완료: \(self?.uploadDone ?? 0)장, 링크: \(self?.viewerLink ?? "없음")\n", stderr)
+            self.saveLastSession()
+
+            // 세션 히스토리에 영구 저장 (목록 창에서 볼 수 있게)
+            let record = ClientSession(
+                id: UUID(),
+                sessionName: self.sessionName,
+                clientName: self.clientName,
+                driveFolderID: self.driveFolderID ?? "",
+                viewerURL: self.viewerLink ?? "",
+                shareLink: self.shareLink,
+                uploadedCount: self.uploadDone,
+                selectionLimit: self.selectionLimit,
+                createdAt: Date()
+            )
+            self.saveSession(record)
+            fputs("[CLIENT] ✅ 업로드 완료: \(self.uploadDone)장, 링크: \(self.viewerLink ?? "없음")\n", stderr)
         }
     }
 
@@ -481,10 +583,12 @@ class ClientSelectService: ObservableObject {
         }
     }
 
+    /// 일반 매니페스트 JSON (GitHub 업로드용, 사람이 읽을 수 있음)
     private func getManifestJSON(photos: [[String: Any]]) -> Data? {
         let manifest: [String: Any] = [
             "sessionName": sessionName,
             "clientName": clientName,
+            "selectionLimit": selectionLimit,   // 0 = 무제한
             "totalPhotos": photos.count,
             "originalZipFileId": originalZipFileId ?? "",
             "photos": photos.map { info -> [String: Any] in
@@ -501,20 +605,172 @@ class ClientSelectService: ObservableObject {
         return try? JSONSerialization.data(withJSONObject: manifest)
     }
 
+    /// 압축용 최소 매니페스트 — URL 해시 임베딩용. 축약 키 + URL 생략 (driveFileId 만으로 viewer 가 재구성).
+    /// 포맷: {v:1, s:세션, c:고객, l:리미트, z:zipID, p:[[driveId,filename,origFilename]]}
+    /// 크기: 기존 대비 약 85-90% 축소 (200B → ~25B per 사진)
+    private func getCompactManifestJSON(photos: [[String: Any]]) -> Data? {
+        let compact: [String: Any] = [
+            "v": 1,                                 // 포맷 버전
+            "s": sessionName,
+            "c": clientName,
+            "l": selectionLimit,
+            "z": originalZipFileId ?? "",
+            "p": photos.map { info -> [String] in
+                let fid = info["driveFileId"] as? String ?? ""
+                let fn = (info["filename"] as? String) ?? ""
+                let ofn = (info["originalFilename"] as? String) ?? fn
+                // 압축: [driveId, filename, originalFilename]
+                // origFilename 이 filename 과 같으면 생략
+                if fn == ofn { return [fid, fn] }
+                return [fid, fn, ofn]
+            }
+        ]
+        return try? JSONSerialization.data(withJSONObject: compact)
+    }
+
+    // MARK: - 세션 히스토리 (업로드한 모든 세션 기록)
+
+    struct ClientSession: Codable, Identifiable {
+        var id: UUID
+        var sessionName: String
+        var clientName: String
+        var driveFolderID: String
+        var viewerURL: String           // 최종 (단축) URL
+        var shareLink: String?          // Drive 폴더 링크
+        var uploadedCount: Int
+        var selectionLimit: Int
+        var createdAt: Date
+        // 피드백 수신 시 업데이트
+        var feedbackSelectedCount: Int? = nil
+        var feedbackCommentCount: Int? = nil
+        var feedbackReceivedAt: Date? = nil
+    }
+
+    private static let historyKey = "cs_sessionHistory_v1"
+    private static let historyMaxCount = 100
+
+    @Published var sessionHistory: [ClientSession] = []
+
+    func loadSessionHistory() {
+        guard let data = UserDefaults.standard.data(forKey: Self.historyKey),
+              let sessions = try? JSONDecoder().decode([ClientSession].self, from: data) else {
+            sessionHistory = []
+            return
+        }
+        // 최신순 정렬
+        sessionHistory = sessions.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func saveSession(_ session: ClientSession) {
+        var history = sessionHistory
+        // 같은 folderID 중복 제거 (재업로드 시 덮어쓰기)
+        history.removeAll { $0.driveFolderID == session.driveFolderID }
+        history.insert(session, at: 0)
+        if history.count > Self.historyMaxCount {
+            history = Array(history.prefix(Self.historyMaxCount))
+        }
+        sessionHistory = history
+        persistHistory()
+    }
+
+    func deleteSession(id: UUID) {
+        sessionHistory.removeAll { $0.id == id }
+        persistHistory()
+    }
+
+    func updateSessionFeedback(folderID: String, selectedCount: Int, commentCount: Int) {
+        if let idx = sessionHistory.firstIndex(where: { $0.driveFolderID == folderID }) {
+            sessionHistory[idx].feedbackSelectedCount = selectedCount
+            sessionHistory[idx].feedbackCommentCount = commentCount
+            sessionHistory[idx].feedbackReceivedAt = Date()
+            persistHistory()
+        }
+    }
+
+    private func persistHistory() {
+        if let data = try? JSONEncoder().encode(sessionHistory) {
+            UserDefaults.standard.set(data, forKey: Self.historyKey)
+        }
+    }
+
+    // MARK: - 선택 제한 프리셋 관리
+
+    /// 기본 프리셋 (수정 불가)
+    static let defaultSelectionPresets: [Int] = [5, 10, 20, 30, 50, 100, 0]
+
+    /// 사용자 커스텀 프리셋 (UserDefaults 에 저장)
+    func loadCustomSelectionPresets() -> [Int] {
+        (UserDefaults.standard.array(forKey: "cs_customSelectionPresets") as? [Int]) ?? []
+    }
+
+    /// 현재 selectionLimit 값을 커스텀 프리셋으로 저장 (중복/기본값은 무시)
+    /// - 반환: 저장된 프리셋 목록 (UI 갱신용)
+    @discardableResult
+    func saveCurrentAsCustomPreset() -> [Int] {
+        var customs = loadCustomSelectionPresets()
+        let defaults = Self.defaultSelectionPresets
+        // 기본 프리셋에 있으면 굳이 추가 안 함
+        guard !defaults.contains(selectionLimit),
+              !customs.contains(selectionLimit),
+              selectionLimit > 0 else { return customs }
+        customs.append(selectionLimit)
+        customs.sort()
+        // 최대 10개까지만 유지
+        if customs.count > 10 { customs = Array(customs.prefix(10)) }
+        UserDefaults.standard.set(customs, forKey: "cs_customSelectionPresets")
+        return customs
+    }
+
+    /// 커스텀 프리셋 삭제
+    func removeCustomPreset(_ value: Int) -> [Int] {
+        var customs = loadCustomSelectionPresets()
+        customs.removeAll(where: { $0 == value })
+        UserDefaults.standard.set(customs, forKey: "cs_customSelectionPresets")
+        return customs
+    }
+
+    // MARK: - zlib 압축 + URL-safe Base64 (뷰어 #gz= 파라미터용)
+
+    /// Data → zlib deflate 압축 → URL-safe Base64 인코딩.
+    /// 뷰어의 DecompressionStream('deflate') 과 호환.
+    private func compressAndBase64(_ data: Data) -> String? {
+        let src = [UInt8](data)
+        let dstSize = src.count + 64
+        let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: dstSize)
+        defer { dst.deallocate() }
+
+        let compressedSize = src.withUnsafeBufferPointer { srcBuf -> Int in
+            guard let srcPtr = srcBuf.baseAddress else { return 0 }
+            return compression_encode_buffer(dst, dstSize, srcPtr, src.count, nil, COMPRESSION_ZLIB)
+        }
+        guard compressedSize > 0 else { return nil }
+
+        let compressed = Data(bytes: dst, count: compressedSize)
+        let b64 = compressed.base64EncodedString()
+        // URL-safe Base64 (RFC 4648 §5): + → -, / → _, padding 제거.
+        // is.gd 등 URL 단축기 통과 + URLSearchParams 안전 (+ 공백 변환 이슈 없음).
+        return b64
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     // MARK: - GitHub Pages에 manifest 업로드
 
-    private func uploadManifestToGitHub(sessionId: String, data: Data) {
+    @discardableResult
+    private func uploadManifestToGitHub(sessionId: String, data: Data) -> Bool {
         // 앱 Keychain에서 GitHub 토큰 (App Sandbox 호환)
         let ghToken: String? = KeychainService.read(key: "github_token")
 
         guard let ghToken = ghToken, !ghToken.isEmpty else {
             fputs("[CLIENT] GitHub 토큰 없음 — manifest GitHub 업로드 스킵\n", stderr)
-            return
+            return false
         }
 
         let b64Content = data.base64EncodedString()
         guard let apiURL = URL(string: "https://api.github.com/repos/kimjjang869-bot/pickshot-viewer/contents/data/\(sessionId).json") else {
-            fputs("[CLIENT] Invalid GitHub API URL\n", stderr); return
+            fputs("[CLIENT] Invalid GitHub API URL\n", stderr)
+            return false
         }
 
         var request = URLRequest(url: apiURL)
@@ -529,35 +785,51 @@ class ClientSelectService: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let sem = DispatchSemaphore(value: 0)
+        var success = false
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let http = response as? HTTPURLResponse {
                 fputs("[CLIENT] GitHub manifest 업로드: HTTP \(http.statusCode)\n", stderr)
+                success = (200...299).contains(http.statusCode)
             }
             sem.signal()
         }.resume()
-        sem.wait()
+        _ = sem.wait(timeout: .now() + 10)
+        return success
     }
 
-    // MARK: - URL 단축 (is.gd)
+    // MARK: - URL 단축 (is.gd POST — 긴 해시 URL 도 처리 가능)
 
-    private func shortenURL(_ longURL: String) -> String {
-        guard let encoded = longURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let apiURL = URL(string: "https://is.gd/create.php?format=simple&url=\(encoded)") else {
-            return longURL
-        }
+    func shortenURL(_ longURL: String) -> String {
+        guard let apiURL = URL(string: "https://is.gd/create.php") else { return longURL }
+
+        var request = URLRequest(url: apiURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        // Form body 인코딩: & = + ? # 은 반드시 퍼센트 인코딩 해야 is.gd 가 URL 을 온전히 받음.
+        // `.urlQueryAllowed` 는 &,= 를 허용해서 is.gd 가 원본 URL 의 쿼리를 별도 폼 필드로 오해함.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#")
+        let urlParam = longURL.addingPercentEncoding(withAllowedCharacters: allowed) ?? longURL
+        request.httpBody = "format=simple&url=\(urlParam)".data(using: .utf8)
+
         let sem = DispatchSemaphore(value: 0)
         var shortURL = longURL
-        URLSession.shared.dataTask(with: apiURL) { data, _, _ in
-            if let data = data, let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               result.hasPrefix("https://") {
-                shortURL = result
-                fputs("[CLIENT] URL 단축: \(result)\n", stderr)
-            } else {
-                fputs("[CLIENT] URL 단축 실패, 원본 사용\n", stderr)
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                fputs("[CLIENT] URL 단축 에러: \(error.localizedDescription)\n", stderr)
+            } else if let data = data,
+                      let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                if result.hasPrefix("https://") {
+                    shortURL = result
+                    fputs("[CLIENT] ✅ URL 단축 성공: \(result)\n", stderr)
+                } else {
+                    fputs("[CLIENT] URL 단축 응답 이상: \(result.prefix(120))\n", stderr)
+                }
             }
             sem.signal()
         }.resume()
-        _ = sem.wait(timeout: .now() + 5)
+        _ = sem.wait(timeout: .now() + 8)
         return shortURL
     }
 
@@ -571,6 +843,7 @@ class ClientSelectService: ObservableObject {
             "sessionName": sessionName,
             "clientName": clientName,
             "clientEmail": clientEmail,
+            "selectionLimit": selectionLimit,   // 0 = 무제한
             "originalZipFileId": originalZipFileId ?? "",
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "totalPhotos": uploadTotal,

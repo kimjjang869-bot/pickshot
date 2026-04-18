@@ -351,6 +351,8 @@ struct ContentView: View {
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
         .sheet(isPresented: $store.showCustomPrompt) { CustomPromptView(store: store) }
         .sheet(isPresented: $clientSelect.showSetup) { ClientSelectSetupView() }
+        .sheet(isPresented: $clientSelect.showSessionList) { ClientSessionListView() }
+        .sheet(isPresented: $clientSelect.showProxySetup) { ClientProxySetupView() }
         .overlay(alignment: .bottom) {
             VStack(spacing: 8) {
                 // 메모리카드 백업 진행률

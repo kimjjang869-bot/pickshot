@@ -288,6 +288,8 @@ class PhotoStore: ObservableObject {
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
+    /// 고객 펜 그림 오버레이 표시 여부 (F 키 토글)
+    @Published var showClientPenOverlay: Bool = true
     @Published var sceneTagFilter: String? = nil { didSet { invalidateFilterCache() } }
     @Published var keywordFilter: String? = nil { didSet { invalidateFilterCache() } }
     @Published var isClassifyingScenes: Bool = false

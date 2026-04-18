@@ -280,9 +280,10 @@ class GoogleDriveService {
     static func createShareLink(
         fileId: String,
         accessToken: String,
+        role: String = "reader",
         completion: @escaping (String?, Error?) -> Void
     ) {
-        // Step 1: Create permission (anyone with link can view)
+        // Step 1: Create permission (anyone with link can view/edit based on role)
         guard let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)/permissions") else {
             completion(nil, APIError(message: "잘못된 permissions URL"))
             return
@@ -293,7 +294,7 @@ class GoogleDriveService {
         permRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let permBody: [String: Any] = [
-            "role": "reader",
+            "role": role,
             "type": "anyone"
         ]
         permRequest.httpBody = try? JSONSerialization.data(withJSONObject: permBody)

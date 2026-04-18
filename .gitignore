@@ -34,3 +34,6 @@ Secrets.xcconfig
 *.dmg
 tester_keys.txt
 TESTER_KEYS.md
+
+# Claude Code local
+.claude/

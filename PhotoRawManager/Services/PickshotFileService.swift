@@ -127,9 +127,15 @@ class PickshotFileService {
         return nil
     }
 
-    // 웹 뷰어에서 생성된 .pickshot 파일 처리
+    // 웹 뷰어에서 생성된 .pickshot 파일 처리 (고객 피드백 — clientSelected/clientComments/clientName)
     private static func applyWebViewerPickshot(json: [String: Any], photosArray: [[String: Any]], to photos: inout [PhotoItem], photoIndex: [UUID: Int]) -> PickshotImportResult? {
         let sessionName = (json["session"] as? [String: Any])?["name"] as? String ?? json["sessionName"] as? String ?? ""
+        // 고객 이름 — 최상위 clientName / client / session.client 등 여러 위치 탐색
+        let clientName: String? = (json["clientName"] as? String)
+            ?? (json["client"] as? String)
+            ?? ((json["session"] as? [String: Any])?["clientName"] as? String)
+            ?? ((json["session"] as? [String: Any])?["client"] as? String)
+
         var matched: [(name: String, rating: Int, spacePick: Bool)] = []
         var unmatched: [String] = []
         var commentsCount = 0
@@ -140,6 +146,19 @@ class PickshotFileService {
             let originalFilename = photoInfo["originalFilename"] as? String ?? filename
             let selected = photoInfo["selected"] as? Bool ?? false
             let comment = photoInfo["comment"] as? String ?? ""
+            let rating = (photoInfo["rating"] as? Int) ?? ((photoInfo["rating"] as? NSNumber)?.intValue ?? 0)
+            // 펜 그림 (있을 때만) — JSON 통째로 보관 후 필요 시 파싱
+            // 빈 배열([])은 저장하지 않음 — 펜 안 그린 사진에도 보더가 뜨는 문제 방지
+            var penJSON: String? = nil
+            if let pen = photoInfo["penDrawings"], !(pen is NSNull) {
+                if let penArr = pen as? [Any], !penArr.isEmpty,
+                   let penData = try? JSONSerialization.data(withJSONObject: pen) {
+                    penJSON = String(data: penData, encoding: .utf8)
+                    fputs("[PICKSHOT] 🎨 펜 데이터 감지: \(filename) — \(penArr.count)개 stroke, JSON \(penJSON?.count ?? 0)자\n", stderr)
+                } else if let penArr = pen as? [Any], penArr.isEmpty {
+                    fputs("[PICKSHOT] penDrawings 빈 배열: \(filename) (스킵)\n", stderr)
+                }
+            }
 
             // 원본 파일명으로 매칭 (확장자 무시)
             let baseName = (originalFilename as NSString).deletingPathExtension.lowercased()
@@ -148,13 +167,32 @@ class PickshotFileService {
             for i in 0..<photos.count {
                 let photoBase = (photos[i].jpgURL.lastPathComponent as NSString).deletingPathExtension.lowercased()
                 if photoBase == baseName {
-                    if selected { photos[i].isSpacePicked = true }
+                    // 고객 셀렉은 clientSelected 로 저장 (내 SP 와 분리)
+                    if selected {
+                        photos[i].clientSelected = true
+                        photos[i].clientName = clientName
+                    }
+                    // 코멘트도 고객 코멘트로 분리 저장
                     if !comment.isEmpty {
-                        photos[i].comments.append(comment)
+                        photos[i].clientComments.append(comment)
+                        if let name = clientName, !name.isEmpty, photos[i].clientName == nil {
+                            photos[i].clientName = name
+                        }
                         commentsCount += 1
                         commentDetails.append((originalFilename, [comment]))
                     }
-                    matched.append((name: originalFilename, rating: 0, spacePick: selected))
+                    // 펜 그림 저장
+                    if let pen = penJSON {
+                        photos[i].clientPenDrawingsJSON = pen
+                    }
+                    // 고객 별점 저장 (0 이면 덮어쓰지 않음 — 여러 pickshot merge 대비)
+                    if rating > 0 {
+                        photos[i].clientRating = rating
+                        if let name = clientName, !name.isEmpty, photos[i].clientName == nil {
+                            photos[i].clientName = name
+                        }
+                    }
+                    matched.append((name: originalFilename, rating: rating, spacePick: selected))
                     didMatch = true
                     break
                 }

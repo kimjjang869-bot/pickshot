@@ -95,8 +95,14 @@ extension ContentView {
 
                     // 클라이언트 셀렉
                     Menu {
-                        Button(action: { ClientSelectService.shared.showSetup = true }) {
+                        Button(action: { ClientSelectService.shared.requestStart() }) {
                             Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                        }
+                        Button(action: { ClientSelectService.shared.showSessionList = true }) {
+                            Label("내 세션 목록", systemImage: "list.clipboard")
+                        }
+                        Button(action: { ClientSelectService.shared.showProxySetup = true }) {
+                            Label("Apps Script 프록시 설정", systemImage: "network.badge.shield.half.filled")
                         }
                         Divider()
                         Button(action: { store.importPickshotFile() }) {
