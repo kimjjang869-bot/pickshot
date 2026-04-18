@@ -522,6 +522,8 @@ struct PhotoPreviewView: View {
     @State private var developedForPhotoID: UUID? = nil
     /// 진행 중인 렌더링 작업 (사진 전환 시 취소).
     @State private var developRenderTask: Task<Void, Never>? = nil
+    /// 디바운스 타이머 (150ms) — 슬라이더 드래그 중 연속 변경 시 마지막만 실행
+    @State private var developRenderDebounce: DispatchWorkItem? = nil
     /// Shared pipeline (Metal CIContext 공유).
     private static let developPipelineShared = DevelopPipeline()
     /// 인라인 크롭 모드 활성화 여부 (C 키 토글).
@@ -1242,6 +1244,8 @@ struct PhotoPreviewView: View {
             guard !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile else { return }
             isCroppingMode.toggle()
         }
+        // 크롭 모드 진입/종료 시 프리뷰 재렌더 (회전/크롭 적용 여부 달라짐)
+        .onChange(of: isCroppingMode) { _ in refreshDevelopedImage() }
         // 보정 토스트 (object: String)
         .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentToast)) { notif in
             guard let msg = notif.object as? String else { return }
@@ -1728,13 +1732,24 @@ struct PhotoPreviewView: View {
 
     /// 현재 사진의 DevelopSettings 를 읽고, 필요하면 비동기 렌더링해 `developedImage` 업데이트.
     /// 설정이 기본값이면 developedImage 를 nil 로 설정 (원본 표시).
+    ///
+    /// v8.6 — 슬라이더 반응성을 위해 디바운스 150ms + 저해상도 프록시 (1024).
+    /// 크롭 모드 중엔 rotation/cropRect 적용 안 함 (오버레이가 시각 처리).
     private func refreshDevelopedImage() {
-        // 기존 작업 취소
+        // 기존 디바운스/작업 취소
+        developRenderDebounce?.cancel()
         developRenderTask?.cancel()
 
         let url = photo.jpgURL
         let photoID = photo.id
-        let settings = DevelopStore.shared.get(for: url)
+        var settings = DevelopStore.shared.get(for: url)
+
+        // 크롭 모드 중엔 회전/크롭 프리뷰 적용 안 함 — 오버레이가 정확히 정렬되도록
+        let cropMode = isCroppingMode
+        if cropMode {
+            settings.cropRotation = 0
+            settings.cropRect = nil
+        }
 
         // 보정 없음 → 원본 사용
         if settings.isDefault {
@@ -1745,22 +1760,30 @@ struct PhotoPreviewView: View {
             return
         }
 
-        // 같은 사진에 대해 이미 렌더링된게 있으면 일단 유지 (설정 바뀌었을 때 업데이트 예정)
-        let previewSize = CGSize(width: 2400, height: 1600)
-        let task = Task.detached(priority: .userInitiated) { [url, settings, previewSize] in
-            let rendered = Self.developPipelineShared.render(
-                url: url,
-                settings: settings,
-                targetSize: previewSize
-            )
-            await MainActor.run {
-                // 사진 전환된 경우 결과 버림
-                guard self.photo.id == photoID else { return }
-                self.developedImage = rendered
-                self.developedForPhotoID = photoID
+        // 디바운스 150ms — 슬라이더 드래그 중엔 마지막 값만 실제 렌더
+        let work = DispatchWorkItem { [settings] in
+            fputs("[DEV-PREVIEW] refresh — \(url.lastPathComponent) exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
+            // 저해상도 프록시 (반응성 우선). 드래그 끝나고 잠잠하면 추후 풀 렌더로 교체 가능.
+            let previewSize = CGSize(width: 1400, height: 1000)
+            let task = Task.detached(priority: .userInitiated) { [url, settings, previewSize] in
+                let t0 = CFAbsoluteTimeGetCurrent()
+                let rendered = Self.developPipelineShared.render(
+                    url: url,
+                    settings: settings,
+                    targetSize: previewSize
+                )
+                let elapsed = CFAbsoluteTimeGetCurrent() - t0
+                fputs("[DEV-PREVIEW] rendered \(rendered == nil ? "FAILED" : "OK") in \(String(format: "%.2f", elapsed))s\n", stderr)
+                await MainActor.run {
+                    guard self.photo.id == photoID else { return }
+                    self.developedImage = rendered
+                    self.developedForPhotoID = photoID
+                }
             }
+            DispatchQueue.main.async { self.developRenderTask = task }
         }
-        developRenderTask = task
+        developRenderDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch

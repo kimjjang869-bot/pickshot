@@ -45,13 +45,56 @@ final class DevelopPipeline {
     /// 파일 URL 에서 설정을 적용해 NSImage 반환.
     /// - targetSize: 프록시 크기. .zero 면 풀해상도.
     func render(url: URL, settings: DevelopSettings, targetSize: CGSize = .zero) -> NSImage? {
-        let isRAW = isRAWFile(url: url)
-        guard let ciImage = loadCIImage(url: url, settings: settings, targetSize: targetSize) else {
+        guard let loaded = loadCIImageWithInfo(url: url, settings: settings, targetSize: targetSize) else {
             return nil
         }
-        // RAW 경로는 load 단계에서 exposure/WB 가 이미 CIRAWFilter 에 적용됨 → 중복 방지
-        let processed = applyFilters(to: ciImage, settings: settings, skipExposureAndManualWB: isRAW)
+        // CIRAWFilter 경로로 처리된 경우에만 JPG 용 exposure/WB 필터를 스킵 (중복 방지).
+        // NEF 등에서 CIRAWFilter 가 실패하면 CIImage 로 fallback 되고 JPG 경로 그대로 사용.
+        let processed = applyFilters(to: loaded.image, settings: settings, skipExposureAndManualWB: loaded.usedRAWPath)
         return makeNSImage(from: processed)
+    }
+
+    struct LoadResult {
+        let image: CIImage
+        /// CIRAWFilter 로 처리됐으면 true. false 면 JPG 경로 필요.
+        let usedRAWPath: Bool
+    }
+
+    /// load 결과 + 어느 경로를 탔는지 반환.
+    func loadCIImageWithInfo(url: URL, settings: DevelopSettings, targetSize: CGSize) -> LoadResult? {
+        let isRAW = isRAWFile(url: url)
+
+        if isRAW {
+            // 1st try: CIRAWFilter
+            if let raw = CIRAWFilter(imageURL: url) {
+                raw.exposure = Float(settings.exposure)
+                if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
+                    let kelvin = 5500.0 + settings.temperature * 45.0
+                    raw.neutralTemperature = Float(kelvin)
+                    raw.neutralTint = Float(settings.tint * 1.5)
+                }
+                if let rawOut = raw.outputImage {
+                    let sized = targetSize == .zero ? rawOut : fitScale(rawOut, to: targetSize)
+                    return LoadResult(image: sized, usedRAWPath: true)
+                } else {
+                    fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter.outputImage nil → CIImage fallback (\(url.lastPathComponent))\n", stderr)
+                }
+            } else {
+                fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter(imageURL:) init 실패 → CIImage fallback (\(url.lastPathComponent))\n", stderr)
+            }
+            // 2nd try: CIImage 로 직접 (macOS 의 RAW 디코딩 fallback)
+            if let ciImage = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) {
+                let sized = targetSize == .zero ? ciImage : fitScale(ciImage, to: targetSize)
+                return LoadResult(image: sized, usedRAWPath: false)
+            }
+            return nil
+        } else {
+            guard let ciImage = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {
+                return nil
+            }
+            let sized = targetSize == .zero ? ciImage : fitScale(ciImage, to: targetSize)
+            return LoadResult(image: sized, usedRAWPath: false)
+        }
     }
 
     /// 이미 로드된 CIImage 에 필터만 적용 (슬라이더 드래그 최적화용).
@@ -66,20 +109,28 @@ final class DevelopPipeline {
         let isRAW = isRAWFile(url: url)
 
         if isRAW {
-            guard let raw = CIRAWFilter(imageURL: url) else { return nil }
+            guard let raw = CIRAWFilter(imageURL: url) else {
+                fputs("[DEV-PIPELINE] ❌ CIRAWFilter(imageURL:) 실패 — \(url.lastPathComponent)\n", stderr)
+                // RAW 필터 실패 시 일반 CIImage 시도 (macOS 가 RAW 를 JPG 로 디코딩 가능하면)
+                return CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
+            }
             // RAW 파이프라인에서 직접 처리 가능한 값들은 여기서 먼저 (품질 더 좋음)
             raw.exposure = Float(settings.exposure)
+            fputs("[DEV-PIPELINE] RAW exposure=\(settings.exposure) → CIRAWFilter\n", stderr)
             // RAW 의 수동 WB — temperature/tint 는 절대값(K/G-M) 이 필요
             if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
-                // -100~+100 를 5000K 기준 ±3000K 범위로 매핑
-                let kelvin = 5000.0 + settings.temperature * 30.0
+                // -100~+100 를 5000K 기준 ±4500K 범위로 매핑
+                let kelvin = 5500.0 + settings.temperature * 45.0
                 raw.neutralTemperature = Float(kelvin)
                 raw.neutralTint = Float(settings.tint * 1.5)
+                fputs("[DEV-PIPELINE] RAW WB temp=\(kelvin)K tint=\(settings.tint)\n", stderr)
             }
-            // AWB 는 Core Image 가 기본 제공하지 않으므로 후단에서 CIColorMatrix 로 처리
-            var image = raw.outputImage
-            if let size = targetSize as CGSize?, size != .zero, let img = image {
-                image = fitScale(img, to: size)
+            guard var image = raw.outputImage else {
+                fputs("[DEV-PIPELINE] ❌ raw.outputImage 가 nil — \(url.lastPathComponent)\n", stderr)
+                return nil
+            }
+            if targetSize != .zero {
+                image = fitScale(image, to: targetSize)
             }
             return image
         } else {
