@@ -503,6 +503,16 @@ struct PhotoPreviewView: View {
     @State private var hexInput: String = "333333"
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var rotatedImage: NSImage?  // Actual rotated pixel data
+
+    // MARK: - Non-Destructive Develop (v8.5)
+    /// DevelopSettings 적용된 이미지. isDefault (보정 없음) 이면 nil.
+    @State private var developedImage: NSImage?
+    /// 현재 개발된 이미지가 어느 photoID 에 대한 것인지 (캐시 무효화용).
+    @State private var developedForPhotoID: UUID? = nil
+    /// 진행 중인 렌더링 작업 (사진 전환 시 취소).
+    @State private var developRenderTask: Task<Void, Never>? = nil
+    /// Shared pipeline (Metal CIContext 공유).
+    private static let developPipelineShared = DevelopPipeline()
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var hiResWorkItem: DispatchWorkItem? = nil
@@ -570,7 +580,7 @@ struct PhotoPreviewView: View {
                     )
 
                     ZStack {
-                        Image(nsImage: rotatedImage ?? image)
+                        Image(nsImage: developedImage ?? rotatedImage ?? image)
                             .resizable()
                             .interpolation(.medium)
                             .aspectRatio(contentMode: .fit)
@@ -1042,6 +1052,10 @@ struct PhotoPreviewView: View {
             image = nil        // Release previous image immediately (메모리 스파이크 방지)
             isHiResLoaded = false
             hiResLoadWork?.cancel()
+            // v8.5 — 비파괴 보정 프리뷰 초기화
+            developRenderTask?.cancel()
+            developedImage = nil
+            developedForPhotoID = nil
 
             // 사진 전환 즉시 hi-res 캐시 사전 purge (memory pressure 대기 X)
             // 현재 선택된 사진을 제외한 나머지는 모두 해제해서 피크 메모리 스파이크 방지
@@ -1155,6 +1169,13 @@ struct PhotoPreviewView: View {
             if newPreset == .fit {
                 switchToLowRes()
             }
+        }
+        // v8.5 — 원본 image 가 로드되면 비파괴 보정 프리뷰 갱신
+        .onChange(of: image) { _ in refreshDevelopedImage() }
+        // 보정값이 외부(슬라이더 등)에서 바뀌면 즉시 반영
+        .onReceive(DevelopStore.shared.objectWillChange) { _ in
+            // objectWillChange 는 변경 직전 발행 → 다음 runloop 에서 읽어야 반영됨
+            DispatchQueue.main.async { refreshDevelopedImage() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
         .sheet(isPresented: $showAIResult) {
@@ -1606,6 +1627,45 @@ struct PhotoPreviewView: View {
 
     private func loadImage(for url: URL) {
         loadImageDirect(for: url, id: pendingPhotoID ?? UUID())
+    }
+
+    // MARK: - Non-Destructive Develop (v8.5)
+
+    /// 현재 사진의 DevelopSettings 를 읽고, 필요하면 비동기 렌더링해 `developedImage` 업데이트.
+    /// 설정이 기본값이면 developedImage 를 nil 로 설정 (원본 표시).
+    private func refreshDevelopedImage() {
+        // 기존 작업 취소
+        developRenderTask?.cancel()
+
+        let url = photo.jpgURL
+        let photoID = photo.id
+        let settings = DevelopStore.shared.get(for: url)
+
+        // 보정 없음 → 원본 사용
+        if settings.isDefault {
+            if developedImage != nil {
+                developedImage = nil
+                developedForPhotoID = nil
+            }
+            return
+        }
+
+        // 같은 사진에 대해 이미 렌더링된게 있으면 일단 유지 (설정 바뀌었을 때 업데이트 예정)
+        let previewSize = CGSize(width: 2400, height: 1600)
+        let task = Task.detached(priority: .userInitiated) { [url, settings, previewSize] in
+            let rendered = Self.developPipelineShared.render(
+                url: url,
+                settings: settings,
+                targetSize: previewSize
+            )
+            await MainActor.run {
+                // 사진 전환된 경우 결과 버림
+                guard self.photo.id == photoID else { return }
+                self.developedImage = rendered
+                self.developedForPhotoID = photoID
+            }
+        }
+        developRenderTask = task
     }
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch
