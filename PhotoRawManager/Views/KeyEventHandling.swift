@@ -1125,6 +1125,11 @@ class KeyCaptureView: NSView {
                 DevelopStore.shared.set(s, for: url)
                 return
             }
+            // C — 인라인 크롭 모드 토글 (단일 선택일 때만 — 2~4장이면 Compare 모드로 양보)
+            if charOrCode("c", 8) && !hasCmd && !hasShift && !hasOption && store.selectionCount <= 1 {
+                NotificationCenter.default.post(name: .toggleCropMode, object: nil)
+                return
+            }
         }
 
         // === 비디오 재생 단축키 ===

@@ -9,6 +9,8 @@ extension Notification.Name {
     /// 영상 IN/OUT 마커가 바뀌었을 때 발송됨. object 는 영상 URL.
     /// 썸네일 그리드 / 클라이언트 전달 UI 가 수신하여 갱신.
     static let videoMarkersChanged = Notification.Name("videoMarkersChanged")
+    /// v8.5 — C 키로 인라인 크롭 모드 토글
+    static let toggleCropMode = Notification.Name("toggleCropMode")
 }
 
 // MARK: - Zoom Presets
@@ -513,6 +515,8 @@ struct PhotoPreviewView: View {
     @State private var developRenderTask: Task<Void, Never>? = nil
     /// Shared pipeline (Metal CIContext 공유).
     private static let developPipelineShared = DevelopPipeline()
+    /// 인라인 크롭 모드 활성화 여부 (C 키 토글).
+    @State private var isCroppingMode: Bool = false
     @State private var showAIResult: Bool = false
     @State private var aiResultText: String = ""
     @State private var hiResWorkItem: DispatchWorkItem? = nil
@@ -791,11 +795,22 @@ struct PhotoPreviewView: View {
                             .allowsHitTesting(false)
                     )
                     .overlay(alignment: .bottom) {
-                        // v8.5 — 비파괴 보정 플로팅 필
-                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
+                        // v8.5 — 비파괴 보정 플로팅 필 (크롭 모드 중엔 숨김)
+                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode {
                             FloatingAdjustmentPill(photoURL: photo.jpgURL)
                                 .padding(.bottom, 16)
                                 .allowsHitTesting(true)
+                        }
+                    }
+                    .overlay {
+                        // v8.5 — 인라인 크롭 오버레이 (C 키로 진입)
+                        if isCroppingMode, !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile {
+                            InlineCropOverlay(
+                                photoURL: photo.jpgURL,
+                                displaySize: vSize,
+                                onDismiss: { isCroppingMode = false }
+                            )
+                            .allowsHitTesting(true)
                         }
                     }
                     .contextMenu { previewBgMenu }
@@ -1184,6 +1199,11 @@ struct PhotoPreviewView: View {
         .onReceive(DevelopStore.shared.objectWillChange) { _ in
             // objectWillChange 는 변경 직전 발행 → 다음 runloop 에서 읽어야 반영됨
             DispatchQueue.main.async { refreshDevelopedImage() }
+        }
+        // C 키 — 크롭 모드 토글
+        .onReceive(NotificationCenter.default.publisher(for: .toggleCropMode)) { _ in
+            guard !photo.isFolder, !photo.isParentFolder, !photo.isVideoFile else { return }
+            isCroppingMode.toggle()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
         .sheet(isPresented: $showAIResult) {
