@@ -67,6 +67,16 @@ final class DevelopPipeline {
         if isRAW {
             // 1st try: CIRAWFilter
             if let raw = CIRAWFilter(imageURL: url) {
+                // targetSize 가 있으면 RAW 디코딩 자체를 축소해서 빠르게 (풀해상도 디코딩 회피)
+                if targetSize != .zero {
+                    let native = raw.outputImage?.extent ?? CGRect(x: 0, y: 0, width: 6000, height: 4000)
+                    let longSide = max(native.width, native.height)
+                    let targetLong = max(targetSize.width, targetSize.height)
+                    if longSide > 0 && targetLong > 0 && targetLong < longSide {
+                        let sf = Float(min(1.0, Double(targetLong) / Double(longSide)))
+                        raw.scaleFactor = sf
+                    }
+                }
                 raw.exposure = Float(settings.exposure)
                 if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
                     let kelvin = 5500.0 + settings.temperature * 45.0
@@ -74,8 +84,8 @@ final class DevelopPipeline {
                     raw.neutralTint = Float(settings.tint * 1.5)
                 }
                 if let rawOut = raw.outputImage {
-                    let sized = targetSize == .zero ? rawOut : fitScale(rawOut, to: targetSize)
-                    return LoadResult(image: sized, usedRAWPath: true)
+                    // scaleFactor 로 이미 축소됐으니 fitScale 추가 필요 없음 (필요 시만)
+                    return LoadResult(image: rawOut, usedRAWPath: true)
                 } else {
                     fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter.outputImage nil → CIImage fallback (\(url.lastPathComponent))\n", stderr)
                 }

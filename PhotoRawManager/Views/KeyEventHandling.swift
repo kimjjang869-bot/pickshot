@@ -947,9 +947,12 @@ class KeyCaptureView: NSView {
             return chars == c || keyCode == code
         }
 
-        // Esc → v8.5 플로팅 필 확장 패널 먼저 닫기, 그 다음 전체화면 닫기
+        // Esc → 보정 패널 확장 중이면 그것만 닫음. 아니면 전체화면 닫기.
         if keyCode == 53 {
-            NotificationCenter.default.post(name: .pickShotCollapseAdjustments, object: nil)
+            if AdjustmentPanelState.shared.isExpanded {
+                NotificationCenter.default.post(name: .pickShotCollapseAdjustments, object: nil)
+                return
+            }
             hideFullscreen?()
             return
         }

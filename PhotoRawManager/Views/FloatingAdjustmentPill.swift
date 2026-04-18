@@ -12,7 +12,11 @@ struct FloatingAdjustmentPill: View {
     let photoURL: URL
 
     @ObservedObject var store: DevelopStore = .shared
-    @State private var expandedTool: AdjustmentTool? = nil
+    @State private var expandedTool: AdjustmentTool? = nil {
+        didSet {
+            AdjustmentPanelState.shared.isExpanded = expandedTool != nil
+        }
+    }
     @State private var fadeState: FadeState = .visible
     @State private var fadeTask: Task<Void, Never>? = nil
 

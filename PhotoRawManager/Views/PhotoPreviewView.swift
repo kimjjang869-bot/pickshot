@@ -604,8 +604,9 @@ struct PhotoPreviewView: View {
                             .resizable()
                             .interpolation(.medium)
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: isFitMode ? vSize.width : scaledW,
-                                   height: isFitMode ? vSize.height : scaledH)
+                            // isFitMode 에선 maxWidth/maxHeight 로 aspect 따라 실제 축소되게 (PreferenceKey 정확도 확보)
+                            .frame(maxWidth: isFitMode ? vSize.width : scaledW,
+                                   maxHeight: isFitMode ? vSize.height : scaledH)
                             .background(
                                 GeometryReader { imgGeo in
                                     Color.clear
@@ -1783,7 +1784,8 @@ struct PhotoPreviewView: View {
             DispatchQueue.main.async { self.developRenderTask = task }
         }
         developRenderDebounce = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        // 40ms 만 디바운스 — 연속 이벤트 합치고 빠르게 렌더 시작
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
     }
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch
