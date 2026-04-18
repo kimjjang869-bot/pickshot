@@ -1711,45 +1711,43 @@ struct PhotoPreviewView: View {
     @ViewBuilder
     private func cropOverlayIfNeeded(vSize: CGSize, image: NSImage) -> some View {
         if isCroppingMode && !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile {
-            // 기존 ZStack 안의 Image 는 무시하고,
-            // 크롭 모드 중엔 **완전 별개의 레이어** 로 이미지+크롭박스를 동일 rect 에 수동 배치.
-            // SwiftUI aspect-fit 자동 계산 의존 제거 → 픽셀 단위 일치 보장.
-            let imgAR: CGFloat = {
-                let s = image.size
-                return (s.width > 0 && s.height > 0) ? s.width / s.height : 1
-            }()
-            let canvasAR = vSize.width / max(vSize.height, 1)
-            let fitW: CGFloat
-            let fitH: CGFloat
-            if imgAR > canvasAR {
-                fitW = vSize.width
-                fitH = fitW / imgAR
-            } else {
-                fitH = vSize.height
-                fitW = fitH * imgAR
-            }
-
-            ZStack {
-                // (1) 원본 이미지를 이 rect 에 수동 배치 — 아래 깔린 Image 를 이 이미지로 덮어씀
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.medium)
-                    .frame(width: fitW, height: fitH)
-                // (2) 크롭 오버레이 — 동일 rect 에 그대로
-                InlineCropOverlay(
-                    photoURL: photo.jpgURL,
-                    displaySize: CGSize(width: fitW, height: fitH),
-                    imageAspectRatio: imgAR,
-                    onDismiss: { isCroppingMode = false }
-                )
-                .frame(width: fitW, height: fitH)
-            }
-            .frame(width: vSize.width, height: vSize.height)  // ZStack center → 이미지+오버레이가 같이 중앙 정렬
-            .background(Color.black)  // 원본 이미지 영역 밖은 검정 (프리뷰 배경 덮기)
-            .allowsHitTesting(true)
+            cropModeLayer(vSize: vSize, image: image)
         } else {
             EmptyView()
         }
+    }
+
+    private func cropModeLayer(vSize: CGSize, image: NSImage) -> some View {
+        let s = image.size
+        let imgAR: CGFloat = (s.width > 0 && s.height > 0) ? s.width / s.height : 1
+        let canvasAR = vSize.width / max(vSize.height, 1)
+        let fitW: CGFloat
+        let fitH: CGFloat
+        if imgAR > canvasAR {
+            fitW = vSize.width
+            fitH = fitW / imgAR
+        } else {
+            fitH = vSize.height
+            fitW = fitH * imgAR
+        }
+        return ZStack {
+            // (1) 원본 이미지를 이 rect 에 수동 배치 — 아래 깔린 Image 를 덮어씀
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.medium)
+                .frame(width: fitW, height: fitH)
+            // (2) 크롭 오버레이 — 동일 rect 에 그대로
+            InlineCropOverlay(
+                photoURL: photo.jpgURL,
+                displaySize: CGSize(width: fitW, height: fitH),
+                imageAspectRatio: imgAR,
+                onDismiss: { isCroppingMode = false }
+            )
+            .frame(width: fitW, height: fitH)
+        }
+        .frame(width: vSize.width, height: vSize.height)
+        .background(Color.black)
+        .allowsHitTesting(true)
     }
 
     // MARK: - Non-Destructive Develop (v8.5)
