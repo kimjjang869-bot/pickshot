@@ -488,24 +488,34 @@ class ClientSelectService: ObservableObject {
 
     private func resizePhoto(photo: PhotoItem, index: Int, tempDir: URL) -> URL? {
         let sourceURL = photo.jpgURL
+        let ext = sourceURL.pathExtension.lowercased()
+        let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
-        // CGImageSource로 빠른 리사이즈
-        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
-            fputs("[CLIENT] ❌ CGImageSource 실패: \(sourceURL.lastPathComponent)\n", stderr)
-            return nil
+        var thumbnail: CGImage? = nil
+
+        // RAW (NEF/ARW/CR3/RAF 등)는 ImageIO 의 CGImageSourceCreateThumbnailAtIndex 가
+        // Bayer main image 디코드에 실패해 "검정 이미지" 를 반환하는 케이스가 있음 (특히
+        // 니콘 NEF, 소니 ARW). `kCGImageSourceCreateThumbnailFromImageAlways: true` 가
+        // embedded preview JPEG 를 의도적으로 건너뛰기 때문. → RAW 는 CGImageSource
+        // 경로를 건너뛰고 PreviewImageCache.loadOptimized 로 (embedded JPEG 추출 /
+        // CIRAWFilter 포함된 검증 경로) 직행.
+        if !isRAW {
+            if let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) {
+                let options: [CFString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: 1200,
+                    // embedded preview 가 있으면 우선 사용 (Always → IfAbsent) — JPG 도
+                    // embedded thumbnail 이 있으면 훨씬 빠르고 거의 동일 품질.
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
+            }
         }
 
-        let options: [CFString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: 1200,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true
-        ]
-
-        var thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
-
-        // RAW fallback: CGImageSource 실패 시 PreviewImageCache로 (CIRAWFilter 포함)
+        // RAW 이거나 CGImageSource 실패: PreviewImageCache.loadOptimized 로 fallback.
         if thumbnail == nil {
-            fputs("[CLIENT] CGImageSource 실패 → loadOptimized fallback: \(sourceURL.lastPathComponent)\n", stderr)
+            let reason = isRAW ? "RAW" : "CGImageSource 실패"
+            fputs("[CLIENT] \(reason) → loadOptimized: \(sourceURL.lastPathComponent)\n", stderr)
             if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: 1200),
                let cgImg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                 thumbnail = cgImg
@@ -911,23 +921,44 @@ class ClientSelectService: ObservableObject {
         for (index, photo) in photos.enumerated() {
             guard !cancelled else { break }
             autoreleasepool {
-                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil) else { return }
-                let opts: [CFString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: originalResolution,
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                ]
-                guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return }
+                let sourceURL = photo.jpgURL
+                let ext = sourceURL.pathExtension.lowercased()
+                let isRAW = FileMatchingService.rawExtensions.contains(ext)
+
+                var thumb: CGImage? = nil
+
+                // RAW 는 ImageIO 가 검정 이미지를 반환할 수 있어 CGImageSource 경로 건너뜀.
+                if !isRAW {
+                    if let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) {
+                        let opts: [CFString: Any] = [
+                            kCGImageSourceThumbnailMaxPixelSize: originalResolution,
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true
+                        ]
+                        thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary)
+                    }
+                }
+                if thumb == nil {
+                    // RAW 또는 CGImageSource 실패: loadOptimized 로 fallback (embedded JPEG 추출)
+                    if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: CGFloat(originalResolution)),
+                       let cg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                        thumb = cg
+                    }
+                }
+                guard let finalThumb = thumb else {
+                    fputs("[CLIENT] ❌ 원본 리사이즈 실패: \(sourceURL.lastPathComponent)\n", stderr)
+                    return
+                }
 
                 let name: String
                 if !filePrefix.isEmpty {
                     name = String(format: "%@_%04d.jpg", filePrefix, index + 1)
                 } else {
-                    name = String(format: "%04d_%@.jpg", index + 1, photo.jpgURL.deletingPathExtension().lastPathComponent)
+                    name = String(format: "%04d_%@.jpg", index + 1, sourceURL.deletingPathExtension().lastPathComponent)
                 }
                 let destURL = zipDir.appendingPathComponent(name)
                 guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
-                CGImageDestinationAddImage(dest, thumb, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+                CGImageDestinationAddImage(dest, finalThumb, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
                 CGImageDestinationFinalize(dest)
             }
         }
