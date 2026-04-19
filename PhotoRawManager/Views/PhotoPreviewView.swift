@@ -427,6 +427,11 @@ class PreviewImageCache {
                 }
             }
         }
+        // FFD8 subData 로 추출한 embedded JPEG 은 RAW 컨테이너의 TIFF orientation 태그가
+        // 소실됨. 원본 RAW 의 기대 aspect 와 비교해서 불일치 시 수동 회전.
+        if let img = bestImage {
+            bestImage = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+        }
         return bestImage
     }
 
@@ -443,16 +448,26 @@ class PreviewImageCache {
 
             guard let ciImage = rawFilter.outputImage else { return nil }
 
-            // Scale down to maxPixel
+            // EXIF orientation 적용 — CIRAWFilter.outputImage 는 센서 원본 방향(보통 landscape)
+            // 으로 반환하므로 세로 사진은 여기서 수동 회전해야 정상 표시됨.
+            let info = PhotoPreviewView.readSourceDisplayInfo(url: url)
+            let oriented: CIImage
+            if info.orientation > 1, let cgOri = CGImagePropertyOrientation(rawValue: UInt32(info.orientation)) {
+                oriented = ciImage.oriented(cgOri)
+            } else {
+                oriented = ciImage
+            }
+
+            // Scale down to maxPixel (orientation 적용 후 기준)
             let scale: CGFloat
-            let maxDim = max(ciImage.extent.width, ciImage.extent.height)
+            let maxDim = max(oriented.extent.width, oriented.extent.height)
             if maxDim > maxPixel {
                 scale = maxPixel / maxDim
             } else {
                 scale = 1.0
             }
 
-            let scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            let scaled = oriented.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
 
             // Render with target color space
             let ctx = CIContext(options: [.workingColorSpace: targetColorSpace])
@@ -2407,15 +2422,10 @@ struct PhotoPreviewView: View {
             var hiRes = Self.loadHiResImage(url: url)
             guard self.pendingPhotoID == photoID else { return }
 
-            // Fix orientation: match lowRes aspect ratio
-            if var img = hiRes, let low = self.lowResImage {
-                let lowIsPortrait = low.size.height > low.size.width
-                let hiIsPortrait = img.size.height > img.size.width
-                if lowIsPortrait != hiIsPortrait {
-                    img = Self.applyOrientation(img, orientation: 6)
-                    hiRes = img
-                }
-            }
+            // Orientation 은 loadHiResImage 내부에서 원본 RAW EXIF 기준으로 이미 보정됨.
+            // (기존의 하드코딩 `orientation: 6` 은 orientation=8 카메라에서 반대 방향으로
+            //  뒤집는 회귀를 유발했어서 제거함. lowRes aspect 와 비교하는 휴리스틱도
+            //  lowRes 자체가 틀렸을 때 오류 전파되는 문제가 있어 제거.)
 
             RunLoop.main.perform(inModes: [.common]) {
                 guard self.pendingPhotoID == photoID else { return }
@@ -2543,6 +2553,11 @@ struct PhotoPreviewView: View {
                 if max(cgImage.width, cgImage.height) >= 3000 { break }
             }
         }
+        // FFD8 subData 로 추출한 embedded JPEG 은 RAW 컨테이너의 TIFF orientation 태그가
+        // 소실됨. 원본 RAW 의 기대 aspect 와 비교해서 불일치 시 수동 회전.
+        if let img = bestImage {
+            bestImage = correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+        }
         return bestImage
     }
 
@@ -2587,6 +2602,42 @@ struct PhotoPreviewView: View {
         _dimensionCache[url] = size
         _dimensionCacheLock.unlock()
         return size
+    }
+
+    /// 원본 RAW/JPG 에서 EXIF orientation + 기대 display aspect 를 읽음.
+    /// `loadRAWWithCIFilter`/FFD8 fallback/loadHiResImage 처럼 embedded JPEG 만 추출해서
+    /// 원본의 TIFF orientation 태그가 소실되는 경로에서, 최종 이미지의 회전 여부를
+    /// 판단하기 위해 사용. Header 만 읽으므로 매우 저렴 (~1ms).
+    ///
+    /// - Returns: (orientation: 1-8, displayLandscape: orientation 적용 후 가로 여부). 실패 시 (1, nil).
+    static func readSourceDisplayInfo(url: URL) -> (orientation: Int, displayLandscape: Bool?) {
+        let opts: [NSString: Any] = [kCGImageSourceShouldCache: false]
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, opts as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any]
+        else { return (1, nil) }
+        let orient = (props[kCGImagePropertyOrientation as String] as? Int) ?? 1
+        let pw = (props[kCGImagePropertyPixelWidth as String] as? Int) ?? 0
+        let ph = (props[kCGImagePropertyPixelHeight as String] as? Int) ?? 0
+        guard pw > 0, ph > 0 else { return (orient, nil) }
+        let displayLandscape: Bool
+        if orient >= 5 && orient <= 8 {
+            // 5-8: width/height swap 됨 (sensor landscape → 표시 portrait 등)
+            displayLandscape = ph > pw
+        } else {
+            displayLandscape = pw > ph
+        }
+        return (orient, displayLandscape)
+    }
+
+    /// 추출된 이미지의 aspect 가 원본 RAW 의 기대 display aspect 와 불일치하면 수동 회전.
+    /// embedded JPEG 추출 경로(FFD8 subData/loadHiResImage)에서 RAW 컨테이너의 orientation
+    /// 태그가 소실되는 케이스를 복구.
+    static func correctEmbeddedImageOrientationIfNeeded(_ image: NSImage, sourceURL: URL) -> NSImage {
+        let info = readSourceDisplayInfo(url: sourceURL)
+        guard info.orientation > 1, let expectLandscape = info.displayLandscape else { return image }
+        let imgLandscape = image.size.width > image.size.height
+        if expectLandscape == imgLandscape { return image }
+        return applyOrientation(image, orientation: info.orientation)
     }
 
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
