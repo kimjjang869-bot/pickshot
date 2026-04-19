@@ -119,15 +119,17 @@ struct MultiPreviewCell: View {
                     }
                 }
                 Spacer()
-                Text(photo.fileName)
-                    .font(.system(size: 9, weight: .medium))
+                // v8.6.2: 파일 확장자 포함 + 폰트 크기 확대 (9 → 13) — 다중선택 프리뷰 가독성 개선
+                Text(photo.fileNameWithExtension)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
                     .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.black.opacity(0.5))
-                    .cornerRadius(2)
-                    .padding(.bottom, 3)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.65))
+                    .cornerRadius(3)
+                    .padding(.bottom, 5)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 3))

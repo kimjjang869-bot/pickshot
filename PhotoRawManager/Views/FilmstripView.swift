@@ -117,25 +117,12 @@ struct FilmstripView: View {
                 // v8.6.2: 빠른 이동 시 썸네일 스크롤 못따라옴 해결 — throttle 패턴 + 애니메이션 제거.
                 //   이전: withAnimation(0.2) 가 매 키마다 200ms 블록 → 다음 스크롤 지연 누적
                 //   지금: 200ms 애니메이션 삭제, throttle 80ms 간격 + trailing 보장
-                .onChange(of: store.selectedPhotoID) { newID in
-                    guard let id = newID else { return }
-                    let now = Date()
-                    if !store.isKeyRepeat || now.timeIntervalSince(scrollThrottleLastFire) >= 0.08 {
-                        // 즉시 scrollTo (애니메이션 없음)
-                        proxy.scrollTo(id, anchor: .center)
-                        scrollThrottleLastFire = now
-                        scrollTrailingWork?.cancel()
-                    } else {
-                        // 너무 빠른 연속 — trailing 으로 마지막 위치 반영 보장
-                        scrollTrailingWork?.cancel()
-                        let work = DispatchWorkItem {
-                            guard let latestID = store.selectedPhotoID else { return }
-                            proxy.scrollTo(latestID, anchor: .center)
-                            scrollThrottleLastFire = Date()
-                        }
-                        scrollTrailingWork = work
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
-                    }
+                // v8.6.2: scrollTrigger 기반 — moveSelection (방향키) 에만 증가, 클릭에선 증가 X.
+                //   쓰로틀 제거 → 매 키 입력마다 scrollTo 즉시 발동 → 선택이 속도 따라옴.
+                //   필름스트립은 LazyHStack 이라 scrollTo 비용 작음 (LazyVGrid 10k 와 달리 빠름).
+                .onChange(of: store.scrollTrigger) { _ in
+                    guard let id = store.selectedPhotoID else { return }
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
         }
