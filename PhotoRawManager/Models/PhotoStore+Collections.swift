@@ -78,10 +78,13 @@ extension PhotoStore {
             UserDefaults.standard.set(1.5, forKey: "thumbnailCacheMaxGB")
             previewResolution = 0
         case .low:
-            UserDefaults.standard.set("3000", forKey: "previewMaxResolution")
-            UserDefaults.standard.set(10.0, forKey: "previewCacheSize")
-            UserDefaults.standard.set(0.5, forKey: "thumbnailCacheMaxGB")
-            previewResolution = previewMax
+            // MBA 8GB 등 저사양: 500px 미리보기 × 50장 캐시 + 2GB 썸네일 캐시
+            // (기존 3000px × 10장 × 0.5GB 는 첫 폴더는 부드럽지만 다음 폴더부터 체감 느려짐 —
+            //  500px 로 줄이면 한 장당 메모리가 훨씬 작아서 많이 캐시 가능 → 폴더 이동 쾌적)
+            UserDefaults.standard.set("500", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(50.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(2.0, forKey: "thumbnailCacheMaxGB")
+            previewResolution = 500
         }
 
         UserDefaults.standard.set(true, forKey: key)
