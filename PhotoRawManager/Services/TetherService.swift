@@ -466,7 +466,8 @@ extension TetherService: ICCameraDeviceDelegate {
 // MARK: - ICCameraDeviceDownloadDelegate
 
 extension TetherService: ICCameraDeviceDownloadDelegate {
-    func didDownloadFile(_ file: ICCameraFile, error: (any Error)?, options: [ICDownloadOption : Any], contextInfo: UnsafeMutableRawPointer?) {
+    // v8.6.3: 프로토콜이 macOS 14 에서 [String:Any] 로 변경됨. 내부에선 options 미사용.
+    func didDownloadFile(_ file: ICCameraFile, error: (any Error)?, options: [String : Any] = [:], contextInfo: UnsafeMutableRawPointer?) {
         let originalFileName = file.name ?? "unknown"
         pendingDownloads.remove(originalFileName)
 

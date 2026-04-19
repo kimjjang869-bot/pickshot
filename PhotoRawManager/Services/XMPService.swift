@@ -25,7 +25,7 @@ struct XMPService {
         // EXIF Rating 설정
         // Microsoft Rating (0-5) — Lightroom이 읽는 표준
         newProps[kCGImagePropertyExifDictionary as String] = {
-            var exif = (properties[kCGImagePropertyExifDictionary as String] as? [String: Any]) ?? [:]
+            let exif = (properties[kCGImagePropertyExifDictionary as String] as? [String: Any]) ?? [:]
             // UserComment에 Rating 저장 (일부 앱 호환)
             return exif
         }()

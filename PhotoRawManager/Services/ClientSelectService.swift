@@ -1038,7 +1038,7 @@ class ClientSelectService: ObservableObject {
         // 매칭 폴더의 파일 목록
         let fm = FileManager.default
         let localFiles = (try? fm.contentsOfDirectory(at: matchFolder, includingPropertiesForKeys: nil))?.map { $0.lastPathComponent.lowercased() } ?? []
-        let localFileSet = Set(localFiles)
+        _ = Set(localFiles)
 
         var matched: [(String, String, Bool, [String])] = []
         var unmatchedCount = 0

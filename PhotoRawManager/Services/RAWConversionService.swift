@@ -127,7 +127,7 @@ struct RAWConversionService {
         let lock = NSLock()
 
         let cores = ProcessInfo.processInfo.activeProcessorCount
-        let concurrency = min(cores, 8)
+        _ = min(cores, 8)
         print("🔄 [RAW→JPG] Start: \(total) files, sharp=\(options.sharpening.rawValue), horizon=\(options.autoHorizon), color=\(options.colorSpace.rawValue)")
 
         // Pre-generate filenames

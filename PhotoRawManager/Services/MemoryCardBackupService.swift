@@ -359,9 +359,9 @@ class MemoryCardBackupService: ObservableObject {
         }
         defer { close(dstFd) }
 
-        fcntl(srcFd, F_NOCACHE, 1)
-        fcntl(dstFd, F_NOCACHE, 1)
-        fcntl(srcFd, F_RDAHEAD, 1)
+        _ = fcntl(srcFd, F_NOCACHE, 1)
+        _ = fcntl(dstFd, F_NOCACHE, 1)
+        _ = fcntl(srcFd, F_RDAHEAD, 1)
 
         let bufferSize = 16 * 1024 * 1024
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)

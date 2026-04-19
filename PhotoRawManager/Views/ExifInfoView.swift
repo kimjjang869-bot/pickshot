@@ -95,7 +95,7 @@ struct ExifInfoView: View {
     private func loadExif() {
         let jpgURL = photo.jpgURL
         let rawURL = photo.rawURL
-        let photoID = photo.id
+        _ = photo.id
         let rawExts = FileMatchingService.rawExtensions
         let isRaw = rawExts.contains(jpgURL.pathExtension.lowercased())
 

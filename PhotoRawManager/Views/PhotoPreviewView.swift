@@ -1772,7 +1772,7 @@ struct PhotoPreviewView: View {
 
                 // Stage 1: Fast load — low: 800px / standard: 1200px / high+: 1600px
                 // v8.6.2: decodeURL 사용 (NEF+JPG 쌍이면 NEF 의 임베디드 프리뷰로 고속화)
-                var fastImage = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: min(stage1MaxPx, optimalPx))
+                let fastImage = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: min(stage1MaxPx, optimalPx))
 
                 // v8.6.2 fix: loadOptimized 내부의 correctThumbnailOrientationIfNeeded 가 이미
                 // 방향 보정을 마친 결과를 리턴. 여기서 또 applyOrientation 을 호출하면 Sony ARW 처럼
@@ -2571,7 +2571,7 @@ struct PhotoPreviewView: View {
         hiResLoadWork?.cancel()
         let work = DispatchWorkItem {
             let t0 = CFAbsoluteTimeGetCurrent()
-            var hiRes = Self.loadHiResImage(url: url)
+            let hiRes = Self.loadHiResImage(url: url)
             guard self.pendingPhotoID == photoID else { return }
 
             // v8.6.2 fix: loadHiResImage 경로도 내부에서 orientation 보정.

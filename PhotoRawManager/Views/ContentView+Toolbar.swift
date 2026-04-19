@@ -166,6 +166,9 @@ extension ContentView {
                         faceGroupFilterMenu
                     }
 
+                    // v8.7: 파일명 번호 범위 필터
+                    rangeFilterMenu
+
                     // G Select
                     gSelectButton
                 }
@@ -660,19 +663,86 @@ extension ContentView {
 
     // MARK: - Face Group Filter Menu
 
+    // MARK: - v8.7 Range (파일 번호) 필터 메뉴
+
+    var rangeFilterMenu: some View {
+        let active = store.rangeFilterMin != nil || store.rangeFilterMax != nil
+        let labelText: String = {
+            if let lo = store.rangeFilterMin, let hi = store.rangeFilterMax { return "\(lo)-\(hi)" }
+            if let lo = store.rangeFilterMin { return "\(lo)-" }
+            if let hi = store.rangeFilterMax { return "-\(hi)" }
+            return "번호"
+        }()
+        return Button(action: {
+            let alert = NSAlert()
+            alert.messageText = "파일 번호 범위 필터"
+            alert.informativeText = "파일명의 마지막 숫자를 기준으로 필터링합니다.\n예: DSC01234.ARW → 1234.\n비워두면 제한 없음."
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 56))
+            let loField = NSTextField(frame: NSRect(x: 0, y: 28, width: 100, height: 22))
+            loField.placeholderString = "최소 (예: 1000)"
+            loField.stringValue = store.rangeFilterMin.map { String($0) } ?? ""
+            let sep = NSTextField(labelWithString: "~")
+            sep.frame = NSRect(x: 110, y: 30, width: 20, height: 18)
+            sep.alignment = .center
+            let hiField = NSTextField(frame: NSRect(x: 140, y: 28, width: 100, height: 22))
+            hiField.placeholderString = "최대 (예: 1500)"
+            hiField.stringValue = store.rangeFilterMax.map { String($0) } ?? ""
+            let hint = NSTextField(labelWithString: "현재 폴더: 전체 \(store.photos.count)장")
+            hint.frame = NSRect(x: 0, y: 0, width: 240, height: 18)
+            hint.font = .systemFont(ofSize: 10)
+            hint.textColor = .secondaryLabelColor
+            container.addSubview(loField); container.addSubview(sep); container.addSubview(hiField); container.addSubview(hint)
+            alert.accessoryView = container
+            alert.addButton(withTitle: "적용")
+            alert.addButton(withTitle: "해제")
+            alert.addButton(withTitle: "취소")
+            let resp = alert.runModal()
+            if resp == .alertFirstButtonReturn {
+                store.rangeFilterMin = Int(loField.stringValue.trimmingCharacters(in: .whitespaces))
+                store.rangeFilterMax = Int(hiField.stringValue.trimmingCharacters(in: .whitespaces))
+            } else if resp == .alertSecondButtonReturn {
+                store.rangeFilterMin = nil
+                store.rangeFilterMax = nil
+            }
+        }) {
+            toolbarButton(
+                icon: "number.circle",
+                text: labelText,
+                color: .teal,
+                active: active
+            )
+        }
+        .buttonStyle(.plain)
+        .help("파일 번호 범위 필터 (예: 1000~1500)")
+    }
+
     var faceGroupFilterMenu: some View {
         let groups = store.availableFaceGroups
         let hasGroups = !groups.isEmpty
 
         return HStack(spacing: 4) {
             Menu {
-                Button(action: { store.faceGroupFilter = nil }) {
-                    Label("전체", systemImage: store.faceGroupFilter == nil ? "checkmark" : "")
+                Button(action: {
+                    store.faceGroupFilter = nil
+                    store.faceGroupFilters = []
+                }) {
+                    Label("전체", systemImage: (store.faceGroupFilter == nil && store.faceGroupFilters.isEmpty) ? "checkmark" : "")
                 }
                 Divider()
+                // v8.7: 다중 인물 선택 (신랑 + 신부 등 OR 조합)
+                if hasGroups && !store.faceGroupFilters.isEmpty {
+                    Button(action: { store.faceGroupFilters = [] }) {
+                        Label("다중 선택 해제 (\(store.faceGroupFilters.count)명)", systemImage: "xmark.circle")
+                    }
+                    Divider()
+                }
                 if hasGroups {
                     ForEach(groups, id: \.self) { gid in
-                        Button(action: { store.faceGroupFilter = gid }) {
+                        // 단일 선택 (기존)
+                        Button(action: {
+                            store.faceGroupFilter = gid
+                            store.faceGroupFilters = []
+                        }) {
                             let count = store.faceGroups[gid]?.count ?? 0
                             HStack(spacing: 8) {
                                 // Face thumbnail
@@ -698,6 +768,23 @@ extension ContentView {
                                         .foregroundColor(.blue)
                                 }
                             }
+                        }
+                    }
+                    Divider()
+                    // v8.7: 다중 선택 토글 (한 메뉴에서 여러 명 체크)
+                    Text("여러 명 선택 (OR)").font(.system(size: 10)).foregroundColor(.secondary)
+                    ForEach(groups, id: \.self) { gid in
+                        Button(action: {
+                            var set = store.faceGroupFilters
+                            if set.contains(gid) { set.remove(gid) } else { set.insert(gid) }
+                            store.faceGroupFilters = set
+                            if !set.isEmpty { store.faceGroupFilter = nil }  // 단일 필터와 충돌 방지
+                        }) {
+                            let isSelected = store.faceGroupFilters.contains(gid)
+                            Label(
+                                "\(isSelected ? "✓ " : "+  ")\(store.faceGroupName(for: gid))",
+                                systemImage: isSelected ? "checkmark.square.fill" : "square"
+                            )
                         }
                     }
                     Divider()
@@ -733,9 +820,10 @@ extension ContentView {
             } label: {
                 toolbarButton(
                     icon: "person.2.fill",
-                    text: store.faceGroupFilter != nil ? store.faceGroupName(for: store.faceGroupFilter!) : "인물",
+                    text: store.faceGroupFilter != nil ? store.faceGroupName(for: store.faceGroupFilter!)
+                        : (!store.faceGroupFilters.isEmpty ? "인물 \(store.faceGroupFilters.count)명" : "인물"),
                     color: .orange,
-                    active: store.faceGroupFilter != nil
+                    active: store.faceGroupFilter != nil || !store.faceGroupFilters.isEmpty
                 )
             }
             .help("인물 그룹 필터")

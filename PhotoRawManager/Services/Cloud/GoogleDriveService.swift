@@ -612,7 +612,7 @@ class GoogleDriveService {
     private static var oauthState: String = ""  // CSRF 방지용 state 토큰
 
     private static func startLocalOAuthServer(completion: @escaping (String?, Error?) -> Void) {
-        let expectedState = oauthState
+        _ = oauthState
         // v8.6.1 보안: LocalOAuthServer 에 expectedState 전달 (CSRF 방지)
         localServer = LocalOAuthServer(port: 8085, expectedState: oauthState, completion: { code, error in
             // state 파라미터 미검증 시 CSRF 공격 가능 — 서버에서 state 추출 후 비교
@@ -653,7 +653,7 @@ class GoogleDriveService {
             }
 
             // 보안: 토큰 응답은 로그에 출력하지 않음 (access_token 노출 방지)
-            let responseStr = String(data: data, encoding: .utf8) ?? "unreadable"
+            _ = String(data: data, encoding: .utf8) ?? "unreadable"
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 completion(nil, APIError(message: "토큰 교환: JSON 파싱 실패"))

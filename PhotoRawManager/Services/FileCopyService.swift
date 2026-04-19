@@ -131,8 +131,8 @@ struct FileCopyService {
         defer { close(dstFD) }
 
         // F_NOCACHE: 커널 캐시 bypass (대용량 파일 복사 시 메모리 절약 + 속도 향상)
-        fcntl(srcFD, F_NOCACHE, 1)
-        fcntl(dstFD, F_NOCACHE, 1)
+        _ = fcntl(srcFD, F_NOCACHE, 1)
+        _ = fcntl(dstFD, F_NOCACHE, 1)
 
         // 8MB 버퍼로 복사
         let bufferSize = 8 * 1024 * 1024  // 8MB

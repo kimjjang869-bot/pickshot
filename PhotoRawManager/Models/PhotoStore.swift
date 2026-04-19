@@ -355,6 +355,24 @@ class PhotoStore: ObservableObject {
     @Published var faceGroupNames: [Int: String] = [:]  // 그룹ID → 인물 이름
     @Published var faceThumbnails: [Int: NSImage] = [:]
     @Published var faceGroupFilter: Int? = nil { didSet { invalidateFilterCache() } }
+    /// v8.6.3 (v8.7 프리뷰): 다중 인물 선택 — OR 조합 ("신랑 or 신부" 같은 필터)
+    @Published var faceGroupFilters: Set<Int> = [] { didSet { invalidateFilterCache() } }
+    /// v8.7: 파일명 번호 범위 필터 — 파일명에서 마지막 숫자 추출 후 [min, max] 포함 검사
+    /// 예: DSC01234.ARW → 1234. (1000, 1500) 설정 시 1000~1500 사이만 통과.
+    @Published var rangeFilterMin: Int? = nil { didSet { invalidateFilterCache() } }
+    @Published var rangeFilterMax: Int? = nil { didSet { invalidateFilterCache() } }
+
+    /// 파일명에서 마지막 숫자 블록 추출 (예: "DSC01234.ARW" → 1234, "IMG_9876-edit.jpg" → 9876)
+    static func extractFileNumber(from url: URL) -> Int? {
+        let base = url.deletingPathExtension().lastPathComponent
+        // 뒤에서부터 연속된 숫자 블록 찾기
+        var digits = ""
+        for ch in base.reversed() {
+            if ch.isNumber { digits.insert(ch, at: digits.startIndex) }
+            else if !digits.isEmpty { break }
+        }
+        return Int(digits)
+    }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
     @Published var faceGroupStatusMessage: String = ""
@@ -687,7 +705,22 @@ class PhotoStore: ObservableObject {
             // Keyword filter
             if let kw = kwFilter, !photo.keywords.contains(kw) { continue }
             // Face group filter
+            // 단일 인물 필터 (기존) — 하위호환
             if let fg = fgID, photo.faceGroupID != fg { continue }
+            // 다중 인물 필터 (OR) — v8.7: faceGroupFilters 가 있으면 포함된 그룹만 통과
+            if !faceGroupFilters.isEmpty {
+                if let gid = photo.faceGroupID, faceGroupFilters.contains(gid) {
+                    // ok
+                } else {
+                    continue
+                }
+            }
+            // v8.7: 파일명 번호 범위 필터
+            if rangeFilterMin != nil || rangeFilterMax != nil {
+                guard let num = PhotoStore.extractFileNumber(from: photo.jpgURL) else { continue }
+                if let lo = rangeFilterMin, num < lo { continue }
+                if let hi = rangeFilterMax, num > hi { continue }
+            }
             // AI category filter
             if let level = aiUsabilityLevel, photo.aiUsability != level { continue }
             if let cat = aiCatValue, photo.aiCategory != cat { continue }

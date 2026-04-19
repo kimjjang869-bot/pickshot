@@ -417,7 +417,7 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
 
     func configure(photo: PhotoItem, size: CGFloat, isSelected: Bool, isFocused: Bool, showFileExtension: Bool, showFileTypeBadge: Bool) {
         currentSize = size
-        let imgH = size * 0.75
+        _ = size * 0.75
 
         // Resize item
         view.frame = NSRect(x: 0, y: 0, width: size + 10, height: size * 0.75 + 50)

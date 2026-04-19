@@ -735,7 +735,7 @@ final class DevelopPipeline {
 
     /// 자동 대비 — 히스토그램 유효 범위가 좁으면 대비 올림, 넓으면 유지/감소.
     func computeAutoContrast(url: URL) -> Double? {
-        var settings = DevelopSettings()
+        let settings = DevelopSettings()
         guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
             return nil
         }

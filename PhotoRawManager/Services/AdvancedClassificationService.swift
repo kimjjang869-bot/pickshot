@@ -284,8 +284,8 @@ struct AdvancedClassificationService {
     }
 
     private static func analyzeColors(cgImage: CGImage) -> ColorAnalysis {
-        let width = cgImage.width
-        let height = cgImage.height
+        _ = cgImage.width
+        _ = cgImage.height
 
         // 작은 이미지로 리샘플 (빠른 분석)
         let sampleSize = 64
@@ -339,7 +339,7 @@ struct AdvancedClassificationService {
         }
 
         let n = Double(pixelCount)
-        let avgR = totalR / n, avgG = totalG / n, avgB = totalB / n
+        _ = (totalR / n, totalG / n, totalB / n)  // v8.6.3: 미사용 평균 RGB — 향후 톤 분석용 자리 보존
         let avgH = totalH / n, avgS = totalS / n, avgV = totalV / n
 
         // 분위기 결정
@@ -650,7 +650,7 @@ struct AdvancedClassificationService {
         let ptr = base.assumingMemoryBound(to: UInt8.self)
 
         var personPixels = 0
-        let totalPixels = width * height
+        _ = width * height
         let step = max(1, min(width, height) / 64)  // 샘플링
 
         for y in stride(from: 0, to: height, by: step) {
