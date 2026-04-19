@@ -2085,13 +2085,26 @@ class ThumbnailLoader {
             return sdType
         }
 
-        // 2. SSD 힌트 (브랜드명)
+        // 2. HDD 힌트 (브랜드/제품명) — SSD 힌트보다 먼저 체크.
+        //    대용량 외장 HDD 를 SSD 로 오판하면 concurrency=2 (.low tier) 로 제한되어
+        //    HDD NCQ 큐(6-way) 활용 못 함 → 썸네일 생성 매우 느려짐.
+        let hddHints = [
+            "wd ", "western digital", "seagate", "toshiba", "hitachi",
+            "my passport", "elements", "expansion", "backup plus", "easystore",
+            "g-drive", "lacie", "hdd", "hard drive"
+        ]
+        if hddHints.contains(where: { volumeName.contains($0) }) {
+            fputs("[STORAGE] External HDD detected via hint: \(volumeName)\n", stderr)
+            return .externalHDD
+        }
+
+        // 3. SSD 힌트 (브랜드명)
         let ssdHints = ["ssd", "extreme", "samsung t", "sandisk extreme", "nvme", "thunderbolt", "portable ssd"]
         if ssdHints.contains(where: { volumeName.contains($0) }) {
             return .externalSSD
         }
 
-        // 3. 용량 기반 추정: 64GB 이하만 SD카드/USB stick 확정
+        // 4. 용량 기반 추정: 64GB 이하만 SD카드/USB stick 확정
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
@@ -2101,7 +2114,8 @@ class ThumbnailLoader {
             }
         }
 
-        // 4. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
+        // 5. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
+        //    (실제 HDD 라면 위 힌트에서 잡혔어야 함. 여기로 오는 건 불명의 외장 SSD 가능성 높음.)
         fputs("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n", stderr)
         return .externalSSD
     }

@@ -348,18 +348,28 @@ class PreviewImageCache {
         }
 
         if canDecode {
+            // RAW 는 Transform:false 로 받아서 orientation 을 수동 적용.
+            // (ImageIO 가 Sony ARW orient=3(180°) 등에서 Transform 을 적용 안 해 이미지가
+            //  뒤집힌 채로 반환되는 버그가 확인됨.)
+            let useManualOrientation = isRAW
+
             // Strategy 1: Embedded preview (fastest)
             let embedOnly: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceCreateThumbnailWithTransform: !useManualOrientation,
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceShouldCache: false
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, embedOnly as CFDictionary) {
                 if cgImage.width >= Int(maxPixel * 0.3) || cgImage.height >= Int(maxPixel * 0.3) {
-                    let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                    var img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    if useManualOrientation {
+                        img = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+                    } else {
+                        img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                    }
+                    return img
                 }
             }
 
@@ -374,7 +384,7 @@ class PreviewImageCache {
             var genOpts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceCreateThumbnailWithTransform: !useManualOrientation,
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceShouldCache: false
             ]
@@ -384,8 +394,13 @@ class PreviewImageCache {
                 genOpts[kCGImageSourceSubsampleFactor as NSString] = subsample
             }
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
-                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                var img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                if useManualOrientation {
+                    img = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+                } else {
+                    img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                }
+                return img
             }
         }
 
@@ -417,7 +432,9 @@ class PreviewImageCache {
                     let opts: [NSString: Any] = [
                         kCGImageSourceThumbnailMaxPixelSize: maxPixel,
                         kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true
+                        // Transform:false — 아래에서 원본 RAW 의 orient 를 수동 적용하므로
+                        // subData 의 embedded JPEG 자체 orientation 은 무시.
+                        kCGImageSourceCreateThumbnailWithTransform: false
                     ]
                     if let cg = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary),
                        cg.width > bestWidth {
@@ -1660,16 +1677,8 @@ struct PhotoPreviewView: View {
                 let stage1MaxPx = SystemSpec.shared.previewStage1MaxPixel()
 
                 // Stage 1: Fast load — low: 800px / standard: 1200px / high+: 1600px
-                var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(stage1MaxPx, optimalPx))
-
-                // Fix orientation: compare with stableImageSize (which has correct orientation)
-                if let fast = fastImage, let stable = self.viewState.stableImageSize {
-                    let stableIsPortrait = stable.height > stable.width
-                    let fastIsPortrait = fast.size.height > fast.size.width
-                    if stableIsPortrait != fastIsPortrait {
-                        fastImage = Self.applyOrientation(fast, orientation: 6)
-                    }
-                }
+                // orientation 은 loadOptimized 내부에서 정확히 처리됨 (v8.6.1: RAW 는 Transform:false + 수동 apply).
+                let fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(stage1MaxPx, optimalPx))
 
                 guard let fast = fastImage, self.pendingPhotoID == id else { return }
                 let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
@@ -1685,10 +1694,18 @@ struct PhotoPreviewView: View {
                     self.lowResImage = fast
                 }
 
+                // Stage 2 시작 전 0.25s 대기 — 사용자가 빠른 탐색(←→) 중이면
+                // Stage 2 비용 회피. 멈춰있을 때만 고화질로 승격.
+                // (userInitiated 백그라운드 큐라 메인스레드 블록 안 함)
+                Thread.sleep(forTimeInterval: 0.25)
+                guard self.pendingPhotoID == id else {
+                    fputs("[LD] RAW-S2 CANCELLED (navigated away during 0.25s wait) \(fileName)\n", stderr)
+                    return
+                }
+
                 // Stage 2: Higher res preview (tier 기반)
                 // low: 1600px (메모리 ~40% 절감) / standard: 2400px / high: 3200px / extreme: 원본
                 // 느린 디스크(HDD/SD/NAS): stage2 스킵 — stage1만으로 충분, 사용자가 줌하면 별도 풀해상도
-                guard self.pendingPhotoID == id else { return }
                 if store.currentFolderIsSlowDisk {
                     fputs("[LD] RAW-S2 SKIP (slow disk) \(fileName)\n", stderr)
                     PreviewImageCache.shared.set(cacheKey, image: fast)
@@ -1701,12 +1718,8 @@ struct PhotoPreviewView: View {
                 let stage2MaxPx = SystemSpec.shared.previewStage2MaxPixel()
                 let stage2Px: CGFloat = stage2MaxPx == 0 ? optimalPx : stage2MaxPx
                 if stage2Px > stage1MaxPx, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
-                    var finalHR = hr
-                    if let stable = self.viewState.stableImageSize {
-                        let sp = stable.height > stable.width
-                        let hp = hr.size.height > hr.size.width
-                        if sp != hp { finalHR = Self.applyOrientation(hr, orientation: 6) }
-                    }
+                    // orientation 은 loadOptimized 내부에서 처리됨.
+                    let finalHR = hr
                     guard self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: finalHR)
                     RunLoop.main.perform(inModes: [.common]) {
@@ -2543,7 +2556,8 @@ struct PhotoPreviewView: View {
             let opts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
+                // Transform:false — 아래 correctEmbeddedImageOrientationIfNeeded 에서 수동 적용
+                kCGImageSourceCreateThumbnailWithTransform: false,
                 kCGImageSourceShouldCacheImmediately: true
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
@@ -2629,14 +2643,16 @@ struct PhotoPreviewView: View {
         return (orient, displayLandscape)
     }
 
-    /// 추출된 이미지의 aspect 가 원본 RAW 의 기대 display aspect 와 불일치하면 수동 회전.
-    /// embedded JPEG 추출 경로(FFD8 subData/loadHiResImage)에서 RAW 컨테이너의 orientation
-    /// 태그가 소실되는 케이스를 복구.
+    /// 추출된 이미지에 원본 RAW 의 EXIF orientation 을 무조건 적용.
+    /// 호출하는 경로는 모두 `kCGImageSourceCreateThumbnailWithTransform: false` 로 받아서
+    /// embedded JPEG 이 회전 전 상태로 돌아왔다는 전제.
+    ///
+    /// 이전 버전은 aspect 비교로 스킵 여부를 결정했지만 orientation 3(180° 회전) 처럼
+    /// aspect 가 변하지 않는 케이스를 놓쳐서 Sony ARW 등에서 사진이 뒤집혀 나왔음.
+    /// 이제 source orient > 1 이면 무조건 applyOrientation 호출 (orient 1 은 no-op).
     static func correctEmbeddedImageOrientationIfNeeded(_ image: NSImage, sourceURL: URL) -> NSImage {
         let info = readSourceDisplayInfo(url: sourceURL)
-        guard info.orientation > 1, let expectLandscape = info.displayLandscape else { return image }
-        let imgLandscape = image.size.width > image.size.height
-        if expectLandscape == imgLandscape { return image }
+        guard info.orientation > 1 else { return image }
         return applyOrientation(image, orientation: info.orientation)
     }
 
@@ -2686,24 +2702,34 @@ struct PhotoPreviewView: View {
             let w = cgImage.width
             let h = cgImage.height
 
-            // For orientations 5-8, the output size is swapped
+            // EXIF orientation 1-8 전체 지원.
+            // 5-8 은 width/height swap, 1-4 는 유지.
             let outputSize: CGSize
             let transform: CGAffineTransform
 
             switch orientation {
-            case 6: // 90° CW (most common for portrait photos)
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
-            case 8: // 90° CCW
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
+            case 2: // Horizontal flip
+                outputSize = CGSize(width: w, height: h)
+                transform = CGAffineTransform(translationX: CGFloat(w), y: 0).scaledBy(x: -1, y: 1)
+            case 3: // 180° rotate (가장 빈번한 허점 — Sony ARW 등)
+                outputSize = CGSize(width: w, height: h)
+                transform = CGAffineTransform(translationX: CGFloat(w), y: CGFloat(h)).rotated(by: .pi)
+            case 4: // Vertical flip
+                outputSize = CGSize(width: w, height: h)
+                transform = CGAffineTransform(translationX: 0, y: CGFloat(h)).scaledBy(x: 1, y: -1)
             case 5: // Mirrored + 90° CW
                 outputSize = CGSize(width: h, height: w)
                 transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
+            case 6: // 90° CW (세로 사진 기본값)
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
             case 7: // Mirrored + 90° CCW
                 outputSize = CGSize(width: h, height: w)
                 transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
-            default:
+            case 8: // 90° CCW
+                outputSize = CGSize(width: h, height: w)
+                transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
+            default: // orientation 1 또는 알 수 없음 — 원본 반환
                 return image
             }
 
