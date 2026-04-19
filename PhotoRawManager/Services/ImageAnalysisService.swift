@@ -505,58 +505,7 @@ struct ImageAnalysisService {
         return pixelData
     }
 
-    // MARK: - Center-weighted Laplacian
-
-    private static func calculateLaplacianFast(pixels: [UInt8], width: Int, height: Int) -> Double {
-        // Center-weighted sharpness: center 50% area gets 3x weight
-        // This prevents bright edges (LED panels, lights) from inflating the score
-        var sumCenter: Int64 = 0
-        var sumSqCenter: Int64 = 0
-        var countCenter: Int = 0
-        var sumEdge: Int64 = 0
-        var sumSqEdge: Int64 = 0
-        var countEdge: Int = 0
-
-        let centerX0 = width / 4
-        let centerX1 = width * 3 / 4
-        let centerY0 = height / 4
-        let centerY1 = height * 3 / 4
-
-        let step = 2
-        for y in stride(from: 1, to: height - 1, by: step) {
-            for x in stride(from: 1, to: width - 1, by: step) {
-                let idx = y * width + x
-                let lap = -4 * Int(pixels[idx])
-                    + Int(pixels[idx - 1])
-                    + Int(pixels[idx + 1])
-                    + Int(pixels[idx - width])
-                    + Int(pixels[idx + width])
-
-                let isCenter = x >= centerX0 && x < centerX1 && y >= centerY0 && y < centerY1
-                if isCenter {
-                    sumCenter += Int64(lap)
-                    sumSqCenter += Int64(lap) * Int64(lap)
-                    countCenter += 1
-                } else {
-                    sumEdge += Int64(lap)
-                    sumSqEdge += Int64(lap) * Int64(lap)
-                    countEdge += 1
-                }
-            }
-        }
-
-        guard countCenter > 0 else { return 0 }
-        let meanC = Double(sumCenter) / Double(countCenter)
-        let varCenter = (Double(sumSqCenter) / Double(countCenter) - meanC * meanC) / 255.0 / 255.0 * 10000
-
-        if countEdge > 0 {
-            let meanE = Double(sumEdge) / Double(countEdge)
-            let varEdge = (Double(sumSqEdge) / Double(countEdge) - meanE * meanE) / 255.0 / 255.0 * 10000
-            // Center gets 70% weight, edge gets 30%
-            return varCenter * 0.7 + varEdge * 0.3
-        }
-        return varCenter
-    }
+    // (calculateLaplacianFast 는 MetalImageProcessor.laplacianSharpness 로 대체되어 제거됨 — v8.6.1 dead code cleanup)
 
     // MARK: - Attention Saliency (Composition Score)
 

@@ -2259,7 +2259,11 @@ class ThumbnailLoader {
                 ThumbnailCache.shared.set(url, image: image)
                 // Disk cache: HDD/NAS에서는 읽기 완료 후 배치로 저장 (I/O 경합 방지)
                 if isHDD || isNAS {
+                    // v8.6.1: append 도 lock 안에서 (worker thread 다수가 동시에 append 하면
+                    // Array realloc 중 race → 크래시)
+                    Self.diskCacheWriteLock.lock()
                     Self.pendingDiskCacheWrites.append((url, image))
+                    Self.diskCacheWriteLock.unlock()
                     Self.flushDiskCacheIfNeeded()
                 } else {
                     DispatchQueue.global(qos: .utility).async {

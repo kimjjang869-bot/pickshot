@@ -398,6 +398,23 @@ struct ContentView: View {
                 .padding(.trailing, 16)
                 .padding(.bottom, 40)
         }
+        .overlay(alignment: .bottomLeading) {
+            // v8.6.1: 메모리 누수 추적 HUD. Cmd+Shift+Option+M 로 토글.
+            if MemoryLeakTracker.shared.isTracking {
+                MemoryLeakHUD()
+                    .padding(.leading, 16)
+                    .padding(.bottom, 40)
+            }
+        }
+        .onAppear {
+            // Stress test provider 연결
+            MemoryLeakTracker.shared.stressPhotoProvider = {
+                store.photos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id }
+            }
+            MemoryLeakTracker.shared.stressPhotoSelector = { id in
+                store.selectedPhotoID = id
+            }
+        }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
         } message: {
@@ -630,6 +647,14 @@ struct ContentView: View {
             if masked == cmdShift && event.keyCode == 2 {
                 DispatchQueue.main.async {
                     NavigationPerformanceMonitor.shared.isEnabled.toggle()
+                }
+                return nil
+            }
+            // v8.6.1: Cmd+Shift+Option+M (keyCode 46) — Memory Leak Tracker HUD 토글
+            if masked.contains(fullMod) && event.keyCode == 46 {
+                DispatchQueue.main.async {
+                    let tracker = MemoryLeakTracker.shared
+                    if tracker.isTracking { tracker.stop() } else { tracker.start() }
                 }
                 return nil
             }

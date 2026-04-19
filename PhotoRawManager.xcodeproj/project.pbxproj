@@ -91,6 +91,8 @@
 		'CV20003' = {isa = PBXBuildFile; fileRef = CV20004; };
 		'CV20005' = {isa = PBXBuildFile; fileRef = CV20006; };
 		'NSCV10002' = {isa = PBXBuildFile; fileRef = NSCV10001; };
+		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
+		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
 		'DC10002' = {isa = PBXBuildFile; fileRef = DC10001; };
 		DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */; };
 		F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C8DC3227F94E990E2676A /* AutoCullView.swift */; };
@@ -253,6 +255,8 @@
 		'CV20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPreviewGrid.swift; sourceTree = "<group>"; };
 		'CV20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualViewerContent.swift; sourceTree = "<group>"; };
 		'NSCV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCropView.swift; sourceTree = "<group>"; };
+		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
+		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
 		'CV20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomPromptView.swift; sourceTree = "<group>"; };
 		DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectService.swift; sourceTree = "<group>"; };
 		'DC10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
@@ -501,6 +505,8 @@
 				DEV40001,
 				DEV50001,
 				NSCV10001,
+				MLT10001,
+				MLH10001,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -795,6 +801,8 @@
 				CV20001,
 				CV20003,
 				NSCV10002,
+				MLT10002,
+				MLH10002,
 				CV20005,
 				PB20001,
 				PB20003,

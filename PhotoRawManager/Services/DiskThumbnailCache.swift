@@ -52,38 +52,38 @@ class DiskThumbnailCache {
         accessTime[key] = accessCounter
         lock.unlock()
 
+        // v8.6.1: NSImage(contentsOf:) 는 I/O — lock 밖에서 실행.
         guard let image = NSImage(contentsOf: filePath) else {
-            // Corrupt cache file — remove it
-            lock.lock()
+            // Corrupt cache file — remove it (I/O, lock 불필요)
             try? FileManager.default.removeItem(at: filePath)
-            lock.unlock()
             return nil
         }
         return image
     }
 
     /// Saves thumbnail to disk cache as JPEG
+    /// v8.6.1: I/O (jpeg.write) 를 lock 밖으로 이동 — 이전엔 수십 MB write 가 lock 점유하면
+    /// 모든 get 이 직렬화되어 스크롤 중 스톨 발생.
     func set(url: URL, modDate: Date, image: NSImage) {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
         guard let jpegData = jpegData(from: image) else { return }
-
         let dataSize = Int64(jpegData.count)
-        lock.lock()
+
+        // I/O 는 lock 밖 — atomic write 자체가 OS 레벨 동기화 보장
         let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
-        // 쓰기 성공 시에만 사이즈 추적
-        if writeSuccess, _trackedSize >= 0 { _trackedSize += dataSize }
-        // 인덱스 업데이트
-        if writeSuccess {
-            let pathHash = pathOnlyKey(url: url)
-            fileIndex[pathHash] = filePath
-        }
-        let needsEviction = writeSuccess && _trackedSize > maxCacheBytes && !_evictionInProgress
+        guard writeSuccess else { return }
+
+        // state 업데이트만 lock 안
+        lock.lock()
+        if _trackedSize >= 0 { _trackedSize += dataSize }
+        let pathHash = pathOnlyKey(url: url)
+        fileIndex[pathHash] = filePath
+        let needsEviction = _trackedSize > maxCacheBytes && !_evictionInProgress
         if needsEviction { _evictionInProgress = true }
         lock.unlock()
 
-        // Evict if over size limit (async, 중복 실행 방지)
         if needsEviction {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.evictIfNeeded()

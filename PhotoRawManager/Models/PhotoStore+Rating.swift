@@ -164,14 +164,15 @@ extension PhotoStore {
         var ratings: [String: Int] = [:]
         var spPicks: [String: Bool] = [:]
         var colorLabels: [String: String] = [:]
-        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel)] = []
+        // v8.6.1: SP 상태도 XMP 에 반영 (이전엔 spacePicked: false 하드코딩으로 XMP 에 안 나감)
+        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel, sp: Bool)] = []
         xmpSnapshot.reserveCapacity(photos.count)
         for photo in photos {
             if photo.rating > 0 { ratings[photo.fileName] = photo.rating }
             if photo.isSpacePicked { spPicks[photo.fileName] = true }
             if photo.colorLabel != .none { colorLabels[photo.fileName] = photo.colorLabel.rawValue }
-            if photo.rating > 0 || photo.colorLabel != .none {
-                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel))
+            if photo.rating > 0 || photo.colorLabel != .none || photo.isSpacePicked {
+                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel, photo.isSpacePicked))
             }
         }
 
@@ -194,7 +195,7 @@ extension PhotoStore {
             // XMP 사이드카
             for item in xmpSnapshot {
                 let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
-                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: false)
+                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.sp)
             }
         }
     }
@@ -275,6 +276,8 @@ extension PhotoStore {
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
+        // v8.6.1: undo 등록 추가 (다른 벌크 작업과 일관성). 이전엔 누락돼 Cmd+Z 불가.
+        pushUndo(action: "일괄 컬러라벨 변경", photoIDs: selectedPhotoIDs)
         _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }

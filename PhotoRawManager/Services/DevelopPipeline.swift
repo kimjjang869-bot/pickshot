@@ -35,19 +35,12 @@ final class DevelopPipeline {
         return CIContext(options: opts)
     }()
 
-    /// CIRAWFilter 캐시 — 같은 RAW 파일의 디코딩을 매번 반복하지 않음.
-    /// 사용자가 slider 를 드래그할 때마다 CIRAWFilter 생성하면 매번 RAW 디스크 파싱.
-    /// 같은 URL 이면 기존 필터의 exposure/temperature 만 변경하고 outputImage 만 재추출.
-    private static let rawFilterCache: NSCache<NSURL, CIRAWFilter> = {
-        let c = NSCache<NSURL, CIRAWFilter>()
-        c.countLimit = 6  // 최근 6개 RAW 파일 유지
-        return c
-    }()
+    /// v8.6.1: CIRAWFilter 는 thread-safe 하지 않음 (NSFastEnumerationMutation 크래시 확인됨).
+    /// 공유 캐시를 쓰면 슬라이더/프리뷰/export 가 동시에 property set → outputImage 읽기가
+    /// 겹치며 크래시. 매 호출마다 fresh 인스턴스 생성 (디스크 헤더 파싱은 OS 캐시 덕분에 저렴).
 
-    /// 사진 전환 시 이전 캐시 제거하는 편리 메서드.
-    static func clearRAWCache() {
-        rawFilterCache.removeAllObjects()
-    }
+    /// 호환성 stub — 외부 호출 유지용 (실제 캐시 없음).
+    static func clearRAWCache() { /* no-op */ }
 
     private let context: CIContext
     init(context: CIContext = DevelopPipeline.sharedContext) {
@@ -79,15 +72,8 @@ final class DevelopPipeline {
         let isRAW = isRAWFile(url: url)
 
         if isRAW {
-            // 1st try: CIRAWFilter (URL 기반 캐시 재사용)
-            let nsURL = url as NSURL
-            let cachedRaw = Self.rawFilterCache.object(forKey: nsURL)
-            let createdRaw = cachedRaw == nil ? CIRAWFilter(imageURL: url) : nil
-            if let raw = cachedRaw ?? createdRaw {
-                if cachedRaw == nil, let newRaw = createdRaw {
-                    Self.rawFilterCache.setObject(newRaw, forKey: nsURL)
-                    fputs("[DEV-PIPELINE] CIRAWFilter 신규 생성 + 캐시 (\(url.lastPathComponent))\n", stderr)
-                }
+            // v8.6.1: 매 호출마다 fresh CIRAWFilter (thread-safe 확보).
+            if let raw = CIRAWFilter(imageURL: url) {
                 // targetSize 가 있으면 RAW 디코딩 자체를 축소해서 빠르게 (풀해상도 디코딩 회피)
                 if targetSize != .zero {
                     let native = raw.outputImage?.extent ?? CGRect(x: 0, y: 0, width: 6000, height: 4000)

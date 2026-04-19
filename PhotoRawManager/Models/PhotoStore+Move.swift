@@ -4,6 +4,19 @@ import AppKit
 
 extension PhotoStore {
 
+    // MARK: - XMP Sidecar Helper (v8.6.1)
+
+    /// 원본 파일 옆에 `.xmp` 사이드카가 있으면 동일한 상대 경로로 함께 이동.
+    /// Adobe Bridge/Lightroom/Camera Raw 가 생성하는 XMP 가 이동 시 고아가 되는 문제 해결.
+    static func moveXMPSidecarIfExists(from src: URL, to dst: URL) {
+        let fm = FileManager.default
+        // e.g. photo.ARW → photo.xmp (확장자 치환), photo.JPG → photo.xmp
+        let srcXMP = src.deletingPathExtension().appendingPathExtension("xmp")
+        let dstXMP = dst.deletingPathExtension().appendingPathExtension("xmp")
+        guard fm.fileExists(atPath: srcXMP.path), !fm.fileExists(atPath: dstXMP.path) else { return }
+        try? fm.moveItem(at: srcXMP, to: dstXMP)
+    }
+
     // MARK: - Cache Invalidation (v8.6.1 메모리 누수 수정)
 
     /// 삭제/이동된 사진 URL 들의 모든 캐시 엔트리 일괄 제거.
@@ -172,15 +185,22 @@ extension PhotoStore {
             fputs("[DELETE] 삭제 대상: jpgURL=\(photo.jpgURL.lastPathComponent), rawURL=\(rawLog)\n", stderr)
 
             // Delete JPG → 휴지통 (복원 경로 기록)
-            do {
-                if fm.fileExists(atPath: photo.jpgURL.path) {
+            // v8.6.1: JPG 삭제 실패 시 RAW 도 건드리지 않음 (반쪽 삭제로 페어 깨짐 방지)
+            var jpgDeleteOK = true
+            if fm.fileExists(atPath: photo.jpgURL.path) {
+                do {
                     var trashURL: NSURL?
                     try fm.trashItem(at: photo.jpgURL, resultingItemURL: &trashURL)
                     if let t = trashURL as URL? {
                         trashMoves.append(FileMove(sourceURL: photo.jpgURL, destURL: t))
                     }
+                } catch {
+                    failed += 1
+                    jpgDeleteOK = false
                 }
-            } catch { failed += 1 }
+            }
+            // JPG 삭제 실패했으면 RAW 건너뛰고 이 사진은 deleted 카운트 미증가
+            guard jpgDeleteOK else { continue }
 
             // Delete RAW → 휴지통 (jpgURL과 같으면 스킵 — 이미 삭제됨)
             if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
@@ -436,18 +456,23 @@ extension PhotoStore {
                     fileMoveRecords.append(FileMove(sourceURL: srcURL, destURL: destURL))
                     moved += 1
 
+                    // v8.6.1: XMP 사이드카 동반 이동 (Adobe/Lightroom 레이팅 메타 유실 방지).
+                    Self.moveXMPSidecarIfExists(from: srcURL, to: destURL)
+
                     // photos 배열에서 해당 파일 찾아서 ID 수집
                     if let photo = self.photos.first(where: {
                         $0.jpgURL.path == srcURL.path || $0.rawURL?.path == srcURL.path
                     }) {
-                        // JPG+RAW 쌍의 다른 파일도 이동
+                        // JPG+RAW 쌍의 다른 파일도 이동 (+ XMP)
                         if photo.jpgURL.path == srcURL.path, let rawURL = photo.rawURL, rawURL != photo.jpgURL {
                             let rawDest = destination.appendingPathComponent(rawURL.lastPathComponent)
                             try? fm.moveItem(at: rawURL, to: rawDest)
+                            Self.moveXMPSidecarIfExists(from: rawURL, to: rawDest)
                         } else if photo.rawURL?.path == srcURL.path {
                             let jpgDest = destination.appendingPathComponent(photo.jpgURL.lastPathComponent)
                             if !fm.fileExists(atPath: jpgDest.path) {
                                 try? fm.moveItem(at: photo.jpgURL, to: jpgDest)
+                                Self.moveXMPSidecarIfExists(from: photo.jpgURL, to: jpgDest)
                             }
                         }
                         movedIDs.insert(photo.id)
@@ -601,6 +626,10 @@ extension PhotoStore {
     }
 
     func batchRename(pattern: String, dateFormat: String, seqDigits: Int, seqStart: Int, preserveRatings: Bool = true) -> (success: Int, errors: [String]) {
+        // v8.6.1 데이터 무결성: batchRename 진입 전 debounce 중인 레이팅 저장 강제 플러시.
+        //   이전엔 400ms debounce 작업이 나중에 깨어나면 구 파일명 키로 rating 덮어써 두 버전 공존.
+        saveRatingsNow()
+
         let targets: [PhotoItem]
         if selectedPhotoIDs.count > 1 {
             targets = filteredPhotos.filter { selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }
