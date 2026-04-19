@@ -132,6 +132,20 @@ class DiskThumbnailCache {
         lock.unlock()
     }
 
+    /// v8.6.1: 사진 삭제 시 해당 디스크 캐시 파일 제거 (메모리/디스크 누수 방지).
+    /// pathOnlyKey 로 인덱스 찾아 실제 파일 삭제 + 인덱스 엔트리 제거.
+    func invalidate(url: URL) {
+        let pathHash = pathOnlyKey(url: url)
+        lock.lock()
+        if let cached = fileIndex[pathHash] {
+            fileIndex.removeValue(forKey: pathHash)
+            lock.unlock()
+            try? FileManager.default.removeItem(at: cached)
+        } else {
+            lock.unlock()
+        }
+    }
+
     func getByPath(url: URL) -> NSImage? {
         let pathHash = pathOnlyKey(url: url)
 

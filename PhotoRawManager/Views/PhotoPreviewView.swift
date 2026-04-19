@@ -2582,6 +2582,21 @@ struct PhotoPreviewView: View {
         return readImageDimensionInfo(url: url)?.size
     }
 
+    /// v8.6.1: 삭제된 URL 의 dimension cache 엔트리 제거 (메모리 누수 방지)
+    static func invalidateImageDimensions(for url: URL) {
+        _dimensionCacheLock.lock()
+        _dimensionCache.removeValue(forKey: url)
+        _dimensionCacheLock.unlock()
+    }
+
+    /// v8.6.1: 삭제된 URL 의 hiRes cache 엔트리 제거 (메모리 누수 방지)
+    /// (hi-res 한 장당 50-200MB — 누적되면 치명적)
+    static func removeHiResCache(for url: URL) {
+        let nsurl = url as NSURL
+        hiResCache.removeObject(forKey: nsurl)
+        hiResCacheOrder.removeAll { $0.isEqual(nsurl) }
+    }
+
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata
     /// 원래 CGContext 기반 구현으로 복원 — CIImage.oriented()는 일부 케이스에서 예상과 다른 방향 적용

@@ -68,6 +68,13 @@ final class DevelopStore: ObservableObject {
         return DevelopSettings()
     }
 
+    /// v8.6.1: 삭제된 사진의 메모리/UserDefaults 엔트리 제거 (누수 방지).
+    func invalidateMemory(for url: URL) {
+        let key = url.path
+        memory.removeValue(forKey: key)
+        UserDefaults.standard.removeObject(forKey: udPrefix + key)
+    }
+
     /// 보정값 저장. 기본값이면 실제로는 삭제.
     func set(_ settings: DevelopSettings, for url: URL) {
         let key = url.path

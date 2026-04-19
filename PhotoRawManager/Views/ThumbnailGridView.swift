@@ -1918,11 +1918,12 @@ class ThumbnailCache {
         // UserDefaults의 thumbnailCacheMaxGB를 썸네일 countLimit 힌트로 사용
         let savedCacheGB = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
 
+        // v8.6.1: cost 단위가 bytes 로 통일됨 → totalCostLimit 도 bytes.
+        // 기존엔 `gbValue * 1024 * 1024` 가 KB 단위라고 주석에 쓰여있었지만 실제 저장은
+        // bytes 상수 × 1,048,576 = MB 단위였음 → NSCache 가 사실상 무제한으로 쌓아 누수.
         if savedCacheGB > 0 {
-            // UserDefaults 기반: GB → KB 단위 totalCostLimit
             let gbValue = savedCacheGB
-            cache.totalCostLimit = Int(gbValue * 1024 * 1024)  // GB → KB
-            // countLimit은 GB 비례
+            cache.totalCostLimit = Int(gbValue * 1024 * 1024 * 1024)  // GB → bytes
             let count: Int
             if gbValue >= 2.0 { count = 20000 }
             else if gbValue >= 1.0 { count = 10000 }
@@ -1931,9 +1932,8 @@ class ThumbnailCache {
             cache.countLimit = count
             baseCountLimit = count
         } else {
-            // 기본: SystemSpec tier 기반 자동 설정 (cost 단위 = KB, totalCostLimit 단위 = KB)
             let mb = SystemSpec.shared.thumbnailCacheMB()
-            cache.totalCostLimit = mb * 1024  // MB → KB
+            cache.totalCostLimit = mb * 1024 * 1024  // MB → bytes
             let count: Int
             switch SystemSpec.shared.effectiveTier {
             case .extreme: count = 20000
@@ -1951,14 +1951,16 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        // CGImage 기반 실제 메모리 크기 계산 (KB 단위)
+        // v8.6.1 메모리 누수 수정: cost 단위를 **bytes** 로 통일 (이전엔 KB 단위로 저장되어
+        // totalCostLimit 이 실제 값의 1/1024 로 오해되어 NSCache 자동 evict 가 사실상 작동 안 함).
+        // applyCacheLimits() 에서 totalCostLimit 도 bytes 단위로 맞춰야 함.
         let cost: Int
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            cost = max(1, (cg.bytesPerRow * cg.height) / 1024)
+            cost = max(1, cg.bytesPerRow * cg.height)
         } else {
             let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
             let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
-            cost = max(1, (pixelW * pixelH * 4) / 1024)
+            cost = max(1, pixelW * pixelH * 4)
         }
         cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
@@ -1967,11 +1969,14 @@ class ThumbnailCache {
         cache.removeAllObjects()
     }
 
-    /// 디버그용 — NSCache 는 총 bytes 를 직접 노출하지 않지만
-    /// countLimit 과 totalCostLimit 은 접근 가능 (bytes 는 추정)
+    /// v8.6.1: 사진 삭제 시 해당 URL 캐시 제거 (메모리 누수 방지)
+    func remove(url: URL) {
+        cache.removeObject(forKey: url as NSURL)
+    }
+
+    /// 디버그용 — countLimit 과 totalCostLimit 만 확인 (NSCache.count 는 private)
     func debugCountAndLimit() -> (count: Int, limitMB: Int) {
-        // NSCache.count 는 내부 private — 대신 limit 과 countLimit 만 확인 가능
-        return (0, cache.totalCostLimit / 1024 / 1024)  // KB → MB (cost 단위는 KB)
+        return (0, cache.totalCostLimit / 1024 / 1024)  // bytes → MB
     }
 }
 

@@ -3,6 +3,30 @@ import Foundation
 import AppKit
 
 extension PhotoStore {
+
+    // MARK: - Cache Invalidation (v8.6.1 메모리 누수 수정)
+
+    /// 삭제/이동된 사진 URL 들의 모든 캐시 엔트리 일괄 제거.
+    /// 이전에는 photos[] 에서만 제거하고 ThumbnailCache / PreviewImageCache / hiResCache /
+    /// FolderPreviewCache / DevelopStore / _dimensionCache 등에 NSImage 들이 그대로 남아
+    /// 35회 삭제에서 수백 MB ~ 수 GB 씩 누수가 발생. 60GB 메모리 사용 + 38GB 스왑 유발.
+    static func invalidateCachesForDeletedURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        // 1) 프리뷰 전용 캐시 (메모리 + 디스크)
+        for url in urls {
+            PreviewImageCache.shared.remove(url: url)
+            ThumbnailCache.shared.remove(url: url)
+            PhotoPreviewView.invalidateImageDimensions(for: url)
+            PhotoPreviewView.removeHiResCache(for: url)
+            DevelopStore.shared.invalidateMemory(for: url)
+        }
+        // 2) 디스크 썸네일 — getByPath path-only key 기반
+        for url in urls {
+            DiskThumbnailCache.shared.invalidate(url: url)
+        }
+        fputs("[CACHE-INVALIDATE] \(urls.count) URLs 캐시 정리 완료\n", stderr)
+    }
+
     // MARK: - Remove / Delete
 
     /// Remove selected photos from the list (NOT from disk)
@@ -120,6 +144,7 @@ extension PhotoStore {
         var deleted = 0
         var failed = 0
         var trashMoves: [FileMove] = []   // 휴지통 복원용
+        var deletedURLs: [URL] = []       // v8.6.1: 삭제된 URL 캐시 무효화용
 
         for id in ids {
             // 안전장치: _photoIndex가 스테일할 수 있으므로 photo.id == id 검증
@@ -135,6 +160,12 @@ extension PhotoStore {
                 continue
             }
             guard !photo.isFolder && !photo.isParentFolder else { continue }
+
+            // v8.6.1: 삭제되는 파일의 모든 캐시 엔트리 수집 → 아래에서 일괄 제거
+            deletedURLs.append(photo.jpgURL)
+            if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                deletedURLs.append(rawURL)
+            }
 
             // 무엇을 삭제하는지 명시 로그 (디버깅 용)
             let rawLog = photo.rawURL.map { $0.lastPathComponent } ?? "nil"
@@ -167,6 +198,11 @@ extension PhotoStore {
         }
 
         AppLogger.log(.export, "Deleted \(deleted) files (\(failed) failed) to Trash")
+
+        // v8.6.1 메모리 누수 수정: 삭제된 사진들의 캐시 일괄 무효화.
+        // (이전에는 photos[] 에서만 제거하고 각 캐시엔 NSImage 가 그대로 남아
+        //  35회 × 수십 MB → 60GB 누수 발생. MemGuard 가 감지했어도 일부만 해제)
+        PhotoStore.invalidateCachesForDeletedURLs(deletedURLs)
 
         // 삭제 효과음 (macOS 휴지통 비우기, 0.28초)
         // 주의: removePhotosFromList 안에서도 재생되므로 여기는 생략 — 이중 재생 방지
@@ -432,6 +468,10 @@ extension PhotoStore {
                 if !fileMoveRecords.isEmpty {
                     self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords, removedPhotos: []))
                 }
+                // v8.6.1 메모리 누수 수정: 이동된 사진들의 캐시 일괄 정리.
+                //   현재 폴더에서는 이동 후 해당 사진이 사라지므로 캐시를 유지할 이유 없음.
+                let movedURLs = fileMoveRecords.map { $0.sourceURL }
+                PhotoStore.invalidateCachesForDeletedURLs(movedURLs)
                 // 이동된 사진 목록에서 제거
                 if !movedIDs.isEmpty {
                     self.removePhotosFromList(ids: movedIDs)

@@ -16,9 +16,12 @@ class LocalOAuthServer {
     private var listener: NWListener?
     private let port: UInt16
     private let completion: (String?, Error?) -> Void
+    /// v8.6.1: OAuth state 검증 (CSRF 방지) — 요청 시작 전 세팅한 값과 콜백 state 가 일치해야 함.
+    private let expectedState: String?
 
-    init(port: UInt16, completion: @escaping (String?, Error?) -> Void) {
+    init(port: UInt16, expectedState: String? = nil, completion: @escaping (String?, Error?) -> Void) {
         self.port = port
+        self.expectedState = expectedState
         self.completion = completion
     }
 
@@ -93,17 +96,38 @@ class LocalOAuthServer {
                 }
             }
 
-            // state 값은 completion에서 검증 가능하도록 code에 포함 (간접 전달)
-            _ = state  // 향후 state 검증 확장용
+            // v8.6.1: OAuth state 검증 (CSRF 방지).
+            // expectedState 가 세팅됐는데 callback state 가 다르면 공격자의 code 주입으로 간주 → 거부.
+            let stateValid: Bool = {
+                guard let expected = self?.expectedState else { return true }  // 검증 비활성 (backward compat)
+                return state == expected
+            }()
 
-            // Send response HTML
-            let html = """
-            <html><body style="font-family:-apple-system;text-align:center;padding:60px;background:#1a1a2e;color:white;">
-            <h1>✅ PickShot 로그인 성공!</h1>
-            <p>이 창을 닫고 PickShot으로 돌아가세요.</p>
-            <script>setTimeout(function(){window.close()},2000);</script>
-            </body></html>
-            """
+            let html: String
+            let returnedCode: String?
+            let returnedError: Error?
+            if !stateValid {
+                html = """
+                <html><body style="font-family:-apple-system;text-align:center;padding:60px;background:#1a1a2e;color:#ff6b6b;">
+                <h1>⚠️ 보안 오류</h1>
+                <p>OAuth state 불일치 — 로그인 취소됨. PickShot에서 다시 시도해주세요.</p>
+                </body></html>
+                """
+                returnedCode = nil
+                returnedError = NSError(domain: "LocalOAuthServer", code: -2,
+                                        userInfo: [NSLocalizedDescriptionKey: "OAuth state 불일치 (CSRF 의심)"])
+                fputs("[OAUTH-SRV] ❌ state mismatch: expected=\(self?.expectedState ?? "nil") got=\(state ?? "nil")\n", stderr)
+            } else {
+                html = """
+                <html><body style="font-family:-apple-system;text-align:center;padding:60px;background:#1a1a2e;color:white;">
+                <h1>✅ PickShot 로그인 성공!</h1>
+                <p>이 창을 닫고 PickShot으로 돌아가세요.</p>
+                <script>setTimeout(function(){window.close()},2000);</script>
+                </body></html>
+                """
+                returnedCode = code
+                returnedError = nil
+            }
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
 
             connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
@@ -112,7 +136,7 @@ class LocalOAuthServer {
 
             self?.stop()
             DispatchQueue.main.async {
-                self?.completion(code, nil)
+                self?.completion(returnedCode, returnedError)
             }
         }
     }

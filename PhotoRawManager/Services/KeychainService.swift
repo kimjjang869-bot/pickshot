@@ -26,18 +26,22 @@ struct KeychainService {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
         ]
         let status = SecItemAdd(addQuery as CFDictionary, nil)
-        cacheLock.lock(); cache[key] = value; cacheLock.unlock()
+        cacheLock.lock(); cache[key] = value; negativeCache.remove(key); cacheLock.unlock()
         return status == errSecSuccess
     }
 
-    // In-memory cache to avoid repeated Keychain reads (which block main thread)
-    private static var cache: [String: String?] = [:]
+    // v8.6.1 fix: 기존 `[String: String?]` 은 `.some(nil)` 이 한 번 저장되면 영원히
+    // 미인증 반환하는 버그 (dict["key"] 가 Optional<Optional<String>> 이라 .some(.none) 을
+    // 찾으면 nil 반환). 해결: non-optional `[String: String]` 사용 + 별도 negative cache set.
+    private static var cache: [String: String] = [:]
+    private static var negativeCache: Set<String> = []
     private static let cacheLock = NSLock()
 
     /// Read a string value from Keychain (cached after first read)
     static func read(key: String) -> String? {
         cacheLock.lock()
-        if let cached = cache[key] { cacheLock.unlock(); return cached }
+        if let v = cache[key] { cacheLock.unlock(); return v }
+        if negativeCache.contains(key) { cacheLock.unlock(); return nil }
         cacheLock.unlock()
 
         let query: [String: Any] = [
@@ -55,7 +59,14 @@ struct KeychainService {
         } else {
             value = nil
         }
-        cacheLock.lock(); cache[key] = value; cacheLock.unlock()
+        cacheLock.lock()
+        if let v = value {
+            cache[key] = v
+            negativeCache.remove(key)
+        } else {
+            negativeCache.insert(key)
+        }
+        cacheLock.unlock()
         return value
     }
 
@@ -67,7 +78,10 @@ struct KeychainService {
             kSecAttrAccount as String: key
         ]
         let status = SecItemDelete(query as CFDictionary)
-        cacheLock.lock(); cache.removeValue(forKey: key); cacheLock.unlock()
+        cacheLock.lock()
+        cache.removeValue(forKey: key)
+        negativeCache.insert(key)
+        cacheLock.unlock()
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
