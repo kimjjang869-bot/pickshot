@@ -208,11 +208,30 @@ struct FilmstripView: View {
                     }
                 }
         } else {
-            // 일반 사진 셀: overlay(NSView) → onTapGesture → onDrop → contextMenu (썸네일뷰와 동일한 순서)
+            // v8.6.2: 일반 사진 셀 — MultiFileDragView NSView 가 클릭을 먹는 문제로 SwiftUI .onDrag 로 교체.
+            //   장점: onTapGesture 확실히 동작, 간단
+            //   단점: 멀티 파일 드래그 미리보기 이미지는 시스템 기본 (썸네일뷰의 커스텀 미리보기보다 단순)
+            //   JPG+RAW 파트너는 NSItemProvider 에 둘 다 포함해서 Finder 로 드래그 시 함께 이동
             base
-                .overlay(MultiFileDragView(photo: photo, store: store))
                 .overlay(DropIndicatorOverlay(photoID: photo.id))
                 .onTapGesture(perform: tap)
+                .onDrag {
+                    // 다중 선택 or 단일
+                    let ids = store.selectedPhotoIDs.contains(photo.id) ? store.selectedPhotoIDs : [photo.id]
+                    var urls: [URL] = []
+                    for id in ids {
+                        guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+                        let p = store.photos[idx]
+                        guard !p.isFolder && !p.isParentFolder else { continue }
+                        urls.append(p.jpgURL)
+                        if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+                    }
+                    // 우선 첫 URL 을 provider 로 (SwiftUI .onDrag 는 단일 itemProvider 반환)
+                    if let first = urls.first {
+                        return NSItemProvider(object: first as NSURL)
+                    }
+                    return NSItemProvider()
+                }
                 .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
                     photo: photo, store: store, cellWidth: (filmstripHeight - 20) * 1.3
                 ))
@@ -409,10 +428,23 @@ struct FilmstripCell: View {
     var body: some View {
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
-                AsyncThumbnailView(url: photo.displayURL)
+                // v8.6.2: 폴더/상위폴더 는 시스템 기본 썸네일 대신 SwiftUI 폴더 아이콘 사용 (깨짐 방지)
+                if photo.isFolder || photo.isParentFolder {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.gray.opacity(0.1))
+                        Image(systemName: photo.isParentFolder ? "arrow.up.circle.fill" : "folder.fill")
+                            .font(.system(size: imgHeight * 0.45, weight: .regular))
+                            .foregroundColor(.blue.opacity(0.85))
+                    }
                     .frame(width: cellWidth, height: imgHeight)
-                    .clipped()
                     .cornerRadius(4)
+                } else {
+                    AsyncThumbnailView(url: photo.displayURL)
+                        .frame(width: cellWidth, height: imgHeight)
+                        .clipped()
+                        .cornerRadius(4)
+                }
 
                 // SP badge (red, prominent)
                 if isSpacePicked {
@@ -453,10 +485,11 @@ struct FilmstripCell: View {
                 }
             }
 
-            Text(photo.fileName)
+            // v8.6.2: 확장자 표시 — RAW/JPG 구분
+            Text(photo.fileNameWithExtension)
                 .font(.system(size: 9))
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .truncationMode(.middle)
                 .foregroundColor(isSelected ? .white : AppTheme.textSecondary)
                 .frame(width: cellWidth)
 

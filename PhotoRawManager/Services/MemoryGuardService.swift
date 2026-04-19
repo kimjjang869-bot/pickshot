@@ -36,7 +36,9 @@ final class MemoryGuardService {
         fputs("[MemGuard] 시작 — baseline \(baselineRamMB)MB\n", stderr)
 
         timer?.cancel()
-        let t = DispatchSource.makeTimerSource(queue: .main)
+        // v8.6.2: main → utility 큐로 이동. 1초마다 main 블록이 키 이벤트 처리와 경쟁해서 스파이크 유발.
+        //   mach_task_basic_info 는 thread 상관없이 호출 가능. flushAll 이 필요할 때만 main 에서 실행.
+        let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         t.schedule(deadline: .now() + 1, repeating: 1.0)
         t.setEventHandler { [weak self] in
             self?.check()
@@ -53,15 +55,18 @@ final class MemoryGuardService {
     }
 
     private func check() {
+        // 호출 자체는 utility 큐에서 돌아옴. mach_task_basic_info 는 thread-safe.
         let now = currentRamMB()
         let growth = now - baselineRamMB
         let sinceFlush = now - lastFlushRamMB
 
-        // 2GB 이상 증가하고, 지난 flush 대비 500MB 이상 더 늘었으면 flush
         if growth >= growthThresholdMB && sinceFlush >= reflushDeltaMB {
             fputs("[MemGuard] RAM 증가 \(growth)MB (2GB 초과) → 자동 캐시 해제\n", stderr)
-            flushAll()
-            lastFlushRamMB = currentRamMB()
+            // @Published 캐시 조작은 main 에서
+            DispatchQueue.main.async { [weak self] in
+                self?.flushAll()
+                self?.lastFlushRamMB = self?.currentRamMB() ?? 0
+            }
         }
     }
 

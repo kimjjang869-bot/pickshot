@@ -464,9 +464,8 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
 
         thumbnailImageView.isHidden = false
 
-        // File name
-        let name = showFileExtension ? photo.fileNameWithExtension : photo.fileName
-        fileNameLabel.stringValue = name
+        // File name — v8.6.2: 확장자 항상 표시 (RAW/JPG 구분 명확)
+        fileNameLabel.stringValue = photo.fileNameWithExtension
         fileNameLabel.isHidden = false
 
         // Stars

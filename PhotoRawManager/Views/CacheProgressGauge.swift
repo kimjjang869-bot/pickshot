@@ -92,8 +92,10 @@ struct CacheProgressGauge: View {
                 .padding(10)
                 .onDisappear { showTooltip = false }
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            if !isComplete { refreshTick += 1 }
+        // v8.6.2: Timer 는 tooltip 표시 중에만 작동 (main queue 부담 최소화)
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            // tooltip 이 보일 때만 업데이트. 평상시엔 no-op.
+            if showTooltip && !isComplete { refreshTick += 1 }
         }
     }
 

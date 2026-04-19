@@ -3465,7 +3465,7 @@ class TileLayer: CALayer {
         imageLayer.frame = CGRect(x: 5, y: 2, width: size, height: imgH)
         borderLayer.frame = imageLayer.frame.insetBy(dx: -2, dy: -2)
         textLayer.frame = CGRect(x: 0, y: imgH + 4, width: bounds.width, height: 14)
-        textLayer.string = photo.fileName
+        textLayer.string = photo.fileNameWithExtension  // v8.6.2: 확장자 표시
 
         // 뱃지 (R+J, JPG, CR3 등)
         if !photo.isFolder && !photo.isParentFolder {
