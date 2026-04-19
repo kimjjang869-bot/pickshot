@@ -271,7 +271,7 @@ extension PhotoStore {
                 var moodCounts: [String: Int] = [:]
                 var compCounts: [String: Int] = [:]
                 var todCounts: [String: Int] = [:]
-                var totalFaces = 0
+                // var totalFaces = 0  // v8.6.3: 미사용 제거 (집계 코드는 디버그 로그에서만 사용됐음)
                 var personPhotos = 0
                 var textPhotos = 0
                 for p in classified {

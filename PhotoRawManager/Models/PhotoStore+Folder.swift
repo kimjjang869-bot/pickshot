@@ -451,7 +451,7 @@ extension PhotoStore {
                 }
                 defer { try? extractStream.close() }
 
-                try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
+                _ = try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
             } else {
                 fputs("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n", stderr)
                 try? FileManager.default.removeItem(at: tempDir)

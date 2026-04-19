@@ -2106,11 +2106,11 @@ struct PhotoPreviewView: View {
         let rads = CGFloat(degrees * .pi / 180.0)
         let origSize = img.size
 
-        // 회전 후 바운딩 박스
+        // 회전 후 바운딩 박스 (현재 미사용 — 크롭은 원본 aspect 기반)
         let cosA = abs(cos(rads))
         let sinA = abs(sin(rads))
-        let rotatedW = origSize.width * cosA + origSize.height * sinA
-        let rotatedH = origSize.height * cosA + origSize.width * sinA
+        _ = origSize.width * cosA + origSize.height * sinA
+        _ = origSize.height * cosA + origSize.width * sinA
 
         // 검은 영역 없는 최대 크롭 사각형 (원본 종횡비 유지)
         let aspect = origSize.width / origSize.height

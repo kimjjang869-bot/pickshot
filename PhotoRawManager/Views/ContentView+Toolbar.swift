@@ -560,7 +560,8 @@ extension ContentView {
     var qualityFilterMenu: some View {
         let aiCount = store.photos.filter { $0.isAIPick }.count
 
-        return Menu {
+        return HStack(spacing: 4) {
+        Menu {
             Button(action: { store.qualityFilter = .all }) {
                 Label("전체", systemImage: store.qualityFilter == .all ? "checkmark" : "")
             }
@@ -654,6 +655,7 @@ extension ContentView {
         if store.isClassifyingScenes || store.isAnalyzing {
             ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
         }
+        }  // HStack close
     }
 
     // MARK: - Face Group Filter Menu

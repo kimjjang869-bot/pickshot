@@ -3101,7 +3101,7 @@ extension MultiFileDragView.DragOverlayNSView: NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.async {
             DragDropState.shared.dropTargetID = nil
         }
     }
