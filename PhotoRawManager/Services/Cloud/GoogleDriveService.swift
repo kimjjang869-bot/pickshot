@@ -453,9 +453,10 @@ class GoogleDriveService {
 
     // MARK: - OAuth 2.0
 
-    // OAuth credentials loaded lazily (avoids keychain popup at app launch)
-    // 기본 OAuth 자격증명 (Secrets.xcconfig 없는 사용자도 사용 가능)
-    // Google Desktop App의 client_secret은 "not confidential" — Google 공식 문서 참조
+    // OAuth credentials — Secrets.xcconfig 또는 환경변수에서 로드.
+    // 보안 권고: 아래 defaultClientID/Secret 은 소스에 평문이라 DMG strings 로 추출 가능.
+    //   Google Desktop App 정책상 "not confidential" 이지만, 앱 사칭 방지를 위해 추후 obfuscation
+    //   또는 강제 Secrets.xcconfig 요구로 전환 권장. (v8.6.1 현재는 배포 호환성 위해 유지)
     private static let defaultClientID = "661638823938-f9bk0a503pv0js0iskdqd196erkg40ua.apps.googleusercontent.com"
     private static let defaultClientSecret = "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"
     static var oauthClientID: String {
@@ -612,7 +613,8 @@ class GoogleDriveService {
 
     private static func startLocalOAuthServer(completion: @escaping (String?, Error?) -> Void) {
         let expectedState = oauthState
-        localServer = LocalOAuthServer(port: 8085, completion: { code, error in
+        // v8.6.1 보안: LocalOAuthServer 에 expectedState 전달 (CSRF 방지)
+        localServer = LocalOAuthServer(port: 8085, expectedState: oauthState, completion: { code, error in
             // state 파라미터 미검증 시 CSRF 공격 가능 — 서버에서 state 추출 후 비교
             completion(code, error)
         })
