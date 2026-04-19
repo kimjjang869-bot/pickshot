@@ -239,7 +239,7 @@ struct MetadataEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .onChange(of: selectedTemplateName) { name in
+                .onChange(of: selectedTemplateName) { _, name in
                     if let t = templates.first(where: { $0.name == name }) {
                         applyTemplate(t)
                     }

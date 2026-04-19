@@ -925,7 +925,7 @@ struct PhotoPreviewView: View {
                 .onAppear {
                     viewState.viewSize = vSize
                 }
-                .onChange(of: vSize) { newSize in
+                .onChange(of: vSize) { _, newSize in
                     viewState.viewSize = newSize
                 }
             }
@@ -1168,7 +1168,7 @@ struct PhotoPreviewView: View {
             }
             store.onQuickPreview = nil
         }
-        .onChange(of: store.selectedPhotoID) { newID in
+        .onChange(of: store.selectedPhotoID) { _, newID in
             guard let newID = newID else { return }
             pendingPhotoID = newID
             hiResWorkItem?.cancel()
@@ -1323,13 +1323,13 @@ struct PhotoPreviewView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
-        .onChange(of: viewState.zoomPreset) { newPreset in
+        .onChange(of: viewState.zoomPreset) { _, newPreset in
             if newPreset == .fit {
                 switchToLowRes()
             }
         }
         // v8.5 — 원본 image 가 로드되면 비파괴 보정 프리뷰 갱신
-        .onChange(of: image) { _ in refreshDevelopedImage() }
+        .onChange(of: image) { _, _ in refreshDevelopedImage() }
         // 보정값이 외부(슬라이더 등)에서 바뀌면 즉시 반영
         .onReceive(DevelopStore.shared.objectWillChange) { _ in
             // objectWillChange 는 변경 직전 발행 → 다음 runloop 에서 읽어야 반영됨
@@ -1341,7 +1341,7 @@ struct PhotoPreviewView: View {
             isCroppingMode.toggle()
         }
         // 크롭 모드 진입/종료 시 프리뷰 재렌더 (회전/크롭 적용 여부 달라짐)
-        .onChange(of: isCroppingMode) { _ in refreshDevelopedImage() }
+        .onChange(of: isCroppingMode) { _, _ in refreshDevelopedImage() }
         // 보정 토스트 (object: String)
         .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentToast)) { notif in
             guard let msg = notif.object as? String else { return }
@@ -1564,7 +1564,7 @@ struct PhotoPreviewView: View {
                 .frame(minWidth: 60, maxWidth: 120)
                 .controlSize(.small)
                 .help("확대/축소 (더블클릭: 화면 맞춤)")
-                .onChange(of: sliderValue) { newVal in
+                .onChange(of: sliderValue) { _, newVal in
                     let scale = sliderToScale(newVal)
                     viewState.customScale = scale
                     if abs(scale - currentFitScale()) < 0.02 {

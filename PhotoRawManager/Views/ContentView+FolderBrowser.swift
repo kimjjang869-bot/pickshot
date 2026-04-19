@@ -115,7 +115,7 @@ struct FolderBrowserView: View {
             }
             volumeObservers = [mountObs, unmountObs]
         }
-        .onChange(of: store.folderURL) { newURL in
+        .onChange(of: store.folderURL) { _, newURL in
             guard let url = newURL else { return }
             expandTreeToPath(url)
         }
@@ -397,7 +397,7 @@ struct FolderBrowserView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                 }
-                .onChange(of: store.folderURL) { newURL in
+                .onChange(of: store.folderURL) { _, newURL in
                     guard let url = newURL else { return }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         withAnimation(.easeInOut(duration: 0.15)) {

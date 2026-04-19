@@ -37,7 +37,7 @@ struct ClientPenOverlayView: View {
         }
         .allowsHitTesting(false)
         .onAppear { parse() }
-        .onChange(of: penDrawingsJSON) { _ in parse() }
+        .onChange(of: penDrawingsJSON) { _, _ in parse() }
     }
 
     private func parse() {

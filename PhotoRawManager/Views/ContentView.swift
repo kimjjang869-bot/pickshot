@@ -191,8 +191,8 @@ struct ContentView: View {
                                 // Left panel
                                 VStack(spacing: 0) {
                                     ThumbnailGridView()
-                                        // 스크롤바와 DragHandle이 겹쳐서 폭조절 드래그가 안 잡히는 문제 방지
-                                        .padding(.trailing, 8)
+                                        // v8.6.3: 스크롤바 + DragHandle/창 리사이즈 겹침 방지 (8→14)
+                                        .padding(.trailing, 14)
 
                                     Divider()
                                     // Status bar
@@ -325,8 +325,8 @@ struct ContentView: View {
                                 }
                             }
                             .onAppear { updateGridColumns(width: leftW) }
-                            .onChange(of: leftW) { newW in updateGridColumns(width: newW) }
-                            .onChange(of: store.thumbnailSize) { _ in updateGridColumns(width: leftW) }
+                            .onChange(of: leftW) { _, newW in updateGridColumns(width: newW) }
+                            .onChange(of: store.thumbnailSize) { _, _ in updateGridColumns(width: leftW) }
                         }
                     }
                     } // end VStack (toolbarRow2 + content)
@@ -463,14 +463,14 @@ struct ContentView: View {
                 return nil
             }
         }
-        .onChange(of: store.selectedPhotoID) { _ in
+        .onChange(of: store.selectedPhotoID) { _, _ in
             CacheSweeper.shared.notifyActivity()
         }
-        .onChange(of: store.folderURL) { newURL in
+        .onChange(of: store.folderURL) { _, newURL in
             // v8.6.3: 스트리밍 로드 대응 — photosVersion 변화에서 재구성 (아래 onChange 에서 처리)
             _ = newURL
         }
-        .onChange(of: store.photosVersion) { _ in
+        .onChange(of: store.photosVersion) { _, _ in
             // v8.6.3: photos 가 스트리밍으로 append 될 때마다 sweep 대상 업데이트.
             //   연속 호출 방지 위해 500ms 쓰로틀 (마지막 상태로 확정).
             guard let url = store.folderURL else { return }
@@ -621,7 +621,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(store.isDarkMode ? .dark : .light)
         .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen.toggle() }, onHideFullscreen: { showFullscreen = false }))
-        .onChange(of: store.showFullscreenPreview) { newVal in
+        .onChange(of: store.showFullscreenPreview) { _, newVal in
             if newVal {
                 showFullscreen = true
                 store.showFullscreenPreview = false
@@ -642,7 +642,7 @@ struct ContentView: View {
                     .animation(.easeInOut(duration: 0.3), value: store.showToast)
             }
         }
-        .onChange(of: store.showDualViewer) { show in
+        .onChange(of: store.showDualViewer) { _, show in
             if show {
                 openDualViewer()
             } else {

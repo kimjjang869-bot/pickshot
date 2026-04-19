@@ -31,7 +31,7 @@ struct HistogramOverlay: View {
             )
             .onTapGesture { isVisible = false }
             .onAppear { loadHistogram() }
-            .onChange(of: photo.id) { _ in
+            .onChange(of: photo.id) { _, _ in
                 loadHistogram()
             }
         } else if !isVisible {
@@ -47,7 +47,7 @@ struct HistogramOverlay: View {
         } else {
             EmptyView()
                 .onAppear { loadHistogram() }
-                .onChange(of: photo.id) { _ in
+                .onChange(of: photo.id) { _, _ in
                     loadHistogram()
                 }
         }

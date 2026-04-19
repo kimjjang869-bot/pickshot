@@ -74,7 +74,7 @@ struct AdvancedClassificationService {
 
         // === 1단계: Vision 요청 배치 실행 ===
         let sceneReq = VNClassifyImageRequest()
-        sceneReq.usesCPUOnly = false
+        // v8.6.3: usesCPUOnly deprecated — GPU 기본 동작
 
         let faceReq = VNDetectFaceRectanglesRequest()
         if #available(macOS 13.0, *) {

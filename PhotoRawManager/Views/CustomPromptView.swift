@@ -43,7 +43,7 @@ struct CustomPromptView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .frame(minHeight: 200)
                 .border(Color.gray.opacity(0.3))
-                .onChange(of: promptText) { _ in selectedPreset = -1 }
+                .onChange(of: promptText) { _, _ in selectedPreset = -1 }
 
             Text("⚠️ JSON 출력 형식을 포함해야 결과가 정상적으로 파싱됩니다")
                 .font(.system(size: 10))

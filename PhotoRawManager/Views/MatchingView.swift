@@ -96,7 +96,7 @@ struct MatchingView: View {
                 .frame(height: 150)
                 .border(Color.gray.opacity(0.3))
                 .cornerRadius(4)
-                .onChange(of: filenameText) { text in
+                .onChange(of: filenameText) { _, text in
                     // 파싱 결과 캐시 (body에서 매 렌더마다 파싱 방지)
                     parsedFilenameCount = FilenameMatchingService.parseFilenames(from: text).count
                 }

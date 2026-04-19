@@ -1004,13 +1004,13 @@ class PhotoStore: ObservableObject {
     /// Returns a Korean scene tag + IPTC keywords matching PickShot's tag vocabulary.
     private static func classifySceneTag(cgImage: CGImage) -> SceneClassResult? {
         let sceneReq = VNClassifyImageRequest()
-        sceneReq.usesCPUOnly = false  // enable ANE
+        // v8.6.3: usesCPUOnly deprecated in macOS 14 — GPU/ANE 는 기본 동작
 
         let faceReq = VNDetectFaceRectanglesRequest()
         if #available(macOS 13.0, *) {
             faceReq.revision = VNDetectFaceRectanglesRequestRevision3
         }
-        faceReq.usesCPUOnly = false
+        // v8.6.3: usesCPUOnly deprecated — GPU 기본 동작
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {

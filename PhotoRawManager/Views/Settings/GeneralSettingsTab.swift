@@ -87,7 +87,7 @@ struct GeneralSettingsTab: View {
                         Divider()
 
                         Toggle("메모리카드 자동 백업", isOn: $autoBackupEnabled)
-                            .onChange(of: autoBackupEnabled) { enabled in
+                            .onChange(of: autoBackupEnabled) { _, enabled in
                                 if enabled { MemoryCardBackupService.shared.startMonitoring() }
                                 else { MemoryCardBackupService.shared.stopMonitoring() }
                             }

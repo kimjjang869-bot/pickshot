@@ -21,7 +21,7 @@ struct FocusPeakingOverlay: View {
             }
         }
         .onAppear { generate() }
-        .onChange(of: image) { _ in generate() }
+        .onChange(of: image) { _, _ in generate() }
     }
 
     private func generate() {

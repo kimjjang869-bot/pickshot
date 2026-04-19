@@ -88,7 +88,7 @@ struct CurveEditorView: View {
         }
         .padding(10)
         .onAppear { loadHistogram() }
-        .onChange(of: photoURL) { _ in loadHistogram() }
+        .onChange(of: photoURL) { _, _ in loadHistogram() }
     }
 
     // MARK: - Grid

@@ -81,7 +81,7 @@ struct ExifInfoView: View {
         }
         .background(Color(nsColor: .controlBackgroundColor))
         .onAppear { loadExif() }
-        .onChange(of: photo.id) { _ in loadExif() }
+        .onChange(of: photo.id) { _, _ in loadExif() }
     }
 
     private static let exifQueue: OperationQueue = {

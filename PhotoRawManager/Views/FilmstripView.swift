@@ -120,7 +120,7 @@ struct FilmstripView: View {
                 // v8.6.2: scrollTrigger 기반 — moveSelection (방향키) 에만 증가, 클릭에선 증가 X.
                 //   쓰로틀 제거 → 매 키 입력마다 scrollTo 즉시 발동 → 선택이 속도 따라옴.
                 //   필름스트립은 LazyHStack 이라 scrollTo 비용 작음 (LazyVGrid 10k 와 달리 빠름).
-                .onChange(of: store.scrollTrigger) { _ in
+                .onChange(of: store.scrollTrigger) { _, _ in
                     guard let id = store.selectedPhotoID else { return }
                     proxy.scrollTo(id, anchor: .center)
                 }

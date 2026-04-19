@@ -90,7 +90,7 @@ struct GSelectQRView: View {
         .padding(20)
         .frame(width: 280)
         .onAppear { updateQR() }
-        .onChange(of: showViewer) { _ in updateQR() }
+        .onChange(of: showViewer) { _, _ in updateQR() }
     }
 
     private func updateQR() {

@@ -96,7 +96,7 @@ struct ThumbnailGridView: View {
                                     Label("새 폴더 만들기", systemImage: "folder.badge.plus")
                                 }
                             }
-                            .onChange(of: store.scrollTrigger) { _ in
+                            .onChange(of: store.scrollTrigger) { _, _ in
                                 guard let id = store.selectedPhotoID else { return }
                                 // v8.6.2: 10k+ 폴더에서 LazyVGrid scrollTo 가 느림 → 쓰로틀.
                                 //   - 단일 이동 또는 100ms 경과: 즉시 실행
@@ -541,7 +541,7 @@ Text(photo.fileNameWithExtension)
                 }
             }
         }
-        .onChange(of: selection) { newSelection in
+        .onChange(of: selection) { _, newSelection in
             store.selectedPhotoIDs = newSelection
             if newSelection.count == 1, let first = newSelection.first {
                 store.selectedPhotoID = first
@@ -554,7 +554,7 @@ Text(photo.fileNameWithExtension)
                 }
             }
         }
-        .onChange(of: store.selectedPhotoIDs) { newIDs in
+        .onChange(of: store.selectedPhotoIDs) { _, newIDs in
             if newIDs != selection {
                 selection = newIDs
             }
@@ -565,7 +565,7 @@ Text(photo.fileNameWithExtension)
                 store.triggerListExifLoad()
             }
         }
-        .onChange(of: store.photosVersion) { _ in
+        .onChange(of: store.photosVersion) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 store.triggerListExifLoad()
             }
@@ -1023,7 +1023,7 @@ struct LazyListRowWrapper: View {
             .onAppear {
                 store.loadExifIfNeeded(for: photo.id)
             }
-            .onChange(of: store.photosVersion) { _ in
+            .onChange(of: store.photosVersion) { _, _ in
                 // 정렬/필터 변경 후에도 EXIF 재로딩
                 store.loadExifIfNeeded(for: photo.id)
             }
@@ -2825,12 +2825,12 @@ struct AsyncThumbnailView: View {
                 loadThumbnail()
             }
         }
-        .onChange(of: url) { newURL in
+        .onChange(of: url) { _, newURL in
             if loadedURL != newURL {
                 loadThumbnail()
             }
         }
-        .onChange(of: retryCount) { _ in
+        .onChange(of: retryCount) { _, _ in
             // 재시도 트리거
             if image == nil {
                 loadThumbnail()
@@ -4038,7 +4038,7 @@ struct DropIndicatorOverlay: View {
         }
         .allowsHitTesting(false)
         .onAppear { observer.bind(to: photoID) }
-        .onChange(of: photoID) { _ in observer.bind(to: photoID) }
+        .onChange(of: photoID) { _, _ in observer.bind(to: photoID) }
     }
 
     private func dropBar(height: CGFloat) -> some View {

@@ -140,7 +140,7 @@ struct ClientView: View {
                 }
                 .padding(6)
             }
-            .onChange(of: store.selectedPhotoID) { newID in
+            .onChange(of: store.selectedPhotoID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         proxy.scrollTo(id, anchor: nil)
@@ -227,7 +227,7 @@ struct ClientView: View {
                 }
                 .padding(8)
             }
-            .onChange(of: store.selectedPhotoID) { newID in
+            .onChange(of: store.selectedPhotoID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         proxy.scrollTo(id, anchor: nil)

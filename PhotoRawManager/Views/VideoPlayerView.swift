@@ -55,7 +55,7 @@ struct VideoPlayerView: View {
             hideTimer = nil
             manager.pause()
         }
-        .onChange(of: url) { newURL in
+        .onChange(of: url) { _, newURL in
             manager.loadVideo(url: newURL)
             showControls = true
             scheduleHideControls()
