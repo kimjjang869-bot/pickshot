@@ -448,6 +448,17 @@ struct ContentView: View {
             sweeper.storeNotePreview = { [weak store] url in
                 store?.notePreviewLoaded(url: url)
             }
+            // v8.6.2: RAW+JPG 쌍에서 RAW 를 decode 소스로 사용 (JPG 20MB → NEF 1/10)
+            sweeper.resolveDecodeURLProvider = { [weak store] jpgURL in
+                guard let store = store else { return nil }
+                for p in store.photos {
+                    if p.jpgURL == jpgURL {
+                        if let raw = p.rawURL, raw != jpgURL { return raw }
+                        break
+                    }
+                }
+                return nil
+            }
         }
         .onChange(of: store.selectedPhotoID) { _ in
             CacheSweeper.shared.notifyActivity()

@@ -49,6 +49,8 @@ final class CacheSweeper: ObservableObject {
     var selectedIndexProvider: (() -> Int?)?
     /// 미리보기 카운트 업데이트 콜백 (CacheProgressGauge 연동). main thread 외에서도 호출 안전해야 함.
     var storeNotePreview: ((URL) -> Void)?
+    /// v8.6.2: jpgURL → decode URL 매핑 (RAW+JPG 쌍에서 RAW 를 decode 소스로 사용)
+    var resolveDecodeURLProvider: ((URL) -> URL?)?
 
     private init() {}
 
@@ -185,33 +187,47 @@ final class CacheSweeper: ObservableObject {
             // UserDefaults 의 previewResolution (기본 1000) 와 동일한 cacheKey 규칙으로 저장
             let res = UserDefaults.standard.string(forKey: "previewMaxResolution").flatMap { Int($0) } ?? 1000
             let maxPx: CGFloat = res > 0 ? CGFloat(res) : 1600
+
+            // v8.6.2: 병렬 프리페치 — 하드웨어 tier 기반 조정
+            //   - low (8GB M1 MBA): 1개 (CPU 과포화 방지 — 실측 로그에서 300% 지속 확인)
+            //   - standard/high/extreme: 2개
+            //   - slow disk: 항상 1개
+            let opQueue = OperationQueue()
+            let tier = SystemSpec.shared.effectiveTier
+            opQueue.maxConcurrentOperationCount = (slowDisk || tier == .low) ? 1 : 2
+            opQueue.qualityOfService = .utility
+            let resolveDecodeURL = self.resolveDecodeURLProvider  // capture closure
+            let bust = isBusyProvider
+            let notePreview = storeNotePreview
+
             for url in window {
-                guard let work = sweepWork, !work.isCancelled else {
-                    fputs("[SWEEP] 중단 (preview) — previews=\(previewsDone)\n", stderr)
-                    break
-                }
-                if isBusyProvider?() ?? false { break }
-                // cacheKey 는 PhotoPreviewView.loadImageDirect 와 정확히 동일하게:
-                //   resolution>0 → url + ".r{N}",  0 → url + ".orig"
+                if let work = sweepWork, work.isCancelled { break }
+                if bust?() ?? false { break }
                 let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
-                // 이미 캐시 (RAM 또는 디스크) 에 있으면 skip — 중복 I/O 방지
-                if PreviewImageCache.shared.has(cacheKey) {
-                    continue
-                }
-                autoreleasepool {
-                    if let img = PreviewImageCache.loadOptimized(url: url, maxPixel: maxPx) {
-                        // v8.6.2: 디코딩만 하고 버리지 말고 실제로 캐시에 저장 (RAM + 디스크)
-                        PreviewImageCache.shared.set(cacheKey, image: img)
-                        // 게이지/진행률 업데이트 — 메인스레드 큐잉으로 안전
-                        storeNotePreview?(url)
+                if PreviewImageCache.shared.has(cacheKey) { continue }
+
+                opQueue.addOperation {
+                    autoreleasepool {
+                        // RAW+JPG 쌍이면 RAW 임베디드 프리뷰로 디코드 (JPG 20MB → 1/10)
+                        let decodeURL = resolveDecodeURL?(url) ?? url
+                        if let img = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: maxPx) {
+                            PreviewImageCache.shared.set(cacheKey, image: img)
+                            notePreview?(url)
+                        }
                     }
                 }
                 previewsDone += 1
-                if previewsDone % 10 == 0 {
-                    fputs("[SWEEP] previews +\(previewsDone)\n", stderr)
-                }
                 if perItemDelay > 0 { Thread.sleep(forTimeInterval: perItemDelay) }
             }
+            // 대기 — 모든 op 완료 or 취소
+            while opQueue.operationCount > 0 {
+                if let work = sweepWork, work.isCancelled {
+                    opQueue.cancelAllOperations()
+                    break
+                }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            opQueue.waitUntilAllOperationsAreFinished()
         }
 
         DispatchQueue.main.async { [weak self] in

@@ -1315,7 +1315,10 @@ struct PhotoPreviewView: View {
                 let key = newURL as NSURL
                 return Self.hiResCache.object(forKey: key) != nil
             }()
-            let delay: TimeInterval = alreadyCached ? 0.0 : 0.15
+            // v8.6.2: 저사양(8GB) 은 HiRes 지연 400ms — 빠른 네비 중 HiRes 스킵해 CPU 여유 확보
+            let tier = SystemSpec.shared.effectiveTier
+            let missDelay: TimeInterval = tier == .low ? 0.4 : 0.15
+            let delay: TimeInterval = alreadyCached ? 0.0 : missDelay
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
@@ -1971,12 +1974,17 @@ struct PhotoPreviewView: View {
         guard let currentIdx = store._filteredIndex[currentID] else { return }
         let cols = max(1, store.actualColumnsPerRow)
 
+        // v8.6.2: 저사양(8GB M1)에선 프리페치 범위 축소 → CPU 과포화 방지.
+        //   - low: 열 ±5 + 행 ±2cols  (약 14장)
+        //   - standard+: 열 ±10 + 행 ±5cols (약 30-40장)
+        let tier = SystemSpec.shared.effectiveTier
+        let colRange = tier == .low ? 5 : 10
+        let rowMult = tier == .low ? 2 : 5
+
         // 수집 대상 오프셋 집합 (중복 제거용 Set)
         var offsets = Set<Int>()
-        // 열 이동: ±1 ~ ±10 순차
-        for o in 1...10 { offsets.insert(o); offsets.insert(-o) }
-        // 행 이동: ±cols, ±2cols, ±3cols, ±4cols, ±5cols (5행 앞뒤 프리페치)
-        for k in 1...5 {
+        for o in 1...colRange { offsets.insert(o); offsets.insert(-o) }
+        for k in 1...rowMult {
             offsets.insert(cols * k)
             offsets.insert(-cols * k)
         }
