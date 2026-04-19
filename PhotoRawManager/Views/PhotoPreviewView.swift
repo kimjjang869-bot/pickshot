@@ -403,16 +403,19 @@ class PreviewImageCache {
 
         for i in 0..<scanLimit {
             if data[i] == ffd8[0] && data[i + 1] == ffd8[1] {
-                let end = min(i + 5_000_000, data.count)  // Allow up to 5MB per JPEG
-                let subData = data.subdata(in: i..<end)
-                if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
-                   CGImageSourceGetCount(imgSource) > 0 {
-                    // 썸네일 스트립 제외 (비정상 비율 4:1 초과)
+                // v8.6.1: FFD8 스캔 per-iteration autoreleasepool — 큰 RAW 에서 subdata/CGImage
+                // 임시 생성물이 누적되어 수백 MB 메모리 피크 나던 문제 수정.
+                autoreleasepool {
+                    let end = min(i + 5_000_000, data.count)
+                    let subData = data.subdata(in: i..<end)
+                    guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                          CGImageSourceGetCount(imgSource) > 0 else { return }
+
                     let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
                     let pw = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
                     let ph = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
                     let ar = pw > ph ? Double(pw) / max(Double(ph), 1) : Double(ph) / max(Double(pw), 1)
-                    if ar > 4.0 { continue }
+                    if ar > 4.0 { return }
 
                     let opts: [NSString: Any] = [
                         kCGImageSourceThumbnailMaxPixelSize: maxPixel,
@@ -1647,12 +1650,15 @@ struct PhotoPreviewView: View {
                 // Stage 1: Fast load — low: 800px / standard: 1200px / high+: 1600px
                 var fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(stage1MaxPx, optimalPx))
 
-                // Fix orientation: compare with stableImageSize (which has correct orientation)
-                if let fast = fastImage, let stable = self.viewState.stableImageSize {
-                    let stableIsPortrait = stable.height > stable.width
+                // v8.6.1 fix: 하드코딩 orientation: 6 → 실제 EXIF orient 값 사용.
+                // (이전 코드는 orient=3/8 파일을 90° 반대로 회전해 "깜빡이며 뒤집힘" 유발)
+                if let fast = fastImage,
+                   let info = Self.readImageDimensionInfo(url: url),
+                   info.orientation > 1 {
+                    let expectPortrait = info.size.height > info.size.width
                     let fastIsPortrait = fast.size.height > fast.size.width
-                    if stableIsPortrait != fastIsPortrait {
-                        fastImage = Self.applyOrientation(fast, orientation: 6)
+                    if expectPortrait != fastIsPortrait {
+                        fastImage = Self.applyOrientation(fast, orientation: info.orientation)
                     }
                 }
 
@@ -1687,10 +1693,13 @@ struct PhotoPreviewView: View {
                 let stage2Px: CGFloat = stage2MaxPx == 0 ? optimalPx : stage2MaxPx
                 if stage2Px > stage1MaxPx, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
                     var finalHR = hr
-                    if let stable = self.viewState.stableImageSize {
-                        let sp = stable.height > stable.width
+                    // v8.6.1 fix: 실제 EXIF orient 사용 (이전 하드코딩 6 제거)
+                    if let info = Self.readImageDimensionInfo(url: url), info.orientation > 1 {
+                        let expectPortrait = info.size.height > info.size.width
                         let hp = hr.size.height > hr.size.width
-                        if sp != hp { finalHR = Self.applyOrientation(hr, orientation: 6) }
+                        if expectPortrait != hp {
+                            finalHR = Self.applyOrientation(hr, orientation: info.orientation)
+                        }
                     }
                     guard self.pendingPhotoID == id else { return }
                     PreviewImageCache.shared.set(cacheKey, image: finalHR)
@@ -2378,12 +2387,14 @@ struct PhotoPreviewView: View {
             var hiRes = Self.loadHiResImage(url: url)
             guard self.pendingPhotoID == photoID else { return }
 
-            // Fix orientation: match lowRes aspect ratio
-            if var img = hiRes, let low = self.lowResImage {
-                let lowIsPortrait = low.size.height > low.size.width
+            // v8.6.1 fix: 실제 EXIF orient 사용 (이전 하드코딩 6 → orient=3/8 오회전 유발)
+            if var img = hiRes,
+               let info = Self.readImageDimensionInfo(url: url),
+               info.orientation > 1 {
+                let expectPortrait = info.size.height > info.size.width
                 let hiIsPortrait = img.size.height > img.size.width
-                if lowIsPortrait != hiIsPortrait {
-                    img = Self.applyOrientation(img, orientation: 6)
+                if expectPortrait != hiIsPortrait {
+                    img = Self.applyOrientation(img, orientation: info.orientation)
                     hiRes = img
                 }
             }
@@ -2522,11 +2533,17 @@ struct PhotoPreviewView: View {
         loadImageDirect(for: selected.jpgURL, id: pendingPhotoID ?? UUID())
     }
 
-    /// Read image pixel dimensions from file header only (no decode, very fast)
-    private static var _dimensionCache: [URL: CGSize] = [:]
+    /// Read image pixel dimensions + EXIF orientation from file header only (no decode, very fast).
+    /// v8.6.1: orient 도 반환해서 Stage1 하드코딩 `orientation: 6` 이 orient=3/8 파일을 잘못
+    /// 회전시키던 깜빡임 버그 수정.
+    struct ImageDimensionInfo {
+        let size: CGSize       // orientation 적용 후의 display size (5-8 케이스는 swap 됨)
+        let orientation: Int   // 1~8 EXIF orientation
+    }
+    private static var _dimensionCache: [URL: ImageDimensionInfo] = [:]
     private static let _dimensionCacheLock = NSLock()
     private static let maxDimensionCacheSize = 2000
-    private static func readImageDimensions(url: URL) -> CGSize? {
+    static func readImageDimensionInfo(url: URL) -> ImageDimensionInfo? {
         _dimensionCacheLock.lock()
         if let cached = _dimensionCache[url] {
             _dimensionCacheLock.unlock()
@@ -2546,7 +2563,6 @@ struct PhotoPreviewView: View {
               let w = props[kCGImagePropertyPixelWidth as String] as? Int,
               let h = props[kCGImagePropertyPixelHeight as String] as? Int,
               w > 0, h > 0 else { return nil }
-        // Check orientation for swap
         let orient = props[kCGImagePropertyOrientation as String] as? Int ?? 1
         let size: CGSize
         if orient >= 5 && orient <= 8 {
@@ -2554,10 +2570,16 @@ struct PhotoPreviewView: View {
         } else {
             size = CGSize(width: w, height: h)
         }
+        let info = ImageDimensionInfo(size: size, orientation: orient)
         _dimensionCacheLock.lock()
-        _dimensionCache[url] = size
+        _dimensionCache[url] = info
         _dimensionCacheLock.unlock()
-        return size
+        return info
+    }
+
+    /// 하위 호환 — 기존 호출처용 (dimension 만 반환).
+    private static func readImageDimensions(url: URL) -> CGSize? {
+        return readImageDimensionInfo(url: url)?.size
     }
 
     /// Apply EXIF orientation to an NSImage that lacks proper orientation metadata

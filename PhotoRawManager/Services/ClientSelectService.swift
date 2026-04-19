@@ -973,6 +973,12 @@ class ClientSelectService: ObservableObject {
             try? FileManager.default.moveItem(at: zipTempURL, to: zipURL)
         }
 
+        // v8.6.1: coordinator 실패 시 early return (기존엔 nil ZIP 업로드 시도해 500 에러)
+        if let err = zipError {
+            fputs("[CLIENT] ❌ ZIP coordinator 실패: \(err.localizedDescription)\n", stderr)
+            return nil
+        }
+
         guard FileManager.default.fileExists(atPath: zipURL.path) else {
             fputs("[CLIENT] ❌ ZIP 생성 실패\n", stderr)
             return nil

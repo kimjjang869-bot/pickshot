@@ -9,23 +9,37 @@ final class CropNSView: NSView {
     // MARK: - Public (setter)
 
     var image: NSImage? { didSet { needsDisplay = true } }
-    /// 이미지 공간의 0~1 정규화 크롭 rect
+    /// 이미지 공간의 0~1 정규화 크롭 rect.
+    /// v8.6.1: `isApplyingExternal` 플래그로 updateNSView 의 외부 binding 업데이트 시
+    /// onCropChanged 콜백이 재호출되어 didSet 피드백 루프 발생하는 문제 차단.
     var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) {
-        didSet { needsDisplay = true; onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        didSet {
+            needsDisplay = true
+            if !isApplyingExternal { onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        }
     }
-    /// -45 ~ +45 도
+    /// -45 ~ +45 도. 크롭 박스 내부 회전 프리뷰용.
     var rotationDegrees: Double = 0 {
-        didSet { needsDisplay = true; onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        didSet {
+            needsDisplay = true
+            if !isApplyingExternal { onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        }
     }
     /// 종횡비 라벨 ("Free", "1:1", "3:2" 등). 드래그 중 비율 잠금 계산에 사용
     var aspectLabel: String = "Original" {
-        didSet { onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        didSet {
+            if !isApplyingExternal { onCropChanged?(cropRect, rotationDegrees, aspectLabel) }
+        }
     }
     /// 종횡비 픽셀 비율 (nil = 자유). preset 선택 시 외부에서 세팅
     var aspectRatio: Double? = nil
 
     /// 크롭 값 변경 콜백 (rect, rotation, label)
     var onCropChanged: ((CGRect, Double, String) -> Void)?
+
+    /// updateNSView 에서 외부 binding 을 반영 중임을 표시 — 이 때의 didSet 은
+    /// onCropChanged 를 호출하지 않아 SwiftUI <-> AppKit 피드백 루프를 방지.
+    fileprivate var isApplyingExternal: Bool = false
 
     // MARK: - Internal state
 
@@ -85,16 +99,21 @@ final class CropNSView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-        // 1) 배경 (이미 layer 로 검정이지만 명시)
-        ctx.setFillColor(NSColor.black.cgColor)
-        ctx.fill(bounds)
-
         let ir = imageRect
         guard ir.width > 0 && ir.height > 0 else { return }
 
-        // 2) 이미지 그리기
+        // 2) 이미지 그리기 — 회전 각도(rotationDegrees) 적용.
+        // 이미지 중심을 축으로 회전 → Lightroom/C1 스타일의 "수평 보정 프리뷰".
         if let img = image {
+            ctx.saveGState()
+            if abs(rotationDegrees) > 0.01 {
+                let cx = ir.midX, cy = ir.midY
+                ctx.translateBy(x: cx, y: cy)
+                ctx.rotate(by: CGFloat(rotationDegrees * .pi / 180))
+                ctx.translateBy(x: -cx, y: -cy)
+            }
             img.draw(in: ir, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
+            ctx.restoreGState()
         }
 
         let cr = cropRectInView
@@ -307,6 +326,15 @@ final class CropNSView: NSView {
         case .trailing:
             rect.size.width = dragStartRect.width + dxN
         }
+        // 드래그 방향 역전 시 rect 뒤집힘 방지 — minX/maxX/minY/maxY 정규화
+        if rect.size.width < 0 {
+            rect.origin.x += rect.size.width
+            rect.size.width = -rect.size.width
+        }
+        if rect.size.height < 0 {
+            rect.origin.y += rect.size.height
+            rect.size.height = -rect.size.height
+        }
         rect.size.width = max(0.05, rect.size.width)
         rect.size.height = max(0.05, rect.size.height)
 
@@ -352,33 +380,7 @@ final class CropNSView: NSView {
         return r
     }
 
-    // MARK: - External commands
-
-    /// 프리셋 선택 외부 호출 — 박스를 새 비율로 세팅
-    func applyPreset(label: String, ratio: Double?) {
-        aspectLabel = label
-        aspectRatio = ratio
-        guard let img = image, img.size.height > 0, let r = ratio else {
-            // Original 또는 Free 면 전체 1,1
-            if label == "Original" {
-                cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-            }
-            return
-        }
-        let imgAR = img.size.width / img.size.height
-        let norm = CGFloat(r) / imgAR
-        let cx = cropRect.midX, cy = cropRect.midY
-        var nr = cropRect
-        let curAR = cropRect.width / cropRect.height
-        if curAR > norm {
-            nr.size.width = cropRect.height * norm
-        } else {
-            nr.size.height = cropRect.width / norm
-        }
-        nr.origin.x = cx - nr.width / 2
-        nr.origin.y = cy - nr.height / 2
-        cropRect = clampNormalized(nr)
-    }
+    // (applyPreset 은 InlineCropOverlay.selectPreset 이 직접 담당하므로 제거됨 — dead code)
 }
 
 // MARK: - SwiftUI Wrapper
@@ -388,9 +390,26 @@ struct NSCropView: NSViewRepresentable {
     @Binding var cropRect: CGRect
     @Binding var rotationDegrees: Double
     @Binding var aspectLabel: String
-    /// 현재 선택된 종횡비 (픽셀 기준). Free=nil, Original=nil 이지만 applyPreset 에서 별도 처리
+    /// 현재 선택된 종횡비 (픽셀 기준). Free/Original = nil.
     var aspectRatio: Double?
-    var onPresetApplied: ((String, Double?) -> Void)? = nil
+
+    /// v8.6.1: Coordinator 패턴 — onCropChanged 클로저가 Binding 값 캡처 시 SwiftUI struct
+    /// 재생성 때마다 stale 되는 문제 해결. Coordinator 는 class 라 레퍼런스 공유 가능.
+    final class Coordinator {
+        var parent: NSCropView
+        init(_ parent: NSCropView) { self.parent = parent }
+
+        func apply(_ rect: CGRect, _ rot: Double, _ label: String) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.parent.cropRect != rect { self.parent.cropRect = rect }
+                if self.parent.rotationDegrees != rot { self.parent.rotationDegrees = rot }
+                if self.parent.aspectLabel != label { self.parent.aspectLabel = label }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> CropNSView {
         let v = CropNSView(frame: .zero)
@@ -399,17 +418,21 @@ struct NSCropView: NSViewRepresentable {
         v.rotationDegrees = rotationDegrees
         v.aspectLabel = aspectLabel
         v.aspectRatio = aspectRatio
-        v.onCropChanged = { rect, rot, label in
-            DispatchQueue.main.async {
-                if cropRect != rect { cropRect = rect }
-                if rotationDegrees != rot { rotationDegrees = rot }
-                if aspectLabel != label { aspectLabel = label }
-            }
-        }
+        // 콜백은 coordinator 를 통해 — parent 를 매번 최신화할 수 있음
+        let coord = context.coordinator
+        v.onCropChanged = { rect, rot, label in coord.apply(rect, rot, label) }
         return v
     }
 
     func updateNSView(_ nsView: CropNSView, context: Context) {
+        // 매 렌더 시 coordinator 의 parent 갱신 (stale binding 방지)
+        context.coordinator.parent = self
+
+        // 외부 binding 변경 반영 — isApplyingExternal 플래그로 didSet 의 onCropChanged
+        // 재호출을 막아 피드백 루프 방지.
+        nsView.isApplyingExternal = true
+        defer { nsView.isApplyingExternal = false }
+
         if nsView.image != image { nsView.image = image }
         if nsView.cropRect != cropRect { nsView.cropRect = cropRect }
         if nsView.rotationDegrees != rotationDegrees { nsView.rotationDegrees = rotationDegrees }

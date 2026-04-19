@@ -15,15 +15,6 @@ enum PerformanceTier: String {
     case extreme   // 48GB+ (M3 Max/Ultra, 포토칸 M3 Ultra 64GB+)
 }
 
-/// 사용자 프로필 — 레거시 enum, 현재 UI 에서 제거됨. UserDefaults 키만 호환성 유지.
-/// (stepDown/stepUp 로직이 .low 에서 무의미하고, 사용자 혼란을 유발해 제거함)
-enum UserPerformanceProfile: String {
-    case auto
-    case speed
-    case balanced
-    case quality
-}
-
 enum GPUClass {
     case intelIntegrated, appleM1, appleM2, appleM3, appleM4, unknown
 }
@@ -48,12 +39,7 @@ final class SystemSpec {
     let osVersion: String           // "macOS 14.5"
     let autoTier: PerformanceTier   // 하드웨어 기반 자동 tier
 
-    // MARK: - 사용자 프로필 (레거시 — 항상 .auto 반환)
-    /// UI 에서 선택 제거됨. 외부 호출 호환성 유지용.
-    var userProfile: UserPerformanceProfile { .auto }
-
-    /// 최종 tier — 항상 하드웨어 기반 autoTier 사용.
-    /// (기존 stepUp/stepDown 은 .low 에서 무의미하고 사용자 혼란 유발해 제거됨)
+    /// 최종 tier — 항상 하드웨어 기반 autoTier 사용 (유저 프로필 picker 폐기됨).
     var effectiveTier: PerformanceTier { autoTier }
 
     private init() {
@@ -308,7 +294,6 @@ final class SystemSpec {
         RAM: \(ramGB)GB
         OS: \(osVersion)
         Auto Tier: \(autoTier.rawValue)
-        User Profile: \(userProfile.rawValue)
         Effective Tier: \(effectiveTier.rawValue)
         ==================
         """
