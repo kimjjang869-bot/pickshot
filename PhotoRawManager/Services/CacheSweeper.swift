@@ -173,9 +173,13 @@ final class CacheSweeper: ObservableObject {
             let selIdx = selectedIndexProvider?() ?? 0
             sweepLock.lock()
             let total = pendingPreviews.count
-            let lo = max(0, selIdx - previewRangeAroundSelection)
-            let hi = min(total, selIdx + previewRangeAroundSelection)
-            let window = total > 0 ? Array(pendingPreviews[lo..<hi]) : []
+            // v8.6.2 fix: lo/hi 를 [0, total] 범위로 clamp + lo <= hi 보장.
+            //   이전엔 selIdx 가 total 보다 크면 lo > hi 가 되어 Array slice 크래시.
+            let loRaw = selIdx - previewRangeAroundSelection
+            let hiRaw = selIdx + previewRangeAroundSelection
+            let lo = max(0, min(loRaw, total))
+            let hi = max(lo, min(hiRaw, total))
+            let window = (total > 0 && lo < hi) ? Array(pendingPreviews[lo..<hi]) : []
             sweepLock.unlock()
 
             // UserDefaults 의 previewResolution (기본 1000) 와 동일한 cacheKey 규칙으로 저장
