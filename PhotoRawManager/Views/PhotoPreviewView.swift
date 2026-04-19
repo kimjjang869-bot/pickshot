@@ -341,9 +341,13 @@ class PreviewImageCache {
         // 전체 로드 경로를 autoreleasepool 로 감싸서 CGImageSource + 중간 NSImage/CGImage
         // 임시 객체를 즉시 해제. key repeat 꾹 누르기 시 autorelease pool 이 main loop 블록되면
         // 못 비워지는 문제 방지.
-        return autoreleasepool { () -> NSImage? in
+        let base = autoreleasepool { () -> NSImage? in
             _loadOptimizedImpl(url: url, maxPixel: maxPixel)
         }
+        guard let img = base else { return nil }
+        // v8.6.2: 사용자 override 회전 (RAW 사이드카 + 앱내부) 적용
+        let deg = PhotoStore.rotationOverrideCW(for: url)
+        return deg == 0 ? img : RotationService.rotateImage(img, degreesCW: deg)
     }
 
     private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat) -> NSImage? {

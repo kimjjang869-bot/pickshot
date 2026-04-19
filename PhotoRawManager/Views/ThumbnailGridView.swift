@@ -1281,6 +1281,15 @@ struct PhotoContextMenu: View {
             Label("이름 변경 (\(targetCount)장)", systemImage: "pencil")
         }
 
+        // v8.6.2: 일괄 회전 (JPG: EXIF 재기록, RAW: XMP 사이드카)
+        Menu {
+            Button("90° 시계방향") { store.batchRotate(ids: targetIDs, degreesCW: 90) }
+            Button("180°")         { store.batchRotate(ids: targetIDs, degreesCW: 180) }
+            Button("270° (반시계 90°)") { store.batchRotate(ids: targetIDs, degreesCW: 270) }
+        } label: {
+            Label("회전 (\(targetCount)장)", systemImage: "rotate.right")
+        }
+
         Divider()
 
         // Copy filename
@@ -2230,7 +2239,10 @@ class ThumbnailLoader {
         }
         // 실제 추출 (feed-forward 경로와 동일 extractThumbnail)
         let img = Self.extractThumbnailFast(url: url) ?? Self.extractThumbnail(url: url)
-        guard let image = img else { return nil }
+        guard let raw = img else { return nil }
+        // v8.6.2: 사용자 회전 override 적용
+        let deg = PhotoStore.rotationOverrideCW(for: url)
+        let image = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
         ThumbnailCache.shared.set(url, image: image)
         let modDate = Self.fileModDate(url)
         DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: image)
@@ -2322,6 +2334,12 @@ class ThumbnailLoader {
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
             if extractElapsed > 5 {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
+            }
+
+            // v8.6.2: 사용자 회전 override 적용
+            if let raw = image {
+                let deg = PhotoStore.rotationOverrideCW(for: url)
+                image = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
             }
 
             if let image = image {
