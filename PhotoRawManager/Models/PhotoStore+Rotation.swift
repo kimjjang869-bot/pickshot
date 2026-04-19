@@ -43,6 +43,9 @@ extension PhotoStore {
 
     // MARK: - 일괄 회전
 
+    /// 직렬 큐 — 빠른 연속 클릭 시에도 회전 작업이 인터리브 되지 않도록.
+    private static let rotationQueue = DispatchQueue(label: "com.pickshot.batchRotate", qos: .userInitiated)
+
     /// 다중 선택한 사진을 일괄 회전.
     /// - Parameters:
     ///   - ids: 대상 photoID 집합
@@ -59,51 +62,71 @@ extension PhotoStore {
         }
         guard !targetPhotos.isEmpty else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "\(targetPhotos.count)장 회전"
-        alert.informativeText = "\(degreesCW)° (시계방향) 회전을 적용합니다.\n• JPG — 파일 EXIF 수정 (무손실)\n• RAW — XMP 사이드카 생성 (Lightroom/C1 호환)"
-        alert.addButton(withTitle: "회전")
-        alert.addButton(withTitle: "취소")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // v8.6.2: 확인 다이얼로그 제거 — 즉시 실행 (되돌리기는 회전 반대방향 재적용)
 
-        // 백그라운드에서 실제 회전 수행
+        // 백그라운드에서 실제 회전 수행 — 직렬 큐로 연속 클릭도 순서 보장
         let photosSnapshot = targetPhotos
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        PhotoStore.rotationQueue.async { [weak self] in
             guard let self = self else { return }
             var success = 0
             var failed = 0
             var overrideMap = PhotoStore.loadRotationOverrides()
 
             for photo in photosSnapshot {
-                let urls: [URL] = {
-                    var arr: [URL] = [photo.jpgURL]
-                    if let raw = photo.rawURL, raw != photo.jpgURL { arr.append(raw) }
-                    return arr
-                }()
+                // URL 별로 타입 분리 — JPG 는 파일 EXIF 수정 (ImageIO 자동 반영), RAW 는 XMP + override
                 var allOK = true
-                for url in urls {
-                    if !RotationService.rotate(url: url, degreesCW: degreesCW) {
+                let jpgExt = photo.jpgURL.pathExtension.lowercased()
+                let jpgIsJPG = (jpgExt == "jpg" || jpgExt == "jpeg")
+
+                // 1. jpgURL 회전
+                if RotationService.rotate(url: photo.jpgURL, degreesCW: degreesCW) {
+                    if jpgIsJPG {
+                        // JPG — 파일 EXIF 가 수정됨 → ImageIO 가 자동 읽음 → override 는 0
+                        overrideMap.removeValue(forKey: photo.jpgURL.path)
+                    } else {
+                        // jpgURL 이 실제로 RAW (JPG 없는 RAW 단독) — XMP 기록됨, override 누적
+                        let prev = overrideMap[photo.jpgURL.path] ?? 0
+                        let next = ((prev + degreesCW) % 360 + 360) % 360
+                        if next == 0 { overrideMap.removeValue(forKey: photo.jpgURL.path) }
+                        else { overrideMap[photo.jpgURL.path] = next }
+                    }
+                } else {
+                    allOK = false
+                }
+
+                // 2. rawURL 회전 (RAW+JPG 쌍일 때만)
+                if let raw = photo.rawURL, raw != photo.jpgURL {
+                    if RotationService.rotate(url: raw, degreesCW: degreesCW) {
+                        // RAW — XMP 사이드카 기록됨. ImageIO 는 XMP 를 읽지 않으므로 override 누적 필요.
+                        let prev = overrideMap[raw.path] ?? 0
+                        let next = ((prev + degreesCW) % 360 + 360) % 360
+                        if next == 0 { overrideMap.removeValue(forKey: raw.path) }
+                        else { overrideMap[raw.path] = next }
+                    } else {
                         allOK = false
                     }
                 }
+
                 if allOK {
                     success += 1
-                    // 앱 내부 표시용 override 갱신 (displayURL 기준)
-                    let key = photo.displayURL.path
-                    let prev = overrideMap[key] ?? 0
-                    let next = ((prev + degreesCW) % 360 + 360) % 360
-                    if next == 0 {
-                        overrideMap.removeValue(forKey: key)
-                    } else {
-                        overrideMap[key] = next
-                    }
                     // 캐시 무효화
                     ThumbnailCache.shared.remove(url: photo.jpgURL)
                     if let raw = photo.rawURL { ThumbnailCache.shared.remove(url: raw) }
                     DiskThumbnailCache.shared.invalidate(url: photo.jpgURL)
                     if let raw = photo.rawURL { DiskThumbnailCache.shared.invalidate(url: raw) }
-                    PreviewImageCache.shared.remove(url: photo.jpgURL)
-                    if let raw = photo.rawURL { PreviewImageCache.shared.remove(url: raw) }
+                    // 미리보기 캐시: 해상도 suffix 키 + orig 키 모두 제거
+                    let baseURLs: [URL] = {
+                        var arr: [URL] = [photo.jpgURL]
+                        if let r = photo.rawURL, r != photo.jpgURL { arr.append(r) }
+                        return arr
+                    }()
+                    let suffixes = ["r600", "r800", "r1000", "r1200", "r1600", "r2000", "r2400", "r3000", "orig"]
+                    for base in baseURLs {
+                        PreviewImageCache.shared.remove(url: base)
+                        for suf in suffixes {
+                            PreviewImageCache.shared.remove(url: base.appendingPathExtension(suf))
+                        }
+                    }
                 } else {
                     failed += 1
                 }
@@ -113,6 +136,18 @@ extension PhotoStore {
 
             DispatchQueue.main.async {
                 self.photosVersion += 1
+                // v8.6.2: 모든 AsyncThumbnailView/미리보기에 회전 통지 → @State image 강제 재로드
+                for photo in photosSnapshot {
+                    NotificationCenter.default.post(name: AsyncThumbnailView.rotationInvalidateNotification, object: photo.jpgURL)
+                    if let raw = photo.rawURL, raw != photo.jpgURL {
+                        NotificationCenter.default.post(name: AsyncThumbnailView.rotationInvalidateNotification, object: raw)
+                    }
+                    // displayURL 도 (RAW+JPG 쌍에서 AsyncThumbnailView 는 displayURL 로 로드)
+                    let disp = photo.displayURL
+                    if disp != photo.jpgURL && disp != (photo.rawURL ?? photo.jpgURL) {
+                        NotificationCenter.default.post(name: AsyncThumbnailView.rotationInvalidateNotification, object: disp)
+                    }
+                }
                 let msg: String
                 if failed == 0 {
                     msg = "↻ \(success)장 회전 완료 (\(degreesCW)°)"

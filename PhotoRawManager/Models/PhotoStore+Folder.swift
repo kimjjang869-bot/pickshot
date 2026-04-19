@@ -338,59 +338,63 @@ extension PhotoStore {
             self?.loadingStatus = "하위 폴더 스캔 중..."
         }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            // recursive: true 로 모든 하위 폴더 스캔
-            var items = FileMatchingService.scanAndMatch(folderURL: url, recursive: true)
+        // v8.6.3: 스트리밍 + 병렬 스캔
+        //   - 최상위 서브폴더마다 동시 스캔 (SSD: 최대 4 병렬, HDD: 1)
+        //   - 배치 단위로 photos 누적 → 첫 사진이 ~200ms 내 보임
+        //   - 전체 완료 후 선택 + prewarm
+        let isSlowDisk = self.currentFolderIsSlowDisk
 
-            // 재귀 모드에서는 폴더 아이템 제거 (하위 폴더 내용이 이미 포함됨)
-            items.removeAll { $0.isFolder }
-
-            // 상위 폴더 네비게이션 추가
+        // 먼저 상위폴더 네비게이션 아이템 투입 (즉시)
+        DispatchQueue.main.async { [weak self] in
+            guard self?.folderURL == url else { return }
             let parent = url.deletingLastPathComponent()
             let home = FileManager.default.homeDirectoryForCurrentUser
             let desktop = home.appendingPathComponent("Desktop")
             let isAtTopLevel = url.path == desktop.path || url.path == home.path || url.path == "/" || parent.path == "/"
+            var initialItems: [PhotoItem] = []
             if !isAtTopLevel && parent.path != url.path {
                 var parentItem = PhotoItem(jpgURL: parent)
                 parentItem.isFolder = true
                 parentItem.isParentFolder = true
-                items.insert(parentItem, at: 0)
+                initialItems.append(parentItem)
             }
+            self?.photos = initialItems
+        }
 
-            let photoCount = items.filter { !$0.isFolder && !$0.isParentFolder }.count
-            let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
-            AppLogger.log(.folder, "Recursive scan: \(photoCount) photos from all subfolders in \(String(format: "%.1f", phase1Elapsed))ms")
+        var firstSelectionMade = false
 
-            // 정렬은 filteredPhotos에서 sortMode에 따라 자동 적용
-            let sorted = items
-
-            DispatchQueue.main.async {
-                guard self?.folderURL == url else { return }
-                self?.photos = sorted
-                self?.isLoading = false
-                self?.loadingStatus = ""
-                self?.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
-
-                // 첫 번째 사진 선택
-                DispatchQueue.main.async {
-                    guard self?.folderURL == url else { return }
-                    let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                        ?? sorted.first
-                    if let fp = firstPhoto {
-                        self?.selectedPhotoID = fp.id
-                        self?.selectedPhotoIDs = [fp.id]
-                        self?.scrollTrigger += 1
-                    }
+        FileMatchingService.scanAndMatchStreaming(
+            folderURL: url,
+            recursive: true,
+            isSlowDisk: isSlowDisk,
+            onBatch: { [weak self] batch in
+                guard let self = self, self.folderURL == url else { return }
+                // 각 배치는 main thread 에서 append — SwiftUI diff 는 incremental
+                self.photos.append(contentsOf: batch)
+                // 첫 배치 직후 첫 사진 자동 선택 (여러 번 호출돼도 한 번만)
+                if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
+                    firstSelectionMade = true
+                    self.selectedPhotoID = first.id
+                    self.selectedPhotoIDs = [first.id]
+                    self.scrollTrigger += 1
                 }
-                // 썸네일 prewarming: SSD 1.5초 / HDD-SD 0.5초 (HDD는 천천히 채워지므로 빨리 시작)
-                // HDD: visible 로딩이 거의 끝난 후(2초)에 시작 — 디스크 경합 회피가 visible 표시 속도에 가장 큰 영향
-                // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
-                let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
-                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
+            },
+            onComplete: { [weak self] photoCount in
+                guard let self = self, self.folderURL == url else { return }
+                let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+                AppLogger.log(.folder, "Recursive scan (streaming): \(photoCount) photos in \(String(format: "%.1f", phase1Elapsed))ms")
+
+                self.isLoading = false
+                self.loadingStatus = ""
+                self.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
+
+                // 썸네일 prewarming
+                let prewarmDelay: TimeInterval = isSlowDisk ? 2.0 : 1.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) { [weak self] in
                     self?.preloadAllThumbnails()
                 }
             }
-        }
+        )
     }
 
     /// 재귀 모드 해제 — 현재 폴더만 다시 로드

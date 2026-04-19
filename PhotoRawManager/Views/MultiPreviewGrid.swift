@@ -140,6 +140,14 @@ struct MultiPreviewCell: View {
             // 고화질 로딩 (선명하게)
             loadHiRes()
         }
+        // v8.6.2: 회전 알림 → 강제 재로드
+        .onReceive(NotificationCenter.default.publisher(for: AsyncThumbnailView.rotationInvalidateNotification)) { note in
+            guard let rotatedURL = note.object as? URL else { return }
+            if rotatedURL == photo.jpgURL || rotatedURL == photo.rawURL || rotatedURL == photo.displayURL {
+                hiResImage = nil
+                loadHiRes()
+            }
+        }
     }
 
     private func loadHiRes() {

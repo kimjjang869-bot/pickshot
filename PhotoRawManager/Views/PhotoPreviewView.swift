@@ -274,6 +274,19 @@ class PreviewImageCache {
         lock.unlock()
     }
 
+    /// v8.6.3: 선제 trim — 가장 오래 안 쓰인 비율만큼만 제거 (MemoryGuard Layer 2)
+    func trimOldest(ratio: Double) {
+        let r = max(0.05, min(0.95, ratio))
+        lock.lock()
+        let total = cache.count
+        let evictCount = Int(Double(total) * r)
+        if evictCount > 0 {
+            // 디스크 이관 포함한 evictOldest 사용
+            evictOldest(count: evictCount)
+        }
+        lock.unlock()
+    }
+
     /// 디버그용 — 현재 캐시 통계 (NavigationPerformanceMonitor 에서 사용)
     func debugStats() -> (count: Int, bytes: Int) {
         lock.lock()
@@ -955,30 +968,13 @@ struct PhotoPreviewView: View {
 
                 Divider().frame(height: 20).opacity(0.2)
 
-                // Rotation buttons
-                Button(action: { applyRotation(degrees: -90) }) {
-                    Image(systemName: "rotate.left")
-                        .font(.system(size: AppTheme.iconSmall))
+                // v8.6.2: 회전 버튼 — 일괄 회전 파이프라인 사용 + 클릭 시 아이콘 회전 애니메이션
+                RotateToolbarButton(systemImage: "arrow.counterclockwise", clockwise: false) {
+                    store.batchRotate(ids: [photo.id], degreesCW: 270)
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .contentShape(Rectangle())
-                .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("왼쪽 90° 회전")
-
-                Button(action: { applyRotation(degrees: 90) }) {
-                    Image(systemName: "rotate.right")
-                        .font(.system(size: AppTheme.iconSmall))
+                RotateToolbarButton(systemImage: "arrow.clockwise", clockwise: true) {
+                    store.batchRotate(ids: [photo.id], degreesCW: 90)
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .contentShape(Rectangle())
-                .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("오른쪽 90° 회전")
 
                 Divider().frame(height: 20).opacity(0.2)
 
@@ -1360,6 +1356,19 @@ struct PhotoPreviewView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
+        // v8.6.2: 일괄 회전 알림 — 현재 선택된 사진이 회전 대상에 포함되면 강제 재로드
+        .onReceive(NotificationCenter.default.publisher(for: AsyncThumbnailView.rotationInvalidateNotification)) { note in
+            guard let rotatedURL = note.object as? URL else { return }
+            guard let sel = store.selectedPhoto else { return }
+            if rotatedURL == sel.jpgURL || rotatedURL == sel.rawURL || rotatedURL == sel.displayURL {
+                // 내부 상태 리셋 → loadImageDirect 재실행
+                image = nil
+                lowResImage = nil
+                rotatedImage = nil
+                developedImage = nil
+                loadImageDirect(for: sel.jpgURL, id: sel.id)
+            }
+        }
         .sheet(isPresented: $showAIResult) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(aiResultText)
@@ -3899,5 +3908,41 @@ struct BatchCorrectionView: View {
         } catch {
             return false
         }
+    }
+}
+
+// MARK: - Rotate Toolbar Button (v8.6.2)
+// 회전 버튼: 클릭 시 아이콘이 해당 방향으로 90° 스핀 애니메이션 → 즉시 피드백
+struct RotateToolbarButton: View {
+    let systemImage: String
+    let clockwise: Bool
+    let action: () -> Void
+
+    @State private var angle: Double = 0
+    @State private var pressed: Bool = false
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.62)) {
+                angle += clockwise ? 90 : -90
+                pressed = true
+            }
+            action()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                withAnimation(.easeOut(duration: 0.18)) { pressed = false }
+            }
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+                .rotationEffect(.degrees(angle))
+                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                .background(pressed ? Color.accentColor.opacity(0.25) : AppTheme.toolbarButtonBg)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .scaleEffect(pressed ? 0.92 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .help(clockwise ? "시계방향 90° 회전" : "반시계 90° 회전")
     }
 }

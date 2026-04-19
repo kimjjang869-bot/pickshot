@@ -243,21 +243,28 @@ struct ThumbnailGridView: View {
                 //   (이전에 selected 였다가 해제된 cell + 새로 selected 된 cell). 나머지 10k-2 개는 스킵.
                 .equatable()
                 .id(photo.id)
+                // v8.6.3: 러버밴드 선택용 셀 프레임 수집
+                .background(GeometryReader { geo in
+                    Color.clear.preference(
+                        key: GridCellFrameKey.self,
+                        value: [photo.id: geo.frame(in: .named("pickshotGrid"))]
+                    )
+                })
             }
         }
         .padding(8)
         .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    store.deselectAll()
-                }
-                .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
-                    // Finder 등에서 그리드 빈 영역에 드롭 → 현재 폴더로 복사
-                    handleExternalDrop(providers: providers)
-                    return true
-                }
+            // v8.6.3: 러버밴드 (marquee) 선택 — 빈 영역에서 드래그 시작하면 사각형 그리고 교차 셀 선택
+            MarqueeSelectionBackground(
+                coordinateSpaceName: "pickshotGrid",
+                allPhotoIDs: photos.filter { !$0.isFolder && !$0.isParentFolder }.map(\.id),
+                store: store
+            )
         )
+        .coordinateSpace(name: "pickshotGrid")
+        .onPreferenceChange(GridCellFrameKey.self) { frames in
+            MarqueeFrameRegistry.shared.frames = frames
+        }
     }
 
     // MARK: - List View
@@ -2704,6 +2711,8 @@ struct AsyncThumbnailView: View {
     @State private var image: NSImage?
     @State private var loadedURL: URL?
     @State private var retryCount: Int = 0
+    /// v8.6.2: 회전 이벤트 리스닝용 — 회전 시 캐시 무효화 + 재로드 트리거
+    static let rotationInvalidateNotification = Notification.Name("com.pickshot.rotation.invalidate")
     /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
     static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
     /// v8.6.2: I/O 스파이크 방지 — 동시 디스크 읽기 최대 4개로 제한.
@@ -2736,6 +2745,14 @@ struct AsyncThumbnailView: View {
         .onChange(of: retryCount) { _ in
             // 재시도 트리거
             if image == nil {
+                loadThumbnail()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Self.rotationInvalidateNotification)) { note in
+            // v8.6.2: 회전된 파일이 이 셀의 URL 이면 강제 재로드
+            if let rotatedURL = note.object as? URL, rotatedURL == self.url {
+                self.image = nil
+                self.loadedURL = nil
                 loadThumbnail()
             }
         }
@@ -2776,7 +2793,10 @@ struct AsyncThumbnailView: View {
                 kCGImageSourceCreateThumbnailWithTransform: true
                ] as CFDictionary),
                cgThumb.width >= 30 {
-                let ns = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                // v8.6.2: 사용자 회전 override 적용
+                let deg = PhotoStore.rotationOverrideCW(for: currentURL)
+                let ns = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
                 ThumbnailCache.shared.set(currentURL, image: ns)
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.loadedURL == currentURL else { return }
@@ -3949,3 +3969,109 @@ struct DropIndicatorOverlay: View {
     }
 }
 
+
+// MARK: - v8.6.3 Marquee (Rubber-band) Selection
+
+/// 셀 프레임을 부모로 전파하는 PreferenceKey
+struct GridCellFrameKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// 마지막으로 수집된 셀 프레임을 전역 저장 — MarqueeSelectionBackground 가 참조 (SwiftUI state 반복 업데이트 회피)
+final class MarqueeFrameRegistry {
+    static let shared = MarqueeFrameRegistry()
+    var frames: [UUID: CGRect] = [:]
+    private init() {}
+}
+
+/// 러버밴드 선택 배경. 빈 영역에서 드래그 시작 시 사각형 그림. 드래그 종료 시 교차 셀 선택.
+struct MarqueeSelectionBackground: View {
+    let coordinateSpaceName: String
+    let allPhotoIDs: [UUID]
+    let store: PhotoStore
+
+    @State private var dragStart: CGPoint?
+    @State private var dragCurrent: CGPoint?
+    @State private var baseSelection: Set<UUID> = []
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(coordinateSpaceName))
+                    .onChanged { value in
+                        if dragStart == nil {
+                            dragStart = value.startLocation
+                            let flags = NSEvent.modifierFlags
+                            // Cmd/Shift 누르고 드래그면 기존 선택 유지
+                            if flags.contains(.command) || flags.contains(.shift) {
+                                baseSelection = store.selectedPhotoIDs
+                            } else {
+                                baseSelection = []
+                            }
+                        }
+                        dragCurrent = value.location
+                        updateLiveSelection()
+                    }
+                    .onEnded { value in
+                        dragCurrent = value.location
+                        updateLiveSelection()
+                        dragStart = nil
+                        dragCurrent = nil
+                    }
+            )
+            .simultaneousGesture(
+                // 빈 영역 탭 → 선택 해제 (드래그 아닌 단순 탭만)
+                TapGesture().onEnded {
+                    if dragStart == nil {
+                        store.deselectAll()
+                    }
+                }
+            )
+            .overlay(
+                Group {
+                    if let s = dragStart, let c = dragCurrent {
+                        let rect = CGRect(
+                            x: min(s.x, c.x),
+                            y: min(s.y, c.y),
+                            width: abs(c.x - s.x),
+                            height: abs(c.y - s.y)
+                        )
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.accentColor.opacity(0.15))
+                            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.accentColor, lineWidth: 1))
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                            .allowsHitTesting(false)
+                    }
+                }
+            )
+    }
+
+    private func updateLiveSelection() {
+        guard let s = dragStart, let c = dragCurrent else { return }
+        let rect = CGRect(
+            x: min(s.x, c.x),
+            y: min(s.y, c.y),
+            width: abs(c.x - s.x),
+            height: abs(c.y - s.y)
+        )
+        let frames = MarqueeFrameRegistry.shared.frames
+        var hits: Set<UUID> = baseSelection
+        for id in allPhotoIDs {
+            if let f = frames[id], f.intersects(rect) {
+                hits.insert(id)
+            }
+        }
+        // 큰 폴더에서 매 프레임마다 set 비교는 비용 있음 → 다르면만 업데이트
+        if hits != store.selectedPhotoIDs {
+            store.selectedPhotoIDs = hits
+            if let first = hits.first {
+                store.selectedPhotoID = first
+            }
+        }
+    }
+}
