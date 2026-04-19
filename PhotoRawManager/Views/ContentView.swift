@@ -20,6 +20,9 @@ struct ContentView: View {
     // Mouse side-button (back/forward) event monitor
     @State private var mouseSideButtonMonitor: Any?
 
+    // v8.6.3: CacheSweeper.prepareForFolder 쓰로틀 (스트리밍 photos 변동)
+    @State private var sweepPrepareWork: DispatchWorkItem?
+
     // 테스터 키 — 숨겨진 Cmd+Shift+Option+K 로 다이얼로그 표시
     @State private var testerKeyMonitor: Any?
     @State private var showTesterKeySheet = false
@@ -464,15 +467,25 @@ struct ContentView: View {
             CacheSweeper.shared.notifyActivity()
         }
         .onChange(of: store.folderURL) { newURL in
-            guard let url = newURL else { return }
-            // 폴더 로드 200ms 후 sweep 대상 재구성 (photos 배열 채워질 시간 확보)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // v8.6.3: 스트리밍 로드 대응 — photosVersion 변화에서 재구성 (아래 onChange 에서 처리)
+            _ = newURL
+        }
+        .onChange(of: store.photosVersion) { _ in
+            // v8.6.3: photos 가 스트리밍으로 append 될 때마다 sweep 대상 업데이트.
+            //   연속 호출 방지 위해 500ms 쓰로틀 (마지막 상태로 확정).
+            guard let url = store.folderURL else { return }
+            sweepPrepareWork?.cancel()
+            let work = DispatchWorkItem {
                 let urls = store.photos.compactMap { p -> URL? in
                     guard !p.isFolder, !p.isParentFolder else { return nil }
                     return p.jpgURL
                 }
-                CacheSweeper.shared.prepareForFolder(url: url, photos: urls)
+                if urls.count > 0 {
+                    CacheSweeper.shared.prepareForFolder(url: url, photos: urls)
+                }
             }
+            sweepPrepareWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}

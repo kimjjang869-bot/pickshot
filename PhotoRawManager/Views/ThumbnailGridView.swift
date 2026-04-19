@@ -1297,6 +1297,14 @@ struct PhotoContextMenu: View {
             Label("회전 (\(targetCount)장)", systemImage: "rotate.right")
         }
 
+        // v8.6.3: Adobe Camera Raw (Photoshop) 로 열기
+        Button(action: {
+            openInCameraRaw(ids: targetIDs, store: store)
+        }) {
+            Label("Camera Raw 에서 열기 (\(targetCount)장)", systemImage: "camera.metering.matrix")
+        }
+        .disabled(!hasAnyRAW(ids: targetIDs, store: store))
+
         Divider()
 
         // Copy filename
@@ -1426,6 +1434,86 @@ struct PhotoContextMenu: View {
             } catch {
                 store.showToastMessage("⚠️ 폴더 생성 실패: \(error.localizedDescription)")
             }
+        }
+    }
+
+    // v8.6.3: 카메라 RAW 정색 디코드 헬퍼 (컨텍스트 메뉴)
+    private func hasAnyRAW(ids: Set<UUID>, store: PhotoStore) -> Bool {
+        for id in ids {
+            guard let idx = store._photoIndex[id] else { continue }
+            let p = store.photos[idx]
+            if p.rawURL != nil || FileMatchingService.rawExtensions.contains(p.jpgURL.pathExtension.lowercased()) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Adobe Camera Raw (Photoshop) 로 RAW 파일 열기.
+    /// /Applications 아래 Photoshop 버전을 찾아 사용. 없으면 기본 앱으로 열림.
+    private func openInCameraRaw(ids: Set<UUID>, store: PhotoStore) {
+        let urls: [URL] = ids.compactMap { id in
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { return nil }
+            let p = store.photos[idx]
+            if let raw = p.rawURL { return raw }
+            if FileMatchingService.rawExtensions.contains(p.jpgURL.pathExtension.lowercased()) { return p.jpgURL }
+            return nil
+        }
+        guard !urls.isEmpty else {
+            store.showToastMessage("⚠️ 선택에 RAW 파일이 없습니다")
+            return
+        }
+        // Photoshop 찾기 — Adobe 는 /Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app 구조
+        let ws = NSWorkspace.shared
+        var photoshop: URL? = nil
+        // 1) Bundle ID 로 직접 조회 (가장 확실)
+        if let bundleURL = ws.urlForApplication(withBundleIdentifier: "com.adobe.Photoshop") {
+            photoshop = bundleURL
+        }
+        // 2) Fallback: /Applications 깊이 2까지 스캔해서 Adobe Photoshop*.app 찾기 (최신 버전 우선)
+        if photoshop == nil {
+            let fm = FileManager.default
+            let topLevel = (try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Applications"), includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+            var candidates: [URL] = []
+            for item in topLevel {
+                let name = item.lastPathComponent.lowercased()
+                if name.hasSuffix(".app") && name.contains("photoshop") {
+                    candidates.append(item)
+                } else if name.contains("photoshop") {
+                    // 서브폴더 한 단계 더 — Adobe 표준 구조
+                    let sub = (try? fm.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)) ?? []
+                    for s in sub where s.pathExtension == "app" && s.lastPathComponent.lowercased().contains("photoshop") {
+                        candidates.append(s)
+                    }
+                }
+            }
+            // 최신 버전 우선 — "Adobe Photoshop 2026.app" > "2025" > "2024" > "(Beta)"
+            photoshop = candidates.sorted { $0.lastPathComponent > $1.lastPathComponent }.first
+        }
+        if let ps = photoshop {
+            fputs("[RAW] Camera Raw 대상 앱: \(ps.path)\n", stderr)
+        } else {
+            fputs("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n", stderr)
+        }
+
+        if let ps = photoshop {
+            let cfg = NSWorkspace.OpenConfiguration()
+            cfg.activates = true
+            ws.open(urls, withApplicationAt: ps, configuration: cfg) { _, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        store.showToastMessage("⚠️ Camera Raw 열기 실패: \(error.localizedDescription)")
+                    } else {
+                        store.showToastMessage("📷 \(urls.count)장 → \(ps.lastPathComponent)")
+                    }
+                }
+            }
+        } else {
+            // Photoshop 없음 — 기본 앱으로 열기 (macOS 가 연결된 앱 사용)
+            for u in urls {
+                ws.open(u)
+            }
+            store.showToastMessage("📷 \(urls.count)장 기본 앱으로 열기 (Photoshop 미설치)")
         }
     }
 

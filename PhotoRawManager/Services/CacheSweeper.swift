@@ -38,7 +38,15 @@ final class CacheSweeper: ObservableObject {
     private let idleThresholdFast: TimeInterval = 2.0
     private let idleThresholdSlow: TimeInterval = 5.0
     private let slowDiskPerItemDelay: TimeInterval = 0.15
-    private let previewRangeAroundSelection: Int = 100
+    // v8.6.3: tier 기반 범위 — low 100 / standard 200 / high 400 / extreme 600
+    private var previewRangeAroundSelection: Int {
+        switch SystemSpec.shared.effectiveTier {
+        case .low: return 100
+        case .standard: return 200
+        case .high: return 400
+        case .extreme: return 600
+        }
+    }
 
     // MARK: - 외부 의존
     /// 현재 폴더가 슬로우 디스크인지 판단. ContentView.onAppear 에서 주입.
@@ -200,11 +208,15 @@ final class CacheSweeper: ObservableObject {
             let bust = isBusyProvider
             let notePreview = storeNotePreview
 
+            var previewsSkipped = 0
             for url in window {
                 if let work = sweepWork, work.isCancelled { break }
                 if bust?() ?? false { break }
                 let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
-                if PreviewImageCache.shared.has(cacheKey) { continue }
+                if PreviewImageCache.shared.has(cacheKey) {
+                    previewsSkipped += 1
+                    continue
+                }
 
                 opQueue.addOperation {
                     autoreleasepool {
@@ -218,6 +230,9 @@ final class CacheSweeper: ObservableObject {
                 }
                 previewsDone += 1
                 if perItemDelay > 0 { Thread.sleep(forTimeInterval: perItemDelay) }
+            }
+            if previewsSkipped > 0 {
+                fputs("[SWEEP] previews already cached (skipped): \(previewsSkipped)\n", stderr)
             }
             // 대기 — 모든 op 완료 or 취소
             while opQueue.operationCount > 0 {
