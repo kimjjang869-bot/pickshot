@@ -93,7 +93,9 @@
 		'NSCV10002' = {isa = PBXBuildFile; fileRef = NSCV10001; };
 		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
 		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
+		'CPG10002' = {isa = PBXBuildFile; fileRef = CPG10001; };
 		'DC10002' = {isa = PBXBuildFile; fileRef = DC10001; };
+		'SWP10002' = {isa = PBXBuildFile; fileRef = SWP10001; };
 		DFDB300628BA9BC0A84AF0E8 /* SmartSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C34EB4DBCFE9DC1FB1EDC3 /* SmartSelectView.swift */; };
 		F19D162931397BFFC34F93FC /* AutoCullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8C8DC3227F94E990E2676A /* AutoCullView.swift */; };
 		F51432D703E705F9D22F165C /* NIMAService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B9AD88F78788103034A9CD /* NIMAService.swift */; };
@@ -257,9 +259,11 @@
 		'NSCV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCropView.swift; sourceTree = "<group>"; };
 		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
 		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
+		'CPG10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheProgressGauge.swift; sourceTree = "<group>"; };
 		'CV20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomPromptView.swift; sourceTree = "<group>"; };
 		DB0149CC8D993C1D6A7E1943 /* SmartSelectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartSelectService.swift; sourceTree = "<group>"; };
 		'DC10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
+		'SWP10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSweeper.swift; sourceTree = "<group>"; };
 		E6484FA4B4C184B8BDE53E19 /* VideoMarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoMarkerService.swift; path = PhotoRawManager/Services/VideoMarkerService.swift; sourceTree = SOURCE_ROOT; };
 		FCR10002 /* FileConflictResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileConflictResolver.swift; path = PhotoRawManager/Services/FileConflictResolver.swift; sourceTree = SOURCE_ROOT; };
 		CSL10002 /* ClientSessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClientSessionListView.swift; path = PhotoRawManager/Views/ClientSessionListView.swift; sourceTree = SOURCE_ROOT; };
@@ -507,6 +511,7 @@
 				NSCV10001,
 				MLT10001,
 				MLH10001,
+				CPG10001,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -532,6 +537,7 @@
 				A20038,
 				A20039,
 				DC10001,
+				SWP10001,
 				B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */,
 				F177AFEF49654E22BDB469B3 /* JPGReturnMatchingService.swift */,
 				F0AD92142A284546BD2E0466 /* AISimilarityService.swift */,
@@ -774,6 +780,7 @@
 				B20039,
 				B20042,
 				DC10002,
+				SWP10002,
 				CV10001,
 				CV10003,
 				SV20001,
@@ -803,6 +810,7 @@
 				NSCV10002,
 				MLT10002,
 				MLH10002,
+				CPG10002,
 				CV20005,
 				PB20001,
 				PB20003,

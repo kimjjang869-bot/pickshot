@@ -165,6 +165,11 @@ extension PhotoStore {
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
+        previewsLoaded = 0
+        thumbCacheCount = 0
+        previewsStartTime = CFAbsoluteTimeGetCurrent()
+        cacheProgressStartTime = CFAbsoluteTimeGetCurrent()
+        clearPreviewTracking()
 
         folderURL = url
         isRecursiveMode = false  // 일반 폴더 열기 시 재귀 모드 해제
@@ -309,6 +314,11 @@ extension PhotoStore {
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
+        previewsLoaded = 0
+        thumbCacheCount = 0
+        previewsStartTime = CFAbsoluteTimeGetCurrent()
+        cacheProgressStartTime = CFAbsoluteTimeGetCurrent()
+        clearPreviewTracking()
 
         folderURL = url
         isRecursiveMode = true

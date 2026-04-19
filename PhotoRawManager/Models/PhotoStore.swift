@@ -221,6 +221,45 @@ class PhotoStore: ObservableObject {
     var thumbsGeneration: Int = 0
     var thumbsStartTime: CFAbsoluteTime = 0
     var isPreloadingThumbs: Bool { thumbsLoaded < thumbsTotal && thumbsTotal > 0 }
+    // v8.6.2: 캐시 생성 진행률 (CacheProgressGauge 표시용 — EXIF thumbsLoaded 와 별개)
+    @Published var previewsLoaded: Int = 0
+    @Published var thumbCacheCount: Int = 0
+    var previewsStartTime: CFAbsoluteTime = 0
+    var cacheProgressStartTime: CFAbsoluteTime = 0
+    var previewsElapsed: TimeInterval { previewsStartTime > 0 ? CFAbsoluteTimeGetCurrent() - previewsStartTime : 0 }
+    var cacheProgressElapsed: TimeInterval { cacheProgressStartTime > 0 ? CFAbsoluteTimeGetCurrent() - cacheProgressStartTime : 0 }
+    private var _previewLoadedURLs: Set<URL> = []
+    private var _thumbCacheInsertedURLs: Set<URL> = []
+    private let _cacheProgressLock = NSLock()
+    /// 미리보기가 처음 생성된 URL 을 기록해서 중복 카운트 방지. main thread 외에서 호출 안전.
+    func notePreviewLoaded(url: URL) {
+        _cacheProgressLock.lock()
+        let isNew = _previewLoadedURLs.insert(url).inserted
+        _cacheProgressLock.unlock()
+        guard isNew else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.previewsLoaded += 1
+        }
+    }
+    /// v8.6.2: ThumbnailCache 인입 알림 처리 — 현재 폴더의 사진만 카운트.
+    func noteThumbCacheInserted(url: URL) {
+        guard let folder = folderURL else { return }
+        // 현재 폴더 직속 파일만 (재귀 폴더 경우에는 folder.path 의 하위면 OK).
+        guard url.path.hasPrefix(folder.path) else { return }
+        _cacheProgressLock.lock()
+        let isNew = _thumbCacheInsertedURLs.insert(url).inserted
+        _cacheProgressLock.unlock()
+        guard isNew else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.thumbCacheCount += 1
+        }
+    }
+    func clearPreviewTracking() {
+        _cacheProgressLock.lock()
+        _previewLoadedURLs.removeAll()
+        _thumbCacheInsertedURLs.removeAll()
+        _cacheProgressLock.unlock()
+    }
     var thumbsETA: String {
         guard thumbsLoaded > 0, thumbsTotal > thumbsLoaded else { return "" }
         let elapsed = CFAbsoluteTimeGetCurrent() - thumbsStartTime
@@ -453,6 +492,14 @@ class PhotoStore: ObservableObject {
         }
         setupFolderWatcher()
 
+        // v8.6.2: ThumbnailCache 인입 알림 구독 (CacheProgressGauge)
+        NotificationCenter.default.addObserver(
+            forName: .thumbnailCacheInserted, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let url = note.object as? URL else { return }
+            self?.noteThumbCacheInserted(url: url)
+        }
+
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제
         MemoryGuardService.shared.start()
 
@@ -472,6 +519,10 @@ class PhotoStore: ObservableObject {
         NotificationCenter.default.addObserver(forName: .init("SettingsChanged"), object: nil, queue: .main) { [weak self] _ in
             self?.applySettingsFromDefaults()
         }
+        // v8.6.2 fix: launch 시에도 UserDefaults 값을 라이브 프로퍼티에 sync.
+        //   (이전엔 SettingsChanged notification 때만 호출되어 previewResolution 이 0 (기본값) 으로
+        //    남아있었고, CacheSweeper 는 1000 으로 caching → cacheKey 불일치로 모든 클릭이 cache MISS)
+        applySettingsFromDefaults()
 
         // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
         // Try security-scoped bookmark first, then fall back to path string

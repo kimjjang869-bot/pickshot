@@ -36,6 +36,8 @@ extension ContentView {
 
                 if let url = store.folderURL {
                     BreadcrumbPathView(url: url, store: store)
+                    // v8.6.2: 캐시 생성 진행률 원형 게이지 (썸네일+미리보기 통합)
+                    CacheProgressGauge(store: store)
                 }
 
                 if store.isLoading {

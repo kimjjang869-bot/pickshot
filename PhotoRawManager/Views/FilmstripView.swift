@@ -5,6 +5,9 @@ struct FilmstripView: View {
     @EnvironmentObject var store: PhotoStore
     @AppStorage("filmstripHeight") private var filmstripHeight: Double = 120
     @State private var scrollMonitor: Any?
+    /// v8.6.2: Filmstrip scrollTo 쓰로틀용 (빠른 이동 시 썸네일 스크롤이 못따라오는 문제 해결)
+    @State private var scrollThrottleLastFire: Date = .distantPast
+    @State private var scrollTrailingWork: DispatchWorkItem?
 
     /// Convert vertical mouse wheel to horizontal scroll in filmstrip
     private func setupVerticalToHorizontalScroll() {
@@ -82,35 +85,8 @@ struct FilmstripView: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     LazyHStack(spacing: 4) {
                         ForEach(store.filteredPhotos) { photo in
-                            FilmstripCell(
-                                photo: photo,
-                                rating: photo.rating,
-                                colorLabel: photo.colorLabel,
-                                isSpacePicked: photo.isSpacePicked,
-                                isGSelected: photo.isGSelected,
-                                isSelected: store.isSelected(photo.id),
-                                isFocused: store.selectedPhotoID == photo.id,
-                                cellHeight: filmstripHeight - 20
-                            )
-                            .id(photo.id)
-                            .onTapGesture {
-                                // 단일 탭 (더블클릭은 NSEvent.clickCount로 즉시 분기 — 250ms 지연 회피)
-                                let clickCount = NSApp.currentEvent?.clickCount ?? 1
-                                if clickCount >= 2, photo.isFolder || photo.isParentFolder {
-                                    store.loadFolder(photo.jpgURL, restoreRatings: true)
-                                    return
-                                }
-                                if photo.isFolder || photo.isParentFolder {
-                                    store.selectedPhotoID = photo.id
-                                    store.selectedPhotoIDs = [photo.id]
-                                } else {
-                                    let flags = NSEvent.modifierFlags
-                                    store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
-                                }
-                            }
-                            .contextMenu {
-                                filmstripContextMenu(for: photo)
-                            }
+                            cellRow(for: photo)
+                                .id(photo.id)
                         }
                     }
                     .padding(.horizontal, 8)
@@ -138,19 +114,140 @@ struct FilmstripView: View {
                         scrollMonitor = nil
                     }
                 }
-                .onChange(of: store.scrollTrigger) { _ in
-                    guard let id = store.selectedPhotoID else { return }
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        proxy.scrollTo(id, anchor: .center)
-                    }
-                }
+                // v8.6.2: 빠른 이동 시 썸네일 스크롤 못따라옴 해결 — throttle 패턴 + 애니메이션 제거.
+                //   이전: withAnimation(0.2) 가 매 키마다 200ms 블록 → 다음 스크롤 지연 누적
+                //   지금: 200ms 애니메이션 삭제, throttle 80ms 간격 + trailing 보장
                 .onChange(of: store.selectedPhotoID) { newID in
                     guard let id = newID else { return }
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    let now = Date()
+                    if !store.isKeyRepeat || now.timeIntervalSince(scrollThrottleLastFire) >= 0.08 {
+                        // 즉시 scrollTo (애니메이션 없음)
                         proxy.scrollTo(id, anchor: .center)
+                        scrollThrottleLastFire = now
+                        scrollTrailingWork?.cancel()
+                    } else {
+                        // 너무 빠른 연속 — trailing 으로 마지막 위치 반영 보장
+                        scrollTrailingWork?.cancel()
+                        let work = DispatchWorkItem {
+                            guard let latestID = store.selectedPhotoID else { return }
+                            proxy.scrollTo(latestID, anchor: .center)
+                            scrollThrottleLastFire = Date()
+                        }
+                        scrollTrailingWork = work
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Cell row (썸네일뷰 PhotoCellWrapper 와 동일한 드래그/드롭/컨텍스트 메뉴)
+
+    @ViewBuilder
+    private func cellRow(for photo: PhotoItem) -> some View {
+        // 공통 탭 핸들러 — overlay 뒤에 적용해야 NSView MultiFileDragView 와 충돌하지 않음
+        let tap = {
+            let clickCount = NSApp.currentEvent?.clickCount ?? 1
+            if clickCount >= 2, photo.isFolder || photo.isParentFolder {
+                store.loadFolder(photo.jpgURL, restoreRatings: true)
+                return
+            }
+            if photo.isFolder || photo.isParentFolder {
+                store.selectedPhotoID = photo.id
+                store.selectedPhotoIDs = [photo.id]
+            } else {
+                let flags = NSEvent.modifierFlags
+                store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
+            }
+        }
+
+        let base = FilmstripCell(
+            photo: photo,
+            rating: photo.rating,
+            colorLabel: photo.colorLabel,
+            isSpacePicked: photo.isSpacePicked,
+            isGSelected: photo.isGSelected,
+            isSelected: store.isSelected(photo.id),
+            isFocused: store.selectedPhotoID == photo.id,
+            cellHeight: filmstripHeight - 20
+        )
+        .contentShape(Rectangle())
+
+        if photo.isParentFolder {
+            base
+                .onTapGesture(perform: tap)
+                .contextMenu {
+                    Button("Finder에서 열기") {
+                        NSWorkspace.shared.open(photo.jpgURL)
+                    }
+                }
+        } else if photo.isFolder {
+            // 폴더 셀: onDrag(단일 URL) + onDrop(이 폴더 안으로 이동)
+            base
+                .onDrag {
+                    let provider = NSItemProvider(object: photo.jpgURL as NSURL)
+                    provider.suggestedName = photo.jpgURL.lastPathComponent
+                    return provider
+                }
+                .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                    handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
+                    return true
+                }
+                .onTapGesture(perform: tap)
+                .contextMenu {
+                    Button("Finder에서 열기") {
+                        NSWorkspace.shared.open(photo.jpgURL)
+                    }
+                    Divider()
+                    copyCutPasteMenu(for: photo, store: store)
+                    Divider()
+                    Button(role: .destructive) {
+                        store.requestDeleteOriginal(ids: [photo.id])
+                    } label: {
+                        Label("휴지통으로 이동", systemImage: "trash")
+                    }
+                }
+        } else {
+            // 일반 사진 셀: overlay(NSView) → onTapGesture → onDrop → contextMenu (썸네일뷰와 동일한 순서)
+            base
+                .overlay(MultiFileDragView(photo: photo, store: store))
+                .overlay(DropIndicatorOverlay(photoID: photo.id))
+                .onTapGesture(perform: tap)
+                .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
+                    photo: photo, store: store, cellWidth: (filmstripHeight - 20) * 1.3
+                ))
+                .contextMenu {
+                    PhotoContextMenu(photo: photo, store: store)
+                }
+        }
+    }
+
+    /// 폴더 셀에 드롭 받기 — 썸네일뷰와 동일: 드롭된 파일/폴더를 이 폴더 안으로 이동.
+    private func handleDropOnFolder(providers: [NSItemProvider], folderURL: URL) {
+        let group = DispatchGroup()
+        var collected: [URL] = []
+        let lock = NSLock()
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { continue }
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                defer { group.leave() }
+                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    lock.lock(); collected.append(url); lock.unlock()
+                } else if let url = item as? URL {
+                    lock.lock(); collected.append(url); lock.unlock()
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            guard !collected.isEmpty else { return }
+            // 자기 자신/자식 폴더로 이동 방지
+            let filtered = collected.filter { src in
+                guard src != folderURL else { return false }
+                return !folderURL.path.hasPrefix(src.path + "/")
+            }
+            guard !filtered.isEmpty else { return }
+            store.movePhotosToFolder(fileURLs: filtered, destination: folderURL)
         }
     }
 
@@ -158,6 +255,17 @@ struct FilmstripView: View {
 
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
         let chars = press.characters
+        let mods = press.modifiers
+
+        // ⌘C / ⌘X / ⌘V — 복사 / 잘라내기 / 붙여넣기
+        if mods.contains(.command) {
+            switch chars.lowercased() {
+            case "c": copySelectionToPasteboard(store: store); return .handled
+            case "x": cutSelectionToPasteboard(store: store); return .handled
+            case "v": pasteFilesFromPasteboard(store: store); return .handled
+            default: break
+            }
+        }
 
         // 스페이스바: 별 5개 토글 (포커스 사진 기준, 다중 선택 시 일괄)
         if chars == " " {
@@ -188,6 +296,29 @@ struct FilmstripView: View {
                     store.setColorLabelForSelected(label)
                 } else if let id = store.selectedPhotoID {
                     store.setColorLabel(label, for: id)
+                }
+            }
+            return .handled
+        }
+
+        // P: SP 픽 토글
+        if chars.lowercased() == "p" {
+            if store.selectedPhotoIDs.count > 1 {
+                store.toggleSpacePickForSelected()
+            } else if let id = store.selectedPhotoID {
+                store.toggleSpacePick(for: id)
+            }
+            return .handled
+        }
+
+        // G/X: G셀렉 토글
+        if chars.lowercased() == "g" || chars.lowercased() == "x" {
+            let ids = store.selectedPhotoIDs.isEmpty
+                ? (store.selectedPhotoID.map { [$0] } ?? [])
+                : Array(store.selectedPhotoIDs)
+            for id in ids {
+                if let idx = store._photoIndex[id] {
+                    store.photos[idx].isGSelected.toggle()
                 }
             }
             return .handled
@@ -239,29 +370,6 @@ struct FilmstripView: View {
         }
     }
 
-    // MARK: - 컨텍스트 메뉴 (썸네일뷰와 동일한 항목들)
-
-    @ViewBuilder
-    private func filmstripContextMenu(for photo: PhotoItem) -> some View {
-        if !photo.isFolder && !photo.isParentFolder {
-            Button("Finder에서 보기") {
-                NSWorkspace.shared.activateFileViewerSelecting([photo.jpgURL])
-            }
-            Divider()
-            Menu("별점") {
-                ForEach(0...5, id: \.self) { r in
-                    Button("\(r)점") { store.setRating(r, for: photo.id) }
-                }
-            }
-            Button(photo.isSpacePicked ? "SP 해제" : "SP 셀렉") {
-                store.toggleSpacePick(for: photo.id)
-            }
-            Divider()
-            Button("삭제…", role: .destructive) {
-                store.requestDeleteOriginal(ids: [photo.id])
-            }
-        }
-    }
 }
 
 struct FilmstripCell: View {
@@ -301,7 +409,7 @@ struct FilmstripCell: View {
     var body: some View {
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
-                AsyncThumbnailView(url: photo.jpgURL)
+                AsyncThumbnailView(url: photo.displayURL)
                     .frame(width: cellWidth, height: imgHeight)
                     .clipped()
                     .cornerRadius(4)

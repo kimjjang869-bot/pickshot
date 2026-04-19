@@ -98,7 +98,7 @@ struct ClientView: View {
                     ForEach(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }) { photo in
                         let isSelected = store.selectedPhotoID == photo.id
                         VStack(spacing: 2) {
-                            AsyncThumbnailView(url: photo.jpgURL)
+                            AsyncThumbnailView(url: photo.displayURL)
                                 .frame(width: size, height: size * 0.75)
                                 .clipped()
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -242,7 +242,7 @@ struct ClientView: View {
 
         return HStack(spacing: 8) {
             // Thumbnail
-            AsyncThumbnailView(url: photo.jpgURL)
+            AsyncThumbnailView(url: photo.displayURL)
                 .frame(width: 60, height: 40)
                 .cornerRadius(4)
                 .clipped()

@@ -407,12 +407,60 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            // Stress test provider 연결
-            MemoryLeakTracker.shared.stressPhotoProvider = {
+            // v8.6.1: 메모리 누수 추적 스트레스 테스트 provider 연결
+            let tracker = MemoryLeakTracker.shared
+            tracker.stressPhotoProvider = {
                 store.photos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id }
             }
-            MemoryLeakTracker.shared.stressPhotoSelector = { id in
+            tracker.stressPhotoSelector = { id in
                 store.selectedPhotoID = id
+            }
+            tracker.stressGridColsProvider = {
+                // v8.6.2 fix: 실제 표시 중인 그리드 열 수 반환 (이전엔 6 하드코딩 → 실제 열 수와 달라
+                //   대각선으로 이동하는 버그). store.actualColumnsPerRow 가 updateGridColumns 에서 실시간 갱신됨.
+                let cols = store.actualColumnsPerRow
+                return cols > 0 ? cols : 6
+            }
+            tracker.stressDeleteAction = { ids in
+                store.deleteOriginalFiles(ids: ids)
+            }
+            tracker.stressCacheInvalidator = { urls in
+                PhotoStore.invalidateCachesForDeletedURLs(urls)
+            }
+            tracker.stressURLProvider = { id in
+                store.photos.first(where: { $0.id == id })?.jpgURL
+            }
+
+            // v8.6.2: CacheSweeper 의존성 주입 + 활동 훅
+            let sweeper = CacheSweeper.shared
+            sweeper.isSlowDiskProvider = { ThumbnailLoader.shared.isSlowDisk }
+            sweeper.isBusyProvider = {
+                store.isLoading || store.isConverting || store.isAnalyzing
+                    || store.isPreloadingThumbs
+                    || MemoryLeakTracker.shared.isStressTesting
+            }
+            sweeper.selectedIndexProvider = {
+                // v8.6.2: O(n) firstIndex → O(1) _photoIndex
+                guard let id = store.selectedPhotoID,
+                      let idx = store._photoIndex[id] else { return nil }
+                return idx
+            }
+            sweeper.storeNotePreview = { [weak store] url in
+                store?.notePreviewLoaded(url: url)
+            }
+        }
+        .onChange(of: store.selectedPhotoID) { _ in
+            CacheSweeper.shared.notifyActivity()
+        }
+        .onChange(of: store.folderURL) { newURL in
+            guard let url = newURL else { return }
+            // 폴더 로드 200ms 후 sweep 대상 재구성 (photos 배열 채워질 시간 확보)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                let urls = store.photos.compactMap { p -> URL? in
+                    guard !p.isFolder, !p.isParentFolder else { return nil }
+                    return p.jpgURL
+                }
+                CacheSweeper.shared.prepareForFolder(url: url, photos: urls)
             }
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
@@ -578,8 +626,29 @@ struct ContentView: View {
                 dualWindow = nil
             }
         }
-        .onAppear { setupMouseSideButtonMonitor() }
-        .onDisappear { teardownMouseSideButtonMonitor() }
+        .onAppear { setupMouseSideButtonMonitor(); setupCacheSweeperActivityMonitor() }
+        .onDisappear { teardownMouseSideButtonMonitor(); teardownCacheSweeperActivityMonitor() }
+    }
+
+    // MARK: - v8.6.2: CacheSweeper 활동 감지 (스크롤 + 키)
+    @State private var sweeperActivityMonitor: Any?
+
+    private func setupCacheSweeperActivityMonitor() {
+        if sweeperActivityMonitor != nil { return }
+        sweeperActivityMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.scrollWheel, .keyDown, .leftMouseDown]
+        ) { event in
+            CacheSweeper.shared.notifyActivity()
+            return event  // 이벤트 소비 금지 (UI 에 그대로 전달)
+        }
+    }
+
+    private func teardownCacheSweeperActivityMonitor() {
+        if let m = sweeperActivityMonitor {
+            NSEvent.removeMonitor(m)
+            sweeperActivityMonitor = nil
+        }
+        CacheSweeper.shared.cancel()
     }
 
     /// 마우스 사이드 버튼 (뒤로=3, 앞으로=4) → 폴더 이력 네비게이션

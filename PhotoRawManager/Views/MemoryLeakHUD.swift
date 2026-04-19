@@ -54,21 +54,40 @@ struct MemoryLeakHUD: View {
     }
 
     private var statsRow: some View {
-        HStack(spacing: 14) {
-            stat(label: "RSS", value: "\(tracker.currentRSSMB)MB",
-                 color: tracker.currentRSSMB > 4000 ? .red : (tracker.currentRSSMB > 2000 ? .orange : .green))
-            stat(label: "Peak", value: "\(tracker.peakRSSMB)MB", color: .yellow)
-            stat(label: "증가율", value: "\(Int(tracker.growthRateMBPerMin))MB/m",
-                 color: tracker.growthRateMBPerMin > 100 ? .red : .white.opacity(0.8))
-            stat(label: "샘플", value: "\(tracker.snapshots.count)", color: .white.opacity(0.7))
-            Spacer()
-            HStack(spacing: 4) {
-                Button(tracker.isTracking ? "정지" : "시작") {
-                    if tracker.isTracking { tracker.stop() } else { tracker.start() }
-                }
-                .font(.system(size: 10))
-                Button("로그") { tracker.openLogFolder() }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                stat(label: "RSS", value: "\(tracker.currentRSSMB)MB",
+                     color: tracker.currentRSSMB > 4000 ? .red : (tracker.currentRSSMB > 2000 ? .orange : .green))
+                stat(label: "Peak", value: "\(tracker.peakRSSMB)MB", color: .yellow)
+                stat(label: "증가율", value: "\(Int(tracker.growthRateMBPerMin))MB/m",
+                     color: tracker.growthRateMBPerMin > 100 ? .red : .white.opacity(0.8))
+                Spacer()
+                HStack(spacing: 4) {
+                    Button(tracker.isTracking ? "정지" : "시작") {
+                        if tracker.isTracking { tracker.stop() } else { tracker.start() }
+                    }
                     .font(.system(size: 10))
+                    Button("🧹 해제") {
+                        let msg = tracker.emergencyCleanup()
+                        tracker.stressProgress = msg
+                    }
+                    .font(.system(size: 10))
+                    .tint(.red)
+                    Button("로그") { tracker.openLogFolder() }
+                        .font(.system(size: 10))
+                }
+            }
+            // 캐시별 상세
+            if let last = tracker.snapshots.last {
+                HStack(spacing: 14) {
+                    stat(label: "Preview", value: "\(last.previewMemMB)MB / \(last.previewCount)", color: .cyan)
+                    stat(label: "HiRes", value: "\(last.hiResCount)장",
+                         color: last.hiResCount > 10 ? .red : .white.opacity(0.7))
+                    stat(label: "Swap", value: "\(last.vmSwapMB)MB",
+                         color: last.vmSwapMB > 1000 ? .red : .white.opacity(0.7))
+                    stat(label: "Thumb limit", value: "\(last.thumbLimitMB)MB", color: .white.opacity(0.6))
+                    Spacer()
+                }
             }
         }
     }
@@ -110,24 +129,94 @@ struct MemoryLeakHUD: View {
     }
 
     private var stressSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("스트레스 테스트")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.white.opacity(0.7))
                 Spacer()
-                Button(tracker.isStressTesting ? "진행 중..." : "실행 (50 cycles)") {
-                    tracker.runStressTest(cycles: 50)
+                Text("현재 상태: \(tracker.isStressTesting ? "진행 중" : "대기")")
+                    .font(.system(size: 9))
+                    .foregroundColor(tracker.isStressTesting ? .yellow : .white.opacity(0.5))
+                // v8.6.2: 테스트 진행 중이면 중단 버튼 노출
+                if tracker.isStressTesting {
+                    Button("⏹ 중단") {
+                        tracker.abortStressTest()
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .buttonStyle(.borderless)
+                    .tint(.red)
                 }
-                .font(.system(size: 10))
-                .disabled(tracker.isStressTesting)
             }
+
+            HStack(spacing: 6) {
+                stressButton("열 이동",
+                             detail: "20/sec\n프리뷰 부하",
+                             color: .blue) {
+                    tracker.runStressTest(mode: .columnNav, cycles: 50)
+                }
+                stressButton("행 이동",
+                             detail: "10/sec\n실제 패턴",
+                             color: .green) {
+                    tracker.runStressTest(mode: .rowNav, cycles: 20)
+                }
+                stressButton("삭제 시뮬",
+                             detail: "safe\n캐시만 정리",
+                             color: .orange) {
+                    tracker.runStressTest(mode: .deleteSimulation, cycles: 10)
+                }
+                stressButton("실제 삭제",
+                             detail: "35장 휴지통\nCmd+Z 복원",
+                             color: .red) {
+                    confirmActualDelete()
+                }
+            }
+
             if !tracker.stressProgress.isEmpty {
                 Text(tracker.stressProgress)
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.white.opacity(0.85))
                     .lineLimit(2)
             }
+        }
+    }
+
+    private func stressButton(_ title: String, detail: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 8))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(color.opacity(0.25))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.6), lineWidth: 1)
+            )
+            .cornerRadius(4)
+            .foregroundColor(.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(tracker.isStressTesting)
+    }
+
+    private func confirmActualDelete() {
+        let alert = NSAlert()
+        alert.messageText = "실제 삭제 테스트"
+        alert.informativeText = """
+        현재 폴더의 앞 35장을 휴지통으로 이동합니다 (튜브짱 시나리오 재현).
+        Cmd+Z 로 복원 가능하지만 실제 파일이 건드려집니다.
+        테스트용 폴더에서만 실행하세요.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "실행")
+        alert.addButton(withTitle: "취소")
+        if alert.runModal() == .alertFirstButtonReturn {
+            tracker.runStressTest(mode: .actualDelete, cycles: 1)
         }
     }
 }

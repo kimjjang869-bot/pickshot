@@ -12,7 +12,7 @@ struct PreviewSettingsTab: View {
     @AppStorage("previewMaxResolution") private var previewMaxResolution = "original"
     @AppStorage("rawPreviewMode") private var rawPreviewMode = "fast"
     @AppStorage("colorProfile") private var colorProfile = "display"
-    @AppStorage("previewCacheSize") private var previewCacheSize = 20.0
+    @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
     @AppStorage("defaultViewMode") private var defaultViewMode = "gridPreview"
     @AppStorage("defaultSortMode") private var defaultSortMode = "captureTime"
@@ -114,8 +114,8 @@ struct PreviewSettingsTab: View {
             .padding(20)
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("SettingsResetTab"))) { _ in
-            previewMaxResolution = "original"; rawPreviewMode = "fast"; colorProfile = "display"
-            previewCacheSize = 20.0; defaultThumbnailSize = 150.0
+            previewMaxResolution = "1000"; rawPreviewMode = "fast"; colorProfile = "display"
+            previewCacheSize = 50.0; defaultThumbnailSize = 150.0
             defaultViewMode = "gridPreview"; defaultSortMode = "captureTime"
             showHistogramByDefault = false; showExifByDefault = false; enableTransition = true
         }

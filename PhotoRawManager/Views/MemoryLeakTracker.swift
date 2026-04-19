@@ -10,6 +10,7 @@
 
 import Foundation
 import Darwin
+import Darwin.Mach
 import Combine
 import AppKit
 
@@ -30,18 +31,28 @@ final class MemoryLeakTracker: ObservableObject {
         let id = UUID()
         let timestamp: Date
         let rssMB: Int
-        let thumbMemMB: Int      // ThumbnailCache (추정)
-        let previewMemMB: Int    // PreviewImageCache
-        let hiResMB: Int         // hiResCache (추정)
-        let developCount: Int    // DevelopStore memory dict 엔트리 수
-        let photosCount: Int     // 현재 폴더의 photos 개수
-        let trigger: String      // "timer" | "stress" | "manual" | "spike"
+        let thumbLimitMB: Int    // ThumbnailCache.totalCostLimit (제한치)
+        let previewMemMB: Int    // PreviewImageCache 실 사용 bytes
+        let previewCount: Int    // PreviewImageCache 엔트리 개수
+        let hiResCount: Int      // hiResCache orderlist 엔트리 개수
+        let vmSwapMB: Int        // 스왑 영역 추정 (task_vm_info)
+        let photosCount: Int
+        let trigger: String
     }
 
     private var timer: Timer?
     private let sampleInterval: TimeInterval = 5.0  // 5초마다 샘플
     private let spikeThresholdMB: Int = 100          // 단일 샘플 간격에 +100MB 이상이면 spike
     private var logFileURL: URL?
+
+    // v8.6.1: 하드 메모리 캡 — 이 값 초과 시 강제 emergency cleanup.
+    // 기본 6GB. 사용자가 "6GB 정도가 마지노선" 이라고 지정.
+    private let hardCapMB: Int = 6144
+    private let warnCapMB: Int = 4096   // 4GB 초과 시 경고 + 선제적 evict
+    private var lastAutoCleanupTime: Date = Date.distantPast
+    private let autoCleanupCooldown: TimeInterval = 2.0  // v8.6.2: 10→2초 (캡 초과 시 빠르게 회수)
+    /// v8.6.2: 하드캡 초과 시 진행 중 스트레스 테스트 강제 중단 플래그
+    private var stressAbortRequested: Bool = false
 
     private init() {
         setupLogFile()
@@ -64,12 +75,37 @@ final class MemoryLeakTracker: ObservableObject {
         isTracking = false
     }
 
+    /// v8.6.2: HUD "중단" 버튼에서 호출 — 진행 중 스트레스 테스트 즉시 중단.
+    func abortStressTest() {
+        stressAbortRequested = true
+        fputs("[LEAK-TRACKER] ⏹ 사용자가 스트레스 테스트 중단 요청\n", stderr)
+    }
+
     // MARK: - Sampling
 
     func sampleOnce(trigger: String) {
         let rssMB = Self.currentProcessRSSMB()
         currentRSSMB = rssMB
         if rssMB > peakRSSMB { peakRSSMB = rssMB }
+
+        // v8.6.1: 하드 메모리 캡 체크 — 6GB 초과 시 자동 emergency cleanup
+        //   10초 쿨다운 (무한 루프 방지) + 트리거 자체 내에서는 호출 X (재귀 방지)
+        if rssMB > hardCapMB && !trigger.hasPrefix("autocap") && !trigger.hasPrefix("cleanup") {
+            // v8.6.2: 하드캡 초과 → 즉시 stress test 중단 요청 + emergency cleanup
+            if isStressTesting { stressAbortRequested = true }
+            let now = Date()
+            if now.timeIntervalSince(lastAutoCleanupTime) > autoCleanupCooldown {
+                lastAutoCleanupTime = now
+                fputs("[LEAK-TRACKER] 🚨 HARD CAP \(hardCapMB)MB 초과 (\(rssMB)MB) → 자동 emergency cleanup + stress 중단\n", stderr)
+                DispatchQueue.main.async { [weak self] in
+                    _ = self?.emergencyCleanup()
+                }
+            }
+        } else if rssMB > warnCapMB {
+            // 4GB 초과 — 선제적 NSCache evict 유도
+            PreviewImageCache.shared.reduceCacheLimit()
+            ThumbnailCache.shared.reduceCacheLimit()
+        }
 
         // Spike detection
         if let last = snapshots.last, rssMB - last.rssMB >= spikeThresholdMB {
@@ -89,19 +125,33 @@ final class MemoryLeakTracker: ObservableObject {
     }
 
     private func makeSnapshot(rssMB: Int, trigger: String) -> Snapshot {
-        let thumbMB = ThumbnailCache.shared.debugCountAndLimit().limitMB
+        let thumbLimit = ThumbnailCache.shared.debugCountAndLimit().limitMB
         let previewInfo = PreviewImageCache.shared.debugStats()
         let previewMB = previewInfo.bytes / 1024 / 1024
         return Snapshot(
             timestamp: Date(),
             rssMB: rssMB,
-            thumbMemMB: thumbMB,
+            thumbLimitMB: thumbLimit,
             previewMemMB: previewMB,
-            hiResMB: 0,  // NSCache 내부 bytes 노출 안 됨
-            developCount: 0,
+            previewCount: previewInfo.count,
+            hiResCount: PhotoPreviewView.debugHiResCount(),
+            vmSwapMB: Self.currentSwapMB(),
             photosCount: externalPhotosCount,
             trigger: trigger
         )
+    }
+
+    /// task_vm_info 의 swap 사용량 (스왑 총합).
+    static func currentSwapMB() -> Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), intPtr, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        return Int(info.compressed / 1024 / 1024)
     }
 
     /// ContentView 같은 외부에서 store.photos.count 를 주기적으로 업데이트.
@@ -141,14 +191,14 @@ final class MemoryLeakTracker: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         logFileURL = logsDir.appendingPathComponent("memleak_\(formatter.string(from: Date())).csv")
-        // CSV 헤더
-        let header = "timestamp,rss_mb,peak_mb,growth_rate_mbmin,thumb_mb,preview_mb,photos_count,trigger\n"
+        // CSV 헤더 (v8.6.1 확장: hiResCount, previewCount, vmSwapMB)
+        let header = "timestamp,rss_mb,peak_mb,growth_rate_mbmin,thumb_limit_mb,preview_mb,preview_count,hires_count,swap_mb,photos_count,trigger\n"
         try? header.data(using: .utf8)?.write(to: logFileURL!)
     }
 
     private func logToFile(_ s: Snapshot) {
         guard let url = logFileURL else { return }
-        let line = "\(s.timestamp.timeIntervalSince1970),\(s.rssMB),\(peakRSSMB),\(String(format: "%.1f", growthRateMBPerMin)),\(s.thumbMemMB),\(s.previewMemMB),\(s.photosCount),\(s.trigger)\n"
+        let line = "\(s.timestamp.timeIntervalSince1970),\(s.rssMB),\(peakRSSMB),\(String(format: "%.1f", growthRateMBPerMin)),\(s.thumbLimitMB),\(s.previewMemMB),\(s.previewCount),\(s.hiResCount),\(s.vmSwapMB),\(s.photosCount),\(s.trigger)\n"
         guard let data = line.data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
@@ -162,49 +212,194 @@ final class MemoryLeakTracker: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    // MARK: - Stress Test
+    // MARK: - Emergency Memory Cleanup
     //
-    // 외부에서 PhotoStore 주입 — callback 으로 다음 사진 선택.
-    // UI 를 직접 클릭하지는 않고 프로그래밍 방식으로 순환.
-    var stressPhotoProvider: (() -> [UUID])?       // UUID 배열 제공
-    var stressPhotoSelector: ((UUID) -> Void)?     // 선택 콜백
+    // v8.6.1: 메모리 누수 수정에도 OS 레벨 VM 이 해제 안 되는 경우를 위한 강제 cleanup.
+    // NSCache 들 removeAllObjects + OperationQueue 취소 + prefetch queue drain +
+    // autoreleasepool 강제 drain + GPU texture flush.
+    func emergencyCleanup() -> String {
+        let before = Self.currentProcessRSSMB()
+        var log = [String]()
 
-    func runStressTest(cycles: Int = 50) {
+        // 1) 모든 in-memory 캐시 비우기
+        PreviewImageCache.shared.clearCache()
+        ThumbnailCache.shared.removeAll()
+        log.append("✓ Preview/Thumbnail cache 해제")
+
+        // 2) hiResCache (PhotoPreviewView static)
+        PhotoPreviewView.clearAllHiResCache()
+        log.append("✓ hiResCache 해제")
+
+        // 3) DevelopPipeline CIRAWFilter
+        DevelopPipeline.clearRAWCache()
+        log.append("✓ Develop 캐시")
+
+        // 4) FolderPreviewCache
+        FolderPreviewCache.shared.invalidateAll()
+        log.append("✓ FolderPreviewCache")
+
+        // 5) autoreleasepool 강제 drain — 여러 pool 실행
+        for _ in 0..<3 {
+            autoreleasepool { _ = NSImage(size: NSSize(width: 1, height: 1)) }
+        }
+
+        // 6) malloc_zone_pressure_relief — macOS 가 내부 buffer 반환
+        //    Darwin.malloc 의 C 함수라 런타임 로딩으로 호출.
+        if let sym = dlsym(dlopen(nil, RTLD_NOW), "malloc_zone_pressure_relief") {
+            typealias FP = @convention(c) (UnsafeMutableRawPointer?, Int) -> Int
+            let fn = unsafeBitCast(sym, to: FP.self)
+            _ = fn(nil, 0)
+            log.append("✓ malloc pressure relief")
+        }
+
+        // 7) 샘플 즉시 다시 찍어 감소 확인
+        Thread.sleep(forTimeInterval: 0.3)  // OS 가 반환할 시간
+        let after = Self.currentProcessRSSMB()
+        let delta = before - after
+        log.append("RSS: \(before)MB → \(after)MB  (Δ -\(delta)MB)")
+        let result = log.joined(separator: " | ")
+        fputs("[MEM-CLEANUP] \(result)\n", stderr)
+        sampleOnce(trigger: "cleanup_\(delta)MB")
+        return result
+    }
+
+    // MARK: - Stress Test providers (ContentView 에서 주입)
+    var stressPhotoProvider: (() -> [UUID])?        // 현재 폴더의 photo ID 배열
+    var stressPhotoSelector: ((UUID) -> Void)?      // 선택 콜백
+    var stressGridColsProvider: (() -> Int)?        // 그리드 열 수 (행 이동 계산용)
+    var stressDeleteAction: ((Set<UUID>) -> Void)?  // 실제 삭제 (휴지통, Cmd+Z 복원 가능)
+    var stressCacheInvalidator: (([URL]) -> Void)?  // 삭제 시뮬레이션 (파일 안 건드리고 캐시만)
+    var stressURLProvider: ((UUID) -> URL?)?        // UUID → URL
+
+    enum StressMode: String {
+        case columnNav          // 열 이동 (20/sec) — 프리뷰 로드 부하
+        case rowNav             // 행 이동 (10/sec) — 실제 검토 패턴
+        case deleteSimulation   // safe — 캐시 정리 코드만 호출
+        case actualDelete       // 실제 휴지통 이동 (35장, Cmd+Z 복원 가능)
+    }
+
+    func runStressTest(mode: StressMode, cycles: Int = 50) {
         guard !isStressTesting else { return }
         guard let provider = stressPhotoProvider, let selector = stressPhotoSelector else {
-            stressProgress = "❌ 스트레스 테스트 provider 미연결 (ContentView 에서 설정 필요)"
+            stressProgress = "❌ provider 미연결"
             return
         }
         let photoIDs = provider()
         guard !photoIDs.isEmpty else {
-            stressProgress = "❌ 사진이 없습니다 — 폴더를 먼저 열어주세요"
+            stressProgress = "❌ 사진이 없습니다"
             return
         }
         isStressTesting = true
-        sampleOnce(trigger: "stress_start")
+        stressAbortRequested = false
+        sampleOnce(trigger: "stress_start_\(mode.rawValue)")
         let initialMB = currentRSSMB
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            for cycle in 0..<cycles {
-                for (i, id) in photoIDs.enumerated() {
-                    DispatchQueue.main.async { selector(id) }
-                    Thread.sleep(forTimeInterval: 0.05)  // 20 photos/sec
-                    if i % 50 == 0 {
-                        DispatchQueue.main.async {
-                            self.stressProgress = "cycle \(cycle+1)/\(cycles) — photo \(i)/\(photoIDs.count)  RSS=\(self.currentRSSMB)MB"
-                        }
-                        self.sampleOnce(trigger: "stress_c\(cycle)_p\(i)")
-                    }
-                }
+            switch mode {
+            case .columnNav: self.runColumnNav(photoIDs: photoIDs, cycles: cycles, selector: selector)
+            case .rowNav: self.runRowNav(photoIDs: photoIDs, cycles: cycles, selector: selector)
+            case .deleteSimulation: self.runDeleteSimulation(photoIDs: photoIDs, cycles: cycles)
+            case .actualDelete: self.runActualDelete(photoIDs: photoIDs)
             }
             DispatchQueue.main.async {
-                self.sampleOnce(trigger: "stress_end")
-                let delta = self.currentRSSMB - initialMB
-                self.stressProgress = "✅ 완료 — \(cycles) cycles × \(photoIDs.count) photos. RSS: \(initialMB)→\(self.currentRSSMB)MB (Δ\(delta > 0 ? "+" : "")\(delta)MB)"
+                self.sampleOnce(trigger: "stress_end_\(mode.rawValue)")
+                let deltaBefore = self.currentRSSMB - initialMB
+                // v8.6.1: 스트레스 테스트 종료 시 자동 emergency cleanup → 메모리 해소 확인
+                let cleanupResult = self.emergencyCleanup()
+                let deltaAfter = self.currentRSSMB - initialMB
+                self.stressProgress = "✅ \(mode.rawValue) 완료\n    테스트 중: \(initialMB)→\(initialMB + deltaBefore)MB (Δ+\(deltaBefore)MB)\n    cleanup 후: \(self.currentRSSMB)MB (Δ+\(deltaAfter)MB)\n    \(cleanupResult)"
                 self.isStressTesting = false
-                fputs("[STRESS] 완료 초기=\(initialMB)MB 최종=\(self.currentRSSMB)MB Δ\(delta)MB peak=\(self.peakRSSMB)MB\n", stderr)
+                fputs("[STRESS-\(mode.rawValue)] 완료 초기=\(initialMB)MB 테스트종료=\(initialMB + deltaBefore)MB cleanup후=\(self.currentRSSMB)MB\n", stderr)
             }
         }
+    }
+
+    private func runColumnNav(photoIDs: [UUID], cycles: Int, selector: @escaping (UUID) -> Void) {
+        for cycle in 0..<cycles {
+            for (i, id) in photoIDs.enumerated() {
+                if stressAbortRequested { return }
+                // v8.6.2: main.async → main.sync (백로그 방지) + autoreleasepool
+                DispatchQueue.main.sync { autoreleasepool { selector(id) } }
+                Thread.sleep(forTimeInterval: 0.05)  // 20/sec
+                if i % 50 == 0 { logCycle("col", cycle+1, cycles, i, photoIDs.count) }
+            }
+        }
+    }
+
+    /// 행 이동 — gridCols 만큼 점프. 사용자의 실제 검토 패턴(↑↓).
+    private func runRowNav(photoIDs: [UUID], cycles: Int, selector: @escaping (UUID) -> Void) {
+        let cols = max(1, stressGridColsProvider?() ?? 6)
+        DispatchQueue.main.async { self.stressProgress = "행 이동 시작 (cols=\(cols))" }
+        for cycle in 0..<cycles {
+            var i = 0
+            while i < photoIDs.count {
+                if stressAbortRequested { return }
+                let id = photoIDs[i]   // v8.6.2: 로컬 캡처 (closure 크래시 방지)
+                DispatchQueue.main.sync { autoreleasepool { selector(id) } }
+                Thread.sleep(forTimeInterval: 0.1)  // 10/sec
+                i += cols
+                if (i / cols) % 20 == 0 { logCycle("row↓", cycle+1, cycles, i, photoIDs.count) }
+            }
+            // 역방향
+            i = photoIDs.count - 1
+            while i >= 0 {
+                if stressAbortRequested { return }
+                let id = photoIDs[i]   // v8.6.2: 로컬 캡처
+                DispatchQueue.main.sync { autoreleasepool { selector(id) } }
+                Thread.sleep(forTimeInterval: 0.1)
+                i -= cols
+            }
+        }
+    }
+
+    /// 삭제 시뮬레이션 (파일 건드리지 않고 캐시 정리만) — safe 테스트
+    private func runDeleteSimulation(photoIDs: [UUID], cycles: Int) {
+        guard let urlProvider = stressURLProvider,
+              let invalidator = stressCacheInvalidator else {
+            DispatchQueue.main.async { self.stressProgress = "❌ invalidator 미연결" }
+            return
+        }
+        for cycle in 0..<cycles {
+            if stressAbortRequested { return }
+            let batch = photoIDs.compactMap { urlProvider($0) }
+            DispatchQueue.main.sync { invalidator(batch) }  // v8.6.2: main.sync 로 backlog 방지 + 즉시 실행
+            // v8.6.2: 0.3s → 0.05s (6배 빠름). 매 cycle 메모리 샘플링도 1/5 로 줄여 오버헤드 최소화.
+            Thread.sleep(forTimeInterval: 0.05)
+            if cycle % 5 == 0 { sampleOnce(trigger: "del_sim_c\(cycle)") }
+            if cycle % 5 == 0 {
+                DispatchQueue.main.async {
+                    self.stressProgress = "del_sim cycle \(cycle+1)/\(cycles) — \(batch.count) URLs  RSS=\(self.currentRSSMB)MB"
+                }
+            }
+        }
+    }
+
+    /// 실제 삭제 35장 (튜브짱 시나리오 재현, Cmd+Z 로 복원 가능)
+    private func runActualDelete(photoIDs: [UUID]) {
+        guard let deleter = stressDeleteAction else {
+            DispatchQueue.main.async { self.stressProgress = "❌ deleter 미연결" }
+            return
+        }
+        let targetCount = min(35, photoIDs.count)
+        let targets = Array(photoIDs.prefix(targetCount))
+        for (i, id) in targets.enumerated() {
+            if stressAbortRequested { return }
+            DispatchQueue.main.sync { deleter([id]) }  // v8.6.2: main.sync 로 즉시 실행
+            // v8.6.2: 1.5s → 0.1s (15배 빠름). 파일시스템 휴지통 이동이 병목이니 너무 빠르면
+            // moveItem 동시성 이슈 가능 → 100ms 정도 안전 마진 확보.
+            Thread.sleep(forTimeInterval: 0.1)
+            if i % 5 == 0 { sampleOnce(trigger: "del_actual_\(i)") }
+            DispatchQueue.main.async {
+                self.stressProgress = "삭제 \(i+1)/\(targetCount)  RSS=\(self.currentRSSMB)MB"
+            }
+        }
+    }
+
+    private func logCycle(_ name: String, _ cycle: Int, _ total: Int, _ i: Int, _ n: Int) {
+        DispatchQueue.main.async {
+            self.stressProgress = "\(name) cycle \(cycle)/\(total) — photo \(i)/\(n)  RSS=\(self.currentRSSMB)MB"
+        }
+        sampleOnce(trigger: "\(name)_c\(cycle)_p\(i)")
     }
 }

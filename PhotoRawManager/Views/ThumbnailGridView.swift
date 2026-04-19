@@ -17,6 +17,11 @@ private struct GridWidthKey: PreferenceKey {
 
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
+    /// v8.6.2: 키 꾹 누르기 중 proxy.scrollTo 쓰로틀 (debounce 아님)
+    ///   최소 100ms 간격으로 '반드시' 발동 — debounce 는 연속 입력 중 끝까지 실행 안 되는 문제로
+    ///   스크롤이 따라가지 못함.
+    @State private var scrollThrottleLastFire: Date = .distantPast
+    @State private var scrollTrailingWork: DispatchWorkItem?
 
     var body: some View {
         GeometryReader { geo in
@@ -93,7 +98,25 @@ struct ThumbnailGridView: View {
                             }
                             .onChange(of: store.scrollTrigger) { _ in
                                 guard let id = store.selectedPhotoID else { return }
-                                proxy.scrollTo(id, anchor: nil)
+                                // v8.6.2: 10k+ 폴더에서 LazyVGrid scrollTo 가 느림 → 쓰로틀.
+                                //   - 단일 이동 또는 100ms 경과: 즉시 실행
+                                //   - 연속 입력 중: trailing 예약 (마지막 위치로 확실히 스크롤 보장)
+                                let now = Date()
+                                if !store.isKeyRepeat || now.timeIntervalSince(scrollThrottleLastFire) >= 0.1 {
+                                    proxy.scrollTo(id, anchor: nil)
+                                    scrollThrottleLastFire = now
+                                    scrollTrailingWork?.cancel()
+                                } else {
+                                    // 너무 빠른 연속 호출 → trailing 한 번만 예약 (끝까지 반영 보장)
+                                    scrollTrailingWork?.cancel()
+                                    let work = DispatchWorkItem {
+                                        guard let newID = store.selectedPhotoID else { return }
+                                        proxy.scrollTo(newID, anchor: nil)
+                                        scrollThrottleLastFire = Date()
+                                    }
+                                    scrollTrailingWork = work
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+                                }
                             }
                         }
                     }
@@ -202,18 +225,23 @@ struct ThumbnailGridView: View {
                             count: max(1, store.actualColumnsPerRow))
 
         let photos = store.filteredPhotos  // Compute once, not per-cell
+        let selectedID = store.selectedPhotoID
+        let selectedIDs = store.selectedPhotoIDs
         return LazyVGrid(columns: columns, spacing: 10, pinnedViews: []) {
             ForEach(photos) { photo in
                 LazyThumbnailWrapper(
                     photo: photo,
                     size: size,
-                    isSelected: store.isSelected(photo.id),
-                    isFocused: store.selectedPhotoID == photo.id,
+                    isSelected: selectedIDs.contains(photo.id),
+                    isFocused: selectedID == photo.id,
                     onTap: {
                         let flags = NSEvent.modifierFlags
                         store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
                     }
                 )
+                // v8.6.2: Equatable conformance 로 선택 상태 변경 시 해당 cell 2개만 re-render
+                //   (이전에 selected 였다가 해제된 cell + 새로 selected 된 cell). 나머지 10k-2 개는 스킵.
+                .equatable()
                 .id(photo.id)
             }
         }
@@ -362,11 +390,13 @@ struct NativeListView: View {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 16)).foregroundColor(.blue)
                     } else {
-                        AsyncThumbnailView(url: photo.jpgURL)
+                        // v8.6.2: RAW+JPG 쌍일 때 RAW 기준 썸네일 (displayURL)
+                        AsyncThumbnailView(url: photo.displayURL)
                             .frame(width: 42, height: 28)
                             .clipShape(RoundedRectangle(cornerRadius: 2))
                     }
-                    Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+                    // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
+Text(photo.fileNameWithExtension)
                         .font(.system(size: 12))
                         .lineLimit(1)
                     if !photo.isFolder && !photo.isParentFolder {
@@ -688,13 +718,25 @@ extension ThumbnailGridView {
 
 // MARK: - Lazy Wrappers (prevent full grid re-render on selection change)
 
-struct LazyThumbnailWrapper: View {
+struct LazyThumbnailWrapper: View, Equatable {
     let photo: PhotoItem
     let size: CGFloat
     let isSelected: Bool
     let isFocused: Bool
     let onTap: () -> Void
     @EnvironmentObject var store: PhotoStore
+
+    // v8.6.2: 선택 상태/사진ID/크기만 비교. store 변경 (예: thumbCacheCount) 에는 re-render 안 함.
+    static func == (l: LazyThumbnailWrapper, r: LazyThumbnailWrapper) -> Bool {
+        l.photo.id == r.photo.id
+            && l.size == r.size
+            && l.isSelected == r.isSelected
+            && l.isFocused == r.isFocused
+            && l.photo.rating == r.photo.rating
+            && l.photo.colorLabel == r.photo.colorLabel
+            && l.photo.isSpacePicked == r.photo.isSpacePicked
+            && l.photo.isGSelected == r.photo.isGSelected
+    }
 
     var body: some View {
         if photo.isParentFolder {
@@ -1405,7 +1447,7 @@ struct ThumbnailCell: View, Equatable {
 
     var body: some View {
         VStack(spacing: 3) {
-            AsyncThumbnailView(url: photo.jpgURL)
+            AsyncThumbnailView(url: photo.displayURL)
                 .frame(width: size, height: imgH)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius, style: .continuous))
@@ -1417,7 +1459,8 @@ struct ThumbnailCell: View, Equatable {
                 .overlay(videoOverlay, alignment: .center)
 
             // File name
-            Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+            // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
+Text(photo.fileNameWithExtension)
                 .font(.system(size: AppTheme.fontCaption))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
@@ -1749,7 +1792,7 @@ struct ListRow: View {
                     } else if photo.isFolder {
                         Image(systemName: "folder.fill").font(.system(size: imgSize * 0.7)).foregroundColor(.blue)
                     } else {
-                        AsyncThumbnailView(url: photo.jpgURL)
+                        AsyncThumbnailView(url: photo.displayURL)
                             .frame(width: imgSize, height: imgSize * 0.67)
                             .clipShape(RoundedRectangle(cornerRadius: 2))
                     }
@@ -1757,7 +1800,8 @@ struct ListRow: View {
                 .frame(width: imgSize, height: imgSize * 0.67)
 
                 HStack(spacing: 3) {
-                    Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+                    // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
+Text(photo.fileNameWithExtension)
                         .font(.system(size: 12)).lineLimit(1)
                     if isFile {
                         let badge = photo.fileTypeBadge
@@ -1963,6 +2007,8 @@ class ThumbnailCache {
             cost = max(1, pixelW * pixelH * 4)
         }
         cache.setObject(image, forKey: url as NSURL, cost: cost)
+        // v8.6.2: CacheProgressGauge 용 — URL 유입 알림 (PhotoStore 에서 중복 카운트 방지)
+        NotificationCenter.default.post(name: .thumbnailCacheInserted, object: url)
     }
 
     func removeAll() {
@@ -1972,6 +2018,12 @@ class ThumbnailCache {
     /// v8.6.1: 사진 삭제 시 해당 URL 캐시 제거 (메모리 누수 방지)
     func remove(url: URL) {
         cache.removeObject(forKey: url as NSURL)
+    }
+
+    /// v8.6.1: 메모리 압박 시 cost/count 상한 절반으로 축소 (즉시 evict 유도).
+    func reduceCacheLimit() {
+        cache.totalCostLimit = max(cache.totalCostLimit / 2, 256 * 1024 * 1024)  // 최소 256MB
+        cache.countLimit = max(cache.countLimit / 2, 500)
     }
 
     /// 디버그용 — countLimit 과 totalCostLimit 만 확인 (NSCache.count 는 private)
@@ -2165,6 +2217,24 @@ class ThumbnailLoader {
     /// Get file modification date for disk cache key
     private static func fileModDate(_ url: URL) -> Date {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date.distantPast
+    }
+
+    /// v8.6.2: CacheSweeper 용 동기 생성. 디스크 캐시까지 채움.
+    /// 이미 캐시에 있으면 즉시 리턴 (추가 I/O 없음).
+    @discardableResult
+    func generateThumbnailSync(url: URL) -> NSImage? {
+        if ThumbnailCache.shared.get(url) != nil { return nil }
+        if DiskThumbnailCache.shared.getByPath(url: url) != nil {
+            // 디스크에 있지만 메모리 캐시엔 없음 → 메모리에만 채우고 종료 (sweep 주 목적)
+            return nil
+        }
+        // 실제 추출 (feed-forward 경로와 동일 extractThumbnail)
+        let img = Self.extractThumbnailFast(url: url) ?? Self.extractThumbnail(url: url)
+        guard let image = img else { return nil }
+        ThumbnailCache.shared.set(url, image: image)
+        let modDate = Self.fileModDate(url)
+        DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: image)
+        return image
     }
 
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
@@ -2618,6 +2688,9 @@ struct AsyncThumbnailView: View {
     @State private var retryCount: Int = 0
     /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
     static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
+    /// v8.6.2: I/O 스파이크 방지 — 동시 디스크 읽기 최대 4개로 제한.
+    ///   빠른 필름스트립 스크롤 시 20+ 셀 동시 로드 → 디스크 스파이크 현상 억제.
+    static let thumbIOSemaphore = DispatchSemaphore(value: 4)
 
     var body: some View {
         Group {
@@ -2668,8 +2741,13 @@ struct AsyncThumbnailView: View {
             return
         }
 
-        // 3~4. 임베디드 + 생성 — 백그라운드
+        // 3~4. 임베디드 + 생성 — 백그라운드 (semaphore 로 동시성 4개 제한 → I/O 스파이크 방지)
         Self.thumbConcurrentQueue.async {
+            Self.thumbIOSemaphore.wait()
+            defer { Self.thumbIOSemaphore.signal() }
+
+            // 빠른 스크롤로 이미 다른 URL 로 바뀌었으면 작업 skip
+            guard self.loadedURL == currentURL else { return }
 
             // 3. 임베디드 썸네일 (파일 헤더, < 1ms)
             let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
@@ -2742,6 +2820,19 @@ struct MultiFileDragView: NSViewRepresentable {
 
         override var acceptsFirstResponder: Bool { false }
 
+        /// v8.6.2: hitTest 를 실제 클릭 이벤트 처리 중이 아닐 때는 nil 로 돌려서
+        /// SwiftUI `.help()` tooltip / onHover 가 뒷 뷰에 정상 dispatch 되도록.
+        /// mouse down 이후 드래그 추적 중에만 self 를 반환해서 이벤트 라우팅을 유지.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            // 현재 클릭/드래그 추적 중이거나, 현재 이벤트가 mouseDown 이면 이 뷰가 받음.
+            if mouseDownPoint != nil { return self }
+            if NSApp.currentEvent?.type == .leftMouseDown {
+                return self
+            }
+            // hover / mouseMoved / tooltip / rightMouseDown(→ contextMenu) 은 모두 SwiftUI 로 투과.
+            return nil
+        }
+
         override func mouseDown(with event: NSEvent) {
             mouseDownPoint = event.locationInWindow
             didStartDrag = false
@@ -2774,6 +2865,12 @@ struct MultiFileDragView: NSViewRepresentable {
             guard let store = store, let photo = photo else { return }
             // parentFolder(상위 폴더 네비게이션) 만 제외. 일반 폴더는 드래그 허용.
             guard !photo.isParentFolder else { return }
+
+            // v8.6.2: 드래그 시작 즉시 선택 반영 — 미선택 사진을 잡고 드래그 시작해도
+            // 바로 선택 하이라이트가 켜지고 드래그 미리보기에도 반영됨.
+            if !store.selectedPhotoIDs.contains(photo.id) {
+                store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+            }
 
             // Collect all selected file/folder URLs
             // ⚠️ 영상 .xmp 사이드카는 드래그에 포함 안 함 — 편집툴이 별도 파일로 오해해서 import 실패
@@ -2814,14 +2911,11 @@ struct MultiFileDragView: NSViewRepresentable {
             let dragImage: NSImage
             // ⚠️ 영상 파일엔 NSImage(contentsOf:) 쓰지 말 것 — main 에서 전체 디코딩 시도 → 무한 멈춤
             // 영상은 DiskThumbnailCache 또는 메모리 ThumbnailCache 만 사용
-            let loadedThumb: NSImage? = {
-                if photo.isVideoFile {
-                    return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
-                        ?? ThumbnailCache.shared.get(photo.jpgURL)
-                }
-                return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
-                    ?? NSImage(contentsOf: photo.jpgURL)
-            }()
+            // v8.6.2: NSImage(contentsOf:) 메인 스레드 블로킹 제거
+            //   → 캐시 miss 면 그냥 시스템 파일 아이콘 사용 (드래그 시작을 절대 막지 않음)
+            let loadedThumb: NSImage? =
+                DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
+                ?? ThumbnailCache.shared.get(photo.jpgURL)
             if let thumbImage = loadedThumb {
                 // 리사이즈
                 let resized = NSImage(size: NSSize(width: previewSize, height: previewSize))

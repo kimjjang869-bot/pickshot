@@ -15,7 +15,7 @@ struct WatermarkPreviewView: View {
             ZStack {
                 // 배경 사진
                 if let photo = photo {
-                    AsyncThumbnailView(url: photo.jpgURL)
+                    AsyncThumbnailView(url: photo.displayURL)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     Rectangle().fill(Color.gray.opacity(0.3))

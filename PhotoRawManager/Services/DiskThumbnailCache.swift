@@ -8,7 +8,13 @@ class DiskThumbnailCache {
 
     private let cacheDir: URL
     private let lock = NSLock()
-    private let maxCacheBytes: Int64 = 2_000_000_000 // 2GB
+    /// v8.6.2: 하드 2GB 고정 → UserDefaults 기반 동적 cap. 0 = 무제한 (macOS isPurgeable 로 자동 관리).
+    ///   Apple 공식 권장 방식 — `~/Library/Caches` 하위 + purgeable 플래그 = 디스크 부족 시 시스템이
+    ///   오래된 것부터 조용히 삭제. 앱 관여 불필요.
+    private var maxCacheBytes: Int64 {
+        let gb = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
+        return gb > 0 ? Int64(gb * 1_000_000_000) : 0  // 0 = 무제한
+    }
     private let jpegQuality: CGFloat = 0.82
 
     /// 점진적 사이즈 추적 (매번 디렉토리 전체 스캔 방지)
@@ -74,13 +80,24 @@ class DiskThumbnailCache {
         // I/O 는 lock 밖 — atomic write 자체가 OS 레벨 동기화 보장
         let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
         guard writeSuccess else { return }
+        // v8.6.2: 파일에 purgeable 플래그 설정 → macOS 가 디스크 부족 시 자동 정리 (공식 권장 방식).
+        // 앱은 그대로 파일을 사용 가능, 시스템이 조용히 삭제 → 다음 접근 시 cache miss → 재생성.
+        var mutableURL = filePath
+        var rv = URLResourceValues()
+        rv.isExcludedFromBackup = true  // iCloud/TimeMachine 백업 대상 제외
+        try? mutableURL.setResourceValues(rv)
+        // NSURLIsPurgeableKey 는 Foundation URLResourceKey 에 isPurgeable 로 존재하지 않아
+        // setResourceValue 로 직접 세팅.
+        _ = try? (mutableURL as NSURL).setResourceValue(NSNumber(value: true), forKey: .isPurgeableKey)
 
         // state 업데이트만 lock 안
         lock.lock()
         if _trackedSize >= 0 { _trackedSize += dataSize }
         let pathHash = pathOnlyKey(url: url)
         fileIndex[pathHash] = filePath
-        let needsEviction = _trackedSize > maxCacheBytes && !_evictionInProgress
+        // v8.6.2: maxCacheBytes == 0 이면 무제한 (macOS 가 isPurgeable 로 자동 관리 — Apple 공식 방식)
+        let cap = maxCacheBytes
+        let needsEviction = cap > 0 && _trackedSize > cap && !_evictionInProgress
         if needsEviction { _evictionInProgress = true }
         lock.unlock()
 
@@ -156,6 +173,16 @@ class DiskThumbnailCache {
 
         guard let fileURL = cachedURL else { return nil }
         return NSImage(contentsOf: fileURL)
+    }
+
+    /// v8.6.2: CacheSweeper 가 "이미 디스크 캐시에 있는지" 빠르게 확인 (디코드 없이).
+    func hasThumb(for url: URL) -> Bool {
+        let pathHash = pathOnlyKey(url: url)
+        lock.lock()
+        buildFileIndex()
+        let has = fileIndex[pathHash] != nil
+        lock.unlock()
+        return has
     }
 
     // MARK: - Private

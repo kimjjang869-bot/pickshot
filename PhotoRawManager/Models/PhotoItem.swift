@@ -273,12 +273,19 @@ struct PhotoItem: Identifiable, Hashable {
     var aiDescription: String? = nil   // 한 줄 설명
     var aiScore: Int? = nil            // 0~100 활용도 점수
 
+    /// v8.6.2: RAW+JPG 쌍일 때 표시 기준 URL — RAW 있으면 RAW 가 primary.
+    ///   파일 operations (delete/move) 는 jpgURL+rawURL 그대로 사용.
+    var displayURL: URL {
+        if let raw = rawURL, raw != jpgURL { return raw }
+        return jpgURL
+    }
+
     var fileName: String {
-        jpgURL.deletingPathExtension().lastPathComponent
+        displayURL.deletingPathExtension().lastPathComponent
     }
 
     var fileNameWithExtension: String {
-        jpgURL.lastPathComponent
+        displayURL.lastPathComponent
     }
 
     var hasRAW: Bool {

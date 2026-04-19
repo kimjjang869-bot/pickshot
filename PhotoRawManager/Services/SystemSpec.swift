@@ -155,21 +155,23 @@ final class SystemSpec {
     }
 
     /// hiResCache(PhotoPreviewView.swift) 개수
+    /// v8.6.1: 전체 RSS 6GB 타겟 달성을 위해 축소. hi-res 한 장당 50-200MB 이므로
+    /// 수 장만 유지해도 총 수백 MB 차지.
     func hiResCacheCount() -> Int {
         switch effectiveTier {
         case .low, .standard: return 2
-        case .high:           return 3
-        case .extreme:        return 5
+        case .high:           return 2   // 3 → 2
+        case .extreme:        return 3   // 5 → 3
         }
     }
 
-    /// hiResCache 총 비용(MB)
+    /// hiResCache 총 비용(MB) — v8.6.1: 각 tier 상한 대폭 축소
     func hiResCacheCostMB() -> Int {
         switch effectiveTier {
-        case .low:      return 100
-        case .standard: return 150
-        case .high:     return 300
-        case .extreme:  return 500
+        case .low:      return 80    // 100 → 80
+        case .standard: return 120   // 150 → 120
+        case .high:     return 200   // 300 → 200
+        case .extreme:  return 300   // 500 → 300
         }
     }
 

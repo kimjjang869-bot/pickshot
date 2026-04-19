@@ -21,10 +21,10 @@ struct PerformanceOptimizeTab: View {
     @State private var applied = false
     @State private var selectedProfile: String = ""
 
-    @AppStorage("previewMaxResolution") private var previewMaxResolution = "original"
-    @AppStorage("previewCacheSize") private var previewCacheSize = 20.0
+    @AppStorage("previewMaxResolution") private var previewMaxResolution = "1000"  // v8.6.2 기본값 통일
+    @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
-    @AppStorage("thumbnailCacheMaxGB") private var thumbnailCacheMaxGB: Double = 2.0
+    @AppStorage("thumbnailCacheMaxGB") private var thumbnailCacheMaxGB: Double = 0.0  // v8.6.2: 0 = 자동(macOS 관리)
 
     var body: some View {
         ScrollView {
@@ -336,8 +336,8 @@ struct PerformanceOptimizeTab: View {
 
 extension PerformanceOptimizeTab {
     func resetDefaults() {
-        previewMaxResolution = "original"; previewCacheSize = 20.0
-        defaultThumbnailSize = 150.0; thumbnailCacheMaxGB = 2.0
+        previewMaxResolution = "1000"; previewCacheSize = 50.0
+        defaultThumbnailSize = 150.0; thumbnailCacheMaxGB = 0.0  // 0 = 자동
         selectedProfile = ""; applied = false
     }
 }

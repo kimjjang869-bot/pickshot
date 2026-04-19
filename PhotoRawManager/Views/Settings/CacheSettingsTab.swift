@@ -49,10 +49,24 @@ struct CacheSettingsTab: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text("썸네일 캐시 최대").frame(width: 130, alignment: .leading)
-                            Slider(value: $thumbnailCacheMaxGB, in: 0.5...10, step: 0.5)
-                            Text("\(thumbnailCacheMaxGB, specifier: "%.1f") GB").font(.system(size: 12, design: .monospaced)).frame(width: 55, alignment: .trailing)
+                            // v8.6.2: 0 = 자동(macOS 관리). 기본값 권장.
+                            Slider(value: $thumbnailCacheMaxGB, in: 0...20, step: 0.5)
+                            Text(thumbnailCacheMaxGB == 0
+                                 ? "자동"
+                                 : "\(thumbnailCacheMaxGB, specifier: "%.1f") GB")
+                                .font(.system(size: 12, design: .monospaced))
+                                .frame(width: 60, alignment: .trailing)
+                                .foregroundColor(thumbnailCacheMaxGB == 0 ? .green : .primary)
                         }
-                        Text("초과 시 오래된 항목부터 자동 삭제").font(.system(size: 11)).foregroundColor(.secondary)
+                        if thumbnailCacheMaxGB == 0 {
+                            Text("✓ macOS 가 디스크 여유에 맞춰 자동 관리합니다 (권장)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.green.opacity(0.85))
+                        } else {
+                            Text("⚠️ 설정한 용량 초과 시 오래된 항목부터 삭제. 디스크 여유가 충분하면 '자동' 권장")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
                     }.padding(4)
                 }
 

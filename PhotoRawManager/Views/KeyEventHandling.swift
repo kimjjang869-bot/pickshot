@@ -868,6 +868,11 @@ private func folderSizeRecursive(url: URL) -> Int64 {
 class KeyCaptureView: NSView {
     var showFullscreen: (() -> Void)?
     var hideFullscreen: (() -> Void)?
+    // v8.6.2: 방향키 전환 시 stale repeat event drop 용 (대각선 튐/멈춤 방지)
+    static var lastNewDirKeyCode: UInt16?
+    static var lastNewDirKeyTime: CFAbsoluteTime = 0
+    /// v8.6.2: 행 이동(↑/↓) 최소 간격 강제용. 열 이동(←/→)은 제약 없음.
+    static var lastRowMoveTime: CFAbsoluteTime = 0
     var store: PhotoStore? {
         didSet { touchBarProvider.store = store }
     }
@@ -1284,6 +1289,38 @@ class KeyCaptureView: NSView {
 
         // Arrow keys, Enter, Delete (keyCode-only)
         store.isKeyRepeat = event.isARepeat
+
+        // v8.6.2: 방향 전환 직후 이전 방향의 stale repeat 이벤트 drop.
+        //   "↓ 꾹 누른 상태로 ← 눌렀을 때 대각선으로 한 칸 튀는" + "멈추는" 현상 해결.
+        //   macOS 는 ↓ 키가 눌린 상태에서 ← keyDown 오면 이후에도 ↓ repeat 을 계속 발송 →
+        //   이벤트 큐에서 ↓ 와 ← 가 섞여 이동 궤적이 엉킴.
+        //   해결: 새 방향 키가 들어온 뒤 100ms 동안, 다른 keyCode 의 repeat 은 무시.
+        let arrowKeys: Set<UInt16> = [123, 124, 125, 126]
+        let rowKeys: Set<UInt16> = [125, 126]  // ↑/↓
+        if arrowKeys.contains(keyCode) {
+            let now = CFAbsoluteTimeGetCurrent()
+            if !event.isARepeat {
+                Self.lastNewDirKeyCode = keyCode
+                Self.lastNewDirKeyTime = now
+            } else if let lastCode = Self.lastNewDirKeyCode,
+                      lastCode != keyCode,
+                      now - Self.lastNewDirKeyTime < 0.1 {
+                // 새 방향 바뀐 지 100ms 안 됐는데 다른 방향의 repeat → drop
+                return
+            }
+            // v8.6.2: 행 이동 (↑/↓) 만 최소 100ms 간격 강제.
+            //   한 번 점프에 ±cols 장 (보통 6~10장) 씩 건너뛰어 preview 로드가 따라오지 못함.
+            //   열 이동 (←/→) 은 ±1 이라 부담 적으니 그대로 진행.
+            if rowKeys.contains(keyCode) && event.isARepeat {
+                let minRowInterval: CFAbsoluteTime = 0.1  // 100ms (10 fps)
+                if now - Self.lastRowMoveTime < minRowInterval {
+                    return  // drop 이 repeat — 너무 빠름
+                }
+                Self.lastRowMoveTime = now
+            } else if rowKeys.contains(keyCode) {
+                Self.lastRowMoveTime = now  // 첫 press 는 기록만
+            }
+        }
 
         // 영상 파일이어도 방향키는 썸네일 이동 전용 — 영상 제어는 JKL / Space 사용
         // (영상 프레임 스텝/점프는 JKL 로 충분, 방향키는 일관된 파일 탐색)
