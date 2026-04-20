@@ -1252,11 +1252,23 @@ struct PhotoPreviewView: View {
             //   키 꾹 누르기 중에도 디스크 썸네일 히트면 즉시 표시 (blank 방지).
             if let thumb = ThumbnailCache.shared.get(url) {
                 image = thumb
+            } else if store.isKeyRepeat {
+                // 🔑 키 반복 중엔 메인 스레드에서 디스크 I/O 금지 — 백그라운드로 이동
+                //   (NSImage(contentsOf:) 는 JPEG 디코드 포함 5-15ms × 30 ev/s → 메인 블록)
+                //   v8.7: 스트로브 깜빡임 방지 — 백그라운드 로드 결과는 ThumbnailCache 에만 저장하고
+                //   self.image 직접 설정은 안 함. 이미 다른 사진으로 이동했을 때 저해상도 썸네일이
+                //   갑자기 표시되며 flash 발생하던 문제 해결. 다음 nav 에서 memory cache HIT 으로 자연 흡수.
+                let targetURL = url
+                DispatchQueue.global(qos: .userInitiated).async {
+                    guard let diskThumb = DiskThumbnailCache.shared.getByPath(url: targetURL) else { return }
+                    DispatchQueue.main.async {
+                        ThumbnailCache.shared.set(targetURL, image: diskThumb)
+                    }
+                }
             } else if let diskThumb = DiskThumbnailCache.shared.getByPath(url: url) {
                 image = diskThumb
                 ThumbnailCache.shared.set(url, image: diskThumb)
-            } else if !store.isKeyRepeat,
-                      let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+            } else if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
                       let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                         kCGImageSourceThumbnailMaxPixelSize: 800,
                         kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
@@ -1272,7 +1284,7 @@ struct PhotoPreviewView: View {
             preloadWork = nil
             imageLoadWork?.cancel()
             hiResWorkItem?.cancel()
-            viewState.stableImageSize = Self.readImageDimensions(url: url)
+            // v8.7: stableImageSize 중복 호출 제거 (위 1238 라인에서 이미 세팅됨)
 
             if store.isKeyRepeat {
                 // 빠른 이동 중 → 짧은 디바운스 (캐시 히트만 즉시, 미스는 대기)

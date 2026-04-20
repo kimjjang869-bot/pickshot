@@ -82,11 +82,17 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             }
         }
         // 열 수 계산 (방향키 행 이동용) — NSCollectionView 실제 폭 기반
+        // CRITICAL: view update 중 @Published 변경 금지 → 무한 재렌더 루프 유발.
+        //   DispatchQueue.main.async 로 다음 런루프에 지연시켜 업데이트 사이클 탈출.
         let gridWidth = scrollView.frame.width - 16  // sectionInset left+right
         let cellWidth = newSize + 10 + 12  // itemWidth + interItemSpacing
         let cols = max(1, Int(gridWidth / cellWidth))
         if store.actualColumnsPerRow != cols {
-            store.actualColumnsPerRow = cols
+            DispatchQueue.main.async {
+                if store.actualColumnsPerRow != cols {
+                    store.actualColumnsPerRow = cols
+                }
+            }
         }
 
         // Update display options
