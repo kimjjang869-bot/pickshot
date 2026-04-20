@@ -96,6 +96,8 @@
 		'CV20003' = {isa = PBXBuildFile; fileRef = CV20004; };
 		'CV20005' = {isa = PBXBuildFile; fileRef = CV20006; };
 		'NSCV10002' = {isa = PBXBuildFile; fileRef = NSCV10001; };
+		'NTLV10002' = {isa = PBXBuildFile; fileRef = NTLV10001; };
+		'NTLV20002' = {isa = PBXBuildFile; fileRef = NTLV20001; };
 		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
 		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
 		'CPG10002' = {isa = PBXBuildFile; fileRef = CPG10001; };
@@ -269,6 +271,8 @@
 		'CV20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPreviewGrid.swift; sourceTree = "<group>"; };
 		'CV20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualViewerContent.swift; sourceTree = "<group>"; };
 		'NSCV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCropView.swift; sourceTree = "<group>"; };
+		'NTLV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTableListView.swift; sourceTree = "<group>"; };
+		'NTLV20001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NativeTableListView+Coordinator.swift"; sourceTree = "<group>"; };
 		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
 		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
 		'CPG10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheProgressGauge.swift; sourceTree = "<group>"; };
@@ -526,6 +530,8 @@
 				DEV40001,
 				DEV50001,
 				NSCV10001,
+				NTLV10001,
+				NTLV20001,
 				MLT10001,
 				MLH10001,
 				CPG10001,
@@ -836,6 +842,8 @@
 				CV20001,
 				CV20003,
 				NSCV10002,
+				NTLV10002,
+				NTLV20002,
 				MLT10002,
 				MLH10002,
 				CPG10002,

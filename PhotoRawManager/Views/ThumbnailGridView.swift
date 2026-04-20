@@ -38,8 +38,8 @@ struct ThumbnailGridView: View {
                 //   v8.7: useNativeGrid UserDefaults true → AppKit NSCollectionView 사용 (10배 빠름)
                 VStack(spacing: 0) {
                     if store.viewMode == .list {
-                        // SwiftUI Table — Finder와 동일한 컬럼 리사이즈/정렬
-                        NativeListView()
+                        // v8.7: NSTableView 기반 — Finder/Bridge 수준 멀티 드래그 + 성능
+                        NativeTableListView()
                             .environmentObject(store)
                     } else if UserDefaults.standard.bool(forKey: "useLazyVGrid") == false {
                         // v8.7: 네이티브 NSCollectionView — 2000+장 폴더에서 60fps 스크롤/네비
