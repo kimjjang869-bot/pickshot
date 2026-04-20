@@ -1,6 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Cell Frame PreferenceKey (for drag monitor)
+private struct FilmstripCellFrameKey: PreferenceKey {
+    static let defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 struct FilmstripView: View {
     @EnvironmentObject var store: PhotoStore
     @AppStorage("filmstripHeight") private var filmstripHeight: Double = 120
@@ -8,6 +16,10 @@ struct FilmstripView: View {
     /// v8.6.2: Filmstrip scrollTo 쓰로틀용 (빠른 이동 시 썸네일 스크롤이 못따라오는 문제 해결)
     @State private var scrollThrottleLastFire: Date = .distantPast
     @State private var scrollTrailingWork: DispatchWorkItem?
+
+    // v8.7: Finder 로 멀티 파일 드래그 — NSView 오버레이 대신 글로벌 이벤트 모니터 방식.
+    //   SwiftUI 의 탭/선택을 방해하지 않으면서 드래그 임계값 초과 시 NSDraggingSession 개시.
+    @StateObject private var dragMonitor = FilmstripDragMonitor()
 
     /// Convert vertical mouse wheel to horizontal scroll in filmstrip
     private func setupVerticalToHorizontalScroll() {
@@ -87,6 +99,14 @@ struct FilmstripView: View {
                         ForEach(store.filteredPhotos) { photo in
                             cellRow(for: photo)
                                 .id(photo.id)
+                                .background(
+                                    GeometryReader { geo in
+                                        Color.clear.preference(
+                                            key: FilmstripCellFrameKey.self,
+                                            value: [photo.id: geo.frame(in: .global)]
+                                        )
+                                    }
+                                )
                         }
                     }
                     .padding(.horizontal, 8)
@@ -107,12 +127,19 @@ struct FilmstripView: View {
                 .onKeyPress { press in
                     handleKeyPress(press)
                 }
-                .onAppear { setupVerticalToHorizontalScroll() }
+                .onAppear {
+                    setupVerticalToHorizontalScroll()
+                    dragMonitor.install(store: store)
+                }
                 .onDisappear {
                     if let monitor = scrollMonitor {
                         NSEvent.removeMonitor(monitor)
                         scrollMonitor = nil
                     }
+                    dragMonitor.uninstall()
+                }
+                .onPreferenceChange(FilmstripCellFrameKey.self) { frames in
+                    dragMonitor.cellFrames = frames
                 }
                 // v8.6.2: 빠른 이동 시 썸네일 스크롤 못따라옴 해결 — throttle 패턴 + 애니메이션 제거.
                 //   이전: withAnimation(0.2) 가 매 키마다 200ms 블록 → 다음 스크롤 지연 누적
@@ -195,30 +222,13 @@ struct FilmstripView: View {
                     }
                 }
         } else {
-            // v8.6.2: 일반 사진 셀 — MultiFileDragView NSView 가 클릭을 먹는 문제로 SwiftUI .onDrag 로 교체.
-            //   장점: onTapGesture 확실히 동작, 간단
-            //   단점: 멀티 파일 드래그 미리보기 이미지는 시스템 기본 (썸네일뷰의 커스텀 미리보기보다 단순)
-            //   JPG+RAW 파트너는 NSItemProvider 에 둘 다 포함해서 Finder 로 드래그 시 함께 이동
+            // v8.7: 일반 사진 셀 — SwiftUI .onDrag 제거. 드래그는 FilmstripDragMonitor (글로벌 NSEvent)
+            //   에서 처리하여 멀티 파일 동시 Finder 복사 지원. .onDrag 가 있으면 SwiftUI 가 먼저
+            //   단일 파일 드래그 세션을 시작해서 multi-item drag 이 불가능.
+            //   내부 셀 재정렬(PhotoReorderDropDelegate) 은 유지.
             base
                 .overlay(DropIndicatorOverlay(photoID: photo.id))
                 .onTapGesture(perform: tap)
-                .onDrag {
-                    // 다중 선택 or 단일
-                    let ids = store.selectedPhotoIDs.contains(photo.id) ? store.selectedPhotoIDs : [photo.id]
-                    var urls: [URL] = []
-                    for id in ids {
-                        guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
-                        let p = store.photos[idx]
-                        guard !p.isFolder && !p.isParentFolder else { continue }
-                        urls.append(p.jpgURL)
-                        if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
-                    }
-                    // 우선 첫 URL 을 provider 로 (SwiftUI .onDrag 는 단일 itemProvider 반환)
-                    if let first = urls.first {
-                        return NSItemProvider(object: first as NSURL)
-                    }
-                    return NSItemProvider()
-                }
                 .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
                     photo: photo, store: store, cellWidth: (filmstripHeight - 20) * 1.3
                 ))
@@ -513,3 +523,182 @@ struct FilmstripCell: View {
         .onHover { isHovered = $0 }
     }
 }
+
+// MARK: - Filmstrip Drag Monitor (v8.7)
+
+/// 글로벌 NSEvent monitor 로 필름스트립 드래그를 감지.
+/// SwiftUI 의 tap/select 이벤트를 방해하지 않으면서 (이벤트 consume 안 함),
+/// 드래그 임계값을 넘으면 NSDraggingSession 을 시작해 멀티 파일 Finder 복사 지원.
+final class FilmstripDragMonitor: ObservableObject {
+    private var monitor: Any?
+    private var downLocation: NSPoint?
+    private var downPhotoID: UUID?
+    private var didStartDrag = false
+    private let threshold: CGFloat = 6  // macOS 드래그 임계값 표준 (너무 크면 둔함)
+    private weak var store: PhotoStore?
+
+    /// 현재 필름스트립에 표시된 각 셀의 global(screen) frame — PreferenceKey 로 업데이트.
+    /// @MainActor 에서 SwiftUI onPreferenceChange 가 세팅.
+    var cellFrames: [UUID: CGRect] = [:]
+
+    func install(store: PhotoStore) {
+        self.store = store
+        uninstall()
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handle(event)
+            return event  // 항상 pass-through — SwiftUI 가 탭/선택을 계속 처리
+        }
+        fputs("[FilmDrag] monitor installed (store=\(store.photos.count) photos)\n", stderr)
+    }
+
+    func uninstall() {
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+    }
+
+    deinit { uninstall() }
+
+    private func handle(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            downLocation = event.locationInWindow
+            downPhotoID = photoAt(event: event)
+            didStartDrag = false
+            fputs("[FilmDrag] mouseDown frames=\(cellFrames.count) hit=\(downPhotoID != nil ? "YES" : "no")\n", stderr)
+
+        case .leftMouseDragged:
+            guard !didStartDrag,
+                  let start = downLocation,
+                  let id = downPhotoID,
+                  let store = store else { return }
+            let dx = event.locationInWindow.x - start.x
+            let dy = event.locationInWindow.y - start.y
+            let dist = hypot(dx, dy)
+            guard dist > threshold else { return }
+            didStartDrag = true
+            fputs("[FilmDrag] 🚀 initiate drag — sel=\(store.selectedPhotoIDs.count) anchor=\(id.uuidString.prefix(8))\n", stderr)
+            initiateDrag(event: event, anchorPhotoID: id, store: store)
+
+        case .leftMouseUp:
+            downLocation = nil
+            downPhotoID = nil
+            didStartDrag = false
+
+        default:
+            break
+        }
+    }
+
+    /// mouseDown 위치가 어느 셀 안인지 찾음.
+    /// SwiftUI GeometryReader(.global) → top-origin (Y 아래로 증가)
+    /// NSEvent window.convertPoint(toScreen:) → AppKit bottom-origin
+    /// → Y 축을 뒤집어서 SwiftUI 좌표계에 맞춘 후 hit test.
+    private func photoAt(event: NSEvent) -> UUID? {
+        guard let window = event.window else { return nil }
+        let appkitScreenPt = window.convertPoint(toScreen: event.locationInWindow)
+        // 이벤트가 발생한 스크린 찾기 (멀티 디스플레이 대응)
+        let screen = NSScreen.screens.first { $0.frame.contains(appkitScreenPt) } ?? NSScreen.main
+        guard let screenFrame = screen?.frame else { return nil }
+        // AppKit (bottom-origin) → SwiftUI (top-origin) 변환
+        let swiftUIY = screenFrame.origin.y + screenFrame.height - appkitScreenPt.y
+        let hitPoint = NSPoint(x: appkitScreenPt.x, y: swiftUIY)
+        for (id, rect) in cellFrames where rect.contains(hitPoint) {
+            return id
+        }
+        return nil
+    }
+
+    /// NSDraggingSession 시작 — 선택된 모든 파일 + JPG/RAW 쌍 포함.
+    private func initiateDrag(event: NSEvent, anchorPhotoID: UUID, store: PhotoStore) {
+        // anchor 가 현재 선택에 없으면 단독 드래그
+        let ids: Set<UUID> = store.selectedPhotoIDs.contains(anchorPhotoID)
+            ? store.selectedPhotoIDs
+            : [anchorPhotoID]
+
+        var urls: [URL] = []
+        for id in ids {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            if p.isParentFolder { continue }
+            if p.isFolder {
+                urls.append(p.jpgURL)
+            } else {
+                urls.append(p.jpgURL)
+                if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+            }
+        }
+        guard !urls.isEmpty else { return }
+
+        // 드래그 프리뷰 기본 frame — 마우스 커서 기준으로 오프셋 적용.
+        //   프레임 origin(0,0) 이면 커서가 프리뷰의 좌상단 기준이 되어 시각적으로 어색함.
+        //   커서가 이미지의 중앙 오른쪽 하단 약간 아래에 오도록 -side/2 , -side/2 오프셋.
+        let side: CGFloat = 80
+        let defaultFrame = NSRect(x: -side / 2, y: -side / 2, width: side, height: side)
+
+        // anchor 셀의 썸네일로 첫 번째 아이템 프리뷰 구성
+        var previewImage: NSImage? = nil
+        if let anchorIdx = store._photoIndex[anchorPhotoID],
+           anchorIdx < store.photos.count {
+            let anchor = store.photos[anchorIdx]
+            let thumb =
+                DiskThumbnailCache.shared.getByPath(url: anchor.jpgURL)
+                ?? ThumbnailCache.shared.get(anchor.jpgURL)
+            if let image = thumb {
+                let resized = NSImage(size: NSSize(width: side, height: side))
+                resized.lockFocus()
+                NSGraphicsContext.current?.imageInterpolation = .high
+                let r = min(side / image.size.width, side / image.size.height)
+                let w = image.size.width * r
+                let h = image.size.height * r
+                image.draw(in: NSRect(x: (side - w)/2, y: (side - h)/2, width: w, height: h))
+                if ids.count > 1 {
+                    let badge = "\(ids.count)" as NSString
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let bsize = badge.size(withAttributes: attrs)
+                    let bW = max(20, bsize.width + 8)
+                    let bRect = NSRect(x: side - bW - 2, y: side - 18, width: bW, height: 16)
+                    NSColor.systemBlue.setFill()
+                    NSBezierPath(roundedRect: bRect, xRadius: 8, yRadius: 8).fill()
+                    badge.draw(at: NSPoint(x: bRect.midX - bsize.width/2, y: bRect.midY - bsize.height/2),
+                               withAttributes: attrs)
+                }
+                resized.unlockFocus()
+                previewImage = resized
+            }
+        }
+
+        var items: [NSDraggingItem] = []
+        for (i, url) in urls.enumerated() {
+            let pb = NSPasteboardItem()
+            pb.setString(url.absoluteString, forType: .fileURL)
+            let di = NSDraggingItem(pasteboardWriter: pb)
+            // 첫 번째 아이템만 썸네일 표시, 나머지는 투명 (Finder 기본 스택 효과와 유사)
+            if i == 0 {
+                di.setDraggingFrame(defaultFrame, contents: previewImage)
+            } else {
+                di.setDraggingFrame(defaultFrame, contents: nil)
+            }
+            items.append(di)
+        }
+
+        guard let contentView = event.window?.contentView else { return }
+        _ = contentView.beginDraggingSession(with: items, event: event, source: FilmstripDragSource.shared)
+    }
+}
+
+/// NSDraggingSource singleton — 외부앱(Finder)에선 copy, 내부 드롭은 move 허용.
+final class FilmstripDragSource: NSObject, NSDraggingSource {
+    static let shared = FilmstripDragSource()
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        return context == .outsideApplication ? .copy : .move
+    }
+}
+

@@ -394,8 +394,20 @@ struct NativeListView: View {
         return f
     }()
 
+    /// sortOrder 변화에 따라 store.filteredPhotos 를 지역적으로 재정렬해 Table 에 제공.
+    /// SwiftUI Table(data, sortOrder:) 는 data 를 스스로 재정렬하지 않으므로 수동 적용.
+    private var sortedRows: [PhotoItem] {
+        let base = store.filteredPhotos
+        if sortOrder.isEmpty { return base }
+        // 폴더/parent 는 항상 상단에 고정. 사진만 sortOrder 적용.
+        let folders = base.filter { $0.isFolder || $0.isParentFolder }
+        let photos = base.filter { !$0.isFolder && !$0.isParentFolder }
+        let sortedPhotos = photos.sorted(using: sortOrder)
+        return folders + sortedPhotos
+    }
+
     var body: some View {
-        Table(store.filteredPhotos, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
+        Table(sortedRows, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
             TableColumn("이름") { photo in
                 let livePhoto = store.livePhoto(photo.id) ?? photo
                 HStack(spacing: 6) {
@@ -535,13 +547,7 @@ Text(photo.fileNameWithExtension)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: UUID.self) { ids in
-            // 행 우클릭 메뉴
-            Button {
-                store.selectedPhotoIDs = ids
-                store.requestDeleteOriginal(ids: ids)
-            } label: {
-                Label("휴지통으로 이동", systemImage: "trash")
-            }
+            listContextMenu(for: ids)
         } primaryAction: { ids in
             // 더블클릭 — 폴더면 진입
             if let id = ids.first, let idx = store._photoIndex[id], idx < store.photos.count {
@@ -583,6 +589,29 @@ Text(photo.fileNameWithExtension)
         .focusable()
         .onKeyPress { press in
             handleKeyPress(press)
+        }
+    }
+
+    /// 리스트뷰 우클릭 컨텍스트 메뉴 — 썸네일뷰 PhotoContextMenu 재사용.
+    @ViewBuilder
+    private func listContextMenu(for ids: Set<UUID>) -> some View {
+        // 우클릭 시 해당 행을 선택으로 전환 (썸네일뷰와 동일 UX)
+        let _ = {
+            if !ids.isEmpty && ids != selection {
+                DispatchQueue.main.async {
+                    selection = ids
+                    store.selectedPhotoIDs = ids
+                    if let first = ids.first { store.selectedPhotoID = first }
+                }
+            }
+        }()
+        let effectiveIDs: Set<UUID> = ids.isEmpty ? selection : ids
+        let firstID = effectiveIDs.first
+        let idx: Int? = firstID.flatMap { store._photoIndex[$0] }
+        if let i = idx, i < store.photos.count {
+            PhotoContextMenu(photo: store.photos[i], store: store)
+        } else {
+            Text("선택된 파일 없음").disabled(true)
         }
     }
 
