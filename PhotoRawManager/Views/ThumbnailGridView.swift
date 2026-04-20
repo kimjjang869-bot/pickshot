@@ -393,7 +393,6 @@ struct NativeListView: View {
         .init(\.fileModDate, order: .reverse)
     ]
     @State private var columnCustomization = TableColumnCustomization<PhotoItem>()
-    @StateObject private var dragMonitor = ListViewDragMonitor()
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -415,67 +414,10 @@ struct NativeListView: View {
 
     var body: some View {
         Table(sortedRows, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
-            TableColumn("이름") { photo in
-                let livePhoto = store.livePhoto(photo.id) ?? photo
-                HStack(spacing: 8) {
-                    // 컬러라벨 인디케이터 (왼쪽 좁은 바 — Lightroom 스타일)
-                    if let labelColor = livePhoto.colorLabel.color {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(labelColor)
-                            .frame(width: 3, height: 20)
-                    } else {
-                        Color.clear.frame(width: 3)
-                    }
-
-                    // 썸네일 (50×34, 더 넓어서 식별 쉬움)
-                    if photo.isParentFolder {
-                        Image(systemName: "arrow.up.circle")
-                            .font(.system(size: 22, weight: .light))
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, height: 34)
-                    } else if photo.isFolder {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 22))
-                            .foregroundColor(.accentColor.opacity(0.85))
-                            .frame(width: 50, height: 34)
-                    } else {
-                        AsyncThumbnailView(url: photo.displayURL)
-                            .frame(width: 50, height: 34)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                            )
-                    }
-
-                    // 파일명
-                    Text(photo.fileNameWithExtension)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    // SP / G / AI 배지 (Pro 앱 스타일 — 아이콘)
-                    if livePhoto.isSpacePicked {
-                        Image(systemName: "flag.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.red)
-                    }
-                    if livePhoto.isGSelected {
-                        Text("G")
-                            .font(.system(size: 8, weight: .heavy))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 3).padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 2).fill(Color.green))
-                    }
-                }
-                .frame(maxHeight: .infinity)
-                .onAppear {
-                    if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
-                        store.loadExifIfNeeded(for: photo.id)
-                    }
-                }
+            TableColumn("이름", value: \.fileNameWithExtension) { photo in
+                listNameCell(photo: photo)
             }
-            .width(min: 180, ideal: 300, max: 600)
+            .width(min: 200, ideal: 320, max: 600)
             .customizationID("name")
             .disabledCustomizationBehavior(.visibility)
 
@@ -524,7 +466,7 @@ struct NativeListView: View {
             .width(min: 70, ideal: 80, max: 110)
             .customizationID("rating")
 
-            TableColumn("해상도") { photo in
+            TableColumn("해상도", value: \.resolutionSortKey) { photo in
                 let exif = store.exifFor(photo.id)
                 Group {
                     if let w = exif?.imageWidth, let h = exif?.imageHeight {
@@ -538,7 +480,7 @@ struct NativeListView: View {
             .customizationID("resolution")
             .defaultVisibility(.hidden)
 
-            TableColumn("카메라") { photo in
+            TableColumn("카메라", value: \.cameraSortKey) { photo in
                 Text(store.exifFor(photo.id)?.cameraModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -547,7 +489,7 @@ struct NativeListView: View {
             .customizationID("camera")
             .defaultVisibility(.hidden)
 
-            TableColumn("렌즈") { photo in
+            TableColumn("렌즈", value: \.lensSortKey) { photo in
                 Text(store.exifFor(photo.id)?.lensModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -586,26 +528,11 @@ struct NativeListView: View {
                 selection = newIDs
             }
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: ListViewBoundsKey.self,
-                    value: geo.frame(in: .global)
-                )
-            }
-        )
-        .onPreferenceChange(ListViewBoundsKey.self) { rect in
-            dragMonitor.tableBounds = rect
-        }
         .onAppear {
             selection = store.selectedPhotoIDs
-            dragMonitor.install(store: store)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 store.triggerListExifLoad()
             }
-        }
-        .onDisappear {
-            dragMonitor.uninstall()
         }
         .onChange(of: store.photosVersion) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -616,6 +543,158 @@ struct NativeListView: View {
         .onKeyPress { press in
             handleKeyPress(press)
         }
+    }
+
+    /// 이름 컬럼 셀 뷰 — 썸네일 + 파일명 + SP/G 배지 + 컬러라벨 인디케이터.
+    /// `.draggable` 로 단일 파일 드래그 지원 (SwiftUI Table 의 내부 tracking loop 때문에
+    /// NSEvent 글로벌 모니터로 멀티 드래그 불가 — 현재 아키텍처 한계).
+    @ViewBuilder
+    private func listNameCell(photo: PhotoItem) -> some View {
+        let livePhoto = store.livePhoto(photo.id) ?? photo
+        HStack(spacing: 8) {
+            if let labelColor = livePhoto.colorLabel.color {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(labelColor)
+                    .frame(width: 3, height: 20)
+            } else {
+                Color.clear.frame(width: 3)
+            }
+
+            if photo.isParentFolder {
+                Image(systemName: "arrow.up.circle")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, height: 34)
+            } else if photo.isFolder {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(.accentColor.opacity(0.85))
+                    .frame(width: 50, height: 34)
+            } else {
+                AsyncThumbnailView(url: photo.displayURL)
+                    .frame(width: 50, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+            }
+
+            Text(photo.fileNameWithExtension)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if livePhoto.isSpacePicked {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.red)
+            }
+            if livePhoto.isGSelected {
+                Text("G")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 2).fill(Color.green))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                .onChanged { value in
+                    // Table 의 내부 mouse tracking 과 간섭 없이 드래그 감지.
+                    //   onChanged 가 여러 번 호출되므로 한 번만 drag session 개시.
+                    guard !Self.listDragInProgress else { return }
+                    Self.listDragInProgress = true
+                    fputs("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n", stderr)
+                    initiateListDrag(anchor: photo)
+                }
+                .onEnded { _ in
+                    Self.listDragInProgress = false
+                }
+        )
+        .onAppear {
+            if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
+                store.loadExifIfNeeded(for: photo.id)
+            }
+        }
+    }
+
+    /// 리스트뷰 드래그 진행 상태 — simultaneousGesture 가 여러 번 fire 하므로 중복 방지.
+    /// ListViewDragSource.draggingSession(endedAt:) 에서 리셋하므로 internal.
+    nonisolated(unsafe) static var listDragInProgress: Bool = false
+
+    /// 드래그 시작 — 선택된 모든 파일로 NSDraggingSession 개시
+    private func initiateListDrag(anchor: PhotoItem) {
+        guard let event = NSApp.currentEvent else {
+            fputs("[ListDrag] ❌ no current event\n", stderr)
+            return
+        }
+        // 선택에 anchor 포함 안 되면 단독 드래그
+        let ids: Set<UUID> = store.selectedPhotoIDs.contains(anchor.id)
+            ? store.selectedPhotoIDs : [anchor.id]
+        var urls: [URL] = []
+        for id in ids {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            if p.isParentFolder { continue }
+            if p.isFolder {
+                urls.append(p.jpgURL)
+            } else {
+                urls.append(p.jpgURL)
+                if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+            }
+        }
+        guard !urls.isEmpty else { return }
+
+        let side: CGFloat = 80
+        let defaultFrame = NSRect(x: -side / 2, y: -side / 2, width: side, height: side)
+
+        // 프리뷰 생성
+        var previewImage: NSImage? = nil
+        let thumb = DiskThumbnailCache.shared.getByPath(url: anchor.jpgURL)
+            ?? ThumbnailCache.shared.get(anchor.jpgURL)
+        if let image = thumb {
+            let resized = NSImage(size: NSSize(width: side, height: side))
+            resized.lockFocus()
+            NSGraphicsContext.current?.imageInterpolation = .high
+            let r = min(side / image.size.width, side / image.size.height)
+            let w = image.size.width * r
+            let h = image.size.height * r
+            image.draw(in: NSRect(x: (side - w)/2, y: (side - h)/2, width: w, height: h))
+            if ids.count > 1 {
+                let badge = "\(ids.count)" as NSString
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                    .foregroundColor: NSColor.white
+                ]
+                let bsize = badge.size(withAttributes: attrs)
+                let bW = max(20, bsize.width + 8)
+                let bRect = NSRect(x: side - bW - 2, y: side - 18, width: bW, height: 16)
+                NSColor.systemBlue.setFill()
+                NSBezierPath(roundedRect: bRect, xRadius: 8, yRadius: 8).fill()
+                badge.draw(at: NSPoint(x: bRect.midX - bsize.width/2, y: bRect.midY - bsize.height/2),
+                           withAttributes: attrs)
+            }
+            resized.unlockFocus()
+            previewImage = resized
+        }
+
+        var items: [NSDraggingItem] = []
+        for (i, url) in urls.enumerated() {
+            let pb = NSPasteboardItem()
+            pb.setString(url.absoluteString, forType: .fileURL)
+            let di = NSDraggingItem(pasteboardWriter: pb)
+            di.setDraggingFrame(defaultFrame, contents: i == 0 ? previewImage : nil)
+            items.append(di)
+        }
+
+        guard let contentView = event.window?.contentView else {
+            fputs("[ListDrag] ❌ no contentView\n", stderr)
+            return
+        }
+        _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
+        fputs("[ListDrag] ✅ session started with \(urls.count) items\n", stderr)
     }
 
     /// 리스트뷰 우클릭 컨텍스트 메뉴 — 썸네일뷰 PhotoContextMenu 재사용.
@@ -4372,6 +4451,7 @@ final class ListViewDragMonitor: ObservableObject {
             self?.handle(event)
             return event
         }
+        fputs("[ListDrag] monitor installed\n", stderr)
     }
 
     func uninstall() {
@@ -4386,19 +4466,27 @@ final class ListViewDragMonitor: ObservableObject {
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
-            downLocation = isInTableBounds(event: event) ? event.locationInWindow : nil
+            let inBounds = isInTableBounds(event: event)
+            downLocation = inBounds ? event.locationInWindow : nil
             didStartDrag = false
+            fputs("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n", stderr)
 
         case .leftMouseDragged:
-            guard !didStartDrag,
-                  let start = downLocation,
-                  let store = store,
-                  !store.selectedPhotoIDs.isEmpty else { return }
-            let dist = hypot(event.locationInWindow.x - start.x,
-                             event.locationInWindow.y - start.y)
-            guard dist > threshold else { return }
-            didStartDrag = true
-            initiateDrag(event: event, store: store)
+            let hasStart = downLocation != nil
+            let hasStore = store != nil
+            let selCount = store?.selectedPhotoIDs.count ?? 0
+            if !didStartDrag && hasStart && hasStore && selCount > 0 {
+                let dist = hypot(event.locationInWindow.x - downLocation!.x,
+                                 event.locationInWindow.y - downLocation!.y)
+                if dist > threshold {
+                    didStartDrag = true
+                    fputs("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n", stderr)
+                    initiateDrag(event: event, store: store!)
+                }
+            } else if !didStartDrag {
+                // 드래그 실패 이유 로깅 (한 번만)
+                fputs("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n", stderr)
+            }
 
         case .leftMouseUp:
             downLocation = nil
@@ -4497,5 +4585,13 @@ final class ListViewDragSource: NSObject, NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         return context == .outsideApplication ? .copy : .move
+    }
+    /// 드래그 종료 시 listDragInProgress 플래그 해제 (NSDraggingSession 이 뒷단 mouse loop 를
+    /// 가져가기 때문에 SwiftUI DragGesture.onEnded 가 호출되지 않음).
+    func draggingSession(_ session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint,
+                         operation: NSDragOperation) {
+        NativeListView.listDragInProgress = false
+        fputs("[ListDrag] session ended — flag reset\n", stderr)
     }
 }

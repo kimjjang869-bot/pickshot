@@ -300,6 +300,23 @@ struct PhotoItem: Identifiable, Hashable {
         return "2_" + jpgURL.pathExtension.lowercased()
     }
 
+    /// Table 컬럼 정렬용 — 해상도 (총 pixel 수)
+    var resolutionSortKey: Int {
+        let w = exifData?.imageWidth ?? 0
+        let h = exifData?.imageHeight ?? 0
+        return w * h
+    }
+
+    /// Table 컬럼 정렬용 — 카메라 모델명
+    var cameraSortKey: String {
+        exifData?.cameraModel ?? ""
+    }
+
+    /// Table 컬럼 정렬용 — 렌즈 모델명
+    var lensSortKey: String {
+        exifData?.lensModel ?? ""
+    }
+
     var hasRAW: Bool {
         rawURL != nil
     }
