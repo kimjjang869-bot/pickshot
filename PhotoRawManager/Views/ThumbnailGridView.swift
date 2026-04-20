@@ -380,6 +380,12 @@ struct ThumbnailGridView: View {
 
 // MARK: - 네이티브 Table 목록뷰 (Finder 스타일 컬럼 리사이즈)
 
+/// 리스트뷰 전용 Table 바운딩 frame 수집 — NSEvent 모니터의 hit test 용.
+private struct ListViewBoundsKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 struct NativeListView: View {
     @EnvironmentObject var store: PhotoStore
     @State private var selection: Set<UUID> = []
@@ -387,6 +393,7 @@ struct NativeListView: View {
         .init(\.fileModDate, order: .reverse)
     ]
     @State private var columnCustomization = TableColumnCustomization<PhotoItem>()
+    @StateObject private var dragMonitor = ListViewDragMonitor()
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -410,107 +417,111 @@ struct NativeListView: View {
         Table(sortedRows, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
             TableColumn("이름") { photo in
                 let livePhoto = store.livePhoto(photo.id) ?? photo
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    // 컬러라벨 인디케이터 (왼쪽 좁은 바 — Lightroom 스타일)
+                    if let labelColor = livePhoto.colorLabel.color {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(labelColor)
+                            .frame(width: 3, height: 20)
+                    } else {
+                        Color.clear.frame(width: 3)
+                    }
+
+                    // 썸네일 (50×34, 더 넓어서 식별 쉬움)
                     if photo.isParentFolder {
-                        Image(systemName: "chevron.up.circle.fill")
-                            .font(.system(size: 16)).foregroundColor(.blue)
+                        Image(systemName: "arrow.up.circle")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, height: 34)
                     } else if photo.isFolder {
                         Image(systemName: "folder.fill")
-                            .font(.system(size: 16)).foregroundColor(.blue)
+                            .font(.system(size: 22))
+                            .foregroundColor(.accentColor.opacity(0.85))
+                            .frame(width: 50, height: 34)
                     } else {
-                        // v8.6.2: RAW+JPG 쌍일 때 RAW 기준 썸네일 (displayURL)
                         AsyncThumbnailView(url: photo.displayURL)
-                            .frame(width: 42, height: 28)
-                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                            .frame(width: 50, height: 34)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                            )
                     }
-                    // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
-Text(photo.fileNameWithExtension)
+
+                    // 파일명
+                    Text(photo.fileNameWithExtension)
                         .font(.system(size: 12))
                         .lineLimit(1)
-                    if !photo.isFolder && !photo.isParentFolder {
-                        let badge = photo.fileTypeBadge
-                        Text(badge.text)
-                            .font(.system(size: 7, weight: .bold))
+                        .truncationMode(.middle)
+
+                    // SP / G / AI 배지 (Pro 앱 스타일 — 아이콘)
+                    if livePhoto.isSpacePicked {
+                        Image(systemName: "flag.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.red)
+                    }
+                    if livePhoto.isGSelected {
+                        Text("G")
+                            .font(.system(size: 8, weight: .heavy))
                             .foregroundColor(.white)
                             .padding(.horizontal, 3).padding(.vertical, 1)
-                            .background(badgeColor(badge.color).opacity(0.8))
-                            .cornerRadius(2)
-                    }
-                    if let labelColor = livePhoto.colorLabel.color {
-                        Circle().fill(labelColor).frame(width: 10, height: 10)
+                            .background(RoundedRectangle(cornerRadius: 2).fill(Color.green))
                     }
                 }
-                .frame(height: 32)
-                .background(
-                    GeometryReader { geo in
-                        if let labelColor = livePhoto.colorLabel.color {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(labelColor.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(labelColor.opacity(0.5), lineWidth: 2)
-                                )
-                                .frame(width: 2000, height: geo.size.height + 4)
-                                .offset(x: -8, y: -2)
-                        } else if livePhoto.rating == 5 {
-                            // v8.7: 노란 레이블과 구분되는 오렌지 색 사용
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(AppTheme.ratingFiveBorder.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(AppTheme.ratingFiveBorder.opacity(0.55), lineWidth: 2)
-                                )
-                                .frame(width: 2000, height: geo.size.height + 4)
-                                .offset(x: -8, y: -2)
-                        }
-                    }
-                )
+                .frame(maxHeight: .infinity)
                 .onAppear {
                     if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
                         store.loadExifIfNeeded(for: photo.id)
                     }
                 }
             }
-            .width(min: 150, ideal: 250, max: 600)
+            .width(min: 180, ideal: 300, max: 600)
             .customizationID("name")
             .disabledCustomizationBehavior(.visibility)
 
             TableColumn("수정일", value: \.fileModDate) { photo in
                 Text(photo.isFolder ? "--" : Self.dateFormatter.string(from: photo.fileModDate))
                     .font(.system(size: 11)).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            }
-            .width(min: 80, ideal: 95, max: 160)
-            .customizationID("date")
-
-            TableColumn("크기") { photo in
-                Text(formatSize(photo.jpgFileSize + photo.rawFileSize))
-                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            }
-            .width(min: 40, ideal: 55, max: 80)
-            .customizationID("size")
-
-            TableColumn("종류") { photo in
-                Text(photo.isFolder ? "폴더" : photo.jpgURL.pathExtension.uppercased())
-                    .font(.system(size: 11)).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 35, ideal: 50, max: 80)
+            .width(min: 100, ideal: 120, max: 180)
+            .customizationID("date")
+
+            TableColumn("크기", value: \.totalFileSize) { photo in
+                Text(photo.isFolder ? "--" : formatSize(photo.totalFileSize))
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .width(min: 55, ideal: 70, max: 100)
+            .customizationID("size")
+
+            TableColumn("종류", value: \.kindSortKey) { photo in
+                Text(prettyKind(for: photo))
+                    .font(.system(size: 11)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .width(min: 75, ideal: 100, max: 150)
             .customizationID("type")
 
-            TableColumn("별점") { photo in
+            TableColumn("별점", value: \.rating) { photo in
                 let rating = store.livePhoto(photo.id)?.rating ?? photo.rating
-                HStack(spacing: 0) {
-                    if rating > 0 {
-                        ForEach(1...rating, id: \.self) { _ in
-                            Image(systemName: "star.fill").font(.system(size: 8)).foregroundColor(AppTheme.starGold)
+                // Lightroom/Capture One 스타일 — 5개 별 전부 표시, 채워진 만큼 골드 색
+                HStack(spacing: 1) {
+                    if photo.isFolder || photo.isParentFolder {
+                        Text("").frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(1...5, id: \.self) { idx in
+                            Image(systemName: idx <= rating ? "star.fill" : "star")
+                                .font(.system(size: 9))
+                                .foregroundColor(idx <= rating ? AppTheme.starGold : Color.white.opacity(0.18))
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 40, ideal: 65, max: 100)
+            .width(min: 70, ideal: 80, max: 110)
             .customizationID("rating")
 
             TableColumn("해상도") { photo in
@@ -521,27 +532,27 @@ Text(photo.fileNameWithExtension)
                             .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
                     } else { Text("") }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 70, ideal: 100, max: 150)
+            .width(min: 80, ideal: 100, max: 150)
             .customizationID("resolution")
             .defaultVisibility(.hidden)
 
             TableColumn("카메라") { photo in
                 Text(store.exifFor(photo.id)?.cameraModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 60, ideal: 110, max: 200)
+            .width(min: 80, ideal: 120, max: 200)
             .customizationID("camera")
             .defaultVisibility(.hidden)
 
             TableColumn("렌즈") { photo in
                 Text(store.exifFor(photo.id)?.lensModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 60, ideal: 120, max: 200)
+            .width(min: 80, ideal: 120, max: 200)
             .customizationID("lens")
             .defaultVisibility(.hidden)
         }
@@ -575,11 +586,26 @@ Text(photo.fileNameWithExtension)
                 selection = newIDs
             }
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ListViewBoundsKey.self,
+                    value: geo.frame(in: .global)
+                )
+            }
+        )
+        .onPreferenceChange(ListViewBoundsKey.self) { rect in
+            dragMonitor.tableBounds = rect
+        }
         .onAppear {
             selection = store.selectedPhotoIDs
+            dragMonitor.install(store: store)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 store.triggerListExifLoad()
             }
+        }
+        .onDisappear {
+            dragMonitor.uninstall()
         }
         .onChange(of: store.photosVersion) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -615,7 +641,33 @@ Text(photo.fileNameWithExtension)
         }
     }
 
+    private func handleKeyPressExt(_ press: KeyPress) -> KeyPress.Result {
+        // Cmd+C/X/V — 복사/잘라내기/붙여넣기
+        if press.modifiers.contains(.command) {
+            switch press.characters.lowercased() {
+            case "c":
+                copySelectionToPasteboard(store: store)
+                return .handled
+            case "x":
+                cutSelectionToPasteboard(store: store)
+                return .handled
+            case "v":
+                pasteFilesFromPasteboard(store: store)
+                return .handled
+            case "a":
+                store.selectAll()
+                selection = store.selectedPhotoIDs
+                return .handled
+            default: break
+            }
+        }
+        return .ignored
+    }
+
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        // Cmd 단축키 먼저 처리
+        if handleKeyPressExt(press) == .handled { return .handled }
+
         let chars = press.characters
 
         // 스페이스바: 별 5개 토글 (포커스 사진 기준, 다중 선택 시 일괄)
@@ -662,6 +714,31 @@ Text(photo.fileNameWithExtension)
         }
 
         return .ignored
+    }
+
+    /// Finder 스타일 파일 종류 라벨 — "JPEG 이미지", "Sony RAW", "MP4 비디오" 등
+    private func prettyKind(for photo: PhotoItem) -> String {
+        if photo.isParentFolder { return "상위 폴더" }
+        if photo.isFolder { return "폴더" }
+        let ext = photo.jpgURL.pathExtension.lowercased()
+        switch ext {
+        case "jpg", "jpeg": return "JPEG 이미지"
+        case "png": return "PNG 이미지"
+        case "heic": return "HEIC 이미지"
+        case "tif", "tiff": return "TIFF 이미지"
+        case "arw": return "Sony RAW"
+        case "cr2", "cr3": return "Canon RAW"
+        case "nef": return "Nikon RAW"
+        case "raf": return "Fuji RAW"
+        case "orf": return "Olympus RAW"
+        case "rw2": return "Panasonic RAW"
+        case "pef": return "Pentax RAW"
+        case "dng": return "Adobe DNG"
+        case "mp4": return "MP4 비디오"
+        case "mov": return "QuickTime 비디오"
+        case "m4v": return "M4V 비디오"
+        default: return ext.uppercased()
+        }
     }
 
     private func formatSize(_ bytes: Int64) -> String {
@@ -4268,5 +4345,157 @@ struct MarqueeSelectionBackground: View {
                 store.selectedPhotoID = first
             }
         }
+    }
+}
+
+// MARK: - ListView Drag Monitor (v8.7)
+
+/// 리스트뷰 드래그 → Finder 멀티 파일 복사를 위한 글로벌 NSEvent 모니터.
+/// 필름스트립과 동일한 방식: 이벤트를 consume 안 함. Table selection 은 SwiftUI 가 처리.
+/// 드래그 임계값 초과 시 store.selectedPhotoIDs 전체를 NSDraggingSession 으로 개시.
+final class ListViewDragMonitor: ObservableObject {
+    private var monitor: Any?
+    private var downLocation: NSPoint?
+    private var didStartDrag = false
+    private let threshold: CGFloat = 6
+    private weak var store: PhotoStore?
+
+    /// NativeListView 의 global frame — PreferenceKey 로 업데이트. SwiftUI 좌표계 (top-origin).
+    var tableBounds: CGRect = .zero
+
+    func install(store: PhotoStore) {
+        self.store = store
+        uninstall()
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+    }
+
+    func uninstall() {
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+    }
+
+    deinit { uninstall() }
+
+    private func handle(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            downLocation = isInTableBounds(event: event) ? event.locationInWindow : nil
+            didStartDrag = false
+
+        case .leftMouseDragged:
+            guard !didStartDrag,
+                  let start = downLocation,
+                  let store = store,
+                  !store.selectedPhotoIDs.isEmpty else { return }
+            let dist = hypot(event.locationInWindow.x - start.x,
+                             event.locationInWindow.y - start.y)
+            guard dist > threshold else { return }
+            didStartDrag = true
+            initiateDrag(event: event, store: store)
+
+        case .leftMouseUp:
+            downLocation = nil
+            didStartDrag = false
+
+        default:
+            break
+        }
+    }
+
+    /// NSEvent 좌표가 Table bounds 내에 있는지 체크. Y 축 플립 처리.
+    private func isInTableBounds(event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let appkit = window.convertPoint(toScreen: event.locationInWindow)
+        let screen = NSScreen.screens.first { $0.frame.contains(appkit) } ?? NSScreen.main
+        guard let frame = screen?.frame else { return false }
+        let swiftUIY = frame.origin.y + frame.height - appkit.y
+        return tableBounds.contains(NSPoint(x: appkit.x, y: swiftUIY))
+    }
+
+    /// 선택된 사진 전체 + JPG/RAW 쌍을 NSDraggingSession 으로 개시.
+    private func initiateDrag(event: NSEvent, store: PhotoStore) {
+        var urls: [URL] = []
+        for id in store.selectedPhotoIDs {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            if p.isParentFolder { continue }
+            if p.isFolder {
+                urls.append(p.jpgURL)
+            } else {
+                urls.append(p.jpgURL)
+                if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+            }
+        }
+        guard !urls.isEmpty else { return }
+
+        // 드래그 프리뷰: 포커스 사진의 썸네일 + 개수 배지
+        let side: CGFloat = 80
+        let defaultFrame = NSRect(x: -side / 2, y: -side / 2, width: side, height: side)
+        var previewImage: NSImage? = nil
+        let anchorURL: URL? = {
+            if let focusID = store.selectedPhotoID,
+               let idx = store._photoIndex[focusID],
+               idx < store.photos.count {
+                return store.photos[idx].jpgURL
+            }
+            return urls.first
+        }()
+        if let url = anchorURL {
+            let thumb =
+                DiskThumbnailCache.shared.getByPath(url: url)
+                ?? ThumbnailCache.shared.get(url)
+            if let image = thumb {
+                let resized = NSImage(size: NSSize(width: side, height: side))
+                resized.lockFocus()
+                NSGraphicsContext.current?.imageInterpolation = .high
+                let r = min(side / image.size.width, side / image.size.height)
+                let w = image.size.width * r
+                let h = image.size.height * r
+                image.draw(in: NSRect(x: (side - w)/2, y: (side - h)/2, width: w, height: h))
+                if store.selectedPhotoIDs.count > 1 {
+                    let badge = "\(store.selectedPhotoIDs.count)" as NSString
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let bsize = badge.size(withAttributes: attrs)
+                    let bW = max(20, bsize.width + 8)
+                    let bRect = NSRect(x: side - bW - 2, y: side - 18, width: bW, height: 16)
+                    NSColor.systemBlue.setFill()
+                    NSBezierPath(roundedRect: bRect, xRadius: 8, yRadius: 8).fill()
+                    badge.draw(at: NSPoint(x: bRect.midX - bsize.width/2, y: bRect.midY - bsize.height/2),
+                               withAttributes: attrs)
+                }
+                resized.unlockFocus()
+                previewImage = resized
+            }
+        }
+
+        var items: [NSDraggingItem] = []
+        for (i, url) in urls.enumerated() {
+            let pb = NSPasteboardItem()
+            pb.setString(url.absoluteString, forType: .fileURL)
+            let di = NSDraggingItem(pasteboardWriter: pb)
+            di.setDraggingFrame(defaultFrame, contents: i == 0 ? previewImage : nil)
+            items.append(di)
+        }
+
+        guard let contentView = event.window?.contentView else { return }
+        _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
+    }
+}
+
+final class ListViewDragSource: NSObject, NSDraggingSource {
+    static let shared = ListViewDragSource()
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        return context == .outsideApplication ? .copy : .move
     }
 }

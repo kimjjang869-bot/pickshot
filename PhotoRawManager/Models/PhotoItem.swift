@@ -288,6 +288,18 @@ struct PhotoItem: Identifiable, Hashable {
         displayURL.lastPathComponent
     }
 
+    /// Table 컬럼 정렬용 — 전체 파일 크기 (JPG + RAW 쌍 합산)
+    var totalFileSize: Int64 {
+        jpgFileSize + rawFileSize
+    }
+
+    /// Table 컬럼 정렬용 — 확장자 (종류 컬럼 정렬 기준)
+    var kindSortKey: String {
+        if isParentFolder { return "0" }  // parent 최상단
+        if isFolder { return "1" }          // 폴더 상단
+        return "2_" + jpgURL.pathExtension.lowercased()
+    }
+
     var hasRAW: Bool {
         rawURL != nil
     }
