@@ -70,6 +70,9 @@
 		'AI20001' = {isa = PBXBuildFile; fileRef = AI20002; };
 		'AI20003' = {isa = PBXBuildFile; fileRef = AI20004; };
 		'AI20005' = {isa = PBXBuildFile; fileRef = AI20006; };
+		'FES30001' = {isa = PBXBuildFile; fileRef = FES30002; };
+		'VSS30001' = {isa = PBXBuildFile; fileRef = VSS30002; };
+		'VSCV30001' = {isa = PBXBuildFile; fileRef = VSCV30002; };
 		'B20034' = {isa = PBXBuildFile; fileRef = A20034; };
 		'B20035' = {isa = PBXBuildFile; fileRef = A20035; };
 		'B20036' = {isa = PBXBuildFile; fileRef = A20036; };
@@ -210,6 +213,9 @@
 		'AI20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageTracker.swift; sourceTree = "<group>"; };
 		'AI20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeVisionService.swift; sourceTree = "<group>"; };
 		'AI20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
+		'FES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceEmbeddingService.swift; sourceTree = "<group>"; };
+		'VSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchService.swift; sourceTree = "<group>"; };
+		'VSCV30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchCropView.swift; sourceTree = "<group>"; };
 		'B10000' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		'B10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRawManagerApp.swift; sourceTree = "<group>"; };
 		'B10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -385,6 +391,8 @@
 				AI20002,
 				AI20004,
 				AI20006,
+				FES30002,
+				VSS30002,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -517,6 +525,7 @@
 				MLT10001,
 				MLH10001,
 				CPG10001,
+				VSCV30002,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -764,6 +773,9 @@
 				AI20001,
 				AI20003,
 				AI20005,
+				FES30001,
+				VSS30001,
+				VSCV30001,
 				A10017,
 				A10018,
 				A10019,

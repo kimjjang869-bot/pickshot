@@ -362,6 +362,13 @@ class PhotoStore: ObservableObject {
     @Published var rangeFilterMin: Int? = nil { didSet { invalidateFilterCache() } }
     @Published var rangeFilterMax: Int? = nil { didSet { invalidateFilterCache() } }
 
+    /// v8.7: 참조 기반 시각 검색 활성화 여부 — VisualSearchService.matchedURLs 로 필터
+    @Published var visualSearchActive: Bool = false { didSet { invalidateFilterCache() } }
+    /// v8.7: 시각 검색 크롭 선택 Sheet 표시
+    @Published var showVisualSearchCrop: Bool = false
+    @Published var visualSearchCropURL: URL? = nil
+    @Published var visualSearchCropMode: VisualSearchMode = .face
+
     /// 파일명에서 마지막 숫자 블록 추출 (예: "DSC01234.ARW" → 1234, "IMG_9876-edit.jpg" → 9876)
     static func extractFileNumber(from url: URL) -> Int? {
         let base = url.deletingPathExtension().lastPathComponent
@@ -720,6 +727,10 @@ class PhotoStore: ObservableObject {
                 guard let num = PhotoStore.extractFileNumber(from: photo.jpgURL) else { continue }
                 if let lo = rangeFilterMin, num < lo { continue }
                 if let hi = rangeFilterMax, num > hi { continue }
+            }
+            // v8.7: 시각 검색 필터 (활성 시 VisualSearchService.matchedURLs 에 포함된 것만)
+            if visualSearchActive {
+                if !VisualSearchService.shared.matchedURLs.contains(photo.jpgURL) { continue }
             }
             // AI category filter
             if let level = aiUsabilityLevel, photo.aiUsability != level { continue }

@@ -11,8 +11,14 @@ enum AppConfig {
     /// AI 기능(스마트 셀렉/컬, AI 분류, 얼굴 그룹/비교, AI 엔진 설정, AI 추천 필터 등)을
     /// UI에서 숨긴다. 코드 자체는 유지해 두고 릴리스 시점에만 off.
     ///
-    /// 출시 후 AI 기능이 안정화되면 `false` 로 바꿔 전체 기능을 다시 노출.
-    static let hideAIFeatures: Bool = true
+    /// v8.6.3: Debug 빌드는 ON (테스트용) / Release 빌드는 OFF (출시 전까지 숨김)
+    static let hideAIFeatures: Bool = {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }()
 
     /// 테더링 기능 공개 여부 (Sony/Canon/Nikon SDK 통합).
     /// - Debug 빌드 → 항상 ON (개발자 테스트용)

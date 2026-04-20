@@ -350,6 +350,39 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
         .sheet(isPresented: $store.showSmartCull) { SmartCullView().environmentObject(store) }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
+        // v8.7: 시각 검색 결과 변경 시 필터 재적용
+        .onReceive(VisualSearchService.shared.$matchedURLs) { _ in
+            if store.visualSearchActive {
+                store.invalidateFilterCache()
+            }
+        }
+        .sheet(isPresented: $store.showVisualSearchCrop) {
+            if let url = store.visualSearchCropURL {
+                VisualSearchCropView(
+                    sourceURL: url,
+                    mode: store.visualSearchCropMode,
+                    isPresented: $store.showVisualSearchCrop
+                ) { mode, cropRect, label in
+                    VisualSearchService.shared.addReference(
+                        mode: mode,
+                        sourceURL: url,
+                        cropRect: cropRect,
+                        label: label
+                    ) { success in
+                        if success {
+                            store.visualSearchActive = true
+                            let urls = store.photos.compactMap { p -> URL? in
+                                guard !p.isFolder, !p.isParentFolder else { return nil }
+                                return p.jpgURL
+                            }
+                            VisualSearchService.shared.runSearch(on: urls)
+                        } else {
+                            store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
+                        }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
         .sheet(isPresented: $store.showCustomPrompt) { CustomPromptView(store: store) }

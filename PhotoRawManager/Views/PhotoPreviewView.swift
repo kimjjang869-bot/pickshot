@@ -884,12 +884,14 @@ struct PhotoPreviewView: View {
                     )
                     .overlay(alignment: .bottom) {
                         // v8.5 — 비파괴 보정 플로팅 필 (크롭 모드 중 / 듀얼뷰어 chrome 숨김 시 비표시)
-                        // v8.6.2 배포 임시 비활성화: 보정 기능이 아직 완성 단계라 숨김. 추후 복구.
-                        if false, !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode && !hideChrome {
+                        // v8.6.3: Debug 에서만 활성화 (보정 기능 완성 전 Release 숨김)
+                        #if DEBUG
+                        if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode && !hideChrome {
                             FloatingAdjustmentPill(photoURL: photo.jpgURL)
                                 .padding(.bottom, 16)
                                 .allowsHitTesting(true)
                         }
+                        #endif
                     }
                     .overlay {
                         cropOverlayIfNeeded(vSize: vSize, image: image)

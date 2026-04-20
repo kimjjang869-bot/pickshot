@@ -1305,6 +1305,37 @@ struct PhotoContextMenu: View {
         }
         .disabled(!hasAnyRAW(ids: targetIDs, store: store))
 
+        // v8.7: 참조 기반 시각 검색 — "이 얼굴/사물이 있는 사진 찾기" (Debug 전용)
+        #if DEBUG
+        Menu {
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .face
+                store.showVisualSearchCrop = true
+            }) {
+                Label("이 얼굴 찾기 (영역 드래그 선택)", systemImage: "person.circle")
+            }
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .object
+                store.showVisualSearchCrop = true
+            }) {
+                Label("이 사물/배경 찾기 (영역 드래그 선택)", systemImage: "sparkle.magnifyingglass")
+            }
+            if !VisualSearchService.shared.references.isEmpty {
+                Divider()
+                Button(action: {
+                    VisualSearchService.shared.clearAll()
+                    store.visualSearchActive = false
+                }) {
+                    Label("검색 기준 모두 해제", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Label("비슷한 사진 찾기", systemImage: "magnifyingglass")
+        }
+        #endif
+
         Divider()
 
         // Copy filename
