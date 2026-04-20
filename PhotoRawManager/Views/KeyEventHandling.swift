@@ -1266,8 +1266,14 @@ class KeyCaptureView: NSView {
         }
 
         // H: Toggle histogram overlay
-        if charOrCode("h", 4) && !hasCmd {
+        if charOrCode("h", 4) && !hasCmd && !hasShift {
             NotificationCenter.default.post(name: .toggleHistogram, object: nil)
+            return
+        }
+
+        // Shift+H: Toggle clipping overlay (과노출 빨강 / 저노출 파랑)
+        if charOrCode("H", 4) && hasShift && !hasCmd {
+            NotificationCenter.default.post(name: .toggleClippingOverlay, object: nil)
             return
         }
 

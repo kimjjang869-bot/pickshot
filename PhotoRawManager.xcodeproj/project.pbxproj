@@ -98,6 +98,9 @@
 		'NSCV10002' = {isa = PBXBuildFile; fileRef = NSCV10001; };
 		'NTLV10002' = {isa = PBXBuildFile; fileRef = NTLV10001; };
 		'NTLV20002' = {isa = PBXBuildFile; fileRef = NTLV20001; };
+		'MFXU10002' = {isa = PBXBuildFile; fileRef = MFXU10001; };
+		'CLIP10002' = {isa = PBXBuildFile; fileRef = CLIP10001; };
+		'CLIP10004' = {isa = PBXBuildFile; fileRef = CLIP10003; };
 		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
 		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
 		'CPG10002' = {isa = PBXBuildFile; fileRef = CPG10001; };
@@ -273,6 +276,9 @@
 		'NSCV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCropView.swift; sourceTree = "<group>"; };
 		'NTLV10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTableListView.swift; sourceTree = "<group>"; };
 		'NTLV20001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NativeTableListView+Coordinator.swift"; sourceTree = "<group>"; };
+		'MFXU10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFXUpscaler.swift; sourceTree = "<group>"; };
+		'CLIP10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClippingOverlayRenderer.swift; sourceTree = "<group>"; };
+		'CLIP10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = ClippingOverlayShader.metal; sourceTree = "<group>"; };
 		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
 		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
 		'CPG10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheProgressGauge.swift; sourceTree = "<group>"; };
@@ -622,6 +628,9 @@
 				NR10002,
 				HW10006,
 				HW10008,
+				MFXU10001,
+				CLIP10001,
+				CLIP10003,
 			);
 			path = Hardware;
 			sourceTree = "<group>";
@@ -887,6 +896,9 @@
 				HW10003,
 				HW10005,
 				HW10007,
+				MFXU10002,
+				CLIP10002,
+				CLIP10004,
 				AC814BFDBB2077853A9E8A48 /* VideoMarkerService.swift in Sources */,
 				FCR10001 /* FileConflictResolver.swift in Sources */,
 				CSL10001 /* ClientSessionListView.swift in Sources */,

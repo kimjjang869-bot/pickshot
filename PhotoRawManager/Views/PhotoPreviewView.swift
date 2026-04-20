@@ -6,6 +6,8 @@ extension Notification.Name {
     static let zoomIn = Notification.Name("zoomIn")
     static let zoomOut = Notification.Name("zoomOut")
     static let toggleHistogram = Notification.Name("toggleHistogram")
+    /// v8.7: Shift+H 클리핑 오버레이 토글 (과노출/저노출)
+    static let toggleClippingOverlay = Notification.Name("toggleClippingOverlay")
     /// 영상 IN/OUT 마커가 바뀌었을 때 발송됨. object 는 영상 URL.
     /// 썸네일 그리드 / 클라이언트 전달 UI 가 수신하여 갱신.
     static let videoMarkersChanged = Notification.Name("videoMarkersChanged")
@@ -566,6 +568,10 @@ struct PhotoPreviewView: View {
     @State private var isCorrecting = false
     @State private var pendingPhotoID: UUID? = nil
     @State private var showHistogram: Bool = false
+    /// v8.7: Shift+H 클리핑 오버레이 (과노출/저노출 Metal 마스크)
+    @State private var showClippingOverlay: Bool = false
+    @State private var clippingMaskImage: NSImage? = nil
+    @State private var lastClippingComputeTime: Date = .distantPast
     @State private var showZebraWarning: Bool = false
     @State private var showFocusPeaking: Bool = false
     @State private var hexInput: String = "333333"
@@ -675,6 +681,20 @@ struct PhotoPreviewView: View {
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
                             .opacity(isCroppingMode ? 0 : 1)
+                            .overlay(
+                                // v8.7: Shift+H 클리핑 오버레이 — Metal 마스크 이미지를 같은 frame 에 덮음
+                                Group {
+                                    if showClippingOverlay, let mask = clippingMaskImage {
+                                        Image(nsImage: mask)
+                                            .resizable()
+                                            .interpolation(.none)
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: isFitMode ? vSize.width : scaledW,
+                                                   height: isFitMode ? vSize.height : scaledH)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                            )
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0
@@ -1376,6 +1396,18 @@ struct PhotoPreviewView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
+        // v8.7: Shift+H 클리핑 오버레이 토글
+        .onReceive(NotificationCenter.default.publisher(for: .toggleClippingOverlay)) { _ in
+            showClippingOverlay.toggle()
+            if showClippingOverlay {
+                regenerateClippingMask(throttled: false)
+            } else {
+                clippingMaskImage = nil
+            }
+        }
+        .onChange(of: developedImage) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
         // v8.6.2: 일괄 회전 알림 — 현재 선택된 사진이 회전 대상에 포함되면 강제 재로드
         .onReceive(NotificationCenter.default.publisher(for: AsyncThumbnailView.rotationInvalidateNotification)) { note in
             guard let rotatedURL = note.object as? URL else { return }
@@ -2934,6 +2966,35 @@ struct PhotoPreviewView: View {
             let ctx = CIContext(options: [.useSoftwareRenderer: false, .workingColorSpace: cs, .outputColorSpace: cs])
             guard let rotated = ctx.createCGImage(ci, from: ci.extent, format: .RGBA8, colorSpace: cs) else { return image }
             return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
+        }
+    }
+
+    /// v8.7: Shift+H 클리핑 마스크 재생성 — Metal compute kernel 로 1패스 (2-3ms).
+    /// 슬라이더 드래그 중엔 80ms 최소 간격 쓰로틀.
+    private func regenerateClippingMask(throttled: Bool) {
+        if throttled {
+            let now = Date()
+            if now.timeIntervalSince(lastClippingComputeTime) < 0.08 { return }
+            lastClippingComputeTime = now
+        }
+        let source = developedImage ?? rotatedImage ?? image
+        guard let ns = source,
+              let cg = ns.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            clippingMaskImage = nil
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let mask = ClippingOverlayRenderer.makeOverlay(from: cg)
+            DispatchQueue.main.async {
+                if let maskCG = mask {
+                    self.clippingMaskImage = NSImage(
+                        cgImage: maskCG,
+                        size: NSSize(width: maskCG.width, height: maskCG.height)
+                    )
+                } else {
+                    self.clippingMaskImage = nil
+                }
+            }
         }
     }
 
