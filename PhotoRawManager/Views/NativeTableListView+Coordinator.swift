@@ -18,6 +18,9 @@ extension NativeTableListView {
         private var lastPhotosVersion: Int = -1
         /// 현재 sortDescriptors 서명 — 변화 감지용.
         private var lastSortSignature: String = ""
+        /// 재로드 중 flag — tableView.reloadData() 가 선택을 초기화하며 발생시키는
+        /// tableViewSelectionDidChange 가 store 선택을 덮어쓰는 것을 방지.
+        private var isReloading: Bool = false
 
         init(store: PhotoStore) {
             self.store = store
@@ -43,9 +46,14 @@ extension NativeTableListView {
         /// 처음 로드 + 전체 재로딩.
         func reloadData() {
             guard let tv = tableView else { return }
+            isReloading = true
             rows = applySorting(to: store.filteredPhotos, descriptors: tv.sortDescriptors)
             tv.reloadData()
             syncSelectionFromStore()
+            // reload 직후 selectionDidChange 가 dispatch 될 수 있으므로 next run loop 에서 flag off
+            DispatchQueue.main.async { [weak self] in
+                self?.isReloading = false
+            }
         }
 
         private func signature(from descriptors: [NSSortDescriptor]) -> String {
@@ -103,6 +111,9 @@ extension NativeTableListView {
         // MARK: - NSTableViewDelegate — 선택 변화
 
         func tableViewSelectionDidChange(_ notification: Notification) {
+            // 재로드 중 이벤트 무시 — reloadData 가 선택을 clear 하며 발생시키는 delegate 호출
+            // 이 때 store 선택이 비어버리면 auto-선택된 첫 사진이 날아감.
+            guard !isReloading else { return }
             guard let tv = tableView else { return }
             let selectedRows = tv.selectedRowIndexes
             let newSelection = Set(selectedRows.compactMap { idx -> UUID? in
@@ -139,35 +150,204 @@ extension NativeTableListView {
             }
         }
 
-        // MARK: - Context Menu
+        // MARK: - Context Menu (PhotoContextMenu 이식)
+
+        /// 현재 선택에 anchor 포함 여부로 대상 결정 (PhotoContextMenu 와 동일 로직).
+        private func ctxTargetIDs(anchor: PhotoItem) -> Set<UUID> {
+            store.selectedPhotoIDs.contains(anchor.id) ? store.selectedPhotoIDs : [anchor.id]
+        }
 
         func buildContextMenu(forRow row: Int) -> NSMenu? {
             let menu = NSMenu()
-            let selectedPhotos = rows.enumerated()
-                .filter { idx, _ in tableView?.selectedRowIndexes.contains(idx) == true }
-                .map { $0.element }
-            guard let first = selectedPhotos.first else {
+            menu.autoenablesItems = false
+
+            // anchor 결정 — 우클릭된 행 우선, 없으면 첫 선택
+            let anchor: PhotoItem? = {
+                if row >= 0 && row < rows.count { return rows[row] }
+                return rows.enumerated().first { tableView?.selectedRowIndexes.contains($0.offset) == true }?.element
+            }()
+            guard let photo = anchor else {
                 let item = NSMenuItem(title: "선택된 파일 없음", action: nil, keyEquivalent: "")
                 item.isEnabled = false
                 menu.addItem(item)
                 return menu
             }
+            let ids = ctxTargetIDs(anchor: photo)
+            let count = ids.count
 
-            // 휴지통으로 이동 (기본 메뉴 — TODO: 다음 단계에서 PhotoContextMenu 호스팅)
-            let deleteItem = NSMenuItem(title: "휴지통으로 이동", action: #selector(ctxDelete), keyEquivalent: "")
-            deleteItem.target = self
-            menu.addItem(deleteItem)
+            // 복사 / 잘라내기 / 붙여넣기
+            menu.addItem(mkItem("복사", key: "c", action: #selector(ctxCopy), modifier: [.command]))
+            menu.addItem(mkItem("잘라내기", key: "x", action: #selector(ctxCut), modifier: [.command]))
+            let paste = mkItem("붙여넣기", key: "v", action: #selector(ctxPaste), modifier: [.command])
+            paste.isEnabled = !(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
+            menu.addItem(paste)
 
             menu.addItem(.separator())
+
+            // 새 폴더로 이동
+            let moveNewFolder = NSMenuItem(title: "새 폴더로 이동", action: #selector(ctxMoveToNewFolder), keyEquivalent: "")
+            moveNewFolder.target = self
+            moveNewFolder.image = NSImage(systemSymbolName: "folder.fill.badge.plus", accessibilityDescription: nil)
+            menu.addItem(moveNewFolder)
+
+            menu.addItem(.separator())
+
+            // 별점 서브메뉴
+            let ratingSub = NSMenu(title: "별점")
+            for r in 0...5 {
+                let title = r == 0 ? "별점 없음" : String(repeating: "★", count: r)
+                let it = NSMenuItem(title: title, action: #selector(ctxSetRating(_:)), keyEquivalent: r == 0 ? "" : "\(r)")
+                it.target = self
+                it.tag = r
+                it.keyEquivalentModifierMask = []
+                ratingSub.addItem(it)
+            }
+            let ratingItem = NSMenuItem(title: "별점", action: nil, keyEquivalent: "")
+            ratingItem.image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: nil)
+            ratingItem.submenu = ratingSub
+            menu.addItem(ratingItem)
+
+            // 컬러라벨 서브메뉴
+            let labelSub = NSMenu(title: "컬러 라벨")
+            for (i, label) in ColorLabel.allCases.enumerated() {
+                let title = label == .none ? "라벨 해제" : label.rawValue
+                let key: String = (label == .none) ? "" : {
+                    switch label {
+                    case .red: return "6"
+                    case .yellow: return "7"
+                    case .green: return "8"
+                    case .blue: return "9"
+                    default: return ""
+                    }
+                }()
+                let it = NSMenuItem(title: title, action: #selector(ctxSetColorLabel(_:)), keyEquivalent: key)
+                it.target = self
+                it.tag = i
+                it.keyEquivalentModifierMask = []
+                if let nsColor = label.nsColor {
+                    let img = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+                        nsColor.setFill()
+                        NSBezierPath(ovalIn: rect).fill()
+                        return true
+                    }
+                    it.image = img
+                }
+                if photo.colorLabel == label && label != .none { it.state = .on }
+                labelSub.addItem(it)
+            }
+            let labelItem = NSMenuItem(title: "컬러 라벨", action: nil, keyEquivalent: "")
+            labelItem.image = NSImage(systemSymbolName: "tag.fill", accessibilityDescription: nil)
+            labelItem.submenu = labelSub
+            menu.addItem(labelItem)
+
+            // G Select 토글
+            let gTitle = photo.isGSelected ? "G셀렉 해제" : "G셀렉"
+            let gItem = NSMenuItem(title: gTitle, action: #selector(ctxToggleGSelect), keyEquivalent: "")
+            gItem.target = self
+            gItem.image = NSImage(systemSymbolName: "cloud", accessibilityDescription: nil)
+            menu.addItem(gItem)
+
+            menu.addItem(.separator())
+
+            // 내보내기
+            let exportItem = NSMenuItem(title: "내보내기 (\(count)장)",
+                                        action: #selector(ctxExport), keyEquivalent: "")
+            exportItem.target = self
+            exportItem.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
+            menu.addItem(exportItem)
+
+            // RAW → JPG 변환
+            let rawConvertItem = NSMenuItem(title: "RAW → JPG 변환 (\(count)장)",
+                                            action: #selector(ctxRawToJpg), keyEquivalent: "")
+            rawConvertItem.target = self
+            rawConvertItem.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+            menu.addItem(rawConvertItem)
+
+            menu.addItem(.separator())
+
+            // 메타데이터 편집
+            let metaItem = NSMenuItem(title: "메타데이터 편집 (\(count)장)",
+                                      action: #selector(ctxEditMetadata), keyEquivalent: "")
+            metaItem.target = self
+            metaItem.image = NSImage(systemSymbolName: "doc.badge.gearshape", accessibilityDescription: nil)
+            menu.addItem(metaItem)
+
+            // 이름 변경
+            let renameItem = NSMenuItem(title: "이름 변경 (\(count)장)",
+                                        action: #selector(ctxRename), keyEquivalent: "")
+            renameItem.target = self
+            renameItem.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: nil)
+            menu.addItem(renameItem)
+
+            // 회전 서브메뉴
+            let rotateSub = NSMenu(title: "회전")
+            let rot90 = NSMenuItem(title: "90° 시계방향", action: #selector(ctxRotate(_:)), keyEquivalent: "")
+            rot90.target = self; rot90.tag = 90
+            rotateSub.addItem(rot90)
+            let rot180 = NSMenuItem(title: "180°", action: #selector(ctxRotate(_:)), keyEquivalent: "")
+            rot180.target = self; rot180.tag = 180
+            rotateSub.addItem(rot180)
+            let rot270 = NSMenuItem(title: "270° (반시계 90°)", action: #selector(ctxRotate(_:)), keyEquivalent: "")
+            rot270.target = self; rot270.tag = 270
+            rotateSub.addItem(rot270)
+            let rotateItem = NSMenuItem(title: "회전 (\(count)장)", action: nil, keyEquivalent: "")
+            rotateItem.image = NSImage(systemSymbolName: "rotate.right", accessibilityDescription: nil)
+            rotateItem.submenu = rotateSub
+            menu.addItem(rotateItem)
+
+            // Camera Raw 에서 열기
+            let cameraRawItem = NSMenuItem(title: "Camera Raw 에서 열기 (\(count)장)",
+                                           action: #selector(ctxOpenInCameraRaw), keyEquivalent: "")
+            cameraRawItem.target = self
+            cameraRawItem.image = NSImage(systemSymbolName: "camera.metering.matrix", accessibilityDescription: nil)
+            cameraRawItem.isEnabled = hasAnyRAW(ids: ids, store: store)
+            menu.addItem(cameraRawItem)
+
+            menu.addItem(.separator())
+
+            // 파일명 복사
+            let copyNameItem = NSMenuItem(title: "파일명 복사", action: #selector(ctxCopyFilename), keyEquivalent: "")
+            copyNameItem.target = self
+            copyNameItem.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
+            menu.addItem(copyNameItem)
 
             // Finder 에서 보기
             let revealItem = NSMenuItem(title: "Finder 에서 보기", action: #selector(ctxReveal), keyEquivalent: "")
             revealItem.target = self
-            revealItem.representedObject = first.jpgURL
+            revealItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+            revealItem.representedObject = photo.jpgURL
             menu.addItem(revealItem)
+
+            // 기본 앱으로 열기
+            let openItem = NSMenuItem(title: "기본 앱으로 열기", action: #selector(ctxOpenDefault), keyEquivalent: "")
+            openItem.target = self
+            openItem.representedObject = photo.jpgURL
+            openItem.image = NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+            menu.addItem(openItem)
+
+            menu.addItem(.separator())
+
+            // 휴지통으로 이동
+            let deleteItem = NSMenuItem(title: "휴지통으로 이동", action: #selector(ctxDelete), keyEquivalent: "")
+            deleteItem.target = self
+            deleteItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+            menu.addItem(deleteItem)
 
             return menu
         }
+
+        private func mkItem(_ title: String, key: String, action: Selector, modifier: NSEvent.ModifierFlags = []) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = self
+            item.keyEquivalentModifierMask = modifier
+            return item
+        }
+
+        // MARK: - Menu Actions
+
+        @objc private func ctxCopy() { copySelectionToPasteboard(store: store) }
+        @objc private func ctxCut() { cutSelectionToPasteboard(store: store) }
+        @objc private func ctxPaste() { pasteFilesFromPasteboard(store: store) }
 
         @objc private func ctxDelete() {
             store.requestDeleteOriginal(ids: store.selectedPhotoIDs)
@@ -176,6 +356,105 @@ extension NativeTableListView {
         @objc private func ctxReveal(_ sender: NSMenuItem) {
             if let url = sender.representedObject as? URL {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
+
+        @objc private func ctxOpenDefault(_ sender: NSMenuItem) {
+            if let url = sender.representedObject as? URL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+
+        @objc private func ctxSetRating(_ sender: NSMenuItem) {
+            let r = sender.tag
+            if store.selectedPhotoIDs.count > 1 {
+                store.setRatingForSelected(r)
+            } else if let id = store.selectedPhotoID {
+                store.setRating(r, for: id)
+            }
+        }
+
+        @objc private func ctxSetColorLabel(_ sender: NSMenuItem) {
+            let idx = sender.tag
+            let allCases = ColorLabel.allCases
+            guard idx >= 0 && idx < allCases.count else { return }
+            let label = allCases[idx]
+            if store.selectedPhotoIDs.count > 1 {
+                store.setColorLabelForSelected(label)
+            } else if let id = store.selectedPhotoID {
+                store.setColorLabel(label, for: id)
+            }
+        }
+
+        @objc private func ctxToggleGSelect() {
+            for id in store.selectedPhotoIDs {
+                if let idx = store._photoIndex[id] {
+                    store.photos[idx].isGSelected.toggle()
+                }
+            }
+        }
+
+        @objc private func ctxExport() {
+            store.showExportSheet = true
+        }
+
+        @objc private func ctxRawToJpg() {
+            store.exportOpenAsRawConvert = true
+            store.showExportSheet = true
+        }
+
+        @objc private func ctxEditMetadata() {
+            let count = store.selectedPhotoIDs.count
+            store.metadataEditorMode = count > 1 ? .batch : .single
+            store.showMetadataEditor = true
+        }
+
+        @objc private func ctxRename() {
+            store.showBatchRename = true
+        }
+
+        @objc private func ctxRotate(_ sender: NSMenuItem) {
+            let deg = sender.tag
+            store.batchRotate(ids: store.selectedPhotoIDs, degreesCW: deg)
+        }
+
+        @objc private func ctxOpenInCameraRaw() {
+            openInCameraRaw(ids: store.selectedPhotoIDs, store: store)
+        }
+
+        @objc private func ctxCopyFilename() {
+            let names = store.selectedPhotoIDs.compactMap { id -> String? in
+                guard let idx = store._photoIndex[id] else { return nil }
+                return store.photos[idx].jpgURL.lastPathComponent
+            }.joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(names, forType: .string)
+            store.showToastMessage("📋 \(store.selectedPhotoIDs.count)개 파일명 복사됨")
+        }
+
+        @objc private func ctxMoveToNewFolder() {
+            let alert = NSAlert()
+            alert.messageText = "새 폴더로 이동"
+            alert.informativeText = "폴더 이름을 입력하세요"
+            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            tf.placeholderString = "새 폴더"
+            alert.accessoryView = tf
+            alert.addButton(withTitle: "이동")
+            alert.addButton(withTitle: "취소")
+            if alert.runModal() == .alertFirstButtonReturn {
+                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty, let folderURL = store.folderURL else { return }
+                let newDir = folderURL.appendingPathComponent(name)
+                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+                var fileURLs: [URL] = []
+                for id in store.selectedPhotoIDs {
+                    guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+                    let p = store.photos[idx]
+                    guard !p.isFolder && !p.isParentFolder else { continue }
+                    fileURLs.append(p.jpgURL)
+                    if let raw = p.rawURL, raw != p.jpgURL { fileURLs.append(raw) }
+                }
+                store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
             }
         }
 
