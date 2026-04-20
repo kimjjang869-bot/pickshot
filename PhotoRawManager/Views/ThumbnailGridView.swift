@@ -432,11 +432,12 @@ Text(photo.fileNameWithExtension)
                                 .frame(width: 2000, height: geo.size.height + 4)
                                 .offset(x: -8, y: -2)
                         } else if livePhoto.rating == 5 {
+                            // v8.7: 노란 레이블과 구분되는 오렌지 색 사용
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(AppTheme.starGold.opacity(0.08))
+                                .fill(AppTheme.ratingFiveBorder.opacity(0.08))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .stroke(AppTheme.starGold.opacity(0.5), lineWidth: 2)
+                                        .stroke(AppTheme.ratingFiveBorder.opacity(0.55), lineWidth: 2)
                                 )
                                 .frame(width: 2000, height: geo.size.height + 4)
                                 .offset(x: -8, y: -2)
@@ -1311,16 +1312,52 @@ struct PhotoContextMenu: View {
             Button(action: {
                 store.visualSearchCropURL = photo.jpgURL
                 store.visualSearchCropMode = .face
-                store.showVisualSearchCrop = true
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
             }) {
-                Label("이 얼굴 찾기 (영역 드래그 선택)", systemImage: "person.circle")
+                Label("이 얼굴 찾기 (영역 드래그)", systemImage: "person.circle")
             }
             Button(action: {
                 store.visualSearchCropURL = photo.jpgURL
                 store.visualSearchCropMode = .object
-                store.showVisualSearchCrop = true
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
             }) {
-                Label("이 사물/배경 찾기 (영역 드래그 선택)", systemImage: "sparkle.magnifyingglass")
+                Label("이 사물/배경 찾기 (영역 드래그)", systemImage: "sparkle.magnifyingglass")
+            }
+            // 기존 얼굴 레퍼런스 label 들 — "같은 사람 추가 샷" 바로가기
+            let existingLabels = Set(VisualSearchService.shared.references
+                .filter { $0.mode == .face }
+                .compactMap { $0.label })
+            if !existingLabels.isEmpty {
+                Divider()
+                ForEach(Array(existingLabels).sorted(), id: \.self) { lbl in
+                    Button(action: {
+                        store.visualSearchCropURL = photo.jpgURL
+                        store.visualSearchCropMode = .face
+                        store.visualSearchPresetLabel = lbl
+                        NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+                    }) {
+                        Label("'\(lbl)' 에 샷 추가 (옆/뒷면)", systemImage: "plus.circle")
+                    }
+                }
+            }
+            // v8.7: 학습 — 현재 검색이 active 일 때만 표시
+            if store.visualSearchActive && !VisualSearchService.shared.references.isEmpty {
+                Divider()
+                // 활성 검색의 label 들 표시 (사용자가 "이 사람 아님" 선언 가능)
+                let activeLabels = Set(VisualSearchService.shared.references
+                    .filter { $0.mode == .face }
+                    .compactMap { $0.label }
+                )
+                ForEach(Array(activeLabels).sorted(), id: \.self) { lbl in
+                    Button(action: {
+                        VisualSearchService.shared.markAsNotMatching(url: photo.jpgURL, forLabel: lbl)
+                        store.showToastMessage("학습됨: '\(lbl)' 아님으로 표시")
+                    }) {
+                        Label("'\(lbl)' 아님 (학습)", systemImage: "hand.thumbsdown")
+                    }
+                }
             }
             if !VisualSearchService.shared.references.isEmpty {
                 Divider()
@@ -1853,7 +1890,8 @@ Text(photo.fileNameWithExtension)
 
         let borderColor: Color = {
             if let labelColor = photo.colorLabel.color { return labelColor }
-            if photo.rating == 5 { return AppTheme.starGold }
+            // v8.7: ★5 테두리는 노란 레이블과 구분되는 오렌지 (ratingFiveBorder)
+            if photo.rating == 5 { return AppTheme.ratingFiveBorder }
             if isFocused { return AppTheme.focusBorder }
             if isSelected { return AppTheme.selectionBorder.opacity(0.7) }
             return Color.clear

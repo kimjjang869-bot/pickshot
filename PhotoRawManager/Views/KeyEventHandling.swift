@@ -942,6 +942,29 @@ class KeyCaptureView: NSView {
             return
         }
 
+        // v8.7: 시트 열려있거나 TextField/SearchField 포커스 상태면 key 이벤트 가로채지 않음
+        //   "스페이스바 ★5 오작동" 버그 수정 — 다이얼로그 안에서 스페이스 누를 때 rating 변경되던 문제
+        if let win = self.window {
+            // (a) 현재 창에 attached sheet 있으면 → 시트가 처리해야 함
+            if win.attachedSheet != nil {
+                super.keyDown(with: event)
+                return
+            }
+            // (b) 포커스가 텍스트필드/서치필드 등 NSText 계열이면 → 해당 뷰에 양보
+            if let fr = win.firstResponder {
+                if fr is NSText || fr is NSTextView {
+                    super.keyDown(with: event)
+                    return
+                }
+                if let frView = fr as? NSView,
+                   frView.isDescendant(of: NSTextField()) == false,
+                   String(describing: type(of: frView)).contains("TextField") {
+                    super.keyDown(with: event)
+                    return
+                }
+            }
+        }
+
         let chars = event.charactersIgnoringModifiers ?? ""
         let keyCode = event.keyCode
         let hasCmd = event.modifierFlags.contains(.command)

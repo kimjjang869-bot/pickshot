@@ -11,6 +11,8 @@ extension Notification.Name {
     static let videoMarkersChanged = Notification.Name("videoMarkersChanged")
     /// v8.5 — C 키로 인라인 크롭 모드 토글
     static let toggleCropMode = Notification.Name("toggleCropMode")
+    /// v8.7 — 시각 검색 크롭 창 열기
+    static let pickShotOpenVisualSearchCrop = Notification.Name("pickShotOpenVisualSearchCrop")
 }
 
 /// 실제로 프리뷰에 렌더된 이미지의 frame(aspect-fit 후 결과) 을 전달하는 PreferenceKey.

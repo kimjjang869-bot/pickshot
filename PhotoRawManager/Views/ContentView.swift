@@ -134,6 +134,16 @@ struct ContentView: View {
                     toolbarRow2
                     Divider()
 
+                    // v8.7: 시각 검색 HUD (플로팅, 검색 활성 시만 표시)
+                    #if DEBUG
+                    VisualSearchHUD {
+                        // 해제 시 필터 off + SwiftUI 강제 리렌더
+                        store.visualSearchActive = false
+                        store.invalidateFilterCache()
+                        store.photosVersion += 1
+                    }
+                    #endif
+
                     // Content area
                     if store.isLoading {
                         // Loading - show progress inside content area (folder browser stays visible)
@@ -350,38 +360,13 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
         .sheet(isPresented: $store.showSmartCull) { SmartCullView().environmentObject(store) }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
-        // v8.7: 시각 검색 결과 변경 시 필터 재적용
-        .onReceive(VisualSearchService.shared.$matchedURLs) { _ in
-            if store.visualSearchActive {
-                store.invalidateFilterCache()
-            }
-        }
-        .sheet(isPresented: $store.showVisualSearchCrop) {
-            if let url = store.visualSearchCropURL {
-                VisualSearchCropView(
-                    sourceURL: url,
-                    mode: store.visualSearchCropMode,
-                    isPresented: $store.showVisualSearchCrop
-                ) { mode, cropRect, label in
-                    VisualSearchService.shared.addReference(
-                        mode: mode,
-                        sourceURL: url,
-                        cropRect: cropRect,
-                        label: label
-                    ) { success in
-                        if success {
-                            store.visualSearchActive = true
-                            let urls = store.photos.compactMap { p -> URL? in
-                                guard !p.isFolder, !p.isParentFolder else { return nil }
-                                return p.jpgURL
-                            }
-                            VisualSearchService.shared.runSearch(on: urls)
-                        } else {
-                            store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
-                        }
-                    }
-                }
-            }
+        // v8.7: 시각 검색 결과 변경 시 필터 재적용 (active 일 때만)
+        .onReceive(VisualSearchService.shared.$matchedURLs) { newMatched in
+            guard store.visualSearchActive else { return }
+            // 매칭 결과가 비어버렸는데 active 면 사용자가 닫기를 누르는 과도기 → 건너뛰기 (onDeactivate 가 처리)
+            if newMatched.isEmpty && VisualSearchService.shared.references.isEmpty { return }
+            store.invalidateFilterCache()
+            store.photosVersion += 1
         }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
@@ -501,7 +486,15 @@ struct ContentView: View {
         }
         .onChange(of: store.folderURL) { _, newURL in
             // v8.6.3: 스트리밍 로드 대응 — photosVersion 변화에서 재구성 (아래 onChange 에서 처리)
-            _ = newURL
+            // v8.7: 폴더 전환 시 시각 검색 상태 save/restore
+            VisualSearchService.shared.switchFolder(
+                to: newURL?.path,
+                currentActive: store.visualSearchActive
+            ) { restoredActive in
+                store.visualSearchActive = restoredActive
+                store.invalidateFilterCache()
+                store.photosVersion += 1
+            }
         }
         .onChange(of: store.photosVersion) { _, _ in
             // v8.6.3: photos 가 스트리밍으로 append 될 때마다 sweep 대상 업데이트.
@@ -683,8 +676,77 @@ struct ContentView: View {
                 dualWindow = nil
             }
         }
-        .onAppear { setupMouseSideButtonMonitor(); setupCacheSweeperActivityMonitor() }
-        .onDisappear { teardownMouseSideButtonMonitor(); teardownCacheSweeperActivityMonitor() }
+        .onAppear {
+            setupMouseSideButtonMonitor()
+            setupCacheSweeperActivityMonitor()
+            setupVisualSearchCropObserver()
+        }
+        .onDisappear {
+            teardownMouseSideButtonMonitor()
+            teardownCacheSweeperActivityMonitor()
+            teardownVisualSearchCropObserver()
+        }
+    }
+
+    @State private var visualSearchCropObserver: NSObjectProtocol?
+
+    private func setupVisualSearchCropObserver() {
+        if visualSearchCropObserver != nil { return }
+        visualSearchCropObserver = NotificationCenter.default.addObserver(
+            forName: .pickShotOpenVisualSearchCrop,
+            object: nil,
+            queue: .main
+        ) { _ in openVisualSearchCropWindow() }
+    }
+    private func teardownVisualSearchCropObserver() {
+        if let o = visualSearchCropObserver { NotificationCenter.default.removeObserver(o) }
+        visualSearchCropObserver = nil
+    }
+
+    // MARK: - v8.7 Visual Search Crop Window 열기 (비모달, 멀티 인스턴스)
+    private func openVisualSearchCropWindow() {
+        guard let url = store.visualSearchCropURL else { return }
+        store.showVisualSearchCrop = false  // flag 재사용 가능하게 초기화
+
+        let folderPhotos = store.photos.compactMap { p -> URL? in
+            guard !p.isFolder, !p.isParentFolder else { return nil }
+            return p.jpgURL
+        }
+
+        VisualSearchCropWindowController.shared.present(
+            sourceURL: url,
+            mode: store.visualSearchCropMode,
+            presetLabel: store.visualSearchPresetLabel,
+            folderPhotos: folderPhotos
+        ) { mode, shots, label in
+            let group = DispatchGroup()
+            var successCount = 0
+            for shot in shots {
+                group.enter()
+                VisualSearchService.shared.addReference(
+                    mode: mode,
+                    sourceURL: shot.url,
+                    cropRect: shot.rect,
+                    label: label
+                ) { ok in
+                    if ok { successCount += 1 }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                if successCount > 0 {
+                    store.visualSearchActive = true
+                    store.showToastMessage("🔍 \(successCount)장 등록 완료 — 검색 시작")
+                    let urls = store.photos.compactMap { p -> URL? in
+                        guard !p.isFolder, !p.isParentFolder else { return nil }
+                        return p.jpgURL
+                    }
+                    VisualSearchService.shared.runSearch(on: urls)
+                } else {
+                    store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
+                }
+            }
+        }
     }
 
     // MARK: - v8.6.2: CacheSweeper 활동 감지 (스크롤 + 키)

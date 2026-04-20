@@ -142,13 +142,92 @@ final class LandmarkFaceEmbeddingProvider: FaceEmbeddingProvider {
     }
 }
 
+// MARK: - Face Area FeaturePrint Provider (Phase 1.5)
+
+/// 얼굴 감지 → crop → VNGenerateImageFeaturePrintRequest.
+/// Landmark 기반 (geometry) 대비 픽셀 feature 기반이라 "다른 사람" 구별력 훨씬 강함.
+/// 피부톤 / 머리색 / 눈 / 입술 / 표정 포함.
+final class FaceFeaturePrintProvider: FaceEmbeddingProvider {
+    let backendID = "faceFP_v2"  // v2: 소형 얼굴 필터 + 10% crop + 0.7 confidence
+    let dimension = 768  // Apple VNFeaturePrint 2024+ — 768 dim
+
+    func compute(cgImage: CGImage) -> [FaceEmbedding] {
+        // 1) 얼굴 감지
+        let faceReq = VNDetectFaceRectanglesRequest()
+        if #available(macOS 13.0, *) {
+            faceReq.revision = VNDetectFaceRectanglesRequestRevision3
+        }
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([faceReq])
+        guard let faces = faceReq.results else { return [] }
+
+        let imgW = CGFloat(cgImage.width)
+        let imgH = CGFloat(cgImage.height)
+        var out: [FaceEmbedding] = []
+
+        for face in faces where face.confidence > 0.7 {  // 0.5 → 0.7 (더 확실한 얼굴만)
+            let bb = face.boundingBox
+            // v8.7: 너무 작은 얼굴 거부 — 면적 1% 미만은 식별 신뢰 낮음 (배경 얼굴/잡음)
+            let area = bb.width * bb.height
+            if area < 0.008 { continue }  // 약 1% 미만
+            // 10% 패딩 — 배경 영향 최소화 (기존 20% → 10%)
+            let padding: CGFloat = 0.10
+            let paddedBB = CGRect(
+                x: max(0, bb.minX - bb.width * padding),
+                y: max(0, bb.minY - bb.height * padding),
+                width: min(1.0 - bb.minX, bb.width * (1 + 2 * padding)),
+                height: min(1.0 - bb.minY, bb.height * (1 + 2 * padding))
+            )
+            let pixelRect = CGRect(
+                x: paddedBB.minX * imgW,
+                y: (1.0 - paddedBB.maxY) * imgH,  // y-flip
+                width: paddedBB.width * imgW,
+                height: paddedBB.height * imgH
+            ).integral.intersection(CGRect(x: 0, y: 0, width: imgW, height: imgH))
+
+            guard pixelRect.width >= 50, pixelRect.height >= 50,
+                  let faceCG = cgImage.cropping(to: pixelRect) else { continue }
+
+            // 2) 얼굴 crop 에 FeaturePrint 계산
+            let fpReq = VNGenerateImageFeaturePrintRequest()
+            let fpHandler = VNImageRequestHandler(cgImage: faceCG, options: [:])
+            try? fpHandler.perform([fpReq])
+            guard let fp = fpReq.results?.first else { continue }
+
+            let data = fp.data
+            let count = data.count / MemoryLayout<Float>.size
+            guard count > 0 else { continue }
+            var vec = [Float](repeating: 0, count: count)
+            data.withUnsafeBytes { raw in
+                let buf = raw.bindMemory(to: Float.self)
+                for i in 0..<count {
+                    vec[i] = buf[i]
+                }
+            }
+            // L2 정규화 — 코사인 유사도 안정화
+            let norm = sqrt(vec.map { $0 * $0 }.reduce(0, +))
+            if norm > 0 { vec = vec.map { $0 / norm } }
+
+            let size = Float(bb.width * bb.height)
+            let quality = min(1.0, face.confidence * (size > 0.01 ? 1.0 : 0.5))
+
+            out.append(FaceEmbedding(
+                vector: vec,
+                boundingBox: bb,
+                quality: quality
+            ))
+        }
+        return out
+    }
+}
+
 // MARK: - Main Service
 
 final class FaceEmbeddingService {
     static let shared = FaceEmbeddingService()
 
-    /// 현재 백엔드 — 기본 Landmark, Phase 2 에서 ArcFaceCoreMLProvider 로 교체 예정
-    private(set) var provider: FaceEmbeddingProvider = LandmarkFaceEmbeddingProvider()
+    /// 현재 백엔드 — 기본 FaceFeaturePrint (Phase 1.5), Phase 2 에서 ArcFaceCoreMLProvider 로 교체 예정
+    private(set) var provider: FaceEmbeddingProvider = FaceFeaturePrintProvider()
 
     /// 백엔드 교체 (모델 업그레이드 시)
     func setProvider(_ p: FaceEmbeddingProvider) {

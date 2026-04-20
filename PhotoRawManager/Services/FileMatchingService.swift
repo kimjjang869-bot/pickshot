@@ -129,6 +129,44 @@ struct FileMatchingService {
         return seconds > 0 ? seconds : nil
     }
 
+    /// v8.7: 파일명에서 "번호" 추출 (마지막 숫자 블록)
+    ///   - "IMG_1234" → 1234
+    ///   - "IMG_1234_LR" → 1234
+    ///   - "DSC-5678-edit" → 5678
+    ///   - "IMG_1234_crop_v2" → 2 (마지막 숫자) — 편집 버전 구분 안 되는 케이스
+    /// 매칭의 정확도는 촬영기 파일명 관례에 의존. 대부분 `PREFIX_NNNN[suffix]` 구조.
+    static func extractTrailingNumber(from baseName: String) -> Int? {
+        let lower = baseName.lowercased()
+        // 뒤에서부터 탐색하되, 편집 접미사 (_lr, _edit, -crop 등) 는 스킵하고 그 앞 숫자 찾기
+        // 간단 휴리스틱: 뒤에서 숫자 시작점을 찾되, non-digit 이 나오면 일단 스톱.
+        //   숫자 블록이 여러 개면 가장 오른쪽 "길이 3+" 숫자 채택 (짧은 version suffix 필터링)
+        var blocks: [(range: Range<String.Index>, value: Int)] = []
+        var idx = lower.startIndex
+        while idx < lower.endIndex {
+            if lower[idx].isNumber {
+                let start = idx
+                var end = idx
+                while end < lower.endIndex, lower[end].isNumber {
+                    end = lower.index(after: end)
+                }
+                if let n = Int(lower[start..<end]) {
+                    blocks.append((start..<end, n))
+                }
+                idx = end
+            } else {
+                idx = lower.index(after: idx)
+            }
+        }
+        // 길이 3+ 블록 중 가장 오른쪽 (일반적 파일번호 특성)
+        if let best = blocks.reversed().first(where: {
+            lower.distance(from: $0.range.lowerBound, to: $0.range.upperBound) >= 3
+        }) {
+            return best.value
+        }
+        // fallback: 마지막 숫자 블록
+        return blocks.last?.value
+    }
+
     /// v8.6.3: 스트리밍 + 병렬 스캔.
     /// 최상위 서브폴더를 동시에 스캔하고, 배치 단위로 `onBatch` 콜백을 main thread 에서 호출.
     /// 카메라 3대 시나리오 (3 subfolders × 2000장 = 6000장) 에서 첫 배치 ~200ms 내 UI 업데이트 → 체감 3~5배 향상.
@@ -274,24 +312,68 @@ struct FileMatchingService {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         } ?? []
 
+        // v8.7: 파일번호 기반 매칭 (옵션) — _LR, -edit 같은 접미사 자동 무시
+        //   설정 UserDefaults "matchByFileNumber" = true 일 때 활성
+        let useNumberMatching = UserDefaults.standard.bool(forKey: "matchByFileNumber")
+        // 번호 → FileInfo 인덱스 (충돌 시 먼저 나온 것 유지)
+        var jpgByNumber: [Int: FileInfo] = [:]
+        var rawByNumber: [Int: FileInfo] = [:]
+        if useNumberMatching {
+            for (base, info) in jpgFiles {
+                if let num = extractTrailingNumber(from: base), jpgByNumber[num] == nil {
+                    jpgByNumber[num] = info
+                }
+            }
+            for (base, info) in rawFiles {
+                if let num = extractTrailingNumber(from: base), rawByNumber[num] == nil {
+                    rawByNumber[num] = info
+                }
+            }
+        }
+
+        /// JPG 엔트리와 매칭되는 RAW 찾기 — 정확 매칭 먼저, 없으면 번호 매칭
+        func pairedRAW(forJPGBase jpgBase: String) -> FileInfo? {
+            if let exact = rawFiles[jpgBase] { return exact }
+            if useNumberMatching,
+               let num = extractTrailingNumber(from: jpgBase),
+               let byNum = rawByNumber[num] {
+                return byNum
+            }
+            return nil
+        }
+
+        /// 어떤 JPG 키가 RAW 를 "소유" 하는지 판정 (중복 매핑 방지)
+        func rawBaseIsPairedFromJPG(_ rawBase: String) -> Bool {
+            if jpgFiles[rawBase] != nil { return true }
+            if useNumberMatching,
+               let num = extractTrailingNumber(from: rawBase),
+               let jpgInfo = jpgByNumber[num],
+               // 해당 JPG 가 존재하고 + 이 RAW 를 pairedRAW 로 가져간다면 true
+               pairedRAW(forJPGBase: jpgInfo.url.deletingPathExtension().lastPathComponent.lowercased())?.url == rawFiles[rawBase]?.url {
+                return true
+            }
+            return false
+        }
+
         // JPG가 있는 파일: JPG를 미리보기로, RAW를 매칭 (stat() 불필요 — enumerator에서 이미 로드)
         var result: [PhotoItem] = jpgFiles
             .sorted { $0.key < $1.key }
             .map { baseName, jpgInfo in
+                let rawInfo = pairedRAW(forJPGBase: baseName)
                 var item = PhotoItem(
                     jpgURL: jpgInfo.url,
-                    rawURL: rawFiles[baseName]?.url
+                    rawURL: rawInfo?.url
                 )
                 item.fileModDate = jpgInfo.modDate
                 item.jpgFileSize = jpgInfo.size
-                if let rawInfo = rawFiles[baseName] {
-                    item.rawFileSize = rawInfo.size
+                if let r = rawInfo {
+                    item.rawFileSize = r.size
                 }
                 return item
             }
 
-        // RAW만 있는 파일
-        let rawOnly = rawFiles.filter { jpgFiles[$0.key] == nil }
+        // RAW만 있는 파일 — 번호 매칭 시에도 JPG 에 딸린 것은 제외
+        let rawOnly = rawFiles.filter { !rawBaseIsPairedFromJPG($0.key) }
         let rawOnlyItems = rawOnly
             .sorted { $0.key < $1.key }
             .map { baseName, rawInfo in

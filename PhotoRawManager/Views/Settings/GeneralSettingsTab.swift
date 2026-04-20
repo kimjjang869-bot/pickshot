@@ -12,6 +12,8 @@ struct GeneralSettingsTab: View {
     @AppStorage("showFileTypeBadge") private var showFileTypeBadge = true
     @AppStorage("showFileExtension") private var showFileExtension = true
     @AppStorage("showFolderPreview") private var showFolderPreview = true
+    // v8.7: JPG+RAW 매칭을 파일번호 기반으로 (예: IMG_1234_LR.jpg ↔ IMG_1234.ARW)
+    @AppStorage("matchByFileNumber") private var matchByFileNumber = false
     @AppStorage("deleteOriginalFile") private var deleteOriginalFile = false
     @AppStorage("skipDeleteConfirm") private var skipDeleteConfirm = true
     @AppStorage("windowStartSize") private var windowStartSize = "default"
@@ -35,6 +37,15 @@ struct GeneralSettingsTab: View {
                         Toggle("시작 시 마지막 폴더 자동 열기", isOn: $autoOpenLastFolder)
                         Toggle("파일 확장자 배지 표시 (JPG, R+J, RAW 등)", isOn: $showFileTypeBadge)
                         Toggle("파일명에 확장자 표시 (IMG_9741.JPG)", isOn: $showFileExtension)
+
+                        Divider()
+
+                        Toggle("JPG+RAW 매칭을 파일번호 기반으로 (편집 접미사 무시)", isOn: $matchByFileNumber)
+                        if matchByFileNumber {
+                            Text("예: IMG_1234_LR.jpg ↔ IMG_1234.ARW 자동 매칭. 다음 폴더 로드부터 적용됩니다.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
 
                         Divider()
 

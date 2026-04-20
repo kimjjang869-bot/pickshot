@@ -129,6 +129,10 @@ class PhotoStore: ObservableObject {
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
     @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
+    /// v8.7: 별점 필터 — 개별 선택. 비어있으면 전체 표시. ratingFilters 있으면 minimumRatingFilter 무시.
+    @Published var ratingFilters: Set<Int> = [] { didSet { invalidateFilterCache() } }
+    /// v8.7: 선택한 사진만 보기 — 클라이언트 비교용
+    @Published var showOnlySelected: Bool = false { didSet { invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
             invalidateFilterCache()  // 중복 캐시 클리어 제거 — invalidateFilterCache가 이미 처리
@@ -368,6 +372,8 @@ class PhotoStore: ObservableObject {
     @Published var showVisualSearchCrop: Bool = false
     @Published var visualSearchCropURL: URL? = nil
     @Published var visualSearchCropMode: VisualSearchMode = .face
+    /// 같은 사람 추가 샷 — 미리 세팅된 label (VisualSearchCropView 에서 readonly 표시)
+    @Published var visualSearchPresetLabel: String? = nil
 
     /// 파일명에서 마지막 숫자 블록 추출 (예: "DSC01234.ARW" → 1234, "IMG_9876-edit.jpg" → 9876)
     static func extractFileNumber(from url: URL) -> Int? {
@@ -648,6 +654,9 @@ class PhotoStore: ObservableObject {
 
         // Capture filter values once to avoid repeated property access
         let minRating = minimumRatingFilter
+        let rFilters = ratingFilters  // v8.7 개별 별점 필터
+        let onlySelected = showOnlySelected
+        let selectedIDsSnapshot = selectedPhotoIDs
         let colorFilters = colorLabelFilters
         let qFilter = qualityFilter
         let sceneTag = sceneTagFilter
@@ -687,7 +696,14 @@ class PhotoStore: ObservableObject {
             }
 
             // Rating filter
-            if minRating > 0 && photo.rating < minRating { continue }
+            // v8.7: 선택한 사진만 보기 (클라이언트 비교용) — parentFolder 는 예외적으로 항상 포함
+            if onlySelected && !photo.isParentFolder {
+                if !selectedIDsSnapshot.contains(photo.id) { continue }
+            }
+            // v8.7: 개별 별점 필터 (Set) 우선, 없으면 기존 최소값 방식
+            if !rFilters.isEmpty {
+                if !rFilters.contains(photo.rating) { continue }
+            } else if minRating > 0 && photo.rating < minRating { continue }
             // Color label filter (다중 선택 지원)
             if !colorFilters.isEmpty && !colorFilters.contains(photo.colorLabel) { continue }
             // Quality filter

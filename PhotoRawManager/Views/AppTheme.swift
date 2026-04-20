@@ -43,7 +43,9 @@ enum AppTheme {
     }
 
     // MARK: - Star Color
-    static let starGold = Color(red: 255/255, green: 184/255, blue: 0/255)     // #FFB800
+    static let starGold = Color(red: 255/255, green: 184/255, blue: 0/255)     // #FFB800 (별 아이콘용)
+    /// v8.7: ★5 썸네일 테두리 전용 — 노란 컬러 라벨과 명확히 구분되도록 오렌지 계열
+    static let ratingFiveBorder = Color(red: 255/255, green: 110/255, blue: 0/255)  // #FF6E00 (vivid orange)
 
     // MARK: - Text Colors
     static let textPrimary = Color.primary
@@ -88,7 +90,8 @@ enum AppTheme {
     // MARK: - 해상도 기반 스케일 팩터 (앱 시작 시 1회 계산 — 포커스 변경 시 안 바뀜)
     static let displayScale: CGFloat = {
         let screenW = NSScreen.main?.frame.width ?? 3200
-        return max(0.8, min(1.2, screenW / 3200.0))
+        // v8.7: 5K 모니터(5120px) 까지 최대 1.4배 스케일
+        return max(0.85, min(1.4, screenW / 3200.0))
     }()
 
     /// 해상도별 자동 조정값
@@ -97,18 +100,19 @@ enum AppTheme {
     }
 
     // MARK: - 모든 값 앱 시작 시 1회 계산 (모니터 변경/포커스 변경 시 안 바뀜)
-    static let buttonHeight: CGFloat = scaled(34)
-    static let pillSize: CGFloat = scaled(30)
+    // v8.7: base 값 상향 — 5K 환경 가독성 개선
+    static let buttonHeight: CGFloat = scaled(38)   // 34 → 38
+    static let pillSize: CGFloat = scaled(32)       // 30 → 32
 
-    static let iconSmall: CGFloat = scaled(13)
-    static let iconMedium: CGFloat = scaled(15)
-    static let iconLarge: CGFloat = scaled(18)
+    static let iconSmall: CGFloat = scaled(15)      // 13 → 15
+    static let iconMedium: CGFloat = scaled(17)     // 15 → 17
+    static let iconLarge: CGFloat = scaled(20)      // 18 → 20
 
-    static let fontMicro: CGFloat = scaled(11)
-    static let fontCaption: CGFloat = scaled(12)
-    static let fontBody: CGFloat = scaled(13)
-    static let fontSubhead: CGFloat = scaled(14)
-    static let fontHeading: CGFloat = scaled(15)
+    static let fontMicro: CGFloat = scaled(12)      // 11 → 12
+    static let fontCaption: CGFloat = scaled(13)    // 12 → 13
+    static let fontBody: CGFloat = scaled(14)       // 13 → 14
+    static let fontSubhead: CGFloat = scaled(15)    // 14 → 15
+    static let fontHeading: CGFloat = scaled(16)    // 15 → 16
 
     // MARK: - Min Touch Target
     static let minTouchTarget: CGFloat = 24

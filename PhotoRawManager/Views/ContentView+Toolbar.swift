@@ -188,9 +188,38 @@ extension ContentView {
                     // 썸네일 영역에 맞춘 좌측 섹션 (별점 + 라벨 + 검색 + 정렬)
                     HStack(spacing: 8) {
                         // Star filter — 별점 필터
+                        //   일반 클릭: 해당 별점만 보기 (개별 토글)
+                        //   Cmd/Shift + 클릭: 여러 별점 선택 (0 or 여러 값)
+                        //   "All" 클릭: 모든 필터 해제
                         HStack(spacing: 3) {
                             ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
-                                Button(action: { store.minimumRatingFilter = rating }) {
+                                let isActive: Bool = {
+                                    if rating == 0 {
+                                        return store.ratingFilters.isEmpty && store.minimumRatingFilter == 0
+                                    }
+                                    return store.ratingFilters.contains(rating)
+                                }()
+                                Button(action: {
+                                    let flags = NSEvent.modifierFlags
+                                    let multi = flags.contains(.command) || flags.contains(.shift)
+                                    if rating == 0 {
+                                        // 전체 해제
+                                        store.ratingFilters = []
+                                        store.minimumRatingFilter = 0
+                                    } else if multi {
+                                        // 개별 토글 (여러 개 선택)
+                                        if store.ratingFilters.contains(rating) {
+                                            store.ratingFilters.remove(rating)
+                                        } else {
+                                            store.ratingFilters.insert(rating)
+                                        }
+                                        store.minimumRatingFilter = 0
+                                    } else {
+                                        // 단일 선택
+                                        store.ratingFilters = [rating]
+                                        store.minimumRatingFilter = 0
+                                    }
+                                }) {
                                     Group {
                                         if rating == 0 {
                                             Text("All")
@@ -207,16 +236,38 @@ extension ContentView {
                                     .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
                                 }
                                 .buttonStyle(.plain)
-                                .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? .primary : AppTheme.starGold))
+                                .foregroundColor(isActive ? .white : (rating == 0 ? .primary : AppTheme.starGold))
                                 .background(
-                                    store.minimumRatingFilter == rating
+                                    isActive
                                         ? AppTheme.starGold.opacity(0.85)
                                         : AppTheme.toolbarButtonBg
                                 )
                                 .clipShape(Capsule())
-                                .help(rating == 0 ? "모든 별점 표시" : "별점 \(rating) 이상 필터")
+                                .help(rating == 0 ? "모든 별점 표시 (필터 해제)" : "별점 \(rating) 만 표시 / Cmd·Shift+클릭: 다중 선택")
                             }
                         }
+
+                        Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
+
+                        // v8.7: 선택한 사진만 보기 토글
+                        Button(action: {
+                            store.showOnlySelected.toggle()
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: store.showOnlySelected ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 11))
+                                Text("선택만")
+                                    .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: AppTheme.pillSize)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(store.showOnlySelected ? .white : .primary)
+                        .background(store.showOnlySelected ? Color.blue.opacity(0.85) : AppTheme.toolbarButtonBg)
+                        .clipShape(Capsule())
+                        .help("선택한 사진만 표시 (비교/편집용)")
+                        .disabled(store.selectedPhotoIDs.isEmpty)
 
                         Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
@@ -1090,12 +1141,13 @@ extension ContentView {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: AppTheme.iconSmall))
+                .foregroundColor(active ? .white : color)  // 아이콘은 컬러 유지
             Text(text)
                 .font(.system(size: AppTheme.fontBody, weight: .medium))
+                .foregroundColor(.white)                   // v8.7: 텍스트는 항상 흰색
         }
         .padding(.horizontal, 8)
         .frame(height: AppTheme.buttonHeight)
-        .foregroundColor(active ? .white : color)
         .background(active ? color : AppTheme.toolbarButtonBg)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
