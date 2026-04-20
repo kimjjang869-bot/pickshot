@@ -805,7 +805,11 @@ struct PhotoPreviewView: View {
                                 Spacer()
                                 VStack(spacing: 4) {
                                     if showHistogram {
-                                        HistogramOverlay(photo: photo)
+                                        // v8.7: 슬라이더 조정 시 실시간 반영 — developedImage 주입
+                                        HistogramOverlay(
+                                            photo: photo,
+                                            liveImage: developedImage ?? rotatedImage ?? image
+                                        )
                                     }
                                 }
                                 .padding(8)
