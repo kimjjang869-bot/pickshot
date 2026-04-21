@@ -248,6 +248,13 @@ extension PhotoStore {
                 self?.photos = sorted
                 if restoreRatings { self?.applySavedRatings() }
 
+                // v8.8.2: 별점/컬러 필터 자동 리셋
+                //   새 폴더에 현재 선택된 별점/컬러 필터에 해당하는 사진이 0장이면 All 로 리셋.
+                //   이유: 빈 결과 화면에서 사용자가 "왜 안 보이지" 헤매는 상황 방지.
+                if let self = self {
+                    self.resetFiltersIfEmpty()
+                }
+
                 // Select first non-folder photo on NEXT run loop
                 DispatchQueue.main.async {
                     guard self?.folderURL == url else { return }

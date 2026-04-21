@@ -438,6 +438,34 @@ func folderTreeCopyCutPasteMenu(_ url: URL, store: PhotoStore) -> some View {
     .disabled(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
 }
 
+/// v8.9: CLIP 기반 유사 이미지 검색 — 참조 사진과 비슷한 사진 top-50 찾아 선택.
+func findSimilar(to photo: PhotoItem, store: PhotoStore) {
+    let queryURL = photo.jpgURL
+    // 백그라운드 검색 (brute-force cosine, 10K 기준 ~50ms)
+    DispatchQueue.global(qos: .userInitiated).async {
+        let results = SemanticSearchService.shared.searchSimilar(to: queryURL, k: 50)
+        guard !results.isEmpty else {
+            DispatchQueue.main.async {
+                store.showToastMessage("⚠️ 임베딩 인덱스가 아직 없습니다. 적극 캐시 모드 ON 후 다시 시도해 주세요.")
+            }
+            return
+        }
+        DispatchQueue.main.async {
+            // 결과 URL → PhotoItem.id 매핑 후 선택
+            let pathSet = Set(results.map { $0.url.path })
+            var matchedIDs: Set<UUID> = []
+            for p in store.photos where pathSet.contains(p.jpgURL.path) {
+                matchedIDs.insert(p.id)
+            }
+            matchedIDs.insert(photo.id)  // 쿼리 사진도 포함
+            store.selectedPhotoIDs = matchedIDs
+            store.showOnlySelected = true
+            fputs("[SEMANTIC] 유사 \(results.count)장 선택 (쿼리 \(queryURL.lastPathComponent))\n", stderr)
+            store.showToastMessage("🔍 비슷한 사진 \(results.count)장 찾음")
+        }
+    }
+}
+
 /// Paste files from pasteboard to current folder (Cmd+V).
 /// Cut 마커가 있으면 move (원본 삭제), 없으면 copy. 파일/폴더 둘 다 지원.
 func pasteFilesFromPasteboard(store: PhotoStore) {

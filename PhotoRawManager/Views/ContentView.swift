@@ -510,6 +510,11 @@ struct ContentView: View {
                 }
                 if urls.count > 0 {
                     CacheSweeper.shared.prepareForFolder(url: url, photos: urls)
+                    // v8.9: CLIP 임베딩 백그라운드 인덱싱 시작 — 적극 캐시 모드일 때만.
+                    //   (기본 모드는 시스템 부하 최소화 원칙)
+                    if store.aggressiveCache && ImageEmbeddingService.shared.isAvailable {
+                        SemanticSearchService.shared.startIndexing(folderURL: url, urls: urls)
+                    }
                 }
             }
             sweepPrepareWork = work

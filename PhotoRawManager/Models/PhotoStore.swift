@@ -98,6 +98,35 @@ class PhotoStore: ObservableObject {
             guard !_suppressDidSet else { return }
             photosVersion += 1; invalidateFilterCache(); rebuildIndex()
             updateFolderSizeCache()
+            pruneStaleSelections()
+        }
+    }
+
+    /// v8.8.3: selectedPhotoIDs 에서 현재 photos 에 없는 유령 ID 제거.
+    ///   폴더 이동/재로드 후 UI에는 선택 하이라이트가 없는데 데이터엔 남아있어
+    ///   키 입력(rating/color) 이 보이지 않는 선택에 적용되는 버그 차단.
+    func pruneStaleSelections() {
+        let validIDs = Set(photos.map { $0.id })
+        let stale = selectedPhotoIDs.subtracting(validIDs)
+        if !stale.isEmpty {
+            selectedPhotoIDs.subtract(stale)
+        }
+        if let sid = selectedPhotoID, !validIDs.contains(sid) {
+            selectedPhotoID = nil
+        }
+    }
+
+    /// v8.8.3: 현재 filteredPhotos 에 보이지 않는 선택 ID 제거.
+    ///   별점/컬러 필터로 선택된 사진이 화면에서 가려지면 "보이지 않는 선택" 이 되어
+    ///   키 입력이 예측 불가능하게 작동하는 버그 차단.
+    func pruneHiddenSelections() {
+        let visibleIDs = Set(filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
+        let hidden = selectedPhotoIDs.subtracting(visibleIDs)
+        if !hidden.isEmpty {
+            selectedPhotoIDs.subtract(hidden)
+        }
+        if let sid = selectedPhotoID, !visibleIDs.contains(sid) {
+            selectedPhotoID = nil
         }
     }
 
@@ -128,9 +157,46 @@ class PhotoStore: ObservableObject {
     @Published var pendingCutPhotoIDs: Set<UUID> = []
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
-    @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
+    @Published var minimumRatingFilter: Int = 0 {
+        didSet {
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
     /// v8.7: 별점 필터 — 개별 선택. 비어있으면 전체 표시. ratingFilters 있으면 minimumRatingFilter 무시.
-    @Published var ratingFilters: Set<Int> = [] { didSet { invalidateFilterCache() } }
+    @Published var ratingFilters: Set<Int> = [] {
+        didSet {
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
+
+    /// v8.8.2: 폴더 전환 시 현재 별점/컬러 필터에 해당하는 사진이 0장이면 "All" 로 자동 리셋.
+    ///   빈 결과 화면에서 사용자가 헤매는 상황 방지.
+    func resetFiltersIfEmpty() {
+        // v8.8.3: filteredPhotos(= 현재 활성화된 모든 필터 적용 결과) 기준으로 판정.
+        //   별점 외 폴더/검색/색상 필터와 교차되어 0장이 되는 케이스까지 커버.
+        let visibleCount = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count
+        guard visibleCount == 0 else { return }
+
+        if !ratingFilters.isEmpty {
+            fputs("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n", stderr)
+            ratingFilters = []
+            return
+        }
+        if minimumRatingFilter > 0 {
+            fputs("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n", stderr)
+            minimumRatingFilter = 0
+            return
+        }
+        if !colorLabelFilters.isEmpty {
+            fputs("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n", stderr)
+            colorLabelFilters = []
+            return
+        }
+    }
     /// v8.7: 선택한 사진만 보기 — 클라이언트 비교용
     @Published var showOnlySelected: Bool = false { didSet { invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
@@ -239,6 +305,13 @@ class PhotoStore: ObservableObject {
     // v8.6.2: 캐시 생성 진행률 (CacheProgressGauge 표시용 — EXIF thumbsLoaded 와 별개)
     @Published var previewsLoaded: Int = 0
     @Published var thumbCacheCount: Int = 0
+    /// v8.8.2: 썸네일+미리보기 캐시 100% 완료 후 HiRes 업그레이드 패스 상태.
+    ///   - .none: 1차 캐시 안 끝났거나 아직 업그레이드 시작 안 함
+    ///   - .running: HiRes 재캐싱 진행 중
+    ///   - .complete: 전 프리뷰가 HiRes 크기로 업그레이드됨 → 네비게이션 시 stage2→3 flash 없음
+    enum CacheUpgradeState { case none, running, complete }
+    @Published var cacheUpgradeState: CacheUpgradeState = .none
+    @Published var cacheUpgradeDone: Int = 0
     var previewsStartTime: CFAbsoluteTime = 0
     var cacheProgressStartTime: CFAbsoluteTime = 0
     var previewsElapsed: TimeInterval { previewsStartTime > 0 ? CFAbsoluteTimeGetCurrent() - previewsStartTime : 0 }
@@ -247,13 +320,49 @@ class PhotoStore: ObservableObject {
     private var _thumbCacheInsertedURLs: Set<URL> = []
     private let _cacheProgressLock = NSLock()
     /// 미리보기가 처음 생성된 URL 을 기록해서 중복 카운트 방지. main thread 외에서 호출 안전.
+    /// v8.8.2 fix:
+    ///   1) 카운터를 Set.count 와 직접 동기화 (이전엔 `+= 1` 방식이라 555/183 같은 오버플로우 발생).
+    ///   2) 현재 폴더 외 URL 은 무시 (이전 폴더에서 in-flight 으로 흘러 들어온 sweep 콜백 차단).
+    ///      — 특히 적극 캐시 모드에서 폴더 전환 중 오버카운트 원인이던 문제 해결.
     func notePreviewLoaded(url: URL) {
+        guard let folder = folderURL else { return }
+        guard url.path.hasPrefix(folder.path) else { return }
         _cacheProgressLock.lock()
         let isNew = _previewLoadedURLs.insert(url).inserted
+        let count = _previewLoadedURLs.count
         _cacheProgressLock.unlock()
         guard isNew else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.previewsLoaded += 1
+            guard let self = self else { return }
+            self.previewsLoaded = count
+            self.checkCacheCompleteAndUpgrade()
+        }
+    }
+
+    /// v8.8.2: 1차 캐시 (Stage 2) 100% → HiRes 업그레이드 패스 시작.
+    ///   썸네일 + 미리보기 모두 완료됐을 때만 발동. 폴더 전환 시 자동 리셋.
+    private func checkCacheCompleteAndUpgrade() {
+        let total = photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+        guard total > 0,
+              thumbCacheCount >= total,
+              previewsLoaded >= total,
+              cacheUpgradeState == .none else { return }
+        // v8.8.2: 완료 상태만 표시, 실제 HiRes 업그레이드 패스는 미구현 (성능 리스크로 보류).
+        cacheUpgradeState = .complete
+        cacheUpgradeDone = total
+        fputs("[CACHE-COMPLETE] all \(total) previews cached\n", stderr)
+    }
+
+    /// 업그레이드 패스 진행 1건 완료 알림.
+    func noteCacheUpgradeProgress() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.cacheUpgradeDone += 1
+            let total = self.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+            if self.cacheUpgradeDone >= total {
+                self.cacheUpgradeState = .complete
+                fputs("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n", stderr)
+            }
         }
     }
     /// v8.6.2: ThumbnailCache 인입 알림 처리 — 현재 폴더의 사진만 카운트.
@@ -263,10 +372,11 @@ class PhotoStore: ObservableObject {
         guard url.path.hasPrefix(folder.path) else { return }
         _cacheProgressLock.lock()
         let isNew = _thumbCacheInsertedURLs.insert(url).inserted
+        let count = _thumbCacheInsertedURLs.count
         _cacheProgressLock.unlock()
         guard isNew else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.thumbCacheCount += 1
+            self?.thumbCacheCount = count
         }
     }
     func clearPreviewTracking() {
@@ -338,7 +448,13 @@ class PhotoStore: ObservableObject {
     @Published var showCompare = false
     @Published var showDualViewer = false
     @Published var showSlideshow = false
-    @Published var colorLabelFilters: Set<ColorLabel> = [] { didSet { invalidateFilterCache() } }
+    @Published var colorLabelFilters: Set<ColorLabel> = [] {
+        didSet {
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
@@ -610,7 +726,14 @@ class PhotoStore: ObservableObject {
     }
 
     var multiSelectedPhotos: [PhotoItem] {
-        selectedPhotoIDs.compactMap { id in
+        // v8.8.2 fix: 현재 필터에 걸려 썸네일 목록에 안 보이는 사진은 multi-preview 에서도 제외.
+        //   예: ★5 필터 걸렸는데 ★3 사진이 선택된 상태 → 썸네일은 빈 목록 → 미리보기도 빈 목록.
+        let visibleIDs: Set<UUID> = {
+            let filtered = filteredPhotos
+            return Set(filtered.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
+        }()
+        return selectedPhotoIDs.compactMap { id in
+            guard visibleIDs.contains(id) else { return nil }
             if let idx = _photoIndex[id], idx < photos.count, photos[idx].id == id {
                 return photos[idx]
             }

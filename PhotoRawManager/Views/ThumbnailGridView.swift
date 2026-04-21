@@ -1392,6 +1392,16 @@ struct PhotoContextMenu: View {
     }
 
     var body: some View {
+        // v8.9: CLIP 기반 유사 이미지 검색 (MobileCLIP-BLT)
+        if ImageEmbeddingService.shared.isAvailable {
+            Button(action: {
+                findSimilar(to: photo, store: store)
+            }) {
+                Label("이 사진과 비슷한 사진 찾기", systemImage: "sparkle.magnifyingglass")
+            }
+            Divider()
+        }
+
         // 복사 / 잘라내기 / 붙여넣기
         Button(action: { copySelectionToPasteboard(store: store) }) {
             Label("복사  ⌘C", systemImage: "doc.on.doc")

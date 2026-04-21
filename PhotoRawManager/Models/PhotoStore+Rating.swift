@@ -269,23 +269,33 @@ extension PhotoStore {
 
     func setColorLabel(_ label: ColorLabel, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
+        let anchorIdx = captureSelectionAnchorIndex()
         photos[i].colorLabel = (photos[i].colorLabel == label) ? .none : label
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
         // v8.6.1: undo 등록 추가 (다른 벌크 작업과 일관성). 이전엔 누락돼 Cmd+Z 불가.
         pushUndo(action: "일괄 컬러라벨 변경", photoIDs: selectedPhotoIDs)
+        // v8.8.2: 토글 동작 — 선택 전부가 이미 해당 라벨이면 해제(.none), 아니면 전부 라벨 적용.
+        let allHaveLabel = selectedPhotoIDs.allSatisfy { id in
+            guard let i = _photoIndex[id], i < photos.count else { return false }
+            return photos[i].colorLabel == label
+        }
+        let target: ColorLabel = allHaveLabel ? .none : label
+        let anchorIdx = captureSelectionAnchorIndex()
         _suppressDidSet = true
         for id in selectedPhotoIDs {
-            if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }
+            if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
     }
 
     func toggleSpacePick(for photoID: UUID) {
@@ -311,23 +321,72 @@ extension PhotoStore {
 
     func setRatingForSelected(_ rating: Int) {
         pushUndo(action: "일괄 별점 변경", photoIDs: selectedPhotoIDs)
+        // v8.8.2: 토글 동작 — 선택 전부가 이미 해당 별점이면 0 으로 해제, 아니면 전부 해당 별점.
+        let allHaveRating = selectedPhotoIDs.allSatisfy { id in
+            guard let i = _photoIndex[id], i < photos.count else { return false }
+            return photos[i].rating == rating
+        }
+        let target = allHaveRating ? 0 : rating
+        let anchorIdx = captureSelectionAnchorIndex()
         _suppressDidSet = true
         for id in selectedPhotoIDs {
-            if let i = _photoIndex[id] { photos[i].rating = rating }
+            if let i = _photoIndex[id] { photos[i].rating = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
     }
 
     func setRating(_ rating: Int, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         AppLogger.log(.rating, "setRating: \(photos[i].fileName) → \(rating) (was \(photos[i].rating))")
         pushUndo(action: "별점 변경", photoIDs: [photoID])
+        let anchorIdx = captureSelectionAnchorIndex()
         photos[i].rating = (photos[i].rating == rating) ? 0 : rating
         invalidateFilterCache()
         photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+    }
+
+    /// v8.8.3: 선택된 마지막 사진이 현재 filteredPhotos 에서 어느 위치(인덱스)인지 기록.
+    ///   rating 변경으로 필터에서 빠지기 전에 호출해둬야 다음 선택 대상을 정확히 찾음.
+    private func captureSelectionAnchorIndex() -> Int? {
+        let visibleFiles = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        guard !visibleFiles.isEmpty else { return nil }
+        // 포커스 된 selectedPhotoID 우선, 없으면 selectedPhotoIDs 중 하나.
+        let anchorID = selectedPhotoID ?? selectedPhotoIDs.first
+        guard let id = anchorID else { return nil }
+        return visibleFiles.firstIndex(where: { $0.id == id })
+    }
+
+    /// v8.8.3: rating/color 변경 후 호출. 기존 선택이 현재 필터에서 사라졌다면
+    ///   앵커 위치의 다음 썸네일로 자동 이동. 더 이상 보일 게 없으면 필터를 All 로 리셋.
+    private func advanceSelectionAfterMutation(fromAnchor anchor: Int?) {
+        let visibleFiles = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        let visibleIDs = Set(visibleFiles.map { $0.id })
+
+        // 숨어버린 선택 제거
+        let hidden = selectedPhotoIDs.subtracting(visibleIDs)
+        if !hidden.isEmpty { selectedPhotoIDs.subtract(hidden) }
+        if let sid = selectedPhotoID, !visibleIDs.contains(sid) { selectedPhotoID = nil }
+
+        // 선택이 여전히 살아 있으면 종료
+        if !selectedPhotoIDs.isEmpty { return }
+
+        // filteredPhotos 에 아직 보여줄 사진이 있으면 앵커 근처로 선택 이동
+        if let anchor = anchor, !visibleFiles.isEmpty {
+            let targetIdx = min(anchor, visibleFiles.count - 1)
+            let next = visibleFiles[targetIdx]
+            selectedPhotoIDs = [next.id]
+            selectedPhotoID = next.id
+            scrollTrigger += 1
+            return
+        }
+
+        // 보여줄 게 전혀 없으면 필터 리셋
+        resetFiltersIfEmpty()
     }
 }

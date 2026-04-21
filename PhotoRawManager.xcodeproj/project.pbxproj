@@ -15,6 +15,8 @@
 		3CCCEDCEF523FCF37EDF6E3A /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B8111B82E42D81DC67D2E /* TimelineView.swift */; };
 		49509F6E57E24C42A069B239 /* FilenameMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2A12130E1BE4A57BC7F1932 /* FilenameMatchingService.swift */; };
 		4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */; };
+		4BFF8CC000001001001010A0 /* MobileCLIPImage.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 4BFF8CC000002001001010A0 /* MobileCLIPImage.mlpackage */; };
+		4BFF8CC000001002001010A0 /* MobileCLIPText.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 4BFF8CC000002002001010A0 /* MobileCLIPText.mlpackage */; };
 		60033346D5E04D0AA2513D40 /* AISimilarityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD92142A284546BD2E0466 /* AISimilarityService.swift */; };
 		61FA4B8CA5F03745413B32EC /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E4A569DDF734271ED6268 /* UpdateService.swift */; };
 		6BB1A7FBB16933A68ECD3C22 /* MemoryCardBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */; };
@@ -71,6 +73,9 @@
 		'AI20003' = {isa = PBXBuildFile; fileRef = AI20004; };
 		'AI20005' = {isa = PBXBuildFile; fileRef = AI20006; };
 		'FES30001' = {isa = PBXBuildFile; fileRef = FES30002; };
+		'IES30001' = {isa = PBXBuildFile; fileRef = IES30002; };
+		'EIX30001' = {isa = PBXBuildFile; fileRef = EIX30002; };
+		'SSS30001' = {isa = PBXBuildFile; fileRef = SSS30002; };
 		'VSS30001' = {isa = PBXBuildFile; fileRef = VSS30002; };
 		'VSCV30001' = {isa = PBXBuildFile; fileRef = VSCV30002; };
 		'VSHD30001' = {isa = PBXBuildFile; fileRef = VSHD30002; };
@@ -202,6 +207,8 @@
 		5997C658F4814B05A202D514 /* MatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchingView.swift; sourceTree = "<group>"; };
 		62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataEditorView.swift; sourceTree = "<group>"; };
 		81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = NIMAAesthetic.mlpackage; sourceTree = "<group>"; };
+		4BFF8CC000002001001010A0 /* MobileCLIPImage.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileCLIPImage.mlpackage; sourceTree = "<group>"; };
+		4BFF8CC000002002001010A0 /* MobileCLIPText.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileCLIPText.mlpackage; sourceTree = "<group>"; };
 		832E4A569DDF734271ED6268 /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateService.swift; path = PhotoRawManager/Services/UpdateService.swift; sourceTree = SOURCE_ROOT; };
 		915A24B2FA4BE98570A5A738 /* MemoryCardBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupView.swift; sourceTree = "<group>"; };
 		94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UpdateView.swift; path = PhotoRawManager/Views/UpdateView.swift; sourceTree = SOURCE_ROOT; };
@@ -221,6 +228,9 @@
 		'AI20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeVisionService.swift; sourceTree = "<group>"; };
 		'AI20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
 		'FES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceEmbeddingService.swift; sourceTree = "<group>"; };
+		'IES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEmbeddingService.swift; sourceTree = "<group>"; };
+		'EIX30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingIndex.swift; sourceTree = "<group>"; };
+		'SSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchService.swift; sourceTree = "<group>"; };
 		'VSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchService.swift; sourceTree = "<group>"; };
 		'VSCV30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchCropView.swift; sourceTree = "<group>"; };
 		'VSHD30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchHUD.swift; sourceTree = "<group>"; };
@@ -406,6 +416,9 @@
 				AI20004,
 				AI20006,
 				FES30002,
+				IES30002,
+				EIX30002,
+				SSS30002,
 				VSS30002,
 			);
 			path = AI;
@@ -460,6 +473,8 @@
 				PSROT10001,
 				CFG10002,
 				81F5C27DF3F5D27545AA8F87 /* NIMAAesthetic.mlpackage */,
+				4BFF8CC000002001001010A0 /* MobileCLIPImage.mlpackage */,
+				4BFF8CC000002002001010A0 /* MobileCLIPText.mlpackage */,
 				AF10004,
 				DEV10001,
 			);
@@ -727,6 +742,8 @@
 				A10013,
 				L10001,
 				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
+				4BFF8CC000001001001010A0 /* MobileCLIPImage.mlpackage in Resources */,
+				4BFF8CC000001002001010A0 /* MobileCLIPText.mlpackage in Resources */,
 				AF10003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -795,6 +812,9 @@
 				AI20003,
 				AI20005,
 				FES30001,
+				IES30001,
+				EIX30001,
+				SSS30001,
 				VSS30001,
 				VSCV30001,
 				VSHD30001,
@@ -1039,7 +1059,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1052,7 +1072,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.8.1;
+				MARKETING_VERSION = 8.8.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1070,7 +1090,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1083,7 +1103,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.8.1;
+				MARKETING_VERSION = 8.8.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

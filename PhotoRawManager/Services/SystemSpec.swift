@@ -155,23 +155,34 @@ final class SystemSpec {
     }
 
     /// hiResCache(PhotoPreviewView.swift) 개수
-    /// v8.6.1: 전체 RSS 6GB 타겟 달성을 위해 축소. hi-res 한 장당 50-200MB 이므로
-    /// 수 장만 유지해도 총 수백 MB 차지.
+    /// v8.8.2 re-tune: HiRes 한 장당 ~280MB (Sony ARW 70MP 디코드). 프리페치 공격성을
+    ///   너무 높이면 피크 메모리 25GB+ 찍음. 현재 + 이웃 소수만 유지.
     func hiResCacheCount() -> Int {
         switch effectiveTier {
-        case .low, .standard: return 2
-        case .high:           return 2   // 3 → 2
-        case .extreme:        return 3   // 5 → 3
+        case .low:      return 2   // 현재 + 다음 1장
+        case .standard: return 3
+        case .high:     return 5
+        case .extreme:  return 8   // 현재 + ±3 정도
         }
     }
 
-    /// hiResCache 총 비용(MB) — v8.6.1: 각 tier 상한 대폭 축소
+    /// hiResCache 총 비용(MB).
     func hiResCacheCostMB() -> Int {
         switch effectiveTier {
-        case .low:      return 80    // 100 → 80
-        case .standard: return 120   // 150 → 120
-        case .high:     return 200   // 300 → 200
-        case .extreme:  return 300   // 500 → 300
+        case .low:      return 200
+        case .standard: return 400
+        case .high:     return 700
+        case .extreme:  return 1200   // ~4장 분량 캡
+        }
+    }
+
+    /// HiRes 프리페치 이웃 반경 — 작게 유지 (직렬 디코드 × 반경 = 체감 latency).
+    func hiResPrefetchRadius() -> Int {
+        switch effectiveTier {
+        case .low:      return 0   // 프리페치 안 함
+        case .standard: return 1
+        case .high:     return 2
+        case .extreme:  return 3
         }
     }
 

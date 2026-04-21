@@ -87,11 +87,17 @@ enum AppTheme {
     static let sidebarCollapsed: CGFloat = 36
     static let sidebarExpanded: CGFloat = 250
 
-    // MARK: - 해상도 기반 스케일 팩터 (앱 시작 시 1회 계산 — 포커스 변경 시 안 바뀜)
+    // MARK: - UI 스케일 팩터
+    //   v8.8.2: 사용자 설정 (UserDefaults "uiScale", 기본 1.0) 우선.
+    //   자동 모드 (uiScale=0) 는 해상도 기반이지만 cap 을 1.0 으로 낮춤 — 5K 환경에서 너무 커지지 않도록.
     static let displayScale: CGFloat = {
-        let screenW = NSScreen.main?.frame.width ?? 3200
-        // v8.7: 5K 모니터(5120px) 까지 최대 1.4배 스케일
-        return max(0.85, min(1.4, screenW / 3200.0))
+        let userScale = UserDefaults.standard.double(forKey: "uiScale")
+        if userScale > 0 {
+            return max(0.7, min(1.5, CGFloat(userScale)))
+        }
+        // 자동 — 3200px 기준 비례, 범위 [0.85, 1.0]
+        let screenW = NSScreen.main?.frame.width ?? 2560
+        return max(0.85, min(1.0, screenW / 3200.0))
     }()
 
     /// 해상도별 자동 조정값

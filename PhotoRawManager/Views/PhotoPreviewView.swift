@@ -333,12 +333,13 @@ class PreviewImageCache {
         }
     }
 
-    /// Optimal preview size based on screen resolution
+    /// v8.8.2: Stage 2 타겟 — HiRes 가 항상 초과하도록 제한.
+    ///   Retina 5K (5120x2880) 에서 Stage 2 = 2800px, HiRes = 4000+px → HiRes 업그레이드 가시적.
     static func optimalPreviewSize() -> CGFloat {
         let scale = NSScreen.main?.backingScaleFactor ?? 2.0
         let screenW = (NSScreen.main?.frame.width ?? 1440) * scale
-        // Use full retina resolution for sharp previews
-        return min(screenW * 0.7, 4000)
+        // Stage 2: 표시에 충분한 수준만. HiRes 가 명확히 초과할 수 있도록 55% 로 제한.
+        return min(screenW * 0.55, 3000)
     }
 
     /// Load image with optimized CGImageSource options (no system cache = less memory)
@@ -566,6 +567,7 @@ struct PhotoPreviewView: View {
     @State private var image: NSImage?          // Currently displayed image (low-res or hi-res)
     @State private var lowResImage: NSImage?     // Fast preview (1200px) — used at fit zoom
     @State private var hiResImage: NSImage?      // Full resolution — loaded on zoom in
+    @State private var navStartTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()  // v8.8.2: 네비→HiRes 지연 측정
     @State private var isHiResLoaded = false      // Whether hi-res is currently active
     @State private var hiResLoadWork: DispatchWorkItem?
     @State private var showCorrectionPanel = false
@@ -1217,6 +1219,8 @@ struct PhotoPreviewView: View {
         .onChange(of: store.selectedPhotoID) { _, newID in
             guard let newID = newID else { return }
             pendingPhotoID = newID
+            // v8.8.2 디버그: 네비게이션 시작 → HiRes 표시까지 지연 측정
+            navStartTime = CFAbsoluteTimeGetCurrent()
             hiResWorkItem?.cancel()
             preloadWork?.cancel()
 
@@ -1282,46 +1286,48 @@ struct PhotoPreviewView: View {
             // Fast path: cache hit → show immediately
             let res = store.previewResolution
             let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
+            let previewCacheHit: Bool
             if let cached = PreviewImageCache.shared.get(cacheKey) {
                 image = cached
                 lowResImage = cached
+                previewCacheHit = true
                 // 캐시 히트 → 아래 debounce 로직으로 계속 진행 (멈추면 고화질 보장)
+            } else {
+                previewCacheHit = false
             }
 
-            // Show thumbnail instantly while full image loads
-            // v8.6.2: 빠른 네비게이션 시 미리보기가 표시 안 되는 문제 대응.
-            //   순서: Memory ThumbnailCache → DiskThumbnailCache (빠름) → [비키리피트] CGImage sync
-            //   키 꾹 누르기 중에도 디스크 썸네일 히트면 즉시 표시 (blank 방지).
-            if let thumb = ThumbnailCache.shared.get(url) {
-                image = thumb
-            } else if store.isKeyRepeat {
-                // 🔑 키 반복 중엔 메인 스레드에서 디스크 I/O 금지 — 백그라운드로 이동
-                //   (NSImage(contentsOf:) 는 JPEG 디코드 포함 5-15ms × 30 ev/s → 메인 블록)
-                //   v8.7: 스트로브 깜빡임 방지 — 백그라운드 로드 결과는 ThumbnailCache 에만 저장하고
-                //   self.image 직접 설정은 안 함. 이미 다른 사진으로 이동했을 때 저해상도 썸네일이
-                //   갑자기 표시되며 flash 발생하던 문제 해결. 다음 nav 에서 memory cache HIT 으로 자연 흡수.
-                let targetURL = url
-                DispatchQueue.global(qos: .userInitiated).async {
-                    guard let diskThumb = DiskThumbnailCache.shared.getByPath(url: targetURL) else { return }
-                    DispatchQueue.main.async {
-                        ThumbnailCache.shared.set(targetURL, image: diskThumb)
+            // v8.8.2 fix: 프리뷰 캐시 히트면 고화질 이미지가 이미 표시 중 → 썸네일로 덮어쓰지 않음.
+            //   이전엔 무조건 ThumbnailCache.get → image 에 140px 썸네일 덮어써서
+            //   캐시 100% 완료 상태에서도 네비게이션 시 저화질로 보이던 치명적 버그.
+            if !previewCacheHit {
+                // Show thumbnail instantly while full image loads
+                if let thumb = ThumbnailCache.shared.get(url) {
+                    image = thumb
+                } else if store.isKeyRepeat {
+                    // 키 반복: 백그라운드로 디스크 썸네일 로딩 (메인 블록 방지)
+                    let targetURL = url
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        guard let diskThumb = DiskThumbnailCache.shared.getByPath(url: targetURL) else { return }
+                        DispatchQueue.main.async {
+                            ThumbnailCache.shared.set(targetURL, image: diskThumb)
+                        }
                     }
+                } else if let diskThumb = DiskThumbnailCache.shared.getByPath(url: url) {
+                    image = diskThumb
+                    ThumbnailCache.shared.set(url, image: diskThumb)
+                } else if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceThumbnailMaxPixelSize: 800,
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                            kCGImageSourceCreateThumbnailWithTransform: true
+                          ] as CFDictionary) {
+                    let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                    // v8.8.0: NEF 등 orient 미적용 케이스 보정
+                    let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
+                    image = img
+                    ThumbnailCache.shared.set(url, image: img)
                 }
-            } else if let diskThumb = DiskThumbnailCache.shared.getByPath(url: url) {
-                image = diskThumb
-                ThumbnailCache.shared.set(url, image: diskThumb)
-            } else if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                        kCGImageSourceThumbnailMaxPixelSize: 800,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                      ] as CFDictionary) {
-                let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                // v8.8.0: NEF 등 orient 미적용 케이스 보정
-                let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
-                image = img
-                ThumbnailCache.shared.set(url, image: img)
-            }
+            }  // ! previewCacheHit
 
             // 미리보기 로딩 (키 연타 시 디바운스)
             preloadWork?.cancel()
@@ -2715,6 +2721,8 @@ struct PhotoPreviewView: View {
             image = cached
             hiResImage = cached
             isHiResLoaded = true
+            let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
+            fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) CACHED → shown in \(navMs)ms from nav start\n", stderr)
             prefetchHiResNeighbors()  // Prefetch next photos
             return
         }
@@ -2754,10 +2762,15 @@ struct PhotoPreviewView: View {
                     let pxW = hi.representations.first?.pixelsWide ?? 0
                     let pxH = hi.representations.first?.pixelsHigh ?? 0
                     fputs("[HIRES] loaded \(url.lastPathComponent) size=\(Int(rawHi.size.width))x\(Int(rawHi.size.height)) px=\(rawPxW)x\(rawPxH) → size=\(Int(hi.size.width))x\(Int(hi.size.height)) px=\(pxW)x\(pxH) in \(String(format: "%.0f", elapsed))ms\n", stderr)
-                    let currentSize = max(self.image?.size.width ?? 0, self.image?.size.height ?? 0)
-                    let hiResSize = max(hi.size.width, hi.size.height)
-                    guard hiResSize > currentSize else {
-                        fputs("[HIRES] ⚠️ skip — hi-res \(Int(hiResSize))px < current \(Int(currentSize))px\n", stderr)
+                    // v8.8.2: LOGICAL size 비교 대신 PIXEL 비교 — JPG DPI 메타로 size 가 scale 달라짐.
+                    let currentPxW = self.image?.representations.first?.pixelsWide ?? Int(self.image?.size.width ?? 0)
+                    let currentPxH = self.image?.representations.first?.pixelsHigh ?? Int(self.image?.size.height ?? 0)
+                    let currentPx = max(currentPxW, currentPxH)
+                    let hiPxW = hi.representations.first?.pixelsWide ?? Int(hi.size.width)
+                    let hiPxH = hi.representations.first?.pixelsHigh ?? Int(hi.size.height)
+                    let hiResPx = max(hiPxW, hiPxH)
+                    guard hiResPx > currentPx else {
+                        fputs("[HIRES] ⚠️ skip — hi-res \(hiResPx)px < current \(currentPx)px\n", stderr)
                         return
                     }
                     let cost = hi.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
@@ -2766,7 +2779,10 @@ struct PhotoPreviewView: View {
                     self.hiResImage = hi
                     self.image = hi
                     self.isHiResLoaded = true
-                    // No prefetch — saves memory (each hi-res is ~50MB)
+                    let navMs = Int((CFAbsoluteTimeGetCurrent() - self.navStartTime) * 1000)
+                    fputs("[HIRES-DISPLAY] \(url.lastPathComponent) FRESH → shown in \(navMs)ms from nav start (decode \(String(format: "%.0f", elapsed))ms)\n", stderr)
+                    // v8.8.2: 네비게이션 settle 이후에 이웃 HiRes 프리페치 (다음 이동 즉시 HiRes 표시)
+                    self.prefetchHiResNeighbors()
                 } else {
                     fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
                     self.isHiResLoaded = true  // 실패해도 재시도 방지
@@ -2783,30 +2799,65 @@ struct PhotoPreviewView: View {
         guard let currentID = store.selectedPhotoID,
               let currentIdx = list.firstIndex(where: { $0.id == currentID }) else { return }
 
-        let range = 2
+        let range = SystemSpec.shared.hiResPrefetchRadius()
+        guard range > 0 else { return }  // low tier: 프리페치 안 함
+
         let start = max(0, currentIdx - range)
         let end = min(list.count - 1, currentIdx + range)
+        fputs("[HIRES-PREFETCH] start idx=\(currentIdx) range=±\(range) window=\(start)..\(end)\n", stderr)
 
-        DispatchQueue.global(qos: .utility).async {
+        // v8.8.2 메모리 안전성: 직렬 큐 사용 (동시 N개 디코드 → 메모리 스파이크 25GB 방지).
+        //   또 메모리 사용률이 높으면 조기 중단.
+        Self.hiResPrefetchQueue.async {
+            var prefetched = 0
+            var skipped = 0
             for i in start...end {
                 if i == currentIdx { continue }
+
+                // 메모리 압박 체크 — 70% 이상이면 중단
+                let memMB = Double(ProcessInfo.processInfo.physicalMemory) / 1024 / 1024
+                let usedMB = Self.currentMemMB()
+                if usedMB / memMB > 0.55 {
+                    fputs("[HIRES-PREFETCH] abort: mem \(Int(usedMB))MB/\(Int(memMB))MB > 55%\n", stderr)
+                    break
+                }
+
                 let photo = list[i]
                 guard !photo.isFolder, !photo.isParentFolder else { continue }
 
                 let hasJPG = !FileMatchingService.rawExtensions.contains(photo.jpgURL.pathExtension.lowercased())
                 let url = hasJPG ? photo.jpgURL : (photo.rawURL ?? photo.jpgURL)
 
-                // Skip if already cached
-                if Self.hiResCache.object(forKey: url as NSURL) != nil { continue }
+                if Self.hiResCache.object(forKey: url as NSURL) != nil {
+                    skipped += 1
+                    continue
+                }
 
-                // Load hi-res
-                let img = Self.loadHiResImage(url: url)
-                if let img = img {
-                    let cost = img.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
-                    Self.hiResCache.setObject(img, forKey: url as NSURL, cost: cost)
+                autoreleasepool {
+                    if let img = Self.loadHiResImage(url: url) {
+                        let cost = img.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                        Self.insertHiRes(img, forKey: url as NSURL, cost: cost)
+                        prefetched += 1
+                    }
                 }
             }
+            fputs("[HIRES-PREFETCH] done prefetched=\(prefetched) skipped(cached)=\(skipped)\n", stderr)
         }
+    }
+
+    /// v8.8.2: 직렬 HiRes 프리페치 큐 — 동시 HiRes 디코드 금지 (메모리 스파이크 방지)
+    private static let hiResPrefetchQueue = DispatchQueue(label: "com.pickshot.hires.prefetch", qos: .utility)
+
+    /// 현재 앱 RSS (MB)
+    private static func currentMemMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        let kerr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return kerr == KERN_SUCCESS ? Double(info.resident_size) / 1024 / 1024 : 0
     }
 
     /// Static hi-res loader (reusable for prefetch)
@@ -2829,8 +2880,10 @@ struct PhotoPreviewView: View {
         // screenPx cap: backingScaleFactor 를 곱하지 않음 — Retina 2x 픽셀은 불필요하게 2배 디코딩 유발
         //   (13"1512px × 2 = 3024 필요치 않음. 1.25 × 논리해상도면 줌 여유 충분)
         //   + origMax 로도 cap (센서 원본보다 크게 요청해봤자 무의미, ImageIO 가 더 느려짐)
+        // v8.8.2: HiRes 는 Retina backing scale 까지 충분히 활용 — Stage 2 보다 명확히 커야 업그레이드 체감.
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
         let screenLogicalMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
-        let screenPxPrimary = screenLogicalMax * 1.25  // 줌 여유 25% 만
+        let screenPxPrimary = screenLogicalMax * scale * 0.9  // 디스플레이 픽셀의 90%
         if let parentSrc = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
             let props = CGImageSourceCopyPropertiesAtIndex(parentSrc, 0, nil) as? [String: Any]
             let origW = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0

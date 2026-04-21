@@ -340,6 +340,15 @@ final class CacheSweeper: ObservableObject {
                 Thread.sleep(forTimeInterval: 0.05)
             }
             opQueue.waitUntilAllOperationsAreFinished()
+
+            // v8.8.2 fix: 전부 이미 캐시돼서 한 장도 새로 만든 게 없으면 pendingPreviews 비움.
+            //   이렇게 해야 다음 notifyActivity 에서 `hasWork` guard 가 false 를 리턴 → 무한 sweep 루프 차단.
+            if previewsDone == 0 && previewsSkipped > 0 {
+                sweepLock.lock()
+                pendingPreviews.removeAll()
+                sweepLock.unlock()
+                fputs("[SWEEP] all previews cached — pending 비움 (무한 루프 차단)\n", stderr)
+            }
         }
 
         DispatchQueue.main.async { [weak self] in

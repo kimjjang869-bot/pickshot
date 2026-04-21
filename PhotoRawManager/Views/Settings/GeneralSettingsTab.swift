@@ -19,6 +19,8 @@ struct GeneralSettingsTab: View {
     @AppStorage("windowStartSize") private var windowStartSize = "default"
     @AppStorage("appLanguage") private var appLanguage = "ko"
     @AppStorage("appearance") private var appearance = "system"
+    /// v8.8.2: UI 전체 스케일 (툴바/폰트/아이콘). 0 = 자동, 0.85/1.0/1.15/1.3 수동 선택.
+    @AppStorage("uiScale") private var uiScale: Double = 1.0
     @AppStorage("showNotifications") private var showNotifications = true
     @AppStorage("autoSaveOnExit") private var autoSaveOnExit = true
     @AppStorage("autoBackupEnabled") private var autoBackupEnabled = false
@@ -85,6 +87,22 @@ struct GeneralSettingsTab: View {
                             Text("시스템").tag("system")
                             Text("항상 다크").tag("dark")
                             Text("항상 라이트").tag("light")
+                        }
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Picker("UI 크기", selection: $uiScale) {
+                                Text("자동").tag(0.0)
+                                Text("85% (작게)").tag(0.85)
+                                Text("100% (기본)").tag(1.0)
+                                Text("115%").tag(1.15)
+                                Text("130% (크게)").tag(1.3)
+                                Text("150% (최대)").tag(1.5)
+                            }
+                            Text("변경 후 앱을 재시작해야 적용됩니다.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
                         }
 
                         Divider()
