@@ -1154,6 +1154,17 @@ struct PhotoPreviewView: View {
                     return nil
                 }
 
+                // v8.7: 마우스 뒤로가기(3) / 앞으로가기(4) → 폴더 히스토리 네비게이션
+                //   마우스가 프리뷰 위에 없어도 창 어디서든 작동. 탐색한 경로 역순/순방향.
+                if event.type == .otherMouseDown && event.buttonNumber == 3 {
+                    self.store.navigateBack()
+                    return nil
+                }
+                if event.type == .otherMouseDown && event.buttonNumber == 4 {
+                    self.store.navigateForward()
+                    return nil
+                }
+
                 // Scroll wheel → zoom (only if mouse is over preview area)
                 guard self.viewState.isMouseOverPreview else { return event }
 
@@ -1405,7 +1416,25 @@ struct PhotoPreviewView: View {
                 clippingMaskImage = nil
             }
         }
+        // 보정 이미지 변화 (슬라이더 조정) — 쓰로틀 재계산
         .onChange(of: developedImage) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
+        // 사진 전환 — 이전 마스크 즉시 클리어 + 새 이미지 로드 직후 재계산
+        .onChange(of: photo.id) { _, _ in
+            if showClippingOverlay {
+                clippingMaskImage = nil
+                // 약간 지연 — image/rotatedImage 가 새 사진으로 교체된 뒤 계산
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    regenerateClippingMask(throttled: false)
+                }
+            }
+        }
+        // base 이미지 변화 (Stage 1 / Stage 2 로드) — 쓰로틀 재계산
+        .onChange(of: image) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
+        .onChange(of: rotatedImage) { _, _ in
             if showClippingOverlay { regenerateClippingMask(throttled: true) }
         }
         // v8.6.2: 일괄 회전 알림 — 현재 선택된 사진이 회전 대상에 포함되면 강제 재로드

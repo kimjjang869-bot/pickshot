@@ -464,6 +464,8 @@ extension NativeTableListView {
         func handleKeyDown(event: NSEvent) -> Bool {
             let chars = event.charactersIgnoringModifiers ?? ""
             let hasCmd = event.modifierFlags.contains(.command)
+            let hasShift = event.modifierFlags.contains(.shift)
+            let keyCode = event.keyCode
 
             // Cmd+C/X/V/A
             if hasCmd {
@@ -483,6 +485,40 @@ extension NativeTableListView {
                     return true
                 default: break
                 }
+            }
+
+            // Delete / Backspace — 휴지통 이동
+            if keyCode == 51 || keyCode == 117 {   // 51=delete, 117=forward delete
+                guard !store.selectedPhotoIDs.isEmpty else { return false }
+                let selPhotos = store.photos.filter {
+                    store.selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder
+                }
+                guard !selPhotos.isEmpty else { return false }
+                let deleteOriginal = UserDefaults.standard.bool(forKey: "deleteOriginalFile")
+                if deleteOriginal {
+                    store.requestDeleteOriginal(ids: store.selectedPhotoIDs)
+                } else {
+                    store.removePhotosFromList(ids: store.selectedPhotoIDs)
+                }
+                return true
+            }
+
+            // Enter — 폴더 진입
+            if keyCode == 36 {
+                if let id = store.selectedPhotoID,
+                   let idx = store._photoIndex[id],
+                   idx < store.photos.count {
+                    let photo = store.photos[idx]
+                    if photo.isParentFolder,
+                       let parent = store.folderURL?.deletingLastPathComponent() {
+                        store.loadFolder(parent, restoreRatings: true)
+                        return true
+                    } else if photo.isFolder {
+                        store.loadFolder(photo.jpgURL, restoreRatings: true)
+                        return true
+                    }
+                }
+                return false
             }
 
             // 스페이스 — 별 5 토글
@@ -519,7 +555,58 @@ extension NativeTableListView {
                 return true
             }
 
+            // 문자 단축키 — 모디파이어 없을 때만
+            if !hasCmd && !hasShift {
+                switch chars.lowercased() {
+                case "r":   // 보정 리셋
+                    resetDevelopSettings()
+                    return true
+                case "g":   // G Select 토글
+                    toggleGSelectForSelection()
+                    return true
+                case "p":   // Quick Look
+                    NotificationCenter.default.post(name: Notification.Name("toggleQuickLook"), object: nil)
+                    return true
+                case "h":   // 히스토그램 토글
+                    NotificationCenter.default.post(name: .toggleHistogram, object: nil)
+                    return true
+                case "i":   // 메타데이터 오버레이
+                    NotificationCenter.default.post(name: Notification.Name("toggleMetadataOverlay"), object: nil)
+                    return true
+                default: break
+                }
+            }
+
+            // Shift+H — 클리핑 오버레이
+            if hasShift && !hasCmd && chars.lowercased() == "h" {
+                NotificationCenter.default.post(name: .toggleClippingOverlay, object: nil)
+                return true
+            }
+
             return false
+        }
+
+        // MARK: - Key Action Helpers
+
+        private func resetDevelopSettings() {
+            for id in store.selectedPhotoIDs {
+                let url: URL
+                if let idx = store._photoIndex[id], idx < store.photos.count {
+                    url = store.photos[idx].jpgURL
+                } else { continue }
+                var s = DevelopStore.shared.get(for: url)
+                guard !s.isDefault else { continue }
+                s.reset()
+                DevelopStore.shared.set(s, for: url)
+            }
+        }
+
+        private func toggleGSelectForSelection() {
+            for id in store.selectedPhotoIDs {
+                if let idx = store._photoIndex[id] {
+                    store.photos[idx].isGSelected.toggle()
+                }
+            }
         }
 
         // MARK: - Cell View Factory
