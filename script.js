@@ -1,11 +1,11 @@
 // ============================================================
-// PickShot v8.8.1 — galaxy-themed dynamic interactions
+// PickShot v8.8.1 — galaxy theme dynamic interactions
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
   initStarfield();
   initNavScroll();
-  initHeroViz();
+  initAppMockup();
   initRevealOnScroll();
   initCountUp();
   initCursorGlow();
@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ─────────────────────────────────────────────────────────
-// STARFIELD — animated canvas background
+// STARFIELD canvas
 // ─────────────────────────────────────────────────────────
 function initStarfield() {
   const canvas = document.getElementById('stars-canvas');
@@ -52,7 +52,6 @@ function initStarfield() {
   function frame() {
     const t = (performance.now() - t0) / 1000;
     ctx.clearRect(0, 0, W, H);
-
     for (const s of stars) {
       const parallax = scrollY * s.z * 0.1;
       const y = (s.y - parallax) % H;
@@ -71,7 +70,7 @@ function initStarfield() {
 }
 
 // ─────────────────────────────────────────────────────────
-// NAV scroll state
+// NAV scroll
 // ─────────────────────────────────────────────────────────
 function initNavScroll() {
   const nav = document.getElementById('nav');
@@ -79,7 +78,7 @@ function initNavScroll() {
   let ticking = false;
   window.addEventListener('scroll', () => {
     if (!ticking) {
-      window.requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         nav.classList.toggle('scrolled', window.scrollY > 8);
         ticking = false;
       });
@@ -89,79 +88,70 @@ function initNavScroll() {
 }
 
 // ─────────────────────────────────────────────────────────
-// HERO loading visualization
+// APP MOCKUP — synthetic thumbnails in hero
 // ─────────────────────────────────────────────────────────
-function initHeroViz() {
-  const grid = document.getElementById('viz-grid');
-  const bar = document.getElementById('viz-bar');
-  const timer = document.getElementById('viz-timer');
-  const counter = document.getElementById('viz-count');
+function initAppMockup() {
+  const grid = document.getElementById('app-grid');
   if (!grid) return;
 
-  const TOTAL_CELLS = 96;   // 16×6
-  const TARGET_MS = 1500;
+  const TOTAL = 48;   // 8 cols × 6 rows
+  // Nebula/photography palette — no real photos
+  const gradients = [
+    'radial-gradient(ellipse at 30% 25%, #ffb8a0, transparent 55%), linear-gradient(135deg, #3a2e5a, #6a4a8a)',
+    'radial-gradient(ellipse at 65% 40%, #80d8ff, transparent 55%), linear-gradient(135deg, #1e3a5a, #2e5a8a)',
+    'radial-gradient(ellipse at 45% 55%, #ff9ab0, transparent 50%), linear-gradient(135deg, #4a2a4a, #7c4a6a)',
+    'radial-gradient(ellipse at 25% 60%, #ffd080, transparent 50%), linear-gradient(135deg, #3a2a1a, #6a4a2a)',
+    'radial-gradient(ellipse at 70% 30%, #b084ff, transparent 50%), linear-gradient(135deg, #2a1a4a, #5a3a7a)',
+    'radial-gradient(ellipse at 50% 45%, #5eead4, transparent 45%), linear-gradient(135deg, #1a3a4a, #3a6a7a)',
+    'radial-gradient(ellipse at 35% 35%, #ff7ab6, transparent 50%), linear-gradient(135deg, #3a1a3a, #6a2a5a)',
+    'radial-gradient(ellipse at 60% 50%, #a0c0ff, transparent 50%), linear-gradient(135deg, #1a2a4a, #3a4a7a)',
+    'radial-gradient(ellipse at 40% 70%, #d4a080, transparent 50%), linear-gradient(135deg, #2a1a1a, #5a3a2a)',
+    'radial-gradient(ellipse at 70% 65%, #8eaeff, transparent 50%), linear-gradient(135deg, #1a1e3a, #3a4a6a)',
+  ];
 
-  // Varied nebula hues (purple-blue-teal-pink)
-  const paletteHues = [250, 260, 275, 290, 200, 180, 320];
+  // Predetermined "picked" and "starred" positions for believable distribution
+  const pickedIndices = new Set([7, 14, 23, 31, 40]);
+  const stars5 = new Set([7, 14, 23, 31, 40, 3, 18, 27]);
+  const stars4 = new Set([1, 12, 20, 33, 44]);
+  const stars3 = new Set([5, 9, 17, 28, 36, 42]);
+  const selectedIdx = 14;  // 선택된 하나
 
-  for (let i = 0; i < TOTAL_CELLS; i++) {
+  for (let i = 0; i < TOTAL; i++) {
     const cell = document.createElement('div');
-    cell.className = 'viz-cell';
-    const hue = paletteHues[Math.floor(Math.random() * paletteHues.length)] + Math.random() * 15;
-    cell.style.setProperty('--h', hue);
+    cell.className = 'app-cell';
+    cell.style.background = gradients[i % gradients.length];
+    if (i === selectedIdx) cell.classList.add('selected');
+    if (pickedIndices.has(i)) cell.classList.add('picked');
+    if (stars5.has(i)) cell.classList.add('stars-5');
+    else if (stars4.has(i)) cell.classList.add('stars-4');
+    else if (stars3.has(i)) cell.classList.add('stars-3');
     grid.appendChild(cell);
   }
 
-  const cells = Array.from(grid.children);
-  let loopTimeout = null;
-
-  function runLoadCycle() {
-    cells.forEach(c => c.classList.remove('loaded', 'ping'));
-    bar.style.width = '0%';
-    timer.textContent = '0.00초';
-    counter.textContent = '10,234';
-
-    const startTime = performance.now();
-    let completed = 0;
-    const perCell = TARGET_MS / TOTAL_CELLS;
-
-    function loadNext() {
-      if (completed >= TOTAL_CELLS) {
-        const elapsed = (performance.now() - startTime) / 1000;
-        timer.textContent = elapsed.toFixed(2) + '초';
-        loopTimeout = setTimeout(runLoadCycle, 2800);
-        return;
+  // Animate cells appearing (stagger)
+  const cells = grid.querySelectorAll('.app-cell');
+  cells.forEach((c, i) => {
+    c.style.opacity = '0';
+    c.style.transform = 'scale(0.92)';
+    c.style.transition = `opacity .4s ease ${200 + i * 18}ms, transform .4s ease ${200 + i * 18}ms, outline-color .3s`;
+  });
+  // Trigger reveal on visible
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        cells.forEach(c => {
+          c.style.opacity = '1';
+          c.style.transform = 'scale(1)';
+        });
+        io.disconnect();
       }
-      const cell = cells[completed];
-      cell.classList.add('loaded', 'ping');
-      completed++;
-
-      const elapsed = (performance.now() - startTime) / 1000;
-      const pct = (completed / TOTAL_CELLS) * 100;
-      bar.style.width = pct + '%';
-      timer.textContent = elapsed.toFixed(2) + '초';
-
-      const jitter = 0.55 + Math.random() * 0.9;
-      setTimeout(loadNext, perCell * jitter);
-    }
-    setTimeout(loadNext, 200);
-  }
-
-  if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) runLoadCycle();
-        else if (loopTimeout) clearTimeout(loopTimeout);
-      });
-    }, { threshold: 0.2 });
-    io.observe(document.querySelector('.hero-viz'));
-  } else {
-    runLoadCycle();
-  }
+    });
+  }, { threshold: 0.1 });
+  io.observe(grid);
 }
 
 // ─────────────────────────────────────────────────────────
-// Reveal on scroll — with stagger for grid children
+// Reveal on scroll with stagger
 // ─────────────────────────────────────────────────────────
 function initRevealOnScroll() {
   const els = document.querySelectorAll('[data-reveal]');
@@ -172,7 +162,6 @@ function initRevealOnScroll() {
   const io = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (entry.isIntersecting) {
-        // Find siblings with data-reveal in the same parent — stagger them
         const parent = entry.target.parentElement;
         const siblings = parent
           ? Array.from(parent.querySelectorAll(':scope > [data-reveal]'))
@@ -183,12 +172,12 @@ function initRevealOnScroll() {
         io.unobserve(entry.target);
       }
     });
-  }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
   els.forEach(el => io.observe(el));
 }
 
 // ─────────────────────────────────────────────────────────
-// Count-up for .speed-num
+// Count-up for speed-num
 // ─────────────────────────────────────────────────────────
 function initCountUp() {
   const nums = document.querySelectorAll('.speed-num[data-count]');
@@ -228,10 +217,10 @@ function initCountUp() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Cursor-reactive glow on CTA buttons
+// Cursor-reactive glow
 // ─────────────────────────────────────────────────────────
 function initCursorGlow() {
-  const targets = document.querySelectorAll('.dl-cta, .btn-cta, .btn-price, .nav-cta');
+  const targets = document.querySelectorAll('.btn-primary');
   targets.forEach(el => {
     el.addEventListener('mousemove', (e) => {
       const rect = el.getBoundingClientRect();
@@ -244,7 +233,7 @@ function initCursorGlow() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Fetch latest version from GitHub API
+// Fetch latest version
 // ─────────────────────────────────────────────────────────
 async function fetchLatestVersion() {
   try {
