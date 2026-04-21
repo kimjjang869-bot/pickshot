@@ -1576,6 +1576,14 @@ struct PhotoContextMenu: View {
             }) {
                 Label("이 사물/배경 찾기 (영역 드래그)", systemImage: "sparkle.magnifyingglass")
             }
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .clothing
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+            }) {
+                Label("같은 옷 찾기 (상체 자동 또는 드래그)", systemImage: "tshirt")
+            }
             // 기존 얼굴 레퍼런스 label 들 — "같은 사람 추가 샷" 바로가기
             let existingLabels = Set(VisualSearchService.shared.references
                 .filter { $0.mode == .face }

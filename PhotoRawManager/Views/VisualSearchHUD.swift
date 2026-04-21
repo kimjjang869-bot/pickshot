@@ -82,6 +82,9 @@ struct VisualSearchHUD: View {
                     Button(action: {
                         onDeactivate()
                         service.clearAll()
+                        // v8.9: 시각 검색 전면 해제 시 별점/컬러/최소별점 필터도 All 로 리셋.
+                        //   사용자 관점에서 "전체 썸네일 복원" 이 일관되게 작동하도록.
+                        resetAllFiltersToAll()
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "xmark.circle.fill")
@@ -113,7 +116,13 @@ struct VisualSearchHUD: View {
                                     Text(ref.label ?? (ref.mode == .face ? "얼굴" : "사물"))
                                         .font(.system(size: 11, weight: .medium))
                                     Button(action: {
+                                        let wasLast = service.references.count == 1
                                         service.removeReference(id: ref.id)
+                                        if wasLast {
+                                            // 마지막 레퍼런스 해제 → 전면 닫기와 동일 처리
+                                            onDeactivate()
+                                            resetAllFiltersToAll()
+                                        }
                                     }) {
                                         Image(systemName: "xmark")
                                             .font(.system(size: 9, weight: .bold))
@@ -158,6 +167,13 @@ struct VisualSearchHUD: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
         }
+    }
+
+    /// v8.9: 시각 검색 전면 해제 시 별점/컬러/최소별점 필터도 All 로 리셋.
+    private func resetAllFiltersToAll() {
+        if !store.ratingFilters.isEmpty { store.ratingFilters = [] }
+        if !store.colorLabelFilters.isEmpty { store.colorLabelFilters = [] }
+        if store.minimumRatingFilter > 0 { store.minimumRatingFilter = 0 }
     }
 
     /// 엄격도/뒷면 옵션 변경 후 재검색

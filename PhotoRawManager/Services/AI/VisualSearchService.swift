@@ -19,8 +19,9 @@ import Vision
 
 /// 검색 타입 — 얼굴은 얼굴 전용 임베딩, 사물/장면은 CLIP 임베딩
 enum VisualSearchMode: String, Codable {
-    case face    // ArcFace / Landmark embedding — 얼굴 식별 특화
-    case object  // MobileCLIP image embedding — 사물/장면/스타일 범용
+    case face     // ArcFace / Landmark embedding — 얼굴 식별 특화
+    case object   // MobileCLIP image embedding — 사물/장면/스타일 범용
+    case clothing // v8.9: 같은 옷/포즈 매칭 — 인물 segmentation + torso crop + CLIP embedding
 }
 
 /// 사용자가 드래그한 참조 영역 — 얼굴 embedding + 보조 레이어 (body/scene) 포함
@@ -296,9 +297,11 @@ final class VisualSearchService: ObservableObject {
     private func evaluatePhoto(url: URL, references: [VisualSearchReference], combine: CombineMode, threshold: Float) -> Bool {
         let faceRefs = references.filter { $0.mode == .face }
         let objectRefs = references.filter { $0.mode == .object }
+        let clothingRefs = references.filter { $0.mode == .clothing }
 
         var faceMatchCount = 0
         var objectMatchCount = 0
+        var clothingMatchCount = 0
 
         // 얼굴 매칭 (3계층) — 참조 label 별로 그룹화 → 그룹 내 어떤 샷이든 매칭되면 pass
         if !faceRefs.isEmpty {
@@ -397,10 +400,27 @@ final class VisualSearchService: ObservableObject {
             }
         }
 
+        // v8.9: 의상 매칭 — torso 크롭 + CLIP embedding 비교.
+        //   실측 CLIP cosine: 웨딩/행사 샷 전반 0.80+ 겹침 → 엄격한 기준 필요.
+        //   다른 옷 ~0.60, 같은 씬 다른 옷 ~0.78, 같은 옷 ~0.88+, 동일 ~0.95.
+        //   사용자 slider 값을 거의 그대로 사용 (최소 0.85 바닥).
+        if !clothingRefs.isEmpty {
+            if let candidateEmb = Self.computeClothingEmbedding(url: url, cropRect: nil),
+               candidateEmb.count == clothingRefs.first?.embedding.count {
+                var bestSim: Float = 0
+                for ref in clothingRefs {
+                    let sim = cosineSimilarity(candidateEmb, ref.embedding)
+                    if sim > bestSim { bestSim = sim }
+                }
+                let clothingThr: Float = max(0.85, threshold)
+                if bestSim >= clothingThr { clothingMatchCount += 1 }
+            }
+        }
+
         // 그룹 수 기준 (같은 label = 1 그룹)
         let faceGroupCount = Set(faceRefs.map { $0.label ?? $0.id.uuidString }).count
-        let totalRefs = faceGroupCount + objectRefs.count
-        let totalMatches = faceMatchCount + objectMatchCount
+        let totalRefs = faceGroupCount + objectRefs.count + clothingRefs.count
+        let totalMatches = faceMatchCount + objectMatchCount + clothingMatchCount
 
         switch combine {
         case .or:  return totalMatches >= 1
@@ -485,9 +505,62 @@ final class VisualSearchService: ObservableObject {
             let best = embs.max { a, b in (a.boundingBox.width * a.boundingBox.height) < (b.boundingBox.width * b.boundingBox.height) }
             return best?.vector ?? []
         case .object:
-            // Apple Vision FeaturePrint — 2048-dim 이미지 특징 벡터 (외부 모델 없이 즉시 가능)
+            // v8.9: 사용자가 cropRect 지정했으면 그 영역만, 아니면 전체 중앙 크롭. MobileCLIP 사용.
+            if ImageEmbeddingService.shared.isAvailable {
+                if let cg = VisualSearchService.loadCroppedCGImage(url: url, rect: cropRect, maxPixel: 512),
+                   let pb = ImageEmbeddingService.shared.preprocessPixelBuffer(cgImage: cg, size: ImageEmbeddingService.shared.inputSize),
+                   let emb = ImageEmbeddingService.shared.embed(pixelBuffer: pb) {
+                    return emb
+                }
+            }
+            // CLIP 사용 불가 시 FeaturePrint fallback
             return Self.computeFeaturePrint(url: url, cropRect: cropRect) ?? []
+        case .clothing:
+            // v8.9: 같은 옷 검색 — 인물 segmentation + torso crop + CLIP embedding.
+            //   사용자가 cropRect 를 그렸으면 그 영역을 torso 로 간주, 아니면 자동 검출.
+            return Self.computeClothingEmbedding(url: url, cropRect: cropRect) ?? []
         }
+    }
+
+    /// v8.9: 의상/포즈 매칭용 임베딩.
+    ///   자동 torso 크롭: Person segmentation bbox → 상단 1/7 (얼굴) 제외 → 그 아래 3/5 (상체+하체) 사용.
+    ///   사용자 크롭이 있으면 그대로 사용.
+    static func computeClothingEmbedding(url: URL, cropRect: CGRect?) -> [Float]? {
+        let region: CGRect? = cropRect ?? autoTorsoRegion(url: url)
+        guard let region = region else { return nil }
+        guard ImageEmbeddingService.shared.isAvailable else {
+            // CLIP 없으면 FeaturePrint fallback
+            return computeFeaturePrint(url: url, cropRect: region)
+        }
+        guard let cg = loadCroppedCGImage(url: url, rect: region, maxPixel: 512) else { return nil }
+        let size = ImageEmbeddingService.shared.inputSize
+        guard let pb = ImageEmbeddingService.shared.preprocessPixelBuffer(cgImage: cg, size: size) else { return nil }
+        return ImageEmbeddingService.shared.embed(pixelBuffer: pb)
+    }
+
+    /// v8.9: 인물 세그멘테이션 bbox 기반으로 torso (상체+하체) 영역 자동 추정.
+    ///   실패 시 nil → caller 가 전체 이미지로 fallback.
+    private static func autoTorsoRegion(url: URL) -> CGRect? {
+        guard let cg = loadCroppedCGImage(url: url, rect: nil, maxPixel: 600) else { return nil }
+        let req = VNGeneratePersonSegmentationRequest()
+        req.qualityLevel = .fast
+        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        try? handler.perform([req])
+        guard let mask = req.results?.first?.pixelBuffer,
+              let bbox = personBoundingBox(from: mask),
+              bbox.width > 0.05, bbox.height > 0.1 else { return nil }
+        // 상단 15% (얼굴 영역) 제외, 그 아래 65% 를 torso + legs 로 사용.
+        let headCut: CGFloat = 0.15
+        let bodyHeight = bbox.height * 0.70
+        let y = bbox.minY + bbox.height * headCut
+        let h = min(bodyHeight, 1.0 - y)
+        guard h > 0.05 else { return nil }
+        return CGRect(
+            x: max(0, bbox.minX - 0.02),
+            y: y,
+            width: min(1.0, bbox.width + 0.04),
+            height: h
+        )
     }
 
     /// VNGenerateImageFeaturePrintRequest 기반 이미지 feature print 추출

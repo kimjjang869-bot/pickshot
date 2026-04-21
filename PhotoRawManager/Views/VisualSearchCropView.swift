@@ -70,10 +70,11 @@ struct VisualSearchCropView: View {
                 Picker("", selection: $mode) {
                     Text("얼굴").tag(VisualSearchMode.face)
                     Text("사물/장면").tag(VisualSearchMode.object)
+                    Text("같은 옷").tag(VisualSearchMode.clothing)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 180)
-                .help("얼굴: 사람 식별 특화 / 사물: 부케·케이크·배경 등 범용")
+                .frame(width: 260)
+                .help("얼굴: 사람 식별 / 사물: 부케·케이크·배경 / 같은 옷: 상체 CLIP 매칭")
             }
             .padding()
 
@@ -220,6 +221,7 @@ struct VisualSearchCropView: View {
         switch mode {
         case .face: return "이름 (예: 우리 아이, 신부)"
         case .object: return "라벨 (예: 부케, 에펠탑)"
+        case .clothing: return "의상 라벨 (예: 파란 셔츠, 신랑 턱시도)"
         }
     }
 
@@ -227,7 +229,7 @@ struct VisualSearchCropView: View {
         // 수집된 샷이 있거나, 현재 영역이 선택된 상태 (object 는 영역 필수)
         if !collectedShots.isEmpty { return true }
         if mode == .object { return normalizedRect != nil }
-        return true  // face 는 전체 사진도 허용
+        return true  // face / clothing 은 전체 사진도 허용 (자동 torso 검출)
     }
 
     private var confirmButtonTitle: String {

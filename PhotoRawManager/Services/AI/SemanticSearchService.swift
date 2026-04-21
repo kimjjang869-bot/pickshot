@@ -147,6 +147,30 @@ final class SemanticSearchService {
         return EmbeddingIndex.shared.topK(queryEmbedding: emb, k: k)
     }
 
+    /// v8.9: 자연어 쿼리 → 유사 이미지 검색 (CLIP Text Encoder).
+    /// - Parameters:
+    ///   - text: 영어 쿼리 권장 ("smiling bride", "beach sunset", "blue shirt").
+    ///           한국어도 작동하나 MobileCLIP 학습 데이터상 정확도 낮음.
+    ///   - k: top-K 결과 수
+    ///   - minScore: 최소 코사인 유사도 (CLIP text↔image 는 0.20 ~ 0.35 수준).
+    /// - Returns: (url, score) 배열.
+    func searchByText(_ text: String, k: Int = 100, minScore: Float = 0.18) -> [(url: URL, score: Float)] {
+        guard TextEncoderService.shared.isAvailable else {
+            fputs("[SEMANTIC] TextEncoder 사용 불가 (모델/토크나이저 누락)\n", stderr)
+            return []
+        }
+        guard let queryEmb = TextEncoderService.shared.embed(text: text) else {
+            fputs("[SEMANTIC] text embedding 실패: '\(text)'\n", stderr)
+            return []
+        }
+        let results = EmbeddingIndex.shared.topK(queryEmbedding: queryEmb, k: k)
+        // v8.9: 실제 top 점수 분포 로깅 (minScore 튜닝 참고용)
+        let top = results.prefix(5).map { "\(String(format: "%.3f", $0.score))" }.joined(separator: ",")
+        let filtered = results.filter { $0.score >= minScore }
+        fputs("[SEMANTIC-TXT] '\(text)' top5=[\(top)] → \(filtered.count)/\(results.count) matched (minScore=\(minScore))\n", stderr)
+        return filtered
+    }
+
     // MARK: - Helpers
 
     private func getMtime(url: URL) -> TimeInterval? {

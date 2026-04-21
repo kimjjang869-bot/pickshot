@@ -75,6 +75,9 @@
 		'FES30001' = {isa = PBXBuildFile; fileRef = FES30002; };
 		'IES30001' = {isa = PBXBuildFile; fileRef = IES30002; };
 		'EIX30001' = {isa = PBXBuildFile; fileRef = EIX30002; };
+		'CTK30001' = {isa = PBXBuildFile; fileRef = CTK30002; };
+		'TES30001' = {isa = PBXBuildFile; fileRef = TES30002; };
+		'BPE30001' = {isa = PBXBuildFile; fileRef = BPE30002; };
 		'SSS30001' = {isa = PBXBuildFile; fileRef = SSS30002; };
 		'VSS30001' = {isa = PBXBuildFile; fileRef = VSS30002; };
 		'VSCV30001' = {isa = PBXBuildFile; fileRef = VSCV30002; };
@@ -230,6 +233,9 @@
 		'FES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceEmbeddingService.swift; sourceTree = "<group>"; };
 		'IES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEmbeddingService.swift; sourceTree = "<group>"; };
 		'EIX30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingIndex.swift; sourceTree = "<group>"; };
+		'CTK30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIPTokenizer.swift; sourceTree = "<group>"; };
+		'TES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoderService.swift; sourceTree = "<group>"; };
+		'BPE30002' = {isa = PBXFileReference; lastKnownFileType = file.txt.gz; name = bpe_simple_vocab_16e6.txt.gz; path = PhotoRawManager/Resources/bpe_simple_vocab_16e6.txt.gz; sourceTree = "<group>"; };
 		'SSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchService.swift; sourceTree = "<group>"; };
 		'VSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchService.swift; sourceTree = "<group>"; };
 		'VSCV30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchCropView.swift; sourceTree = "<group>"; };
@@ -418,6 +424,8 @@
 				FES30002,
 				IES30002,
 				EIX30002,
+				CTK30002,
+				TES30002,
 				SSS30002,
 				VSS30002,
 			);
@@ -744,6 +752,7 @@
 				4BFF8CBFEC087D25630A96C0 /* NIMAAesthetic.mlpackage in Resources */,
 				4BFF8CC000001001001010A0 /* MobileCLIPImage.mlpackage in Resources */,
 				4BFF8CC000001002001010A0 /* MobileCLIPText.mlpackage in Resources */,
+				BPE30001,
 				AF10003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -814,6 +823,8 @@
 				FES30001,
 				IES30001,
 				EIX30001,
+				CTK30001,
+				TES30001,
 				SSS30001,
 				VSS30001,
 				VSCV30001,
@@ -1059,7 +1070,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1072,7 +1083,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.8.3;
+				MARKETING_VERSION = 8.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1090,7 +1101,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1103,7 +1114,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.8.3;
+				MARKETING_VERSION = 8.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

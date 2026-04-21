@@ -102,6 +102,38 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    /// v8.9: "ai:<쿼리>" prefix 로 검색 시 CLIP 텍스트 임베딩으로 매칭.
+    ///   결과는 VisualSearchService.matchedURLs 에 주입 (기존 필터 파이프라인 재활용).
+    ///   쿼리 비우거나 prefix 제거되면 해제.
+    private func triggerAITextSearchIfNeeded(for text: String) {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        let prefix = "ai:"
+        guard t.lowercased().hasPrefix(prefix) else {
+            // AI prefix 없음 — 기존 AI 검색이 active 면 해제
+            if visualSearchActive && VisualSearchService.shared.references.isEmpty && !VisualSearchService.shared.matchedURLs.isEmpty {
+                VisualSearchService.shared.matchedURLs = []
+                visualSearchActive = false
+            }
+            return
+        }
+        let query = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return }
+        guard TextEncoderService.shared.isAvailable else {
+            fputs("[SEM-TXT] TextEncoder 사용 불가\n", stderr)
+            return
+        }
+        // 백그라운드 실행
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let results = SemanticSearchService.shared.searchByText(query, k: 300, minScore: 0.22)
+            let urls = Set(results.map { $0.url })
+            DispatchQueue.main.async {
+                VisualSearchService.shared.matchedURLs = urls
+                self.visualSearchActive = !urls.isEmpty
+            }
+        }
+    }
+
     /// v8.8.3: selectedPhotoIDs 에서 현재 photos 에 없는 유령 ID 제거.
     ///   폴더 이동/재로드 후 UI에는 선택 하이라이트가 없는데 데이터엔 남아있어
     ///   키 입력(rating/color) 이 보이지 않는 선택에 적용되는 버그 차단.
@@ -661,11 +693,14 @@ class PhotoStore: ObservableObject {
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제
         MemoryGuardService.shared.start()
 
-        // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화
+        // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화.
+        //   v8.9: "ai:<쿼리>" prefix 로 시작하면 CLIP 텍스트 검색 실행.
         searchDebounce = $searchText
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.invalidateFilterCache()
+            .debounce(for: .milliseconds(350), scheduler: DispatchQueue.main)
+            .sink { [weak self] text in
+                guard let self = self else { return }
+                self.invalidateFilterCache()
+                self.triggerAITextSearchIfNeeded(for: text)
             }
 
         // 메모리카드 자동 백업 모니터링
