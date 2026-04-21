@@ -2816,7 +2816,18 @@ class ThumbnailLoader {
         for idx in 0..<maxIdx {
             if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                 if cg.width >= 80 && cg.height >= 80 {
-                    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    // v8.8.0 fix: NEF 등 일부 RAW 는 임베디드 preview 에 orientation 정보가 없어
+                    //   kCGImageSourceCreateThumbnailWithTransform 이 회전을 적용 못 함.
+                    //   메인 파일의 orientation (5-8 = 90°/270° rotated) 이고 thumb 이 landscape 면
+                    //   실제 display 는 portrait 이어야 하므로 수동 회전.
+                    if isRAW && (mainOrientation >= 5 && mainOrientation <= 8) {
+                        let thumbLandscape = cg.width > cg.height
+                        if thumbLandscape, let rotated = applyOrientation(img, orientation: mainOrientation) {
+                            return rotated
+                        }
+                    }
+                    return img
                 }
             }
         }

@@ -2936,20 +2936,26 @@ struct PhotoPreviewView: View {
         guard mainOrient != 1 else { return image }
         let mainPw = props[kCGImagePropertyPixelWidth as String] as? Int ?? 0
         let mainPh = props[kCGImagePropertyPixelHeight as String] as? Int ?? 0
-        guard mainPw > 0, mainPh > 0 else { return image }
+
+        let thumbLandscape = image.size.width > image.size.height
+
+        // v8.8.0 fix: NEF 등 일부 RAW 는 CGImageSource 가 PixelWidth/Height 를 못 읽음.
+        //   그 경우엔 orientation 값만으로 결정: 5-8 이면 회전 필요하고 thumb 가 landscape 면 rotate.
+        if mainPw == 0 || mainPh == 0 {
+            if (mainOrient >= 5 && mainOrient <= 8) && thumbLandscape {
+                return applyOrientation(image, orientation: mainOrient)
+            }
+            return image  // 정보 부족하지만 rotation 불필요로 추정
+        }
 
         // main image의 "display aspect" (orientation 적용 후)
         let displayLandscape: Bool
         if mainOrient >= 5 && mainOrient <= 8 {
-            // orientation 5-8 → width/height가 swap됨 (raw가 landscape면 display는 portrait)
             displayLandscape = mainPh > mainPw
         } else {
-            // orientation 1-4 → aspect 그대로
             displayLandscape = mainPw > mainPh
         }
-        let thumbLandscape = image.size.width > image.size.height
         if displayLandscape == thumbLandscape { return image }
-        // 불일치: transform=true가 적용되지 않은 케이스 → 수동 회전
         return applyOrientation(image, orientation: mainOrient)
     }
 
