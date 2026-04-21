@@ -129,12 +129,14 @@ final class DevelopPipeline {
                 }
                 if var rawOut = raw.outputImage {
                     // orient 적용 (CIRAWFilter sensor raw → display orient)
+                    let sensorExtent = rawOut.extent
                     if let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
                        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
                        let orient = props[kCGImagePropertyOrientation as String] as? Int,
                        orient > 1,
                        let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orient)) {
                         rawOut = rawOut.oriented(cgOri)
+                        fputs("[RAW-DIAG] \(url.lastPathComponent) sensor=\(Int(sensorExtent.width))x\(Int(sensorExtent.height)) orient=\(orient) → display=\(Int(rawOut.extent.width))x\(Int(rawOut.extent.height))\n", stderr)
                     }
                     // v8.6.2: demosaic 결과를 CGImage 로 baking 해서 캐싱 (non-RAW 필터 드래그 고속화)
                     if let cg = DevelopPipeline.sharedContext.createCGImage(rawOut, from: rawOut.extent) {
@@ -284,6 +286,19 @@ final class DevelopPipeline {
 
     private func applyFilters(to input: CIImage, settings: DevelopSettings, skipExposureAndManualWB: Bool = false) -> CIImage {
         var image = input
+
+        // v8.7: RAW baseline 톤/채도 — CIRAWFilter 는 neutral 출력 (camera "Standard" JPG 보다 flat).
+        //   사용자가 원래 미리보기(embedded JPG) 와 색 차이를 크게 느끼는 원인.
+        //   skipExposureAndManualWB=true 는 RAW 경로. 기본값에서 soft baseline 만 적용.
+        //   (UserDefaults 로 토글 가능 — "rawBaselineBoost" false 면 끔)
+        if skipExposureAndManualWB && UserDefaults.standard.object(forKey: "rawBaselineBoost") as? Bool ?? true {
+            let baseline = CIFilter.colorControls()
+            baseline.inputImage = image
+            baseline.saturation = 1.12   // +12% — 카메라 기본 채도 근사
+            baseline.contrast = 1.06      // +6% — soft S-curve
+            baseline.brightness = 0
+            if let out = baseline.outputImage { image = out }
+        }
 
         // 1) JPG 용 WB (RAW 는 load 단계에서 이미 처리됨)
         if !skipExposureAndManualWB {

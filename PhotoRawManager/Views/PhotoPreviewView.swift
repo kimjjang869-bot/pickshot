@@ -2026,9 +2026,17 @@ struct PhotoPreviewView: View {
                 fputs("[DEV-QUALITY] rendered \(rendered == nil ? "FAILED" : "OK") in \(String(format: "%.2f", elapsed))s\n", stderr)
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
-                    let aligned = rendered.map { Self.enforceAspectOfStage1($0, url: url, stage1Portrait: self.firstLoadIsPortrait) }
-                    self.developedImage = aligned
-                    self.developedForPhotoID = photoID
+                    // v8.7: Quality 렌더는 EXIF orient 을 정확히 적용했음. Stage 1 이 틀렸을 수 있음.
+                    //   enforceAspectOfStage1 을 skip 해서 Quality 결과를 "진실" 로 인정.
+                    //   만약 Stage 1 이 엉뚱하게 landscape 로 로드됐다면, Quality 가 portrait 로 보여주는 게 맞음.
+                    if let r = rendered {
+                        let rPortrait = r.size.height > r.size.width
+                        if let s1 = self.firstLoadIsPortrait, s1 != rPortrait {
+                            fputs("[RAW-DIAG] \(url.lastPathComponent) Quality aspect mismatch — stage1=\(s1 ? "P" : "L") quality=\(rPortrait ? "P" : "L") — Quality 신뢰, enforce 생략\n", stderr)
+                        }
+                        self.developedImage = r
+                        self.developedForPhotoID = photoID
+                    }
                 }
             }
             DispatchQueue.main.async { self.developRenderTask = task }
