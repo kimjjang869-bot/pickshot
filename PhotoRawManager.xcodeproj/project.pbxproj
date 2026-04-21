@@ -1039,7 +1039,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1052,7 +1052,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.6.1;
+				MARKETING_VERSION = 8.8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1070,7 +1070,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1083,7 +1083,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026. All rights reserved.";
 				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "외장 하드디스크나 메모리 카드의 사진을 불러오기 위해 접근이 필요합니다.";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/PhotoRawManager/Services";
-				MARKETING_VERSION = 8.6.1;
+				MARKETING_VERSION = 8.8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
