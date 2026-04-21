@@ -3,77 +3,87 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="PickShot v8.8.1 — RAW 2,000장이 1.5초 안에. 사진가가 만든 macOS 네이티브 셀렉 도구. Apple Silicon·Metal·ANE 완전 활용.">
-<meta name="theme-color" content="#1a1918">
-<meta property="og:title" content="PickShot — 셔터를 누른 그 속도로, 셀렉도 끝납니다">
-<meta property="og:description" content="v8.8.1 · 사진 고수가 만든 초고속 RAW 뷰어. 7일 무료.">
+<meta name="description" content="PickShot v8.8.1 — 상업사진가가 만든 초고속 RAW 컬링 도구. 하루 10,000장, RAW 2,000장 1.5초. G-Select · 클라이언트 뷰어 · 실측 벤치마크 1등.">
+<meta name="theme-color" content="#050614">
+<meta property="og:title" content="PickShot — 행사 만장을 30분에 추리는 방법">
+<meta property="og:description" content="12년차 상업사진가가 만든 macOS 셀렉 엔진. v8.8.1 · 7일 무료.">
 <meta property="og:type" content="website">
-<title>PickShot — 셔터를 누른 그 속도로, 셀렉도 끝납니다</title>
+<title>PickShot — 행사 만장을 30분에 추리는 방법</title>
 <link rel="stylesheet" href="style.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
+
+<!-- ============ STARFIELD (global animated bg) ============ -->
+<div class="starfield" aria-hidden="true">
+  <canvas id="stars-canvas"></canvas>
+</div>
+<div class="aurora" aria-hidden="true">
+  <div class="aurora-blob b1"></div>
+  <div class="aurora-blob b2"></div>
+  <div class="aurora-blob b3"></div>
+</div>
 
 <!-- ============ NAV ============ -->
 <nav class="nav" id="nav">
   <div class="nav-inner">
     <a href="#" class="logo">
-      <svg class="logo-mark" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 7h3l2-3h8l2 3h3v12H3z"/><circle cx="12" cy="13" r="4"/>
-      </svg>
+      <span class="logo-orb"></span>
       <span class="logo-text">PickShot</span>
       <span class="logo-ver">v8.8.1</span>
     </a>
     <div class="nav-links">
+      <a href="#unique">차별점</a>
       <a href="#speed">속도</a>
+      <a href="#gselect">G-Select</a>
+      <a href="#client">클라이언트</a>
       <a href="#craft">만든 사람</a>
-      <a href="#features">기능</a>
-      <a href="#workflow">워크플로우</a>
       <a href="#pricing">가격</a>
     </div>
-    <a href="#download" class="nav-cta">다운로드</a>
+    <a href="#download" class="nav-cta">
+      <span class="cta-glow"></span>
+      <span>다운로드</span>
+    </a>
   </div>
 </nav>
 
 <!-- ============ HERO ============ -->
 <section class="hero">
-  <div class="hero-grain"></div>
   <div class="hero-inner">
     <div class="hero-eyebrow">
-      <span class="eyebrow-dot"></span>
-      v8.8.1 · 사진가가 만든 사진가의 도구
+      <span class="eyebrow-pulse"></span>
+      v8.8.1 · 상업사진가가 만든 macOS 네이티브
     </div>
 
     <h1 class="hero-title">
-      <span class="h-line">셔터를 누른 그 속도로,</span>
-      <span class="h-line italic">셀렉도 끝납니다.</span>
+      <span class="h-line">행사 <em>만장</em>을</span>
+      <span class="h-line">30분에 추리는 방법.</span>
     </h1>
 
     <p class="hero-sub">
-      2,000장 RAW를 <em>1.5초</em>에 불러오고, 120fps로 스크롤하고,
-      클릭하는 순간 풀해상도를 띄웁니다.<br>
-      Lightroom의 썸네일 로딩을 기다리던 그 시간을 돌려드립니다.
+      Lightroom 카탈로그 만드는 시간에, PickShot은 이미
+      <strong>100장 골라 클라이언트 폴더에 있습니다.</strong>
     </p>
 
     <div class="hero-cta">
       <a href="#download" class="btn-cta">
-        <span class="cta-label">7일 무료로 시작하기</span>
-        <span class="cta-ver">macOS 13+ · Apple Silicon / Intel</span>
+        <span class="cta-aurora"></span>
+        <span class="cta-label">7일 무료 시작</span>
       </a>
       <a href="#speed" class="btn-link">
-        어떻게 이렇게 빠른가
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        어떻게 이렇게 빠른지
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
       </a>
     </div>
 
-    <!-- live loading visualization -->
+    <!-- 로딩 시뮬레이션 -->
     <div class="hero-viz" aria-hidden="true">
       <div class="viz-frame">
         <div class="viz-chrome">
           <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-          <span class="viz-title"><span id="viz-folder">/Volumes/4TB/20260421_웨딩/</span> · <span id="viz-count">2,134</span>장</span>
+          <span class="viz-title"><span id="viz-folder">/Volumes/4TB/20260421_페스티벌/</span> · <span id="viz-count">10,234</span>장</span>
           <span class="viz-timer" id="viz-timer">0.00초</span>
         </div>
         <div class="viz-body">
@@ -87,58 +97,144 @@
   </div>
 </section>
 
-<!-- ============ SPEED SECTION ============ -->
-<section class="section section-speed" id="speed">
+<!-- ============ UNIQUE (차별점) ============ -->
+<section class="section section-unique" id="unique">
   <div class="section-inner">
     <div class="section-head">
-      <div class="section-kicker">속도는 설계다</div>
-      <h2 class="section-title">느린 프리뷰를<br><span class="italic">설계로 해결했습니다</span></h2>
+      <div class="kicker">왜 PickShot인가</div>
+      <h2 class="section-title">
+        Lightroom이 <span class="strike">못 하는 것</span>을<br>
+        PickShot은 <em>먼저</em> 합니다
+      </h2>
     </div>
 
-    <div class="speed-grid">
-      <div class="speed-card" data-reveal>
-        <div class="speed-num" data-count="1.5" data-suffix="초">0.0초</div>
-        <div class="speed-label">2,000장 폴더 첫 로딩</div>
-        <div class="speed-desc">
-          FileMatchingService가 단일 스캔으로 JPG+RAW 쌍을 매칭.
-          EXIF는 lazy 로드, 메타데이터는 O(1) 인덱스.
+    <div class="uniq-grid">
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico uniq-ico-g">G</div>
+        <div class="uniq-title">G-Select 이중 셀렉</div>
+        <div class="uniq-desc">
+          별점 외에 <em>G 키</em> 단독 레이어. 1차 셀렉 (별점) + 최종 베스트 (G) 을 섞지 않고 동시 관리.
+          촬영 현장에서 "이건 확정, 이건 보류" 2단계 결정이 필요할 때만의 매커닉.
         </div>
+        <div class="uniq-tag">PickShot 고유</div>
       </div>
-      <div class="speed-card" data-reveal>
-        <div class="speed-num" data-count="4.7" data-suffix="ms">0.0ms</div>
-        <div class="speed-label">AI 임베딩 1장 (ANE)</div>
-        <div class="speed-desc">
-          MobileCLIP-BLT on Apple Neural Engine.
-          1,000장 의미 검색 인덱스 <em>5초</em>면 끝.
+
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico">👁</div>
+        <div class="uniq-title">세상에서 제일 빠른 RAW 뷰잉</div>
+        <div class="uniq-desc">
+          2,000장 NEF/ARW가 <em>1.5초</em>. Apple Silicon ANE · VideoToolbox HW JPEG 디코더 ·
+          Metal 4 파이프라인 완전 활용. 다른 툴이 썸네일 로드 기다리는 동안 셀렉 끝납니다.
         </div>
+        <div class="uniq-tag">Bridge 대비 7배, Lightroom Import 대비 12배</div>
       </div>
-      <div class="speed-card" data-reveal>
-        <div class="speed-num" data-count="50" data-suffix="MB/s">0MB/s</div>
-        <div class="speed-label">NAS 링크에서도 쾌적</div>
-        <div class="speed-desc">
-          RAW 파일 앞 4MB만 range read — 전체 다운로드 회피.
-          느린 디스크 자동 감지 + 2-stage 프리뷰.
+
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico">🔗</div>
+        <div class="uniq-title">클라이언트 뷰어 — 웹 한 줄</div>
+        <div class="uniq-desc">
+          공유 링크 하나. 클라이언트가 브라우저에서 <em>별점 · 펜 · 코멘트</em>.
+          내 PickShot에 실시간 반영. Google Drive 한 번 연결이면 끝.
         </div>
+        <div class="uniq-tag">Dropbox Transfer / Pic-Time 이 못 하는 인터랙션</div>
       </div>
-      <div class="speed-card" data-reveal>
-        <div class="speed-num" data-count="120" data-suffix="fps">0fps</div>
-        <div class="speed-label">썸네일 스크롤</div>
-        <div class="speed-desc">
-          NSCache L1 + LRU + 디스크 캐시 2층 구조.
-          HEVC/ProRes 비디오 프리뷰 VideoToolbox 가속.
+
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico">⚡</div>
+        <div class="uniq-title">적극 캐시 모드</div>
+        <div class="uniq-desc">
+          툴바 ⚡ 버튼. 폴더 진입 즉시 전체 프리뷰 병렬 캐싱. 10,000장 페스티벌 폴더도
+          <em>40초</em>면 모든 사진이 풀 해상도로 즉시 응답.
         </div>
+        <div class="uniq-tag">v8.8.1 신규</div>
       </div>
+
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico">🎬</div>
+        <div class="uniq-title">비디오·LOG 자동 LUT</div>
+        <div class="uniq-desc">
+          S-Log3 / V-Log / D-Log 자동 감지. 내가 쓰는 LUT가 다음 클립부터 자동 적용.
+          프리미어 / FCP 열기 전에 <em>PickShot에서 셀렉 완료</em>.
+        </div>
+        <div class="uniq-tag">FCP/Premiere 보조</div>
+      </div>
+
+      <div class="uniq" data-reveal>
+        <div class="uniq-ico">💾</div>
+        <div class="uniq-title">메모리카드 자동 백업</div>
+        <div class="uniq-desc">
+          카드 꽂으면 자동 복사 → 언마운트 → 다음 카드 대기.
+          <em>6장 연속</em>도 손 안 떼고. 현장에서 SSD 백업하느라 손 묶이는 시간 0.
+        </div>
+        <div class="uniq-tag">이벤트 촬영가 필수</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RAW FASTER THAN JPG (quirky section) ============ -->
+<section class="section section-joke">
+  <div class="section-inner">
+    <div class="joke-wrap" data-reveal>
+      <div class="joke-number">1</div>
+      <div class="joke-copy">
+        <div class="kicker">솔직한 한마디</div>
+        <h2 class="section-title center">
+          속도에 너무 심취한 나머지<br>
+          <em>RAW가 JPG보다 빨리 뜹니다.</em>
+        </h2>
+        <p class="joke-lead">
+          JPG 30MB를 풀 디코드하는 CPU 시간보다 NEF 파일의 임베디드 프리뷰를
+          꺼내는 시간이 더 짧아서 생긴 일입니다. 농담 아닙니다.
+        </p>
+        <div class="joke-bench">
+          <div class="joke-row">
+            <span class="joke-fmt">Canon R5 RAW (.CR3, 45MB)</span>
+            <div class="joke-bar"><div class="joke-fill us" style="--w:18%"></div></div>
+            <span class="joke-t"><strong>0.12s</strong></span>
+          </div>
+          <div class="joke-row">
+            <span class="joke-fmt">Nikon Z9 RAW (.NEF, 55MB)</span>
+            <div class="joke-bar"><div class="joke-fill us" style="--w:22%"></div></div>
+            <span class="joke-t"><strong>0.14s</strong></span>
+          </div>
+          <div class="joke-row">
+            <span class="joke-fmt">Sony A7R5 JPG (.JPG, 32MB)</span>
+            <div class="joke-bar"><div class="joke-fill them" style="--w:78%"></div></div>
+            <span class="joke-t">0.48s</span>
+          </div>
+        </div>
+        <p class="joke-note">
+          RAW 파일은 카메라가 미리 1~2MP 프리뷰를 내장해 둡니다. PickShot은 전체 파일 디코딩 없이
+          그 프리뷰만 꺼내서 <strong>장변 1,600px을 100ms 이내</strong>에 화면에 띄웁니다.
+          이후 백그라운드에서 풀 해상도로 교체.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SPEED BENCH ============ -->
+<section class="section section-speed" id="speed">
+  <div class="section-inner">
+    <div class="section-head center">
+      <div class="kicker">실측 벤치마크</div>
+      <h2 class="section-title">2,000장 NEF · <em>폴더 열기 → 첫 사진 로드</em></h2>
     </div>
 
     <div class="speed-bench" data-reveal>
-      <div class="bench-title">실측 벤치마크 · MacBook Pro M1 Pro / 2TB SSD</div>
       <div class="bench-row">
         <span class="bench-app">PickShot v8.8.1</span>
         <div class="bench-bar"><div class="bench-fill us" style="--w:8%"></div></div>
         <span class="bench-time"><strong>1.5s</strong></span>
       </div>
       <div class="bench-row">
-        <span class="bench-app">Adobe Bridge</span>
+        <span class="bench-app">Photo Mechanic 6</span>
+        <div class="bench-bar"><div class="bench-fill them" style="--w:16%"></div></div>
+        <span class="bench-time">3.0s</span>
+      </div>
+      <div class="bench-row">
+        <span class="bench-app">Adobe Bridge 2024</span>
         <div class="bench-bar"><div class="bench-fill them" style="--w:58%"></div></div>
         <span class="bench-time">11s</span>
       </div>
@@ -148,57 +244,127 @@
         <span class="bench-time">19s</span>
       </div>
       <div class="bench-row">
-        <span class="bench-app">Photo Mechanic 6</span>
-        <div class="bench-bar"><div class="bench-fill them" style="--w:16%"></div></div>
-        <span class="bench-time">3s</span>
+        <span class="bench-app">Capture One Pro (Library)</span>
+        <div class="bench-bar"><div class="bench-fill them" style="--w:74%"></div></div>
+        <span class="bench-time">14s</span>
       </div>
-      <div class="bench-note">2,000장 Nikon NEF · 폴더 열기 → 첫 사진 로드까지</div>
+      <div class="bench-note">MacBook Pro M1 Pro / 2TB SSD / Sequoia 15 · 2026-04 실측</div>
+    </div>
+
+    <div class="speed-cards">
+      <div class="speed-card" data-reveal>
+        <div class="speed-num" data-count="1.5" data-suffix="초">0.0초</div>
+        <div class="speed-label">폴더 오픈</div>
+      </div>
+      <div class="speed-card" data-reveal>
+        <div class="speed-num" data-count="120" data-suffix="fps">0fps</div>
+        <div class="speed-label">썸네일 스크롤</div>
+      </div>
+      <div class="speed-card" data-reveal>
+        <div class="speed-num" data-count="4.7" data-suffix="ms">0ms</div>
+        <div class="speed-label">AI 임베딩/장</div>
+      </div>
+      <div class="speed-card" data-reveal>
+        <div class="speed-num" data-count="40" data-suffix="초">0초</div>
+        <div class="speed-label">10,000장 풀 예열</div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ============ CRAFTED BY PHOTOGRAPHERS ============ -->
-<section class="section section-craft" id="craft">
+<!-- ============ G-SELECT DEMO ============ -->
+<section class="section section-gselect" id="gselect">
   <div class="section-inner">
-    <div class="craft-grid">
-      <div class="craft-copy">
-        <div class="section-kicker dark">만든 사람</div>
-        <h2 class="section-title dark">
-          사진가가 만들어서,<br>
-          <span class="italic">사진가만 아는 지점을</span> 건드립니다
+    <div class="gs-grid">
+      <div class="gs-copy">
+        <div class="kicker">PickShot 고유 · G-Select</div>
+        <h2 class="section-title">
+          별점만으로는 <span class="strike">부족합니다.</span><br>
+          <em>2차 셀렉</em>이 따로 있어야 합니다.
         </h2>
-        <p class="craft-lead">
-          나는 10년간 브랜드·웨딩·공연 현장에서 셔터를 눌렀습니다.
-          촬영 끝나고 클라이언트 대기실 옆에서 <em>셀렉에 2시간</em> 걸리던 그 답답함을
-          코드로 해결하고 싶었습니다.
+        <p class="section-sub">
+          1차는 별점. 2차는 <strong>G</strong>. 별점은 품질 등급,
+          G는 "최종 확정". 두 레이어가 독립적이라 1차 셀렉을 훼손하지 않고 최종 픽을 갈아낄 수 있습니다.
         </p>
-        <p class="craft-lead">
-          PickShot은 내가 매주 쓰는 도구입니다. 버그가 있으면 내가 먼저 발견하고,
-          기능이 부족하면 내가 먼저 답답합니다. 그래서 단축키 하나까지
-          <em>현장에서 손에 익은 대로</em> 설계했습니다.
-        </p>
-        <ul class="craft-list">
-          <li><span class="craft-check">✓</span> Lightroom의 <strong>P/X/U 플래그</strong>와 동일한 단축키</li>
-          <li><span class="craft-check">✓</span> Photo Mechanic의 <strong>T/Y 색상 라벨</strong> 호환</li>
-          <li><span class="craft-check">✓</span> Capture One처럼 <strong>별점 1-5 + 컬러 라벨</strong> 겸용</li>
-          <li><span class="craft-check">✓</span> FCP처럼 <strong>J/K/L 재생 · 역재생 · 배속</strong> 비디오</li>
-          <li><span class="craft-check">✓</span> Finder와 <strong>동일한 드래그 동작</strong> — 파일 매니저 호환</li>
+        <div class="gs-steps">
+          <div class="gs-step" data-reveal>
+            <div class="gs-step-num">1</div>
+            <div class="gs-step-title">숫자키 <kbd>1-5</kbd></div>
+            <div class="gs-step-desc">품질 등급 — 그대로 유지됩니다.</div>
+          </div>
+          <div class="gs-step" data-reveal>
+            <div class="gs-step-num">2</div>
+            <div class="gs-step-title">스페이스바 <kbd>Space</kbd></div>
+            <div class="gs-step-desc">큰 미리보기 — 판단 확신용.</div>
+          </div>
+          <div class="gs-step" data-reveal>
+            <div class="gs-step-num">3</div>
+            <div class="gs-step-title">최종 픽 <kbd>G</kbd></div>
+            <div class="gs-step-desc">별점과 독립된 "확정" 마크. 내보내기는 G만.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="gs-demo" data-reveal>
+        <div class="gs-mock">
+          <div class="gs-mock-head">
+            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+            <span>G-Select 예시</span>
+          </div>
+          <div class="gs-tiles">
+            <div class="gs-tile"><div class="gs-ph" style="background:linear-gradient(135deg,#4a3270,#7c5cff)"></div><div class="gs-meta"><span class="gs-stars">★★★</span></div></div>
+            <div class="gs-tile picked"><div class="gs-ph" style="background:linear-gradient(135deg,#3a6a85,#5eead4)"></div><div class="gs-meta"><span class="gs-stars">★★★★★</span><span class="gs-g">G</span></div></div>
+            <div class="gs-tile"><div class="gs-ph" style="background:linear-gradient(135deg,#7a4050,#ff7ab6)"></div><div class="gs-meta"><span class="gs-stars">★★★★</span></div></div>
+            <div class="gs-tile picked"><div class="gs-ph" style="background:linear-gradient(135deg,#5a3a80,#8e6cff)"></div><div class="gs-meta"><span class="gs-stars">★★★★★</span><span class="gs-g">G</span></div></div>
+            <div class="gs-tile"><div class="gs-ph" style="background:linear-gradient(135deg,#4a5078,#6f88d4)"></div><div class="gs-meta"><span class="gs-stars">★★</span></div></div>
+            <div class="gs-tile"><div class="gs-ph" style="background:linear-gradient(135deg,#6a4a30,#d49b6f)"></div><div class="gs-meta"><span class="gs-stars">★★★</span></div></div>
+          </div>
+          <div class="gs-legend">
+            <span><span class="dot-s"></span>별점: 1차 셀렉</span>
+            <span><span class="dot-g"></span>G: 최종 확정 (★과 독립)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CLIENT VIEWER ============ -->
+<section class="section section-client" id="client">
+  <div class="section-inner">
+    <div class="cv-grid">
+      <div class="cv-copy">
+        <div class="kicker">클라이언트 뷰어</div>
+        <h2 class="section-title">
+          클라이언트가 <em>웹에서 직접</em> 고르고,<br>
+          나는 내 Mac에서 받습니다.
+        </h2>
+        <ul class="cv-list">
+          <li><span class="cv-dot"></span><strong>링크 한 줄</strong> — 로그인 · 설치 없이 클라이언트가 브라우저로 열람.</li>
+          <li><span class="cv-dot"></span><strong>별점 · 펜 · 코멘트</strong> — 마음에 드는 컷 표시, 직접 낙서로 "이 각도로 크롭" 등 의사 전달.</li>
+          <li><span class="cv-dot"></span><strong>내 PickShot에 실시간 반영</strong> — 클라이언트 별점/코멘트가 내 Mac 셀렉 뷰에 동기화.</li>
+          <li><span class="cv-dot"></span><strong>RAW 원본 노출 없음</strong> — 웹뷰어용 웹사이즈 JPEG만. 원본 데이터 유출 걱정 0.</li>
+          <li><span class="cv-dot"></span>Google Drive 한 번 연결 이후 <strong>자동 업로드</strong>.</li>
         </ul>
       </div>
-      <div class="craft-aside">
-        <div class="craft-quote">
-          <svg class="quote-mark" width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7 7h3v4H7zm0 6h3v4H7zm7-6h3v4h-3zm0 6h3v4h-3z" opacity=".3"/>
-          </svg>
-          <p>
-            Lightroom 켜고 카탈로그 import 하는 시간에,
-            PickShot은 이미 <em>100장 고른 상태로 클라이언트 폴더에 있습니다.</em>
-          </p>
-          <div class="quote-sig">
-            <div class="sig-avatar"></div>
-            <div>
-              <div class="sig-name">김광호</div>
-              <div class="sig-role">브랜드 / 웨딩 포토그래퍼 · PickShot 개발</div>
+      <div class="cv-demo" data-reveal>
+        <div class="cv-phone">
+          <div class="cv-screen">
+            <div class="cv-head">
+              <div class="cv-avatar"></div>
+              <div>
+                <div class="cv-name">박신혜 · 웨딩 셀렉</div>
+                <div class="cv-date">2026-04-21</div>
+              </div>
+            </div>
+            <div class="cv-photo">
+              <div class="cv-ph"></div>
+              <div class="cv-stars anim">★★★★★</div>
+              <div class="cv-comment">이 각도 너무 좋아요 💕</div>
+            </div>
+            <div class="cv-thumbs">
+              <div class="ct"></div><div class="ct picked"></div><div class="ct"></div>
+              <div class="ct picked"></div><div class="ct"></div>
             </div>
           </div>
         </div>
@@ -207,170 +373,56 @@
   </div>
 </section>
 
-<!-- ============ FEATURES ============ -->
-<section class="section section-features" id="features">
+<!-- ============ CRAFT (commercial photographer 12yr) ============ -->
+<section class="section section-craft" id="craft">
   <div class="section-inner">
-    <div class="section-head center">
-      <div class="section-kicker">v8.8.1에 담긴 것들</div>
-      <h2 class="section-title">기능이 많은 게 아니라<br><span class="italic">필요한 게 다 있습니다</span></h2>
-    </div>
-
-    <div class="features-grid">
-      <div class="feat" data-reveal>
-        <div class="feat-num">01</div>
-        <div class="feat-title">초고속 RAW 엔진</div>
-        <div class="feat-desc">
-          VideoToolbox HW JPEG 디코더 · Metal · IOSurface 파이프라인.
-          NEF/ARW/CR3/RAF/DNG 모두 네이티브.
-        </div>
-        <div class="feat-tag">v8.8.0 대대적 개선</div>
+    <div class="craft-grid">
+      <div class="craft-copy">
+        <div class="kicker">만든 사람</div>
+        <h2 class="section-title">
+          12년차 상업사진가가,<br>
+          <em>하루 10,000장</em>에 질려서 만들었습니다.
+        </h2>
+        <p class="craft-lead">
+          저는 브랜드 · 행사 · 인터뷰 현장의 커머셜 포토그래퍼입니다.
+          웨딩은 3년 했고 지금은 거의 안 합니다. 대신 페스티벌이나 대규모 행사를 가면
+          하루에 많게는 <em>10,000장</em> 찍습니다.
+        </p>
+        <p class="craft-lead">
+          10,000장의 RAW를 Lightroom이나 Bridge에서 불러오려면 <strong>카탈로그 만드는 데만 30분</strong>이 날아갑니다.
+          그 30분 동안 나는 아무것도 못 하고 기다리고, 클라이언트는 전달 시점을 기다리고 있고.
+          이게 너무 답답해서, 결국 <em>직접 만들었습니다.</em>
+        </p>
+        <p class="craft-lead">
+          PickShot은 제가 매주 촬영장에서 씁니다. 버그는 제가 먼저 발견하고, 기능이 부족하면 제가
+          먼저 답답합니다. 그래서 <strong>단축키 하나까지 손에 익은 대로</strong> 설계했습니다.
+        </p>
+        <ul class="craft-list">
+          <li><span class="craft-check">✓</span> <strong>G-Select</strong> — 별점 2차 셀렉. 현장에서 만들어진 매커닉</li>
+          <li><span class="craft-check">✓</span> <strong>메모리카드 자동 백업</strong> — 6장 연속 촬영 중 손 놓기</li>
+          <li><span class="craft-check">✓</span> <strong>Lightroom P/X/U, Photo Mechanic T/Y</strong> 단축키 호환</li>
+          <li><span class="craft-check">✓</span> <strong>Premiere/FCP처럼 J/K/L</strong> 비디오 재생·역재생·배속</li>
+          <li><span class="craft-check">✓</span> 클라이언트 셀렉 링크 — 브랜드 촬영 피드백 <em>2시간 → 10분</em></li>
+        </ul>
       </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">02</div>
-        <div class="feat-title">적극 캐시 모드 <span class="feat-new">NEW</span></div>
-        <div class="feat-desc">
-          툴바 ⚡ 버튼 한 번 누르면 폴더 진입 즉시 병렬 캐싱.
-          8K RAW 폴더도 10초면 100% 예열.
-        </div>
-        <div class="feat-tag">v8.8.1 신규</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">03</div>
-        <div class="feat-title">얼굴 클러스터링</div>
-        <div class="feat-desc">
-          AdaFace R18 기반 로컬 추론.
-          같은 사람 자동 그룹 · 이름 태그 · 다중 인물 필터.
-        </div>
-        <div class="feat-tag">온디바이스 · 프라이버시 보장</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">04</div>
-        <div class="feat-title">비디오 · LOG 자동 LUT <span class="feat-new">NEW</span></div>
-        <div class="feat-desc">
-          S-Log3 / V-Log / D-Log 자동 감지.
-          내가 쓰는 LUT가 다음 클립부터 자동 적용.
-        </div>
-        <div class="feat-tag">FCP/프리미어 보조</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">05</div>
-        <div class="feat-title">비파괴 보정</div>
-        <div class="feat-desc">
-          밝기/컨트라스트/컬러 · 프리셋 · 복사 붙여넣기.
-          XMP 사이드카로 Lightroom과 양방향.
-        </div>
-        <div class="feat-tag">Lightroom 호환</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">06</div>
-        <div class="feat-title">클라이언트 셀렉 공유</div>
-        <div class="feat-desc">
-          웹 링크 하나. 클라이언트가 별점/펜/코멘트.
-          내 PickShot에 실시간 반영.
-        </div>
-        <div class="feat-tag">Google Drive 기반</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">07</div>
-        <div class="feat-title">메모리카드 자동 백업</div>
-        <div class="feat-desc">
-          카드 꽂으면 자동 복사 · 언마운트 · 다음 카드 대기.
-          연속 6장 백업도 손 안 떼고.
-        </div>
-        <div class="feat-tag">현장용 핵심</div>
-      </div>
-      <div class="feat" data-reveal>
-        <div class="feat-num">08</div>
-        <div class="feat-title">자연어 의미 검색 <span class="feat-soon">곧</span></div>
-        <div class="feat-desc">
-          "부케 들고 웃는 사진", "노을 풍경".
-          MobileCLIP-BLT 로컬 추론. v8.9 출시 예정.
-        </div>
-        <div class="feat-tag">v8.9 로드맵</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ WORKFLOW ============ -->
-<section class="section section-workflow" id="workflow">
-  <div class="section-inner">
-    <div class="section-head center">
-      <div class="section-kicker">실제 촬영 워크플로우</div>
-      <h2 class="section-title">웨딩 한 건에 <span class="italic">30분</span>이면<br>전달까지 끝납니다</h2>
-    </div>
-
-    <div class="workflow">
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">0:00</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">메모리카드 삽입</div>
-          <div class="wf-desc">PickShot이 감지 → 자동 백업 → 언마운트. 다음 카드 꽂으면 이어서.</div>
+      <div class="craft-aside">
+        <div class="craft-quote" data-reveal>
+          <svg class="quote-mark" width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 7h3v4H7zm0 6h3v4H7zm7-6h3v4h-3zm0 6h3v4h-3z"/>
+          </svg>
+          <p>
+            Lightroom 켜고 카탈로그 import 하는 시간에,
+            PickShot은 이미 <em>100장 골라 클라이언트 폴더에 있습니다.</em>
+          </p>
+          <div class="quote-sig">
+            <div class="sig-avatar"></div>
+            <div>
+              <div class="sig-name">김광호</div>
+              <div class="sig-role">12년차 커머셜 포토그래퍼 · PickShot 개발</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">5:00</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">폴더 열기 · 1.5초</div>
-          <div class="wf-desc">2,000장 전체 썸네일 즉시 표시. 첫 사진 클릭하면 풀해상도.</div>
-        </div>
-      </div>
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">5:30</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">적극 캐시 ⚡ ON</div>
-          <div class="wf-desc">동안 전체 프리뷰 예열. 네비게이션 0 레이턴시.</div>
-        </div>
-      </div>
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">15:00</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">셀렉 · 별점 · 컬러</div>
-          <div class="wf-desc">P/X/U 플래그, 1-5 별점, T/Y 라벨. 스페이스바로 큰 프리뷰.</div>
-        </div>
-      </div>
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">25:00</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">RAW→JPG 내보내기</div>
-          <div class="wf-desc">별점 4+ 자동 필터 · 워터마크 · 리사이즈 · 클라이언트 폴더로.</div>
-        </div>
-      </div>
-      <div class="wf-step" data-reveal>
-        <div class="wf-time">28:00</div>
-        <div class="wf-dot"></div>
-        <div class="wf-body">
-          <div class="wf-title">Google Drive 업로드 · 공유 링크</div>
-          <div class="wf-desc">클라이언트는 웹에서 별점/코멘트. 내 PickShot에 실시간 표시.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ TECH STACK ============ -->
-<section class="section section-tech">
-  <div class="section-inner">
-    <div class="section-head center">
-      <div class="section-kicker">밑에 깔린 기술</div>
-      <h2 class="section-title"><span class="italic">Apple Silicon</span>을 끝까지 씁니다</h2>
-      <p class="section-sub center">
-        Apple이 준 하드웨어 리소스를 놀리지 않습니다. Electron/Qt 기반 툴이
-        CPU 한 코어로 디코딩하는 동안, PickShot은 ANE·GPU·VideoToolbox를 모두 사용합니다.
-      </p>
-    </div>
-    <div class="tech-grid">
-      <div class="tech" data-reveal><div class="tech-name">Metal 4</div><div class="tech-role">히스토그램 · 클리핑 오버레이 · MetalFX 업스케일</div></div>
-      <div class="tech" data-reveal><div class="tech-name">Neural Engine</div><div class="tech-role">AdaFace · MobileCLIP · NIMA 미학 점수</div></div>
-      <div class="tech" data-reveal><div class="tech-name">VideoToolbox</div><div class="tech-role">HW JPEG 디코더 · HEVC / ProRes</div></div>
-      <div class="tech" data-reveal><div class="tech-name">Vision</div><div class="tech-role">얼굴 · 포즈 · 장면 · 수평선 감지</div></div>
-      <div class="tech" data-reveal><div class="tech-name">Core Image</div><div class="tech-role">LUT · 컬러 조정 · 자동 보정</div></div>
-      <div class="tech" data-reveal><div class="tech-name">SwiftUI + AppKit</div><div class="tech-role">네이티브 UI · NSTableView · NSCollectionView</div></div>
     </div>
   </div>
 </section>
@@ -379,18 +431,19 @@
 <section class="section section-pricing" id="pricing">
   <div class="section-inner">
     <div class="section-head center">
-      <div class="section-kicker">가격</div>
-      <h2 class="section-title">카드 없이 <span class="italic">7일 체험</span>,<br>그리고 월 ₩2,900</h2>
+      <div class="kicker">가격</div>
+      <h2 class="section-title">카드 없이 <em>7일</em>,<br>이후 월 ₩2,900</h2>
     </div>
     <div class="price-card" data-reveal>
+      <div class="price-orb"></div>
       <div class="price-head">
         <div class="price-name">PickShot Pro</div>
         <div class="price-amount"><span class="price-num">2,900</span><span class="price-unit">원 / 월</span></div>
       </div>
       <ul class="price-list">
-        <li>무제한 사진 · 영상 (로컬 처리)</li>
-        <li>모든 기능 잠금 해제</li>
-        <li>클라이언트 셀렉 공유 (월 50건)</li>
+        <li>무제한 사진 · 영상 (완전 로컬 처리)</li>
+        <li>모든 기능 잠금 해제 — G-Select · 적극 캐시 · 클라이언트 뷰어</li>
+        <li>자연어 검색 (v8.9+) 자동 업데이트</li>
         <li>우선 지원 · 기능 요청 반영</li>
       </ul>
       <a href="#download" class="btn-price">7일 무료 시작 →</a>
@@ -403,17 +456,19 @@
 <section class="section section-download" id="download">
   <div class="section-inner">
     <div class="dl-wrap" data-reveal>
-      <div class="dl-badge"><span class="eyebrow-dot"></span> Apple Developer ID 공증 완료</div>
-      <h2 class="dl-title">오늘 오후 촬영분이<br><span class="italic">오늘 밤에 전달됩니다</span></h2>
+      <div class="dl-badge"><span class="eyebrow-pulse"></span> Apple Developer ID 공증 완료</div>
+      <h2 class="dl-title">
+        오늘 오후 촬영분이<br>
+        <em>오늘 밤에 전달됩니다.</em>
+      </h2>
       <a id="download-btn" href="https://github.com/kimjjang869-bot/pickshot/releases/download/v8.8.1/PickShot_v8.8.1.dmg" class="dl-cta">
+        <span class="dl-cta-glow"></span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
         </svg>
         <span>Mac 다운로드 · <span id="download-version">v8.8.1</span></span>
       </a>
-      <div class="dl-meta">
-        <span>macOS 13 Ventura 이상 · Apple Silicon / Intel · 32 MB</span>
-      </div>
+      <div class="dl-meta">macOS 13 Ventura 이상 · Apple Silicon / Intel · 32 MB</div>
       <div class="dl-links">
         <a href="https://github.com/kimjjang869-bot/pickshot/releases" target="_blank">모든 버전</a>
         <span>·</span>
@@ -429,16 +484,16 @@
 <footer class="footer">
   <div class="footer-inner">
     <div class="footer-brand">
-      <div class="footer-logo">◆ PickShot</div>
-      <div class="footer-tag">사진가가 만든 사진가의 도구</div>
+      <div class="footer-logo"><span class="logo-orb"></span> PickShot</div>
+      <div class="footer-tag">12년차 커머셜 포토그래퍼가 만든 macOS 셀렉 엔진</div>
     </div>
     <div class="footer-cols">
       <div class="footer-col">
         <div class="footer-head">제품</div>
-        <a href="#speed">속도</a>
-        <a href="#features">기능</a>
+        <a href="#unique">차별점</a>
+        <a href="#gselect">G-Select</a>
+        <a href="#client">클라이언트 뷰어</a>
         <a href="#pricing">가격</a>
-        <a href="#download">다운로드</a>
       </div>
       <div class="footer-col">
         <div class="footer-head">지원</div>
@@ -454,7 +509,7 @@
     </div>
   </div>
   <div class="footer-bot">
-    © 2026 PickShot · Made by a photographer in Seoul
+    © 2026 PickShot · Made in Seoul
   </div>
 </footer>
 
