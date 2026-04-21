@@ -280,6 +280,18 @@ struct PhotoItem: Identifiable, Hashable {
         return jpgURL
     }
 
+    /// v8.8.0: 썸네일/미리보기 추출 소스 URL.
+    ///   - 설정 `preferRAWOverJPG` = true 이면 RAW+JPG 쌍에서 RAW 를 우선 사용.
+    ///   - 기본값(false)은 JPG 우선 (빠름).
+    ///   주의: 캐시 키도 이 URL 기준이라 옵션 토글 시 두 소스가 독립적으로 캐싱됨.
+    var thumbnailSourceURL: URL {
+        if UserDefaults.standard.bool(forKey: "preferRAWOverJPG"),
+           let raw = rawURL, raw != jpgURL {
+            return raw
+        }
+        return jpgURL
+    }
+
     var fileName: String {
         displayURL.deletingPathExtension().lastPathComponent
     }

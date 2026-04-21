@@ -441,7 +441,8 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
             thumbnailImageView.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
 
             // 메모리 캐시 히트 → 즉시, 나머지 → 독립 스레드 + RunLoop common mode
-            let url = photo.jpgURL
+            // v8.8.0: preferRAWOverJPG 설정 반영 — 쌍에서 RAW 우선
+            let url = photo.thumbnailSourceURL
             if let cached = ThumbnailCache.shared.get(url) {
                 thumbnailImageView.image = cached
                 thumbnailImageView.layer?.backgroundColor = nil

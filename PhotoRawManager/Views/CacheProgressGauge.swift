@@ -146,3 +146,62 @@ struct CacheProgressGauge: View {
         return "\(m)분 \(s)초"
     }
 }
+
+// MARK: - v8.8.1 적극 캐시 모드 토글 버튼
+
+/// 툴바에 표시되는 "캐시 적극 로딩" 토글 버튼.
+/// - OFF (기본): 폴더 진입 후 idle 대기 → 백그라운드 순차 로딩 (시스템 부하 낮음)
+/// - ON: 폴더 진입 즉시 병렬 로딩 (CPU/디스크 집중 사용, 캐시 빠르게 생성)
+struct AggressiveCacheToggle: View {
+    @ObservedObject var store: PhotoStore
+    @State private var hovering = false
+    @State private var pulse = false
+
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                store.aggressiveCache.toggle()
+            }
+        }) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(store.aggressiveCache
+                          ? Color.orange.opacity(hovering ? 0.35 : 0.25)
+                          : (hovering ? Color.white.opacity(0.08) : Color.clear))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(store.aggressiveCache ? Color.orange.opacity(0.6) : Color.white.opacity(0.15),
+                                    lineWidth: 1)
+                    )
+                ZStack {
+                    // 베이스: 미리보기/캐시 스택 느낌의 아이콘
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(
+                            store.aggressiveCache
+                                ? AnyShapeStyle(LinearGradient(colors: [.orange, .yellow],
+                                                               startPoint: .top, endPoint: .bottom))
+                                : AnyShapeStyle(Color.white.opacity(0.7))
+                        )
+                    // ON 상태에선 번개 오버레이 (빠른 로딩 표시)
+                    if store.aggressiveCache {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 7, weight: .black))
+                            .foregroundStyle(.yellow)
+                            .offset(x: 7, y: -6)
+                            .shadow(color: .orange.opacity(0.8), radius: 2)
+                            .scaleEffect(pulse ? 1.15 : 1.0)
+                            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                    }
+                }
+            }
+            .frame(width: 26, height: 22)
+        }
+        .buttonStyle(.plain)
+        .onAppear { pulse = true }
+        .onHover { hovering = $0 }
+        .help(store.aggressiveCache
+              ? "캐시 적극 로딩 ON — 폴더 진입 즉시 병렬 로딩 (시스템 부하 ↑)"
+              : "캐시 적극 로딩 OFF — 기본 (백그라운드 천천히)")
+    }
+}

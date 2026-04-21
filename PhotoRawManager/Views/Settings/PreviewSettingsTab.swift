@@ -11,6 +11,7 @@ import SwiftUI
 struct PreviewSettingsTab: View {
     @AppStorage("previewMaxResolution") private var previewMaxResolution = "original"
     @AppStorage("rawPreviewMode") private var rawPreviewMode = "fast"
+    @AppStorage("preferRAWOverJPG") private var preferRAWOverJPG = false
     @AppStorage("colorProfile") private var colorProfile = "display"
     @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
@@ -45,6 +46,9 @@ struct PreviewSettingsTab: View {
                             Text("픽쳐스타일 미리보기 (CIRAWFilter)").tag("ciraw")
                         }
                         .help("빠른 미리보기: 카메라 내장 JPEG 사용 (빠름, 픽쳐스타일 적용됨)\n픽쳐스타일 미리보기: CIRAWFilter 사용 (느림, 정밀한 색상)")
+
+                        Toggle("RAW+JPG 쌍에서 RAW 를 우선 표시", isOn: $preferRAWOverJPG)
+                            .help("켜면 RAW 파일 (ARW/NEF/CR3 등) 의 임베디드 프리뷰로 썸네일/미리보기 생성. 카메라 JPG 설정(픽쳐스타일/화이트밸런스) 이 그대로 반영됨.\n끄면 JPG 파일을 직접 사용 (더 빠름).")
 
                         Picker("RAW 색공간", selection: $colorProfile) {
                             Text("모니터 맞춤 (자동)").tag("display")

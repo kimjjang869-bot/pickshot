@@ -36,26 +36,28 @@ extension ContentView {
 
                 if let url = store.folderURL {
                     BreadcrumbPathView(url: url, store: store)
-                    Spacer().frame(width: 12)  // 경로 ↔ 진행률 게이지 간격
+                    Spacer().frame(width: 12)  // 경로 ↔ 게이지 간격
+                    // v8.8.2: "하위 포함" 배지를 진행률 게이지보다 먼저 표시
+                    if store.isRecursiveMode {
+                        Button { store.exitRecursiveMode() } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "folder.badge.plus").font(.system(size: 10))
+                                Text("하위 포함").font(.system(size: AppTheme.fontMicro, weight: .medium))
+                            }
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.15)).foregroundColor(.orange)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                     // v8.6.2: 캐시 생성 진행률 원형 게이지 (썸네일+미리보기 통합)
                     CacheProgressGauge(store: store)
+                    // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
+                    AggressiveCacheToggle(store: store)
                 }
 
                 if store.isLoading {
                     ProgressView().scaleEffect(0.6)
-                }
-
-                if store.isRecursiveMode {
-                    Button { store.exitRecursiveMode() } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "folder.badge.plus").font(.system(size: 10))
-                            Text("하위 포함").font(.system(size: AppTheme.fontMicro, weight: .medium))
-                        }
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(Color.orange.opacity(0.15)).foregroundColor(.orange)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
                 }
 
                 if store.selectionCount > 1 {
@@ -200,15 +202,18 @@ extension ContentView {
                                     }
                                     return store.ratingFilters.contains(rating)
                                 }()
+                                // v8.8: 각 별점에 해당하는 사진 수 (All 에는 배지 없음)
+                                let count: Int = {
+                                    if rating == 0 { return 0 }
+                                    return store.photos.filter { $0.rating == rating && !$0.isFolder && !$0.isParentFolder }.count
+                                }()
                                 Button(action: {
                                     let flags = NSEvent.modifierFlags
                                     let multi = flags.contains(.command) || flags.contains(.shift)
                                     if rating == 0 {
-                                        // 전체 해제
                                         store.ratingFilters = []
                                         store.minimumRatingFilter = 0
                                     } else if multi {
-                                        // 개별 토글 (여러 개 선택)
                                         if store.ratingFilters.contains(rating) {
                                             store.ratingFilters.remove(rating)
                                         } else {
@@ -216,25 +221,37 @@ extension ContentView {
                                         }
                                         store.minimumRatingFilter = 0
                                     } else {
-                                        // 단일 선택
-                                        store.ratingFilters = [rating]
+                                        // v8.8: 동일 별점 재클릭 → 해제
+                                        if store.ratingFilters.count == 1 && store.ratingFilters.contains(rating) {
+                                            store.ratingFilters = []
+                                        } else {
+                                            store.ratingFilters = [rating]
+                                        }
                                         store.minimumRatingFilter = 0
                                     }
                                 }) {
-                                    Group {
+                                    HStack(spacing: 4) {
                                         if rating == 0 {
                                             Text("All")
                                                 .font(.system(size: AppTheme.fontCaption, weight: .semibold))
                                         } else {
-                                            HStack(spacing: 1) {
-                                                Image(systemName: "star.fill")
-                                                    .font(.system(size: 8))
-                                                Text("\(rating)")
-                                                    .font(.system(size: AppTheme.fontCaption, weight: .semibold))
-                                            }
+                                            Image(systemName: "star.fill").font(.system(size: 10))
+                                            Text("\(rating)").font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                        }
+                                        if count > 0 {
+                                            Text(formatCountBadge(count))
+                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.white)
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                                .padding(.horizontal, 5)
+                                                .frame(height: 14)
+                                                .background(Capsule().fill(Color.black.opacity(0.45)))
                                         }
                                     }
-                                    .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
+                                    .padding(.horizontal, 10)
+                                    .frame(height: AppTheme.pillSize)
+                                    .fixedSize(horizontal: true, vertical: false)
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundColor(isActive ? .white : (rating == 0 ? .primary : AppTheme.starGold))
@@ -244,13 +261,13 @@ extension ContentView {
                                         : AppTheme.toolbarButtonBg
                                 )
                                 .clipShape(Capsule())
-                                .help(rating == 0 ? "모든 별점 표시 (필터 해제)" : "별점 \(rating) 만 표시 / Cmd·Shift+클릭: 다중 선택")
+                                .help(rating == 0 ? "모든 별점 표시 (필터 해제)" : "별점 \(rating) 만 표시 (\(count)장) / Cmd·Shift+클릭: 다중 선택")
                             }
                         }
 
                         Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
-                        // v8.7: 선택한 사진만 보기 토글
+                        // v8.7: 선택한 사진만 보기 토글 (v8.8: 선택 수 배지 추가)
                         Button(action: {
                             store.showOnlySelected.toggle()
                         }) {
@@ -259,6 +276,16 @@ extension ContentView {
                                     .font(.system(size: 11))
                                 Text("선택만")
                                     .font(.system(size: AppTheme.fontCaption, weight: .semibold))
+                                if store.selectedPhotoIDs.count > 0 {
+                                    Text(formatCountBadge(store.selectedPhotoIDs.count))
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .padding(.horizontal, 5)
+                                        .frame(height: 14)
+                                        .background(Capsule().fill(Color.black.opacity(0.45)))
+                                }
                             }
                             .padding(.horizontal, 10)
                             .frame(height: AppTheme.pillSize)
@@ -272,33 +299,48 @@ extension ContentView {
 
                         Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
-                        // Color label filter — 라벨 필터 (다중 선택)
-                        HStack(spacing: 5) {
+                        // Color label filter — 별점 필터와 동일 pill 디자인 + 카운트 배지
+                        HStack(spacing: 4) {
                             ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
                                 let isActive = store.colorLabelFilters.contains(label)
+                                let labelCount = store.photos.filter {
+                                    $0.colorLabel == label && !$0.isFolder && !$0.isParentFolder
+                                }.count
                                 Button(action: {
                                     if isActive { store.colorLabelFilters.remove(label) }
                                     else { store.colorLabelFilters.insert(label) }
                                 }) {
-                                    Circle()
-                                        .fill(label.color ?? .clear)
-                                        .frame(width: 12, height: 12)
-                                        .overlay(
-                                            isActive
-                                                ? Circle().stroke(Color.white, lineWidth: 2.5)
-                                                : Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                                        )
-                                        .shadow(color: isActive ? (label.color ?? .clear).opacity(0.7) : .clear, radius: 4)
-                                        .opacity(isActive ? 1.0 : 0.5)
-                                        .frame(width: AppTheme.minTouchTarget, height: AppTheme.minTouchTarget)
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(label.color ?? .clear)
+                                            .frame(width: 12, height: 12)
+                                            .overlay(
+                                                Circle().stroke(Color.white.opacity(isActive ? 0.9 : 0.2), lineWidth: isActive ? 1.5 : 0.5)
+                                            )
+                                        if labelCount > 0 {
+                                            Text(formatCountBadge(labelCount))
+                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.white)
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                                .padding(.horizontal, 5)
+                                                .frame(height: 14)
+                                                .background(Capsule().fill(Color.black.opacity(0.45)))
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .frame(height: AppTheme.pillSize)
+                                    .fixedSize(horizontal: true, vertical: false)
                                 }
                                 .buttonStyle(.plain)
-                                .help("\(label.rawValue) 라벨 필터 (\(label.key.isEmpty ? "" : "키: \(label.key)"))")
+                                .background(isActive ? (label.color ?? .gray).opacity(0.85) : AppTheme.toolbarButtonBg)
+                                .clipShape(Capsule())
+                                .help("\(label.rawValue) 라벨 필터 (\(labelCount)장)\(label.key.isEmpty ? "" : " / 키: \(label.key)")")
                             }
                             if !store.colorLabelFilters.isEmpty {
                                 Button(action: { store.colorLabelFilters.removeAll() }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.plain)
@@ -1137,6 +1179,14 @@ extension ContentView {
     }
 
     // MARK: - Toolbar Button Helper
+
+    /// v8.8: 숫자 배지 포맷 — 1000 이상은 "1.2k" 형식으로 압축
+    func formatCountBadge(_ count: Int) -> String {
+        if count < 1000 { return "\(count)" }
+        let k = Double(count) / 1000.0
+        if k >= 10 { return "\(Int(k))k" }
+        return String(format: "%.1fk", k)
+    }
 
     func toolbarButton(icon: String, text: String, color: Color, active: Bool) -> some View {
         HStack(spacing: 4) {

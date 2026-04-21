@@ -245,7 +245,7 @@ struct FolderBrowserView: View {
 
     /// Auto-expand tree to show the currently loaded folder (async to avoid blocking main thread)
     private func expandTreeToPath(_ targetURL: URL) {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = URL(fileURLWithPath: "/Users/\(NSUserName())")
         let desktopURL = home.appendingPathComponent("Desktop")
 
         // Build path components from Desktop to target
@@ -813,13 +813,13 @@ struct FolderBrowserView: View {
                 let columns = [GridItem(.flexible()), GridItem(.flexible())]
                 LazyVGrid(columns: columns, spacing: 8) {
                     iconQuickItem(name: "Desktop", icon: "desktopcomputer", color: .blue,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Desktop"))
                     iconQuickItem(name: "Documents", icon: "doc.fill", color: .blue,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Documents"))
                     iconQuickItem(name: "Downloads", icon: "arrow.down.circle.fill", color: .green,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Downloads"))
                     iconQuickItem(name: "Pictures", icon: "photo.fill", color: .orange,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Pictures"))
                 }
                 .padding(.horizontal, 6)
 
@@ -954,7 +954,11 @@ struct FolderBrowserView: View {
 
     /// Build root folder items (can be called off the main thread)
     private func buildRootItems() -> [FolderItem] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        // v8.8.0: Sandbox 컨테이너 가 아닌 실제 사용자 home 경로 사용.
+        //   FileManager.homeDirectoryForCurrentUser 는 sandbox 에서 컨테이너 를 반환 → 그 안의
+        //   Desktop 심볼릭 링크가 실제 경로로 이어지지만 엔타이틀먼트 가 컨테이너 경로 기준으로
+        //   적용 안 돼 read-write 가 거부 됨. 실제 /Users/<name> 경로 로 접근 해야 정상 동작.
+        let home = URL(fileURLWithPath: "/Users/\(NSUserName())")
         var items: [FolderItem] = []
 
         let desktopURL = home.appendingPathComponent("Desktop")

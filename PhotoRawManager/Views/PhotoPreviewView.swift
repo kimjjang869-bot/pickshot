@@ -484,6 +484,13 @@ class PreviewImageCache {
                 }
             }
         }
+        // v8.8.0 fix: Nikon Z8/Z9 NEF 등 임베디드 JPEG 에 orient 태그가 없는 케이스 대응.
+        //   부모 RAW 파일의 main orient (NEF 의 경우 top-level or TIFF.Orientation) 를 읽어
+        //   필요 시 회전 적용. (Sony ARW 와 동일한 correctThumbnailOrientationIfNeeded 패턴.)
+        if let img = bestImage,
+           let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+            return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: parentSource)
+        }
         return bestImage
     }
 
@@ -1309,7 +1316,9 @@ struct PhotoPreviewView: View {
                         kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                         kCGImageSourceCreateThumbnailWithTransform: true
                       ] as CFDictionary) {
-                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                // v8.8.0: NEF 등 orient 미적용 케이스 보정
+                let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
                 image = img
                 ThumbnailCache.shared.set(url, image: img)
             }
@@ -1381,6 +1390,29 @@ struct PhotoPreviewView: View {
         }
         // v8.5 — 원본 image 가 로드되면 비파괴 보정 프리뷰 갱신
         .onChange(of: image) { _, _ in refreshDevelopedImage() }
+        // v8.8.1: 캐시 100% 완료 시 현재 사진을 고화질 버전으로 자동 업그레이드.
+        //   캐시가 다 쌓였는데도 저화질 stage1 이 표시되던 케이스 (slow disk skip / key-repeat 취소 등) 대응.
+        .onChange(of: store.previewsLoaded) { _, new in
+            let total = store.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+            guard total > 0, new >= total,
+                  store.thumbCacheCount >= total,
+                  let selected = store.selectedPhoto,
+                  !selected.isFolder, !selected.isParentFolder, !selected.isVideoFile
+            else { return }
+            let url = selected.jpgURL
+            let res = store.previewResolution
+            let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
+            if let hi = PreviewImageCache.shared.get(cacheKey) {
+                // 현재 표시 이미지보다 해상도 크면 교체
+                let curMax = max(image?.size.width ?? 0, image?.size.height ?? 0)
+                let hiMax = max(hi.size.width, hi.size.height)
+                if hiMax > curMax * 1.1 {
+                    fputs("[CACHE-DONE] upgrade preview \(url.lastPathComponent) \(Int(curMax)) → \(Int(hiMax))\n", stderr)
+                    self.image = hi
+                    self.lowResImage = hi
+                }
+            }
+        }
         // 보정값이 외부(슬라이더 등)에서 바뀌면 즉시 반영
         .onReceive(DevelopStore.shared.objectWillChange) { _ in
             // objectWillChange 는 변경 직전 발행 → 다음 runloop 에서 읽어야 반영됨
@@ -1825,20 +1857,59 @@ struct PhotoPreviewView: View {
             let isJPG = ["jpg", "jpeg"].contains(ext)
 
             if isJPG {
-                // JPG: load at target resolution
-                let targetPx = resolution > 0 ? CGFloat(resolution) : 0
-                let img: NSImage?
-                if targetPx == 0 {
-                    img = NSImage(contentsOf: decodeURL)
-                } else {
-                    img = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: targetPx)
+                // v8.8.1: JPG 2-stage 로딩 (고용량 JPG 로딩 속도 대폭 개선)
+                //   Stage 1: 임베디드 프리뷰 (~1600px, <100ms) → 즉시 표시
+                //   Stage 2: 목표 해상도 풀 디코딩 → 교체
+                //   "원본" (resolution=0) 은 화면 해상도 기반 optimalPreviewSize 를 상한으로 사용.
+                let stage1Px: CGFloat = 1600
+                let finalPx: CGFloat = resolution > 0
+                    ? CGFloat(resolution)
+                    : PreviewImageCache.optimalPreviewSize()
+                let stage2Needed = finalPx > stage1Px * 1.2
+
+                // Stage 1: 빠른 임베디드 프리뷰 — loadOptimized 내부에서 Strategy 1 (CGImageSource embedded)
+                //   이 즉시 리턴. 50MP JPG 라도 수십 ms 내 완료.
+                let fastImage = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: stage1Px)
+                if let fast = fastImage, self.pendingPhotoID == id {
+                    let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                    fputs("[LD] JPG-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms\n", stderr)
+                    // Stage 1 은 썸네일 캐시에만. PreviewImageCache 는 stage2 결과로 채움.
+                    ThumbnailCache.shared.set(url, image: fast)
+                    RunLoop.main.perform(inModes: [.common]) {
+                        guard self.pendingPhotoID == id,
+                              store.selectedPhoto?.jpgURL == url else { return }
+                        self.image = fast
+                        self.lowResImage = fast
+                    }
+                    // stage2 불필요 (예: 목표가 이미 stage1 이하) → stage1 결과로 최종 캐시
+                    if !stage2Needed {
+                        PreviewImageCache.shared.set(cacheKey, image: fast)
+                        store.notePreviewLoaded(url: url)
+                        return
+                    }
                 }
-                guard let loaded = img, self.pendingPhotoID == id else { return }
+
+                // Stage 2: 목표 해상도 풀 디코딩 (느린 디스크 skip)
+                guard self.pendingPhotoID == id else { return }
+                if store.currentFolderIsSlowDisk, fastImage != nil {
+                    PreviewImageCache.shared.set(cacheKey, image: fastImage!)
+                    store.notePreviewLoaded(url: url)
+                    return
+                }
+                let full: NSImage? = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: finalPx)
+                    ?? (resolution == 0 ? NSImage(contentsOf: decodeURL) : nil)
+                guard let loaded = full, self.pendingPhotoID == id else {
+                    // stage2 실패 시 stage1 로 마무리
+                    if let fast = fastImage {
+                        PreviewImageCache.shared.set(cacheKey, image: fast)
+                        store.notePreviewLoaded(url: url)
+                    }
+                    return
+                }
                 let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                fputs("[LD] JPG \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(ms)ms\n", stderr)
+                fputs("[LD] JPG-S2 \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(ms)ms\n", stderr)
                 PreviewImageCache.shared.set(cacheKey, image: loaded)
-                store.notePreviewLoaded(url: url)  // v8.6.2: 진행률 게이지
-                // 미리보기 이미지로 썸네일 캐시도 채우기 (디스크 I/O 없이 즉시)
+                store.notePreviewLoaded(url: url)
                 ThumbnailCache.shared.set(url, image: loaded)
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id,
@@ -2618,7 +2689,9 @@ struct PhotoPreviewView: View {
                         kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                         kCGImageSourceCreateThumbnailWithTransform: true
                       ] as CFDictionary) else { return }
-                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                // v8.8.0: NEF 등 orient 미적용 케이스 보정
+                let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
                 ThumbnailCache.shared.set(url, image: img)
             }
         }
@@ -2775,7 +2848,9 @@ struct PhotoPreviewView: View {
             if let cg = CGImageSourceCreateThumbnailAtIndex(parentSrc, 0, opts as CFDictionary) {
                 // 최소 화질 기준: 장변 2000px 이상이면 채택 (그 이하면 FFD8 폴백)
                 if max(cg.width, cg.height) >= 2000 {
-                    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    let raw = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    // v8.8.0: NEF 등 embedded preview 에 orient 없는 RAW 보정
+                    return correctThumbnailOrientationIfNeeded(raw, source: parentSrc)
                 }
             }
         }
@@ -2932,7 +3007,13 @@ struct PhotoPreviewView: View {
     /// - orientation=1 또는 이미 일치하는 경우 no-op (정상 파일 영향 없음).
     static func correctThumbnailOrientationIfNeeded(_ image: NSImage, source: CGImageSource) -> NSImage {
         guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return image }
-        let mainOrient = props[kCGImagePropertyOrientation as String] as? Int ?? 1
+        // v8.8.0 fix: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        let mainOrient: Int = {
+            if let o = props[kCGImagePropertyOrientation as String] as? Int { return o }
+            if let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
+               let o = tiff[kCGImagePropertyTIFFOrientation as String] as? Int { return o }
+            return 1
+        }()
         guard mainOrient != 1 else { return image }
         let mainPw = props[kCGImagePropertyPixelWidth as String] as? Int ?? 0
         let mainPh = props[kCGImagePropertyPixelHeight as String] as? Int ?? 0

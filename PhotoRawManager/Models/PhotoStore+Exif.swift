@@ -30,20 +30,24 @@ extension PhotoStore {
                 }
             }
 
-            // 8-way concurrent 추출
+            // 8-way concurrent 추출 — v8.8.0: ThumbnailLoader 경유로 변경.
+            //   직접 CGImageSourceCreateThumbnailAtIndex 호출 시 NEF 등 RAW 의 EXIF orientation
+            //   이 적용 안 돼서 세로 사진이 가로로 캐시되는 버그 발생. generateThumbnailSync 는
+            //   내부에서 extractThumbnailFast 를 통해 orientation 을 정확히 처리.
             let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .userInitiated, attributes: .concurrent)
             for url in toLoad.prefix(60) {
                 concurrentQueue.async {
                     autoreleasepool {
                         if ThumbnailCache.shared.get(url) != nil { return }
-                        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                              let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                                kCGImageSourceThumbnailMaxPixelSize: 400,
-                                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                                kCGImageSourceCreateThumbnailWithTransform: true
-                              ] as CFDictionary) else { return }
-                        let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                        ThumbnailCache.shared.set(url, image: img)
+                        if let img = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                            ThumbnailCache.shared.set(url, image: img)
+                        } else {
+                            // generateThumbnailSync 는 이미 캐시에 있으면 nil 리턴 — 그 경우 직접 get
+                            if ThumbnailCache.shared.get(url) == nil,
+                               let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+                                ThumbnailCache.shared.set(url, image: disk)
+                            }
+                        }
                     }
                 }
             }
@@ -227,14 +231,10 @@ extension PhotoStore {
                 autoreleasepool {
                     guard self?.idlePrefetchGeneration == gen else { return }
                     if ThumbnailCache.shared.get(url) != nil { return }  // 이미 캐시됨
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                            kCGImageSourceThumbnailMaxPixelSize: 400,
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true
-                          ] as CFDictionary) else { return }
-                    let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                    ThumbnailCache.shared.set(url, image: img)
+                    // v8.8.0: ThumbnailLoader 경유 (NEF 등 RAW orientation 처리 보장)
+                    if let img = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                        ThumbnailCache.shared.set(url, image: img)
+                    }
                 }
             }
         }
@@ -383,15 +383,10 @@ extension PhotoStore {
             if ThumbnailCache.shared.get(url) != nil { continue }
             let op = BlockOperation {
                 autoreleasepool {
-                    let opts: [NSString: Any] = [
-                        kCGImageSourceThumbnailMaxPixelSize: 1200,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                    ]
-                    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
-                    let ns = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-                    ThumbnailCache.shared.set(url, image: ns)
+                    // v8.8.0: ThumbnailLoader 경유 (NEF 등 RAW orientation 처리 보장)
+                    if let ns = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                        ThumbnailCache.shared.set(url, image: ns)
+                    }
                 }
             }
             Self.thumbPrefetchQueue.addOperation(op)

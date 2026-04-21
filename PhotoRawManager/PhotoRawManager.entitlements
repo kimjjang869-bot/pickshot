@@ -22,5 +22,11 @@
 	<array>
 		<string>/Volumes/</string>
 	</array>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Desktop/</string>
+		<string>/Documents/</string>
+		<string>/Movies/</string>
+	</array>
 </dict>
 </plist>

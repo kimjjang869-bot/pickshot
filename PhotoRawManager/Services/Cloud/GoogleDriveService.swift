@@ -577,19 +577,8 @@ class GoogleDriveService {
             .replacingOccurrences(of: "=", with: "")
         oauthState = stateToken
 
-        let scopes = "https://www.googleapis.com/auth/drive.file"
-        let authURL = "https://accounts.google.com/o/oauth2/v2/auth"
-            + "?client_id=\(oauthClientID)"
-            + "&redirect_uri=\(oauthRedirectURI)"
-            + "&response_type=code"
-            + "&scope=\(scopes)"
-            + "&access_type=offline"
-            + "&prompt=consent"
-            + "&code_challenge=\(codeChallenge)"
-            + "&code_challenge_method=S256"
-            + "&state=\(stateToken)"
-
-        // Start local HTTP server to receive callback
+        // v8.8.0: 서버를 먼저 시작해서 실제 바인딩된 port 를 얻은 뒤 redirect_uri 에 반영.
+        //   8085 가 사용중이면 8086, 8087 … 로 fallback.
         startLocalOAuthServer { code, error in
             if let error = error {
                 completion(nil, error)
@@ -602,17 +591,40 @@ class GoogleDriveService {
             exchangeCodeForToken(code: code, completion: completion)
         }
 
+        // 바인딩된 port 로 redirect_uri 구성
+        let port = localServer?.boundPort ?? 8085
+        let redirect = "http://127.0.0.1:\(port)/oauth/callback"
+        oauthRedirectURIRuntime = redirect
+
+        let scopes = "https://www.googleapis.com/auth/drive.file"
+        let authURL = "https://accounts.google.com/o/oauth2/v2/auth"
+            + "?client_id=\(oauthClientID)"
+            + "&redirect_uri=\(redirect)"
+            + "&response_type=code"
+            + "&scope=\(scopes)"
+            + "&access_type=offline"
+            + "&prompt=consent"
+            + "&code_challenge=\(codeChallenge)"
+            + "&code_challenge_method=S256"
+            + "&state=\(stateToken)"
+
         // Open browser
         if let url = URL(string: authURL) {
             NSWorkspace.shared.open(url)
         }
     }
 
+    /// v8.8.0: 실제 서버가 바인딩된 redirect URI. token 교환 시 동일한 값 사용해야 함.
+    private static var oauthRedirectURIRuntime: String = "http://127.0.0.1:8085/oauth/callback"
+
     private static var localServer: LocalOAuthServer?
     private static var oauthState: String = ""  // CSRF 방지용 state 토큰
 
     private static func startLocalOAuthServer(completion: @escaping (String?, Error?) -> Void) {
         _ = oauthState
+        // v8.8.0: 이전 OAuth 시도가 완료/취소 안 된 경우 listener 가 port 를 잡고 있을 수 있음 → 먼저 해제.
+        localServer?.stop()
+        localServer = nil
         // v8.6.1 보안: LocalOAuthServer 에 expectedState 전달 (CSRF 방지)
         localServer = LocalOAuthServer(port: 8085, expectedState: oauthState, completion: { code, error in
             // state 파라미터 미검증 시 CSRF 공격 가능 — 서버에서 state 추출 후 비교
@@ -634,7 +646,7 @@ class GoogleDriveService {
         // 빈 문자열로 보내면 Google이 invalid_request 에러 → 빈 값이면 파라미터 생략
         var body = "code=\(code)"
             + "&client_id=\(oauthClientID)"
-            + "&redirect_uri=\(oauthRedirectURI)"
+            + "&redirect_uri=\(oauthRedirectURIRuntime)"  // v8.8.0: start 시 바인딩된 port 와 일치
             + "&grant_type=authorization_code"
             + "&code_verifier=\(codeVerifier)"
         if !oauthClientSecret.isEmpty {

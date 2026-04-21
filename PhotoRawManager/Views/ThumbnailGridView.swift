@@ -1072,6 +1072,12 @@ struct LazyThumbnailWrapper: View, Equatable {
                 photo: photo, store: store, cellWidth: size
             ))
             .onTapGesture { onTap() }
+            .background(RightClickSelector {
+                // v8.8.0: 우클릭 시 사진 선택 (이미 선택돼 있으면 유지)
+                if !store.selectedPhotoIDs.contains(photo.id) {
+                    store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                }
+            })
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
                     Button("Finder에서 열기") {
@@ -1229,6 +1235,13 @@ struct LazyListRowWrapper: View {
                     onTap()
                 }
             }
+            .background(RightClickSelector {
+                // v8.8.0: 우클릭 시 사진 선택
+                if !photo.isFolder && !photo.isParentFolder,
+                   !store.selectedPhotoIDs.contains(photo.id) {
+                    store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                }
+            })
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
                     Button("Finder에서 열기") {
@@ -1238,6 +1251,40 @@ struct LazyListRowWrapper: View {
                     PhotoContextMenu(photo: photo, store: store)
                 }
             }
+    }
+}
+
+// MARK: - Right-Click Select Helper
+
+/// v8.8.0: 우클릭 시 콜백 실행 (이벤트는 통과 → SwiftUI .contextMenu 가 여전히 열림).
+///   썸네일 셀에 .background(RightClickSelector { ... }) 로 붙여 "우클릭 = 사진 선택" 기능 추가.
+struct RightClickSelector: NSViewRepresentable {
+    let onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = RightClickCatcherView()
+        v.onRightClick = onRightClick
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? RightClickCatcherView)?.onRightClick = onRightClick
+    }
+
+    final class RightClickCatcherView: NSView {
+        var onRightClick: (() -> Void)?
+        override func rightMouseDown(with event: NSEvent) {
+            onRightClick?()
+            super.rightMouseDown(with: event)
+        }
+        /// 좌클릭 이벤트는 SwiftUI 로 통과 — 우클릭만 가로챔.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent else { return nil }
+            if event.type == .rightMouseDown || event.type == .rightMouseUp {
+                return super.hitTest(point)
+            }
+            return nil
+        }
     }
 }
 
@@ -2592,8 +2639,10 @@ class ThumbnailLoader {
     @discardableResult
     func generateThumbnailSync(url: URL) -> NSImage? {
         if ThumbnailCache.shared.get(url) != nil { return nil }
-        if DiskThumbnailCache.shared.getByPath(url: url) != nil {
-            // 디스크에 있지만 메모리 캐시엔 없음 → 메모리에만 채우고 종료 (sweep 주 목적)
+        if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+            // v8.8.1 fix: 디스크 히트 시 실제로 메모리 캐시에 채우기 (이전 버전은 주석만 있고 미구현 →
+            //   thumbCacheCount 가 증가 안 해서 진행률이 99% 정체).
+            ThumbnailCache.shared.set(url, image: disk)
             return nil
         }
         // 실제 추출 (feed-forward 경로와 동일 extractThumbnail)
@@ -2793,12 +2842,15 @@ class ThumbnailLoader {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
 
         // 메인 이미지 EXIF orientation 읽기 (RAW 썸네일에 orientation이 없을 수 있음)
-        let mainOrientation: Int
-        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-           let orient = props[kCGImagePropertyOrientation as String] as? Int {
-            mainOrientation = orient
-        } else {
-            mainOrientation = 1  // normal
+        // v8.8.0 fix: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        var mainOrientation: Int = 1
+        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            if let orient = props[kCGImagePropertyOrientation as String] as? Int {
+                mainOrientation = orient
+            } else if let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
+                      let orient = tiff[kCGImagePropertyTIFFOrientation as String] as? Int {
+                mainOrientation = orient
+            }
         }
 
         // 임베디드 썸네일만 시도 (파일 전체 디코딩 안 함)
@@ -2903,7 +2955,13 @@ class ThumbnailLoader {
         // (전체 파일 다운로드 회피 → 30-50MB/s 링크에서 10배 이상 빠름)
         if isRAW && ThumbnailLoader.shared.isNetworkMode {
             if let cgImage = NASOptimizedReader.extractRAWThumbnail(url: url, maxPixel: CGFloat(thumbSize)) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                // v8.8.0 fix: Nikon Z8/Z9 NEF 등 embedded preview 에 orient 태그가 없는 RAW 보정.
+                //   부모 파일 source 에서 top-level/TIFF.Orientation 을 읽어 적용.
+                if let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: parentSource)
+                }
+                return img
             }
             // 실패 시 일반 경로로 폴백 (아래)
         }
@@ -2949,8 +3007,14 @@ class ThumbnailLoader {
         }
 
         // RAW Step 3: Embedded JPEG extraction (last resort — for unsupported RAW formats)
+        // v8.8.0 fix: Nikon Z8/Z9 NEF 등은 Step 1/2 가 nil 리턴 (PixelWidth=nil) → Step 3 타는데
+        //   embedded JPEG 에 orient 태그가 없어 수동 회전 필요. correctThumbnailOrientationIfNeeded 는
+        //   부모 RAW 의 top-level 또는 TIFF.Orientation 을 읽어 적용.
         if isRAW {
             if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                }
                 return img
             }
             return nil

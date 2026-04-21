@@ -148,6 +148,17 @@ class PhotoStore: ObservableObject {
         didSet { UserDefaults.standard.set(Double(thumbnailSize), forKey: "savedThumbnailSize") }
     }
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
+
+    /// v8.8.1: 적극적 캐시 프리로드 모드.
+    ///   true  → 폴더 진입 즉시 공격적 병렬 로딩 (CPU/디스크 집중, 시스템 부하 ↑)
+    ///   false → 기존 idle 기반 순차 로딩 (백그라운드에서 조용히)
+    @Published var aggressiveCache: Bool = UserDefaults.standard.bool(forKey: "aggressiveCachePreload") {
+        didSet {
+            UserDefaults.standard.set(aggressiveCache, forKey: "aggressiveCachePreload")
+            // 토글 시 즉시 sweep 재평가 (OFF→ON 이면 바로 시작, ON→OFF 면 일반 idle 대기)
+            CacheSweeper.shared.notifyActivity()
+        }
+    }
     @Published var qualityFilter: QualityFilter = .all { didSet { invalidateFilterCache() } }
     @Published var isAnalyzing = false
     @Published var analyzeProgress: Double = 0

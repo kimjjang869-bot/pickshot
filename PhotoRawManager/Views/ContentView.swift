@@ -460,6 +460,8 @@ struct ContentView: View {
                     || store.isPreloadingThumbs
                     || MemoryLeakTracker.shared.isStressTesting
             }
+            // v8.8.1: 적극 캐시 모드 바인딩
+            sweeper.aggressiveModeProvider = { [weak store] in store?.aggressiveCache ?? false }
             sweeper.selectedIndexProvider = {
                 // v8.6.2: O(n) firstIndex → O(1) _photoIndex
                 guard let id = store.selectedPhotoID,

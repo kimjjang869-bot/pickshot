@@ -31,6 +31,9 @@
     "— %@" : {
 
     },
+    "— 정면/옆면/뒷면 여러 샷 등록 가능" : {
+
+    },
     "... 외 %lld개" : {
 
     },
@@ -137,12 +140,15 @@
         }
       }
     },
-    "%@ 라벨 필터 (%@)" : {
+    "%@ 경과" : {
+
+    },
+    "%@ 라벨 필터 (%lld장)%@" : {
       "localizations" : {
         "ko" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ 라벨 필터 (%2$@)"
+            "value" : "%1$@ 라벨 필터 (%2$lld장)%3$@"
           }
         }
       }
@@ -165,6 +171,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@: %lld / %lld" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$lld / %3$lld"
           }
         }
       }
@@ -194,6 +210,9 @@
           }
         }
       }
+    },
+    "%lld / 100" : {
+
     },
     "%lld folders" : {
 
@@ -432,7 +451,13 @@
     "• URL 비워두고 저장 → 프록시 미사용 (URL 내장 방식 폴백)" : {
 
     },
+    "• 기본값으로 복원하려면 '기본값' 버튼을 눌러주세요." : {
+
+    },
     "• 무료 플랜: 하루 100,000회 요청 (소규모 스튜디오엔 넉넉)" : {
+
+    },
+    "• 변경 버튼을 누르고 원하는 단축키 조합을 한 번 누르세요." : {
 
     },
     "• 사용자의 다른 Google Drive 파일은 보지 않습니다" : {
@@ -445,6 +470,9 @@
           }
         }
       }
+    },
+    "• 이미 다른 액션에 쓰이는 조합은 충돌합니다 — 권장: 수정자 키(⌥/⇧) 조합." : {
+
     },
     "• 코드 업데이트 하려면 같은 Worker 에 코드 다시 저장하면 됨" : {
 
@@ -483,6 +511,9 @@
         }
       }
     },
+    "⏹ 중단" : {
+
+    },
     "◆" : {
 
     },
@@ -502,6 +533,9 @@
           }
         }
       }
+    },
+    "⚠️ 설정한 용량 초과 시 오래된 항목부터 삭제. 디스크 여유가 충분하면 '자동' 권장" : {
+
     },
     "⚠️ 주의: Backspace 키를 누르면 원본 파일이 휴지통으로 이동됩니다. 실수로 삭제할 수 있으니 주의하세요." : {
       "extractionState" : "manual",
@@ -529,6 +563,12 @@
 
     },
     "✏️ 펜" : {
+
+    },
+    "✓ %@" : {
+
+    },
+    "✓ macOS 가 디스크 여유에 맞춰 자동 관리합니다 (권장)" : {
 
     },
     "✓ 셀렉" : {
@@ -583,6 +623,9 @@
           }
         }
       }
+    },
+    "🧹 해제" : {
+
     },
     "$" : {
 
@@ -678,6 +721,15 @@
       }
     },
     "85+: ★★★★★  |  75~84: ★★★★  |  65~74: ★★★" : {
+
+    },
+    "90° 시계방향" : {
+
+    },
+    "180°" : {
+
+    },
+    "270° (반시계 90°)" : {
 
     },
     "500px (초저사양)" : {
@@ -997,6 +1049,9 @@
           }
         }
       }
+    },
+    "Camera Raw 에서 열기 (%lld장)" : {
+
     },
     "CIRAWFilter 모드에서 사용할 출력 색공간" : {
       "extractionState" : "manual",
@@ -1459,6 +1514,9 @@
     "ISO %lld" : {
 
     },
+    "JPEG 품질" : {
+
+    },
     "JPEG 품질:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1561,6 +1619,9 @@
         }
       }
     },
+    "JPG+RAW 매칭을 파일번호 기반으로 (편집 접미사 무시)" : {
+
+    },
     "JPG만" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1602,6 +1663,9 @@
           }
         }
       }
+    },
+    "LIVE" : {
+
     },
     "LOG" : {
 
@@ -1657,6 +1721,9 @@
       }
     },
     "Mac" : {
+
+    },
+    "Memory Leak Tracker" : {
 
     },
     "Navigation Debug" : {
@@ -1957,6 +2024,9 @@
         }
       }
     },
+    "RAW+JPG 쌍에서 RAW 를 우선 표시" : {
+
+    },
     "RAW만" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1975,12 +2045,6 @@
 
     },
     "SP" : {
-
-    },
-    "SP 셀렉" : {
-
-    },
-    "SP 해제" : {
 
     },
     "SP: %lld장" : {
@@ -2130,17 +2194,6 @@
     "개인정보 처리방침" : {
 
     },
-    "건너뜀" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "건너뜀"
-          }
-        }
-      }
-    },
     "건너뛰기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2166,6 +2219,17 @@
     "건너뛴 파일: %lld개" : {
 
     },
+    "건너뜀" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "건너뜀"
+          }
+        }
+      }
+    },
     "검색" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2176,6 +2240,15 @@
           }
         }
       }
+    },
+    "검색 결과: %lld장" : {
+
+    },
+    "검색 기준 선택" : {
+
+    },
+    "검색 해제 → 전체 썸네일 복원" : {
+
     },
     "검정 계열" : {
       "extractionState" : "manual",
@@ -2463,6 +2536,9 @@
     "기본 프록시로 복원" : {
 
     },
+    "기본값" : {
+
+    },
     "기준 %lld점 이상 %lld장 셀렉 완료" : {
       "localizations" : {
         "ko" : {
@@ -2694,6 +2770,15 @@
         }
       }
     },
+    "노출" : {
+
+    },
+    "노출·WB·커브·크롭이 설정된 사진들은 JPEG 로 렌더링되어 저장됩니다. 원본은 건드리지 않음." : {
+
+    },
+    "누르면 이미지 분석 후 자동값을 슬라이더에 반영" : {
+
+    },
     "다른 폴더의 RAW/JPG 파일을 현재 목록과 매칭합니다" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2763,6 +2848,9 @@
         }
       }
     },
+    "다중 선택 해제 (%lld명)" : {
+
+    },
     "다크 그레이" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2807,6 +2895,9 @@
         }
       }
     },
+    "단축키 커스텀" : {
+
+    },
     "닫기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2817,6 +2908,9 @@
           }
         }
       }
+    },
+    "대비" : {
+
     },
     "대상" : {
       "extractionState" : "manual",
@@ -2928,6 +3022,9 @@
           }
         }
       }
+    },
+    "뒷면 포함" : {
+
     },
     "듀얼 뷰어 (D)" : {
       "extractionState" : "manual",
@@ -3079,6 +3176,9 @@
       }
     },
     "로고 크기 %lld%%" : {
+
+    },
+    "로그" : {
 
     },
     "로그 폴더 열기" : {
@@ -3396,6 +3496,9 @@
         }
       }
     },
+    "모두 기본값으로" : {
+
+    },
     "모두 추가" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3418,7 +3521,10 @@
         }
       }
     },
-    "모든 별점 표시" : {
+    "모든 별점 표시 (필터 해제)" : {
+
+    },
+    "모든 보정값 초기화 (R)" : {
 
     },
     "모든 분석 항목 선택" : {
@@ -3623,6 +3729,12 @@
         }
       }
     },
+    "박스 제거" : {
+
+    },
+    "반시계 90° 회전" : {
+
+    },
     "반환된 JPG 파일명과 현재 폴더의 RAW 파일명을 비교합니다.\n정확 매칭 → 유사 매칭 → 숫자 패턴 매칭 순으로 시도합니다." : {
 
     },
@@ -3800,8 +3912,15 @@
         }
       }
     },
-    "별점 %lld 이상 필터" : {
-
+    "별점 %lld 만 표시 (%lld장) / Cmd·Shift+클릭: 다중 선택" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "별점 %1$lld 만 표시 (%2$lld장) / Cmd·Shift+클릭: 다중 선택"
+          }
+        }
+      }
     },
     "별점 분포" : {
       "extractionState" : "manual",
@@ -3930,6 +4049,15 @@
           }
         }
       }
+    },
+    "보정값 복사 (Cmd+Shift+C)" : {
+
+    },
+    "보정값 붙여넣기 (Cmd+Shift+V)" : {
+
+    },
+    "보정값 적용해서 내보내기" : {
+
     },
     "보정된 사진을 JPG로 저장 (원본 옆에 _corrected 파일 생성)" : {
       "extractionState" : "manual",
@@ -4191,6 +4319,12 @@
           }
         }
       }
+    },
+    "사물/장면" : {
+
+    },
+    "사용 가능한 모든 단축키" : {
+
     },
     "사용량 초기화" : {
       "extractionState" : "manual",
@@ -4513,6 +4647,9 @@
         }
       }
     },
+    "샷 추가" : {
+
+    },
     "서비스 약관" : {
 
     },
@@ -4569,6 +4706,12 @@
     "선택된 사진만 분류 (%lld장)" : {
 
     },
+    "선택된 파일 없음" : {
+
+    },
+    "선택만" : {
+
+    },
     "선택한 %lld장을 목록에서 제거하시겠습니까? (파일은 삭제되지 않습니다)" : {
 
     },
@@ -4585,6 +4728,9 @@
           }
         }
       }
+    },
+    "선택한 사진만 표시 (비교/편집용)" : {
+
     },
     "선택한 썸네일만" : {
 
@@ -4939,6 +5085,9 @@
         }
       }
     },
+    "스트레스 테스트" : {
+
+    },
     "슬라이드쇼" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4949,6 +5098,19 @@
           }
         }
       }
+    },
+    "시각 검색 진행 중... %lld/%lld" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "시각 검색 진행 중... %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "시계방향 90° 회전" : {
+
     },
     "시스템" : {
       "extractionState" : "manual",
@@ -5108,6 +5270,9 @@
     "아래 버튼으로 Cloudflare Workers 대시보드 열기 → 로그인 또는 가입(무료)" : {
 
     },
+    "아래 핵심 단축키를 원하는 키로 재매핑할 수 있습니다. 나머지는 기본값 고정." : {
+
+    },
     "아무 키나 누르면 닫힘" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5120,6 +5285,9 @@
       }
     },
     "아직 업로드한 세션이 없습니다" : {
+
+    },
+    "안내" : {
 
     },
     "알림 표시 (내보내기 완료, 분석 완료 등)" : {
@@ -5188,6 +5356,9 @@
         }
       }
     },
+    "얼굴 감지 실패 시 인물 영역 FeaturePrint 로 옆/뒷면 매칭 시도 (정확도↓)" : {
+
+    },
     "얼굴 감지 중..." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5235,6 +5406,9 @@
         }
       }
     },
+    "얼굴: 사람 식별 특화 / 사물: 부케·케이크·배경 등 범용" : {
+
+    },
     "엄격 (90)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5245,6 +5419,9 @@
           }
         }
       }
+    },
+    "엄격도" : {
+
     },
     "업데이트 확인" : {
       "extractionState" : "manual",
@@ -5375,6 +5552,9 @@
     "여기에 붙여넣기  ⌘V" : {
 
     },
+    "여러 명 선택 (OR)" : {
+
+    },
     "연간" : {
 
     },
@@ -5453,6 +5633,9 @@
     "영상: %lld개" : {
 
     },
+    "영역 초기화" : {
+
+    },
     "예: 20260322_행사_셀렉" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5463,6 +5646,9 @@
           }
         }
       }
+    },
+    "예: IMG_1234_LR.jpg ↔ IMG_1234.ARW 자동 매칭. 다음 폴더 로드부터 적용됩니다." : {
+
     },
     "예: IMG_1234.CR3 → %@%@.CR3" : {
       "localizations" : {
@@ -5506,6 +5692,9 @@
           }
         }
       }
+    },
+    "예: 신부 / 부케 / 웨딩카" : {
+
     },
     "예산 설정" : {
       "extractionState" : "manual",
@@ -5564,6 +5753,9 @@
         }
       }
     },
+    "온도" : {
+
+    },
     "옵션" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5596,6 +5788,9 @@
           }
         }
       }
+    },
+    "요약: %@" : {
+
     },
     "요청 횟수" : {
       "extractionState" : "manual",
@@ -5808,6 +6003,9 @@
         }
       }
     },
+    "이 샷 삭제" : {
+
+    },
     "이름" : {
 
     },
@@ -5890,6 +6088,9 @@
           }
         }
       }
+    },
+    "이미지 분석 후 자동 커브 적용" : {
+
     },
     "이미지 전환 애니메이션" : {
       "extractionState" : "manual",
@@ -6043,20 +6244,6 @@
         }
       }
     },
-    "장" : {
-
-    },
-    "자동" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동"
-          }
-        }
-      }
-    },
     "자동 보정" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6064,50 +6251,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "자동 보정"
-          }
-        }
-      }
-    },
-    "자동 보정 적용" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 보정 적용"
-          }
-        }
-      }
-    },
-    "자동 생성 키워드" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 생성 키워드"
-          }
-        }
-      }
-    },
-    "자동 화이트밸런스" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 화이트밸런스"
-          }
-        }
-      }
-    },
-    "자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정"
           }
         }
       }
@@ -6143,6 +6286,67 @@
     "잘라내기  ⌘X" : {
 
     },
+    "장" : {
+
+    },
+    "자동" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동"
+          }
+        }
+      }
+    },
+    "자동 보정 적용" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 보정 적용"
+          }
+        }
+      }
+    },
+    "자동 생성 키워드" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 생성 키워드"
+          }
+        }
+      }
+    },
+    "자동 얼굴 감지" : {
+
+    },
+    "자동 화이트밸런스" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 화이트밸런스"
+          }
+        }
+      }
+    },
+    "자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정"
+          }
+        }
+      }
+    },
     "장 분석 예정" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6153,6 +6357,12 @@
           }
         }
       }
+    },
+    "재검색" : {
+
+    },
+    "재매핑 가능한 단축키" : {
+
     },
     "저작권" : {
       "extractionState" : "manual",
@@ -6287,6 +6497,9 @@
         }
       }
     },
+    "전체 초기화" : {
+
+    },
     "전체 해제" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6370,6 +6583,9 @@
         }
       }
     },
+    "정지" : {
+
+    },
     "제거" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6435,6 +6651,9 @@
           }
         }
       }
+    },
+    "종합 점수" : {
+
     },
     "준비 중..." : {
       "extractionState" : "manual",
@@ -6963,6 +7182,12 @@
         }
       }
     },
+    "커브 · 영역 슬라이더 전체 리셋" : {
+
+    },
+    "커스텀" : {
+
+    },
     "커스텀 Worker URL 을 지우고 PickShot 기본 프록시 사용" : {
 
     },
@@ -7064,6 +7289,9 @@
           }
         }
       }
+    },
+    "켜면 RAW 파일 (ARW/NEF/CR3 등) 의 임베디드 프리뷰로 썸네일/미리보기 생성. 카메라 JPG 설정(픽쳐스타일/화이트밸런스) 이 그대로 반영됨.\n끄면 JPG 파일을 직접 사용 (더 빠름)." : {
+
     },
     "코드 보기" : {
 
@@ -7365,6 +7593,9 @@
         }
       }
     },
+    "톤 커브" : {
+
+    },
     "통합" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7377,6 +7608,12 @@
       }
     },
     "투명도 %lld%%" : {
+
+    },
+    "틴트" : {
+
+    },
+    "파일 번호 범위 필터 (예: 1000~1500)" : {
 
     },
     "파일 없음" : {
@@ -7743,6 +7980,9 @@
         }
       }
     },
+    "폴더에 이미지가 없습니다" : {
+
+    },
     "표시 항목" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7848,6 +8088,12 @@
         }
       }
     },
+    "프리셋" : {
+
+    },
+    "프리셋 삭제" : {
+
+    },
     "프리셋 선택" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7858,6 +8104,9 @@
           }
         }
       }
+    },
+    "프리셋 이름" : {
+
     },
     "프리셋 저장" : {
 
@@ -8083,17 +8332,6 @@
         }
       }
     },
-    "행" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "행"
-          }
-        }
-      }
-    },
     "해상도" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8101,6 +8339,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "해상도"
+          }
+        }
+      }
+    },
+    "행" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "행"
           }
         }
       }
@@ -8152,7 +8401,16 @@
         }
       }
     },
+    "현재 사진에서 가장 큰 얼굴을 찾아 박스 자동 표시" : {
+
+    },
+    "현재 상태: %@" : {
+
+    },
     "현재 설정" : {
+
+    },
+    "현재 설정을 프리셋으로 저장 (Cmd+Shift+S)" : {
 
     },
     "현재 셀렉 학습" : {
@@ -8166,7 +8424,13 @@
         }
       }
     },
+    "현재 엄격도/옵션으로 재검색" : {
+
+    },
     "현재 열린 폴더의 파일과 선택한 폴더의 파일을 파일명(baseName)으로 비교하여\nJPG↔RAW를 자동 연결합니다." : {
+
+    },
+    "현재 영역을 정면/옆/뒷면 샷 중 하나로 추가" : {
 
     },
     "현재 탭 설정을 기본값으로 초기화" : {
@@ -8329,6 +8593,9 @@
           }
         }
       }
+    },
+    "회전 (%lld장)" : {
+
     },
     "휴지통으로 이동" : {
       "extractionState" : "manual",

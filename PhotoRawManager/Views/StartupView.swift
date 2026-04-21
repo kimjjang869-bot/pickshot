@@ -75,7 +75,7 @@ struct StartupView: View {
                     Button(action: {
                         store.startupMode = .viewer
                         store.shouldOpenFolderBrowser = true
-                        let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+                        let desktop = URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Desktop")
                         // Try security-scoped bookmark first (App Sandbox)
                         if let bookmarkedURL = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
                             store.loadFolder(bookmarkedURL, restoreRatings: true)

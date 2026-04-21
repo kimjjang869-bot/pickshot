@@ -15,6 +15,8 @@ import CommonCrypto
 class LocalOAuthServer {
     private var listener: NWListener?
     private let port: UInt16
+    /// v8.8.0: start() 실패 시 실제 바인딩된 port (redirect URI 재생성 용).
+    private(set) var boundPort: UInt16 = 0
     private let completion: (String?, Error?) -> Void
     /// v8.6.1: OAuth state 검증 (CSRF 방지) — 요청 시작 전 세팅한 값과 콜백 state 가 일치해야 함.
     private let expectedState: String?
@@ -25,40 +27,63 @@ class LocalOAuthServer {
         self.completion = completion
     }
 
-    func start() {
-        do {
-            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-                completion(nil, NSError(domain: "LocalOAuthServer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid port: \(port)"]))
-                return
+    /// v8.8.0: NWParameters 구성 — localEndpointReuse 허용 (TIME_WAIT 재사용).
+    private static func makeParameters() -> NWParameters {
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        params.acceptLocalOnly = true  // 127.0.0.1 만
+        return params
+    }
+
+    /// v8.8.0: 포트 8085 가 잡혀있으면 8086, 8087 … 순차 시도.
+    private func tryBind(preferredPort: UInt16) -> (listener: NWListener, port: UInt16)? {
+        for offset: UInt16 in 0..<20 {
+            let candidate = preferredPort &+ offset
+            guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
+            if let l = try? NWListener(using: Self.makeParameters(), on: nwPort) {
+                fputs("[OAUTH-SRV] bound on port \(candidate)\n", stderr)
+                return (l, candidate)
+            } else {
+                fputs("[OAUTH-SRV] port \(candidate) in use — next\n", stderr)
             }
-            listener = try NWListener(using: .tcp, on: nwPort)
-            listener?.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    fputs("[OAUTH-SRV] ✅ listener ready on port \(self?.port ?? 0)\n", stderr)
-                case .failed(let err):
-                    fputs("[OAUTH-SRV] ❌ listener failed: \(err.localizedDescription)\n", stderr)
-                    DispatchQueue.main.async {
-                        self?.completion(nil, err)
-                    }
-                case .cancelled:
-                    fputs("[OAUTH-SRV] listener cancelled\n", stderr)
-                case .waiting(let err):
-                    fputs("[OAUTH-SRV] ⚠️ listener waiting: \(err.localizedDescription)\n", stderr)
-                default:
-                    fputs("[OAUTH-SRV] listener state: \(state)\n", stderr)
-                }
-            }
-            listener?.newConnectionHandler = { [weak self] connection in
-                fputs("[OAUTH-SRV] 📥 incoming connection\n", stderr)
-                self?.handleConnection(connection)
-            }
-            listener?.start(queue: .global(qos: .userInitiated))
-            fputs("[OAUTH-SRV] start() called, port=\(port)\n", stderr)
-        } catch {
-            fputs("[OAUTH-SRV] ❌ start() threw: \(error.localizedDescription)\n", stderr)
-            completion(nil, error)
         }
+        return nil
+    }
+
+    func start() {
+        guard NWEndpoint.Port(rawValue: port) != nil else {
+            completion(nil, NSError(domain: "LocalOAuthServer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid port: \(port)"]))
+            return
+        }
+        guard let result = tryBind(preferredPort: port) else {
+            completion(nil, NSError(domain: "LocalOAuthServer", code: -3, userInfo: [NSLocalizedDescriptionKey: "OAuth 로컬 포트(8085~8104)가 모두 사용중입니다. 다른 OAuth 창을 닫거나 앱을 재시작해 주세요."]))
+            return
+        }
+        listener = result.listener
+        boundPort = result.port
+        listener?.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                fputs("[OAUTH-SRV] ✅ listener ready on port \(self?.boundPort ?? 0)\n", stderr)
+            case .failed(let err):
+                fputs("[OAUTH-SRV] ❌ listener failed: \(err.localizedDescription)\n", stderr)
+                DispatchQueue.main.async {
+                    self?.completion(nil, err)
+                }
+            case .cancelled:
+                fputs("[OAUTH-SRV] listener cancelled\n", stderr)
+            case .waiting(let err):
+                fputs("[OAUTH-SRV] ⚠️ listener waiting: \(err.localizedDescription)\n", stderr)
+            default:
+                fputs("[OAUTH-SRV] listener state: \(state)\n", stderr)
+            }
+        }
+        listener?.newConnectionHandler = { [weak self] connection in
+            fputs("[OAUTH-SRV] 📥 incoming connection\n", stderr)
+            self?.handleConnection(connection)
+        }
+        listener?.start(queue: .global(qos: .userInitiated))
+        fputs("[OAUTH-SRV] start() called, port=\(boundPort)\n", stderr)
     }
 
     func stop() {

@@ -602,7 +602,9 @@ class VideoPlayerManager: ObservableObject {
                     request.finish(with: source, context: nil)
                 }
             }
-            filteredComposition.renderSize = size ?? CGSize(width: 1920, height: 1080)
+            // v8.8.1 fix: AVMutableVideoComposition(asset:applyingCIFiltersWithHandler:) 는 preferredTransform
+            //   을 자동 반영한 renderSize 를 설정. 여기서 naturalSize 로 덮어쓰면 세로 4K (2160×3840) 가
+            //   1920×1080 landscape frame 에 잘려 렌더링됨. 덮어쓰지 않고 인이트가 계산한 값을 그대로 사용.
             filteredComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps ?? 30))
 
             DispatchQueue.main.async { [weak self] in
@@ -837,6 +839,7 @@ class VideoPlayerManager: ObservableObject {
         let fileName = url.lastPathComponent.uppercased()
         let logPatterns = ["SLOG", "S-LOG", "CLOG", "C-LOG", "VLOG", "V-LOG",
                            "NLOG", "N-LOG", "FLOG", "F-LOG", "LOG-C", "LOGC",
+                           "DLOG", "D-LOG", "DLOGM", "D-LOG-M",
                            "BRAW", "BMPCC", "RED", "ARRI"]
         if logPatterns.contains(where: { fileName.contains($0) }) { return true }
 
@@ -847,6 +850,15 @@ class VideoPlayerManager: ObservableObject {
             // Sony XAVC 클립 + 10bit 이상 (bitrate > 40Mbps) → S-Log3/HLG 강력 추정
             if meta.bitrate > 40 { return true }
         }
+
+        // v8.8.1: Panasonic / DJI / 기타 Mxx_#### 클립 네이밍 + 고비트레이트 → LOG 강력 추정.
+        //   예: Panasonic S5M2 = "M51_0280.MP4" (V-Log), DJI Ronin 4D 일부 모델, Lumix 라인업.
+        //   transfer function/gamma 메타데이터가 없어도 80Mbps 이상이면 flat/LOG 프로파일 가능성 매우 높음.
+        if fileName.range(of: #"^M\d{2,3}_\d{4}\.(MP4|MOV)$"#, options: .regularExpression) != nil {
+            if meta.bitrate > 60 { return true }
+        }
+        // DJI 파일명 패턴 (DJI_xxxxxxxx.MP4)
+        if fileName.hasPrefix("DJI_") && meta.bitrate > 60 { return true }
 
         // 3) 폴더명 기반 감지 (카메라에서 복사 시 폴더명에 LOG 포함)
         let parentFolder = url.deletingLastPathComponent().lastPathComponent.uppercased()
