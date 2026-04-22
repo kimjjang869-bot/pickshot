@@ -37,6 +37,7 @@
       <a href="#features">기능</a>
       <a href="#craft">만든 사람</a>
       <a href="#pricing">가격</a>
+      <a href="manual.html">매뉴얼</a>
     </div>
     <a href="#download" class="btn btn-secondary btn-sm">다운로드</a>
   </div>
@@ -58,7 +59,7 @@
     </h1>
 
     <p class="hero-sub">
-      2,000장 RAW가 <strong>1.5초에</strong> 뜨고, 120fps로 스크롤하고,
+      2,000장 RAW가 <strong>1.5초에</strong> 뜨고,
       클릭하는 순간 풀해상도. Lightroom 카탈로그 만드는 시간에
       <strong>100장 골라 클라이언트 폴더에</strong> 있습니다.
     </p>
@@ -123,33 +124,33 @@
         <div class="kicker">PickShot 만의 매커닉</div>
         <h2 class="section-title">
           별점만으론 부족합니다.<br>
-          <span class="italic">2차 셀렉</span>이 따로 있어야 합니다.
+          <span class="italic">클라이언트 셀렉</span>은 따로 있어야 합니다.
         </h2>
         <p class="section-sub">
-          <strong>1차 (별점)</strong> 과 <strong>최종 (G)</strong> 이 독립 레이어로 공존합니다.
-          별점으로 등급을 매기고, G 로 최종 픽을 확정. 두 결정이 섞이지 않아
-          1차 셀렉 품질을 훼손하지 않고 최종 픽만 갈아낄 수 있습니다.
+          <strong>별점 (내 기준)</strong> 과 <strong>G (클라이언트 전달용)</strong> 이
+          독립 레이어로 공존합니다. 내 셀렉은 별점으로, 클라이언트에게 보낼 컷은 G 로.
+          두 결정이 섞이지 않아 내 기준을 훼손하지 않고 클라이언트용 픽만 갈아낄 수 있습니다.
         </p>
         <div class="gs-steps">
           <div class="gs-step" data-reveal>
             <div class="gs-step-num">1</div>
             <div>
-              <div class="gs-step-title">숫자키 <kbd>1</kbd>~<kbd>5</kbd></div>
-              <div class="gs-step-desc">품질 등급 — 절대 변하지 않음</div>
+              <div class="gs-step-title">숫자키 <kbd>1</kbd>~<kbd>4</kbd></div>
+              <div class="gs-step-desc">품질 등급 — 내 기준, 절대 변하지 않음</div>
             </div>
           </div>
           <div class="gs-step" data-reveal>
             <div class="gs-step-num">2</div>
             <div>
-              <div class="gs-step-title"><kbd>Space</kbd> 큰 프리뷰</div>
-              <div class="gs-step-desc">판단 확신을 위한 풀해상도 확인</div>
+              <div class="gs-step-title"><kbd>Space</kbd> 별 5점 빠른 셀렉</div>
+              <div class="gs-step-desc">숫자 5 대신 스페이스바로 원핸드 셀렉</div>
             </div>
           </div>
           <div class="gs-step" data-reveal>
             <div class="gs-step-num">3</div>
             <div>
-              <div class="gs-step-title"><kbd>G</kbd> 최종 확정</div>
-              <div class="gs-step-desc">별점과 독립. 내보내기는 G만 필터 가능</div>
+              <div class="gs-step-title"><kbd>G</kbd> 클라이언트 전달용</div>
+              <div class="gs-step-desc">별점과 독립. 클라이언트에게 보낼 컷만 G 로 묶기</div>
             </div>
           </div>
         </div>
@@ -170,8 +171,8 @@
             <div class="gs-tile"><div class="gs-ph g-ph-6"></div><div class="gs-meta"><span class="gs-stars">★★★</span></div></div>
           </div>
           <div class="gs-legend">
-            <span><span class="dot-s"></span>별점 = 1차</span>
-            <span><span class="dot-g"></span>G = 최종 확정</span>
+            <span><span class="dot-s"></span>별점 = 내 기준</span>
+            <span><span class="dot-g"></span>G = 클라이언트 전달용</span>
           </div>
         </div>
       </div>
@@ -222,12 +223,12 @@
         <div class="speed-label">2,000장 폴더 오픈</div>
       </div>
       <div class="speed-card" data-reveal>
-        <div class="speed-num" data-count="120" data-suffix="fps">0fps</div>
-        <div class="speed-label">썸네일 스크롤</div>
-      </div>
-      <div class="speed-card" data-reveal>
         <div class="speed-num" data-count="40" data-suffix="초">0초</div>
         <div class="speed-label">10,000장 풀 캐시 예열</div>
+      </div>
+      <div class="speed-card" data-reveal>
+        <div class="speed-num" data-count="221" data-suffix="MB">0MB</div>
+        <div class="speed-label">메모리 사용량 (18GB → 221MB)</div>
       </div>
       <div class="speed-card" data-reveal>
         <div class="speed-num" data-count="30" data-suffix="분">0분</div>
@@ -388,14 +389,21 @@
           하루에 많게는 <strong>10,000장</strong> 찍습니다.
         </p>
         <p class="craft-lead">
-          Lightroom이나 Bridge에서 10,000장 불러오려면 카탈로그 만드는 데만
-          <strong>30분이 날아갑니다</strong>. 그 동안 아무것도 못 하고 기다리고,
-          클라이언트는 전달을 기다리고. 이게 답답해서 직접 만들었습니다.
+          촬영이 끝나면 그때부터가 진짜입니다. 메모리카드에서 SSD로 복사하고,
+          <strong>Lightroom에 다시 올려서 카탈로그 만드는 데만 30분</strong>.
+          그 동안 아무것도 못 하고 진행바만 쳐다보고 있어야 했습니다.
         </p>
         <p class="craft-lead">
-          PickShot은 제가 매주 현장에서 씁니다. 버그는 제가 먼저 발견하고, 기능이
-          부족하면 제가 먼저 답답합니다. <strong>단축키 하나까지 손에 익은 대로</strong>
-          설계했습니다.
+          기다림이 끝나도 문제는 계속됐습니다. 프리뷰는 한 장 넘길 때마다 로딩,
+          스크롤은 버벅이고, 셀렉하다 보면 현장의 텐션은 이미 다 식어버렸습니다.
+          어느 날 복사 진행바를 보다가 생각했습니다 —
+          <strong>"복사하는 동안 셀렉할 수는 없을까?"</strong>
+        </p>
+        <p class="craft-lead">
+          그래서 직접 만들었습니다. 카드 꽂자마자 백업은 자동으로 돌고,
+          동시에 PickShot은 RAW를 1.5초에 띄워 버립니다. 복사가 끝날 때쯤이면
+          셀렉도 얼추 끝나 있습니다. <strong>단축키 하나까지 손에 익은 대로</strong>,
+          제가 매주 현장에서 쓰면서 다듬은 도구입니다.
         </p>
         <ul class="craft-list">
           <li><span class="craft-check">✓</span> <strong>G-Select</strong> — 현장에서 만들어진 2차 셀렉 매커닉</li>
@@ -462,14 +470,22 @@
         오늘 오후 촬영분이<br>
         <span class="italic">오늘 밤에 전달됩니다.</span>
       </h2>
-      <a id="download-btn" href="https://github.com/kimjjang869-bot/pickshot/releases/download/v8.8.1/PickShot_v8.8.1.dmg" class="btn btn-primary btn-xl">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-        </svg>
-        <span>Mac 다운로드 · <span id="download-version">v8.8.1</span></span>
-      </a>
+      <div class="dl-cta-row">
+        <a id="download-btn" href="https://github.com/kimjjang869-bot/pickshot/releases/download/v8.8.1/PickShot_v8.8.1.dmg" class="btn btn-primary btn-xl">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+          </svg>
+          <span>Mac 다운로드 · <span id="download-version">v8.8.1</span></span>
+        </a>
+        <a href="manual.html" class="btn btn-ghost">
+          사용법 먼저 보기
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
       <div class="dl-meta">macOS 13 Ventura 이상 · Apple Silicon / Intel · 32 MB</div>
       <div class="dl-links">
+        <a href="manual.html">매뉴얼</a>
+        <span>·</span>
         <a href="https://github.com/kimjjang869-bot/pickshot/releases" target="_blank">모든 버전</a>
         <span>·</span>
         <a href="https://github.com/kimjjang869-bot/pickshot" target="_blank">GitHub</a>
@@ -509,6 +525,7 @@
       </div>
       <div class="footer-col">
         <div class="footer-head">지원</div>
+        <a href="manual.html">사용 매뉴얼</a>
         <a href="https://github.com/kimjjang869-bot/pickshot/issues" target="_blank">버그 신고</a>
         <a href="https://github.com/kimjjang869-bot/pickshot/releases" target="_blank">릴리즈 노트</a>
         <a href="https://github.com/kimjjang869-bot/pickshot" target="_blank">소스 코드</a>

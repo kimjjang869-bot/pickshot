@@ -320,6 +320,9 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
     private var currentPhotoURL: URL?
     private var currentSize: CGFloat = 120
     private var starViews: [NSImageView] = []
+    /// v8.9.1 perf: 같은 사진/같은 크기/같은 별점 재구성 시 NSImage SymbolConfiguration 재생성 회피.
+    private var lastRating: Int = -1
+    private var lastStarSize: CGFloat = -1
 
     override func loadView() {
         let container = NSView()
@@ -475,13 +478,17 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
         fileNameLabel.stringValue = photo.fileNameWithExtension
         fileNameLabel.isHidden = false
 
-        // Stars
+        // Stars — v8.9.1 perf: 별점/크기 변경 시에만 NSImage 재생성 (스크롤 스파이크 완화)
         let starSize = max(8, size * 0.06)
-        for (i, sv) in starViews.enumerated() {
-            let filled = (i + 1) <= photo.rating
-            let config = NSImage.SymbolConfiguration(pointSize: starSize, weight: .regular)
-            sv.image = NSImage(systemSymbolName: filled ? "star.fill" : "star", accessibilityDescription: nil)?.withSymbolConfiguration(config)
-            sv.contentTintColor = filled ? NSColor(AppTheme.starGold) : NSColor.gray.withAlphaComponent(0.25)
+        if lastRating != photo.rating || lastStarSize != starSize {
+            for (i, sv) in starViews.enumerated() {
+                let filled = (i + 1) <= photo.rating
+                let config = NSImage.SymbolConfiguration(pointSize: starSize, weight: .regular)
+                sv.image = NSImage(systemSymbolName: filled ? "star.fill" : "star", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+                sv.contentTintColor = filled ? NSColor(AppTheme.starGold) : NSColor.gray.withAlphaComponent(0.25)
+            }
+            lastRating = photo.rating
+            lastStarSize = starSize
         }
         starsContainer.isHidden = false
 
@@ -619,6 +626,9 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
         sceneLabel.isHidden = true
         borderView.layer?.borderWidth = 0
         borderView.layer?.backgroundColor = NSColor.clear.cgColor
+        // v8.9.1 perf: star 재생성 강제 (다음 configure 에서 새 별점 반영)
+        lastRating = -1
+        lastStarSize = -1
     }
 
     // MARK: - Helper

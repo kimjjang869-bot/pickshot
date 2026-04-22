@@ -69,6 +69,8 @@ final class CacheSweeper: ObservableObject {
 
     /// 사용자 활동 발생 — 진행 중 sweep 즉시 중단, idle 타이머 리셋.
     /// v8.8.1: 적극 모드에선 사용자 활동 있어도 sweep 중단 안 함 (캐시 빌드 우선).
+    /// v8.9.1 perf: 스크롤 이벤트 폭주 시 Timer thrash 방지 — lastActivity 만 갱신하고
+    ///   reschedule 은 50ms throttle (스크롤 1초당 60+ 호출 → 20회로).
     func notifyActivity() {
         lastActivity = Date()
         let aggressive = aggressiveModeProvider?() ?? false
@@ -82,8 +84,13 @@ final class CacheSweeper: ObservableObject {
                 }
             }
         }
+        // throttle: 50ms 내 중복 호출은 마지막 한 번만 reschedule
+        let now = Date()
+        if let last = lastReschedule, now.timeIntervalSince(last) < 0.05 { return }
+        lastReschedule = now
         rescheduleIdleTimer()
     }
+    private var lastReschedule: Date? = nil
 
     /// 폴더 로드 완료 시 호출. sweep 대상 재구성.
     func prepareForFolder(url: URL, photos: [URL]) {
