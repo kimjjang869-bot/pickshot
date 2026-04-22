@@ -140,7 +140,6 @@ struct ContentView: View {
                         // 해제 시 필터 off + SwiftUI 강제 리렌더
                         store.visualSearchActive = false
                         store.invalidateFilterCache()
-                        store.photosVersion += 1
                     }
                     #endif
 
@@ -349,6 +348,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $store.showBatchRename) { BatchRenameView() }
+        .sheet(isPresented: $store.showBurstPickerDialog) {
+            BurstPickerDialog(isPresented: $store.showBurstPickerDialog)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $store.showPreferenceTrainingDialog) {
+            PreferenceTrainingDialog(isPresented: $store.showPreferenceTrainingDialog)
+                .environmentObject(store)
+        }
         .sheet(isPresented: $store.showMetadataEditor) {
             MetadataEditorSheet(store: store)
         }
@@ -366,7 +373,6 @@ struct ContentView: View {
             // 매칭 결과가 비어버렸는데 active 면 사용자가 닫기를 누르는 과도기 → 건너뛰기 (onDeactivate 가 처리)
             if newMatched.isEmpty && VisualSearchService.shared.references.isEmpty { return }
             store.invalidateFilterCache()
-            store.photosVersion += 1
         }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
@@ -495,7 +501,6 @@ struct ContentView: View {
             ) { restoredActive in
                 store.visualSearchActive = restoredActive
                 store.invalidateFilterCache()
-                store.photosVersion += 1
             }
         }
         .onChange(of: store.photosVersion) { _, _ in

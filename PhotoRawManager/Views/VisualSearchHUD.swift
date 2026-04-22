@@ -171,9 +171,11 @@ struct VisualSearchHUD: View {
 
     /// v8.9: 시각 검색 전면 해제 시 별점/컬러/최소별점 필터도 All 로 리셋.
     private func resetAllFiltersToAll() {
-        if !store.ratingFilters.isEmpty { store.ratingFilters = [] }
-        if !store.colorLabelFilters.isEmpty { store.colorLabelFilters = [] }
-        if store.minimumRatingFilter > 0 { store.minimumRatingFilter = 0 }
+        store.batchUpdateFilters {
+            if !store.ratingFilters.isEmpty { store.ratingFilters = [] }
+            if !store.colorLabelFilters.isEmpty { store.colorLabelFilters = [] }
+            if store.minimumRatingFilter > 0 { store.minimumRatingFilter = 0 }
+        }
     }
 
     /// 엄격도/뒷면 옵션 변경 후 재검색

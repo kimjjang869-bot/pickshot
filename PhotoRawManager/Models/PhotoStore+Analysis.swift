@@ -82,7 +82,6 @@ extension PhotoStore {
                         }
                     }
                     self._suppressDidSet = false
-                    self.photosVersion += 1
                     self.invalidateFilterCache()
                 }
                 self.isAnalyzing = false
@@ -257,7 +256,6 @@ extension PhotoStore {
                     self._suppressDidSet = false
                     self.rebuildIndex(); self.invalidateFilterCache()
                     self.selectedPhotoID = selectedID
-                    self.photosVersion += 1
                 }
                 self.isClassifyingScenes = false
                 self.classifyProgress = 1.0

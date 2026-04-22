@@ -112,7 +112,7 @@ struct PhotoRawManagerApp: App {
                 Button("셀렉 가져오기...") {
                     let result = PickshotFileService.importSelection(to: &store.photos, photoIndex: store._photoIndex)
                     if let result = result {
-                        store.photosVersion += 1
+                        store.invalidateFilterCache()
                         store.lastImportResult = result
                         store.showImportResult = true
                     }

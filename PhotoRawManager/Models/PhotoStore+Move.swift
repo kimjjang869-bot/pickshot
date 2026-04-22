@@ -576,7 +576,6 @@ extension PhotoStore {
             sortMode = .customOrder
         }
         invalidateFilterCache()
-        photosVersion += 1
         objectWillChange.send()
         fputs("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n", stderr)
     }
@@ -613,7 +612,6 @@ extension PhotoStore {
             sortMode = .customOrder
         }
         invalidateFilterCache()
-        photosVersion += 1
         // photosVersion @Published 변경으로 충분 — objectWillChange.send() 중복 호출 제거
         fputs("[REORDER MULTI] \(sourceIDs.count)장 → \(targetID.uuidString.prefix(8)) (before=\(insertBefore))\n", stderr)
     }

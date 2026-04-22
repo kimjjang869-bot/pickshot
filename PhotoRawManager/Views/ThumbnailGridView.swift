@@ -389,6 +389,7 @@ private struct ListViewBoundsKey: PreferenceKey {
 struct NativeListView: View {
     @EnvironmentObject var store: PhotoStore
     @State private var selection: Set<UUID> = []
+    @State private var listExifLoadWork: DispatchWorkItem? = nil
     @State private var sortOrder: [KeyPathComparator<PhotoItem>] = [
         .init(\.fileModDate, order: .reverse)
     ]
@@ -535,9 +536,11 @@ struct NativeListView: View {
             }
         }
         .onChange(of: store.photosVersion) { _, _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                store.triggerListExifLoad()
-            }
+            // v8.9 perf: 500ms → 100ms + cancellable. photosVersion 폭주 시에도 마지막 1회만 실행.
+            listExifLoadWork?.cancel()
+            let work = DispatchWorkItem { store.triggerListExifLoad() }
+            listExifLoadWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
         }
         .focusable()
         .onKeyPress { press in
@@ -2996,7 +2999,7 @@ class ThumbnailLoader {
                     kCGImageSourceCreateThumbnailFromImageAlways: false,
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCacheImmediately: false,
                     kCGImageSourceShouldCache: false
                 ]
                 for idx in 0..<imageCount {
@@ -3014,7 +3017,7 @@ class ThumbnailLoader {
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceSubsampleFactor: 8,
-                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCacheImmediately: false,
                     kCGImageSourceShouldCache: false
                 ]
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
@@ -3061,7 +3064,7 @@ class ThumbnailLoader {
                 kCGImageSourceThumbnailMaxPixelSize: thumbSize,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if subsample > 1 {

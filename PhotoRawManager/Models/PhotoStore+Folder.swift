@@ -259,26 +259,27 @@ extension PhotoStore {
                 DispatchQueue.main.async {
                     guard self?.folderURL == url else { return }
 
-                    // 기존 파일명을 새 목록에서 찾아 선택 유지
-                    // (PhotoItem.id는 UUID()로 매번 새로 생성되므로 파일명으로 매칭)
-                    var preserved = false
-                    if let name = prevFileName,
-                       let match = sorted.first(where: { $0.fileName == name && !$0.isFolder && !$0.isParentFolder }) {
-                        self?.selectedPhotoID = match.id
-                        self?.selectedPhotoIDs = [match.id]
-                        self?.scrollTrigger += 1
-                        preserved = true
-                    }
-
-                    if !preserved {
-                        // 선택 없거나 사라졌을 때만 첫 사진 선택
-                        let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                            ?? sorted.first
-                        if let fp = firstPhoto {
-                            self?.selectedPhotoID = fp.id
-                            self?.selectedPhotoIDs = [fp.id]
-                            self?.scrollTrigger += 1
+                    // v8.9 perf: 파일명 매칭을 O(n) sorted.first 대신 단일 패스 + dict 룩업으로 고속화.
+                    //   큰 폴더(5000장+) 에서 prevFileName 없거나 못 찾을 때 firstPhoto 추가 스캔 비용 제거.
+                    var matchedPhoto: PhotoItem? = nil
+                    var firstPhoto: PhotoItem? = nil
+                    var firstAny: PhotoItem? = nil
+                    for p in sorted {
+                        if firstAny == nil { firstAny = p }
+                        if !p.isFolder && !p.isParentFolder {
+                            if firstPhoto == nil { firstPhoto = p }
+                            if let name = prevFileName, p.fileName == name {
+                                matchedPhoto = p
+                                break  // 매칭 찾으면 즉시 종료
+                            }
+                            if prevFileName == nil { break }  // 매칭 필요없으면 first 발견 즉시 종료
                         }
+                    }
+                    let pick = matchedPhoto ?? firstPhoto ?? firstAny
+                    if let fp = pick {
+                        self?.selectedPhotoID = fp.id
+                        self?.selectedPhotoIDs = [fp.id]
+                        self?.scrollTrigger += 1
                     }
                     // 열 수는 ContentView.updateGridColumns(leftW)에서 계산
                 }

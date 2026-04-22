@@ -95,7 +95,6 @@ extension PhotoStore {
             // 배치 완료 → UI 업데이트 (Table 갱신을 위해 photosVersion 증가)
             DispatchQueue.main.async { [weak self] in
                 self?.invalidateFilterCache()
-                self?.photosVersion += 1
                 // @Published가 자동 알림 → objectWillChange 중복 제거
             }
         }
@@ -167,7 +166,6 @@ extension PhotoStore {
                 self.exifBatchWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     self?.invalidateFilterCache()
-                    self?.photosVersion += 1
                 }
                 self.exifBatchWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)

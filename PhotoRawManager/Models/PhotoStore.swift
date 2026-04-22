@@ -96,7 +96,7 @@ class PhotoStore: ObservableObject {
     @Published var photos: [PhotoItem] = [] {
         didSet {
             guard !_suppressDidSet else { return }
-            photosVersion += 1; invalidateFilterCache(); rebuildIndex()
+            invalidateFilterCache(); rebuildIndex()
             updateFolderSizeCache()
             pruneStaleSelections()
         }
@@ -187,10 +187,15 @@ class PhotoStore: ObservableObject {
     var isKeyRepeat: Bool = false
     /// Cmd+X 로 잘라낸 사진 ID — 썸네일 흐리게 표시용 (paste 완료 시 clear)
     @Published var pendingCutPhotoIDs: Set<UUID> = []
+    /// v8.9: 연사 베스트 선별 다이얼로그 표시 토글
+    @Published var showBurstPickerDialog: Bool = false
+    /// v8.9: 내 취향 학습 다이얼로그 표시 토글
+    @Published var showPreferenceTrainingDialog: Bool = false
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
     @Published var minimumRatingFilter: Int = 0 {
         didSet {
+            guard !_suppressDidSet else { return }
             invalidateFilterCache()
             resetFiltersIfEmpty()
             pruneHiddenSelections()
@@ -199,38 +204,59 @@ class PhotoStore: ObservableObject {
     /// v8.7: 별점 필터 — 개별 선택. 비어있으면 전체 표시. ratingFilters 있으면 minimumRatingFilter 무시.
     @Published var ratingFilters: Set<Int> = [] {
         didSet {
+            guard !_suppressDidSet else { return }
             invalidateFilterCache()
             resetFiltersIfEmpty()
             pruneHiddenSelections()
         }
     }
 
+    /// 재진입 방지 플래그 — didSet 체인에서 filteredPhotos 가 2~3번 재계산되는 것을 막는다.
+    private var _resettingFiltersIfEmpty = false
+
     /// v8.8.2: 폴더 전환 시 현재 별점/컬러 필터에 해당하는 사진이 0장이면 "All" 로 자동 리셋.
     ///   빈 결과 화면에서 사용자가 헤매는 상황 방지.
     func resetFiltersIfEmpty() {
+        // didSet 체인에서 재진입 방지 (ratingFilters = [] → didSet → resetFiltersIfEmpty 재호출)
+        if _resettingFiltersIfEmpty { return }
+        _resettingFiltersIfEmpty = true
+        defer { _resettingFiltersIfEmpty = false }
+
         // v8.8.3: filteredPhotos(= 현재 활성화된 모든 필터 적용 결과) 기준으로 판정.
         //   별점 외 폴더/검색/색상 필터와 교차되어 0장이 되는 케이스까지 커버.
-        let visibleCount = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.count
+        let visibleCount = filteredPhotos.lazy.filter { !$0.isFolder && !$0.isParentFolder }.count
         guard visibleCount == 0 else { return }
 
         if !ratingFilters.isEmpty {
+            let stars = ratingFilters.sorted().map { "★\($0)" }.joined(separator: " ")
             fputs("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n", stderr)
             ratingFilters = []
+            // v8.9 perf: didSet 체인에서 SwiftUI 가 토스트 트랜지션을 못 잡는 경우 방지 — 다음 runloop 으로.
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 \(stars) 사진이 없습니다 — 전체 보기로 전환")
+            }
             return
         }
         if minimumRatingFilter > 0 {
+            let prev = minimumRatingFilter
             fputs("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n", stderr)
             minimumRatingFilter = 0
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 ★\(prev) 이상 사진이 없습니다 — 전체 보기로 전환")
+            }
             return
         }
         if !colorLabelFilters.isEmpty {
             fputs("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n", stderr)
             colorLabelFilters = []
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 해당 컬러 라벨 사진이 없습니다 — 전체 보기로 전환")
+            }
             return
         }
     }
     /// v8.7: 선택한 사진만 보기 — 클라이언트 비교용
-    @Published var showOnlySelected: Bool = false { didSet { invalidateFilterCache() } }
+    @Published var showOnlySelected: Bool = false { didSet { guard !_suppressDidSet else { return }; invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
             invalidateFilterCache()  // 중복 캐시 클리어 제거 — invalidateFilterCache가 이미 처리
@@ -482,6 +508,7 @@ class PhotoStore: ObservableObject {
     @Published var showSlideshow = false
     @Published var colorLabelFilters: Set<ColorLabel> = [] {
         didSet {
+            guard !_suppressDidSet else { return }
             invalidateFilterCache()
             resetFiltersIfEmpty()
             pruneHiddenSelections()
@@ -793,6 +820,10 @@ class PhotoStore: ObservableObject {
     let filterLock = NSLock()
     var _cachedFiltered: [PhotoItem]?
     var _cacheKey: String = ""
+    /// v8.9 perf: status bar 렌더 때마다 O(n) 순회를 피하기 위한 파생 캐시.
+    var _cachedPhotoCount: Int = 0
+    var _cachedSpacePickCount: Int = 0
+    var _derivedCountsKey: String = ""
 
     func invalidateCache() {
         filterLock.lock()
@@ -802,14 +833,29 @@ class PhotoStore: ObservableObject {
         photosVersion += 1
     }
 
-    /// 사진 수 (폴더 제외) — O(1) 캐시 기반, 매 렌더마다 filter 방지
+    /// 사진 수 (폴더 제외) — v8.9 진짜 O(1): filterCache 키 변경 시 한 번만 재계산.
     var photoCount: Int {
-        filteredPhotos.lazy.filter { !$0.isFolder && !$0.isParentFolder }.count
+        refreshDerivedCountsIfNeeded()
+        return _cachedPhotoCount
     }
 
-    /// 스페이스 셀렉 수 — O(1) 캐시 기반
+    /// 스페이스 셀렉 수 — v8.9 진짜 O(1).
     var spacePickCount: Int {
-        photos.lazy.filter { $0.isSpacePicked }.count
+        refreshDerivedCountsIfNeeded()
+        return _cachedSpacePickCount
+    }
+
+    private func refreshDerivedCountsIfNeeded() {
+        let key = "\(photosVersion)"
+        if _derivedCountsKey == key { return }
+        var pc = 0, sp = 0
+        for p in photos {
+            if !p.isFolder && !p.isParentFolder { pc += 1 }
+            if p.isSpacePicked { sp += 1 }
+        }
+        _cachedPhotoCount = pc
+        _cachedSpacePickCount = sp
+        _derivedCountsKey = key
     }
 
     var filteredPhotos: [PhotoItem] {
@@ -937,6 +983,9 @@ class PhotoStore: ObservableObject {
         return final
     }
 
+    /// v8.9 perf: 필터 캐시 무효화 + photosVersion 단일 발화.
+    /// 기존 `invalidateFilterCache(); photosVersion += 1` 이중 호출 40+ 곳을 통합하여
+    /// 액션당 SwiftUI 렌더 트리거가 2회 발생하는 것을 막는다.
     func invalidateFilterCache() {
         filterLock.lock()
         _cachedFiltered = nil
@@ -944,6 +993,18 @@ class PhotoStore: ObservableObject {
         _filteredIndex.removeAll()
         _filteredIndexVersion = ""
         filterLock.unlock()
+        photosVersion += 1
+    }
+
+    /// v8.9 perf: 여러 필터를 한 번에 변경 — invalidateFilterCache + resetFiltersIfEmpty + pruneHiddenSelections 1회로 묶음.
+    /// "All" 버튼 등 일괄 초기화 시 4~5번 재계산되던 것을 1회로.
+    func batchUpdateFilters(_ updates: () -> Void) {
+        _suppressDidSet = true
+        updates()
+        _suppressDidSet = false
+        invalidateFilterCache()
+        resetFiltersIfEmpty()
+        pruneHiddenSelections()
     }
 
     private func sortPhotos(_ list: [PhotoItem]) -> [PhotoItem] {

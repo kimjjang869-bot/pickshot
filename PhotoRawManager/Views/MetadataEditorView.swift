@@ -401,7 +401,7 @@ struct MetadataEditorView: View {
                 if !isBatch || applyCountry { store.photos[idx].iptcCountry = meta.country }
             }
         }
-        store.photosVersion += 1
+        store.invalidateFilterCache()
     }
 
     private func removeKeyword(_ kw: String) {

@@ -211,8 +211,18 @@ extension ContentView {
                                     let flags = NSEvent.modifierFlags
                                     let multi = flags.contains(.command) || flags.contains(.shift)
                                     if rating == 0 {
-                                        store.ratingFilters = []
-                                        store.minimumRatingFilter = 0
+                                        // v8.9: All 클릭은 모든 종류의 필터/선택 기반 뷰를 해제.
+                                        //   "이 사진과 비슷한 사진 찾기" (showOnlySelected) 탈출 포함.
+                                        store.batchUpdateFilters {
+                                            store.ratingFilters = []
+                                            store.minimumRatingFilter = 0
+                                            store.colorLabelFilters = []
+                                            store.showOnlySelected = false
+                                            if !VisualSearchService.shared.references.isEmpty || !VisualSearchService.shared.matchedURLs.isEmpty {
+                                                VisualSearchService.shared.clearAll()
+                                                store.visualSearchActive = false
+                                            }
+                                        }
                                     } else if multi {
                                         if store.ratingFilters.contains(rating) {
                                             store.ratingFilters.remove(rating)
@@ -734,6 +744,15 @@ extension ContentView {
                     Label("선택된 사진만 분류 (\(selectedCount)장)", systemImage: "checkmark.circle")
                 }
                 .disabled(store.isAIClassifying || selectedCount == 0)
+
+                Divider()
+
+                // v8.9: 연사 베스트 자동 선별
+                Button(action: {
+                    store.showBurstPickerDialog = true
+                }) {
+                    Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                }
             }
         } label: {
             toolbarButton(
@@ -748,6 +767,18 @@ extension ContentView {
         .popover(isPresented: $store.showAnalysisOptions) {
             AnalysisOptionsView(store: store)
         }
+
+        // v8.9: 내 취향 학습 툴바 버튼
+        Button(action: { store.showPreferenceTrainingDialog = true }) {
+            toolbarButton(
+                icon: "brain.head.profile",
+                text: "내 취향",
+                color: .pink,
+                active: UserPreferenceService.shared.profile.isTrained
+            )
+        }
+        .buttonStyle(.plain)
+        .help("사용자 셀렉 학습 — AI 셀렉 프로필 생성/가져오기/내보내기")
 
         if store.isClassifyingScenes || store.isAnalyzing {
             ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
@@ -1290,7 +1321,7 @@ extension ContentView {
                 }
                 let result = PickshotFileService.applyPickshotFile(url: url, to: &store.photos, photoIndex: store._photoIndex)
                 if let result = result {
-                    store.photosVersion += 1
+                    store.invalidateFilterCache()
                     store.buildClientComments()
                     store.lastImportResult = result
                     store.showPickshotImportSheet = true

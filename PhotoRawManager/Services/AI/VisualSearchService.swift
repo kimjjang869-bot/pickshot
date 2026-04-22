@@ -77,6 +77,8 @@ final class VisualSearchService: ObservableObject {
         var active: Bool
     }
     private var folderStates: [String: FolderState] = [:]
+    private var folderAccessOrder: [String] = []  // v8.9: LRU — 가장 최근 방문 폴더 순
+    private let maxFolderStates: Int = 3
     private var currentFolderPath: String?
 
     private init() {}
@@ -98,7 +100,15 @@ final class VisualSearchService: ObservableObject {
                 threshold: threshold,
                 active: currentActive
             )
-            fputs("[VS] 폴더 상태 저장 '\(URL(fileURLWithPath: curPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count)\n", stderr)
+            folderAccessOrder.removeAll { $0 == curPath }
+            folderAccessOrder.append(curPath)
+            // v8.9: 상한 초과 시 가장 오래된 폴더 상태 제거 (matchedURLs 수만 장 보존 방지)
+            while folderAccessOrder.count > maxFolderStates {
+                let old = folderAccessOrder.removeFirst()
+                folderStates.removeValue(forKey: old)
+                fputs("[VS] LRU evict '\(URL(fileURLWithPath: old).lastPathComponent)'\n", stderr)
+            }
+            fputs("[VS] 폴더 상태 저장 '\(URL(fileURLWithPath: curPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count) (\(folderAccessOrder.count)/\(maxFolderStates))\n", stderr)
         }
 
         // 2) 현재 상태 초기화
@@ -335,7 +345,17 @@ final class VisualSearchService: ObservableObject {
                         if sim > bestFaceSim { bestFaceSim = sim }
                     }
                 }
-                if bestFaceSim >= threshold {
+                // v8.9: AdaFace(512-dim) 사용 시 임계값 분포가 달라 별도 매핑.
+                //   AdaFace: 같은 사람 0.40~0.70, 다른 사람 0.10~0.25.
+                //   FeaturePrint: 같은 사람 0.85~0.95, 다른 사람 0.70~0.82.
+                let faceThr: Float = {
+                    if FaceEmbeddingService.shared.provider.backendID == "adaface_r18_v1" {
+                        // slider 0.86 → 0.42, 0.92 → 0.55 (정확도 우선 커브)
+                        return 0.28 + (threshold - 0.80) * 1.5
+                    }
+                    return threshold  // FeaturePrint 는 기존 그대로
+                }()
+                if bestFaceSim >= faceThr {
                     groupMatched = true
                     matchedBy = "face"
                 }

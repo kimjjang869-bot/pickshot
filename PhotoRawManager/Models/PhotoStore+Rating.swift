@@ -91,7 +91,6 @@ extension PhotoStore {
             }
             rebuildIndex()
             _suppressDidSet = false
-            photosVersion += 1
             invalidateFilterCache()
 
             // 복원된 사진 선택
@@ -270,11 +269,19 @@ extension PhotoStore {
     func setColorLabel(_ label: ColorLabel, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         let anchorIdx = captureSelectionAnchorIndex()
-        photos[i].colorLabel = (photos[i].colorLabel == label) ? .none : label
+        let target: ColorLabel = (photos[i].colorLabel == label) ? .none : label
+        photos[i].colorLabel = target
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
         advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습용 이벤트 기록
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .colorLabel,
+            payload: target.rawValue
+        )
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
@@ -287,36 +294,70 @@ extension PhotoStore {
         }
         let target: ColorLabel = allHaveLabel ? .none : label
         let anchorIdx = captureSelectionAnchorIndex()
+        let affectedIDs = selectedPhotoIDs  // 기록용 스냅샷
         _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
         advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습 DB 기록 (벌크) — 뿌리 데이터 유실 방지.
+        recordBulkEvent(ids: affectedIDs, kind: .colorLabel, payload: target.rawValue)
     }
 
     func toggleSpacePick(for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         pushUndo(action: "SP 토글", photoIDs: [photoID])
         photos[i].isSpacePicked.toggle()
+        let newValue = photos[i].isSpacePicked
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .spacePick,
+            payload: newValue ? "true" : "false"
+        )
     }
 
     func toggleSpacePickForSelected() {
         pushUndo(action: "일괄 SP 토글", photoIDs: selectedPhotoIDs)
+        let affectedIDs = selectedPhotoIDs
         _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].isSpacePicked.toggle() }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        // 벌크 SP 토글 — 개별 최종 상태 기록
+        for id in affectedIDs {
+            guard let i = _photoIndex[id], i < photos.count else { continue }
+            SelectionEventStore.shared.record(
+                photoUUID: id.uuidString,
+                photoPath: photos[i].jpgURL.path,
+                folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+                kind: .spacePick,
+                payload: photos[i].isSpacePicked ? "true" : "false"
+            )
+        }
+    }
+
+    /// v8.9: 벌크 이벤트 기록 헬퍼 — affectedIDs 전체를 동일 payload 로 일괄 append.
+    private func recordBulkEvent(ids: Set<UUID>, kind: SelectionEventKind, payload: String?) {
+        for id in ids {
+            guard let i = _photoIndex[id], i < photos.count else { continue }
+            SelectionEventStore.shared.record(
+                photoUUID: id.uuidString,
+                photoPath: photos[i].jpgURL.path,
+                folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+                kind: kind,
+                payload: payload
+            )
+        }
     }
 
     func setRatingForSelected(_ rating: Int) {
@@ -328,15 +369,17 @@ extension PhotoStore {
         }
         let target = allHaveRating ? 0 : rating
         let anchorIdx = captureSelectionAnchorIndex()
+        let affectedIDs = selectedPhotoIDs
         _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].rating = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
         advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습 DB 기록 (벌크 별점)
+        recordBulkEvent(ids: affectedIDs, kind: .rated, payload: "\(target)")
     }
 
     func setRating(_ rating: Int, for photoID: UUID) {
@@ -344,11 +387,19 @@ extension PhotoStore {
         AppLogger.log(.rating, "setRating: \(photos[i].fileName) → \(rating) (was \(photos[i].rating))")
         pushUndo(action: "별점 변경", photoIDs: [photoID])
         let anchorIdx = captureSelectionAnchorIndex()
-        photos[i].rating = (photos[i].rating == rating) ? 0 : rating
+        let targetRating = (photos[i].rating == rating) ? 0 : rating
+        photos[i].rating = targetRating
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
         advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습용 이벤트 기록
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .rated,
+            payload: "\(targetRating)"
+        )
     }
 
     /// v8.8.3: 선택된 마지막 사진이 현재 filteredPhotos 에서 어느 위치(인덱스)인지 기록.

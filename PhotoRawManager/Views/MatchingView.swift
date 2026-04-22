@@ -366,7 +366,7 @@ struct MatchingView: View {
         resultMessage = "매칭된 \(matchedCount)장에 ★1 별점을 적용했습니다."
         showResult = true
         isProcessing = false
-        store.photosVersion += 1
+        store.invalidateFilterCache()
     }
 
     private func runJPGReturnMatch() {
@@ -405,7 +405,7 @@ struct MatchingView: View {
                 resultMessage = "정확:\(exactCount) 유사:\(fuzzyCount) 번호:\(numberCount) — ★1 별점 적용됨"
                 showResult = true
                 isProcessing = false
-                store.photosVersion += 1
+                store.invalidateFilterCache()
             }
         }
     }
@@ -481,7 +481,7 @@ struct MatchingView: View {
                 resultMessage = "매칭 완료: \(matched)개 연결됨 (폴더: \(selectedURL.lastPathComponent), 총 \(externalFiles.count)개 파일)"
                 showResult = true
                 isProcessing = false
-                store.photosVersion += 1
+                store.invalidateFilterCache()
             }
         }
     }
@@ -518,7 +518,7 @@ struct MatchingView: View {
                 resultMessage = "평균 유사도: \(String(format: "%.0f", avgSimilarity * 100))% — ★1 별점 적용됨"
                 showResult = true
                 isProcessing = false
-                store.photosVersion += 1
+                store.invalidateFilterCache()
             }
         }
     }

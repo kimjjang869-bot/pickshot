@@ -221,13 +221,62 @@ final class FaceFeaturePrintProvider: FaceEmbeddingProvider {
     }
 }
 
+// MARK: - AdaFace R18 Provider (v8.9: 최고 정확도 512-dim)
+
+/// AdaFace R18 CoreML 모델 기반 provider. LFW 99.82% 정확도.
+/// 얼굴 감지는 Vision, 임베딩은 AdaFace 모델 (112x112 입력 → 512-dim).
+final class AdaFaceEmbeddingProvider: FaceEmbeddingProvider {
+    let backendID = "adaface_r18_v1"
+    let dimension = 512
+
+    func compute(cgImage: CGImage) -> [FaceEmbedding] {
+        // 얼굴 감지
+        let req = VNDetectFaceRectanglesRequest()
+        if #available(macOS 13.0, *) {
+            req.revision = VNDetectFaceRectanglesRequestRevision3
+        }
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do { try handler.perform([req]) } catch { return [] }
+        guard let faces = req.results else { return [] }
+
+        var out: [FaceEmbedding] = []
+        let imgW = CGFloat(cgImage.width)
+        let imgH = CGFloat(cgImage.height)
+
+        for face in faces where face.confidence > 0.5 {
+            // Vision 좌표 (좌하원점) → CGImage 좌표 (좌상원점) 변환 + 25% 패딩
+            let bb = face.boundingBox
+            let padX: CGFloat = bb.width * 0.15
+            let padY: CGFloat = bb.height * 0.15
+            let cropRect = CGRect(
+                x: max(0, (bb.origin.x - padX) * imgW),
+                y: max(0, (1 - bb.origin.y - bb.height - padY) * imgH),
+                width: min(imgW, (bb.width + padX * 2) * imgW),
+                height: min(imgH, (bb.height + padY * 2) * imgH)
+            )
+            guard cropRect.width > 20, cropRect.height > 20,
+                  let faceCrop = cgImage.cropping(to: cropRect) else { continue }
+            guard let emb = AdaFaceService.embedding(from: faceCrop) else { continue }
+            out.append(FaceEmbedding(vector: emb, boundingBox: bb, quality: Float(face.confidence)))
+        }
+        return out
+    }
+}
+
 // MARK: - Main Service
 
 final class FaceEmbeddingService {
     static let shared = FaceEmbeddingService()
 
-    /// 현재 백엔드 — 기본 FaceFeaturePrint (Phase 1.5), Phase 2 에서 ArcFaceCoreMLProvider 로 교체 예정
-    private(set) var provider: FaceEmbeddingProvider = FaceFeaturePrintProvider()
+    /// v8.9: AdaFace R18 모델이 있으면 512-dim 고정밀 엔진, 없으면 FeaturePrint fallback.
+    private(set) var provider: FaceEmbeddingProvider = {
+        if AdaFaceService.isAvailable {
+            fputs("[FACE-EMB] AdaFace R18 (512-dim) 엔진 사용\n", stderr)
+            return AdaFaceEmbeddingProvider()
+        }
+        fputs("[FACE-EMB] AdaFace 없음 — VNFeaturePrint (768-dim) fallback\n", stderr)
+        return FaceFeaturePrintProvider()
+    }()
 
     /// 백엔드 교체 (모델 업그레이드 시)
     func setProvider(_ p: FaceEmbeddingProvider) {
@@ -308,6 +357,10 @@ final class FaceEmbeddingCache {
     private let cacheDir: URL
     private let lock = NSLock()
     private var memoryCache: [String: PhotoFaceEmbeddings] = [:]
+    /// v8.9: 메모리 캐시 무한 증식 방지 (기존 상한 없음 → 3998장에서 16MB+ 누적).
+    ///   LRU 순서 유지용 access order list.
+    private var accessOrder: [String] = []
+    private let maxMemoryEntries: Int = 2000
 
     private init() {
         let fm = FileManager.default
@@ -362,6 +415,13 @@ final class FaceEmbeddingCache {
         let k = key(url: url, backendID: backendID)
         lock.lock()
         memoryCache[k] = entry
+        // v8.9 LRU: 기존 항목 제거 후 최신 위치에 재등록, 상한 초과 시 가장 오래된 항목 evict.
+        accessOrder.removeAll { $0 == k }
+        accessOrder.append(k)
+        while accessOrder.count > maxMemoryEntries {
+            let oldest = accessOrder.removeFirst()
+            memoryCache.removeValue(forKey: oldest)
+        }
         lock.unlock()
         let file = cacheDir.appendingPathComponent("\(k).json")
         if let data = try? JSONEncoder().encode(entry) {
@@ -369,10 +429,28 @@ final class FaceEmbeddingCache {
         }
     }
 
+    /// v8.9: 메모리 압박 시 MemGuard 가 호출. 디스크는 유지.
+    ///   기본 trim: 가장 오래된 절반만 evict (재계산 비용 완화).
+    func trimMemory(aggressive: Bool = false) {
+        lock.lock()
+        if aggressive {
+            memoryCache.removeAll()
+            accessOrder.removeAll()
+        } else {
+            let target = max(maxMemoryEntries / 2, 0)
+            while accessOrder.count > target {
+                let oldest = accessOrder.removeFirst()
+                memoryCache.removeValue(forKey: oldest)
+            }
+        }
+        lock.unlock()
+    }
+
     func remove(url: URL, backendID: String) {
         let k = key(url: url, backendID: backendID)
         lock.lock()
         memoryCache.removeValue(forKey: k)
+        accessOrder.removeAll { $0 == k }
         lock.unlock()
         let file = cacheDir.appendingPathComponent("\(k).json")
         try? FileManager.default.removeItem(at: file)
@@ -381,6 +459,7 @@ final class FaceEmbeddingCache {
     func invalidateAll() {
         lock.lock()
         memoryCache.removeAll()
+        accessOrder.removeAll()
         lock.unlock()
         try? FileManager.default.removeItem(at: cacheDir)
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)

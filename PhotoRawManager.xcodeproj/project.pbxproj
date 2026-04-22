@@ -78,6 +78,12 @@
 		'CTK30001' = {isa = PBXBuildFile; fileRef = CTK30002; };
 		'TES30001' = {isa = PBXBuildFile; fileRef = TES30002; };
 		'BPE30001' = {isa = PBXBuildFile; fileRef = BPE30002; };
+		'BDS30001' = {isa = PBXBuildFile; fileRef = BDS30002; };
+		'BPK30001' = {isa = PBXBuildFile; fileRef = BPK30002; };
+		'UPP30001' = {isa = PBXBuildFile; fileRef = UPP30002; };
+		'SES30001' = {isa = PBXBuildFile; fileRef = SES30002; };
+		'BPD30001' = {isa = PBXBuildFile; fileRef = BPD30002; };
+		'PTD30001' = {isa = PBXBuildFile; fileRef = PTD30002; };
 		'SSS30001' = {isa = PBXBuildFile; fileRef = SSS30002; };
 		'VSS30001' = {isa = PBXBuildFile; fileRef = VSS30002; };
 		'VSCV30001' = {isa = PBXBuildFile; fileRef = VSCV30002; };
@@ -236,6 +242,12 @@
 		'CTK30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIPTokenizer.swift; sourceTree = "<group>"; };
 		'TES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoderService.swift; sourceTree = "<group>"; };
 		'BPE30002' = {isa = PBXFileReference; lastKnownFileType = file.txt.gz; name = bpe_simple_vocab_16e6.txt.gz; path = PhotoRawManager/Resources/bpe_simple_vocab_16e6.txt.gz; sourceTree = "<group>"; };
+		'BDS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstDetectionService.swift; sourceTree = "<group>"; };
+		'BPK30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstPickerService.swift; sourceTree = "<group>"; };
+		'UPP30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPreferenceProfile.swift; sourceTree = "<group>"; };
+		'SES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionEventStore.swift; sourceTree = "<group>"; };
+		'BPD30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstPickerDialog.swift; sourceTree = "<group>"; };
+		'PTD30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferenceTrainingDialog.swift; sourceTree = "<group>"; };
 		'SSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchService.swift; sourceTree = "<group>"; };
 		'VSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchService.swift; sourceTree = "<group>"; };
 		'VSCV30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualSearchCropView.swift; sourceTree = "<group>"; };
@@ -426,6 +438,10 @@
 				EIX30002,
 				CTK30002,
 				TES30002,
+				BDS30002,
+				BPK30002,
+				UPP30002,
+				SES30002,
 				SSS30002,
 				VSS30002,
 			);
@@ -567,6 +583,8 @@
 				VSCV30002,
 				VSHD30002,
 				VSCW30002,
+				BPD30002,
+				PTD30002,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -825,6 +843,12 @@
 				EIX30001,
 				CTK30001,
 				TES30001,
+				BDS30001,
+				BPK30001,
+				UPP30001,
+				SES30001,
+				BPD30001,
+				PTD30001,
 				SSS30001,
 				VSS30001,
 				VSCV30001,

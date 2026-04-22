@@ -76,36 +76,38 @@ final class SemanticSearchService {
         for (idx, url) in urls.enumerated() {
             if let work = indexWorkItem, work.isCancelled { break }
 
-            // mtime 조회 — 변경 없으면 스킵
-            let mtime: TimeInterval = {
-                guard let attrs = try? fm.attributesOfItem(atPath: url.path),
-                      let date = attrs[.modificationDate] as? Date else { return 0 }
-                return date.timeIntervalSince1970
-            }()
+            // v8.9 perf: skip/new 두 분기 모두 autoreleasepool drain 대상으로 감싸서
+            // NSDictionary(attrsOfItem) / SQLite binding 에서 발생하는 autorelease 힙 누적 방지.
+            autoreleasepool {
+                // mtime 조회 — 변경 없으면 스킵
+                let mtime: TimeInterval = {
+                    guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+                          let date = attrs[.modificationDate] as? Date else { return 0 }
+                    return date.timeIntervalSince1970
+                }()
 
-            // v8.9 fix: 저장된 DB mtime 과 파일 mtime 비교 (이전 버전은 둘 다 파일 mtime 이라 항상 skip).
-            if let storedMtime = EmbeddingIndex.shared.getStoredMtime(url: url),
-               abs(storedMtime - mtime) < 1.0 {
-                skipCount += 1
-            } else {
-                autoreleasepool {
+                // v8.9 fix: 저장된 DB mtime 과 파일 mtime 비교 (이전 버전은 둘 다 파일 mtime 이라 항상 skip).
+                if let storedMtime = EmbeddingIndex.shared.getStoredMtime(url: url),
+                   abs(storedMtime - mtime) < 1.0 {
+                    skipCount += 1
+                } else {
                     if let emb = ImageEmbeddingService.shared.embed(url: url) {
                         _ = EmbeddingIndex.shared.upsert(url: url, mtime: mtime, embedding: emb)
                         newCount += 1
                     }
                 }
-            }
 
-            indexDone = idx + 1
-            indexProgress = Double(indexDone) / Double(max(1, indexTotal))
+                indexDone = idx + 1
+                indexProgress = Double(indexDone) / Double(max(1, indexTotal))
 
-            if let onProgress = onProgress {
-                let d = indexDone, t = indexTotal
-                DispatchQueue.main.async { onProgress(d, t) }
-            }
+                if let onProgress = onProgress {
+                    let d = indexDone, t = indexTotal
+                    DispatchQueue.main.async { onProgress(d, t) }
+                }
 
-            if indexDone % 50 == 0 {
-                fputs("[SEMANTIC] indexing \(indexDone)/\(indexTotal) (new=\(newCount), skip=\(skipCount))\n", stderr)
+                if indexDone % 50 == 0 {
+                    fputs("[SEMANTIC] indexing \(indexDone)/\(indexTotal) (new=\(newCount), skip=\(skipCount))\n", stderr)
+                }
             }
         }
 

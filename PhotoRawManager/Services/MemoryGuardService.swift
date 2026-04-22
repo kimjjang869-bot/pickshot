@@ -56,16 +56,18 @@ final class MemoryGuardService {
         self.physicalRamGB = ramGB
         let ramMB = ramGB * 1024
 
-        // Layer 1: soft target
-        let soft = min(Int(Double(ramMB) * 0.40), ramMB - 3072)
-        self.softTargetMB = max(soft, 1024)  // 최소 1GB (아주 저사양 방어)
+        // v8.9 실전 한도 — 사용자 체감 "메모리 많이 쓴다" 는 대략 8~12GB 부터.
+        //   RAM 이 많아도 사진 앱 1개가 18GB+ 쓰는 건 비정상 → 더 공격적으로 하향.
+        // Layer 1: soft target — RAM 20%, 캡 8GB
+        let soft = min(Int(Double(ramMB) * 0.20), 8192)
+        self.softTargetMB = max(soft, 1024)
 
-        // Layer 2: warning = soft × 1.5
-        self.warningMB = Int(Double(self.softTargetMB) * 1.5)
+        // Layer 2: warning — soft × 1.5, 캡 12GB
+        self.warningMB = min(Int(Double(self.softTargetMB) * 1.5), 12288)
 
-        // Layer 3: emergency
-        let emergency = min(Int(Double(ramMB) * 0.65), ramMB - 2048)
-        self.emergencyMB = max(emergency, self.warningMB + 512)  // warning 위 512MB 이상
+        // Layer 3: emergency — RAM 30%, 캡 16GB
+        let emergency = min(Int(Double(ramMB) * 0.30), 16384)
+        self.emergencyMB = max(emergency, self.warningMB + 512)
 
         fputs("[MemGuard] 초기화 — RAM \(ramGB)GB / soft \(softTargetMB)MB / warn \(warningMB)MB / emerg \(emergencyMB)MB\n", stderr)
     }
@@ -177,6 +179,9 @@ final class MemoryGuardService {
         ThumbnailCache.shared.removeAll()
         AggressiveImageCache.shared.removeAll()
         PhotoPreviewView.clearAllHiResCache()
+        // v8.9: AI 계층 메모리 캐시도 해제 — 이전에 flush 누락으로 상시 점유됨.
+        FaceEmbeddingCache.shared.trimMemory(aggressive: true)
+        EmbeddingIndex.shared.close()  // 다음 쿼리 시 재오픈 + 메모리 캐시도 리셋
         DispatchQueue.global(qos: .utility).async { autoreleasepool { } }
         let after = currentRamMB()
         fputs("[MemGuard] Layer 3 (\(reason)) 완료: \(before)MB → \(after)MB (감소 \(before - after)MB)\n", stderr)

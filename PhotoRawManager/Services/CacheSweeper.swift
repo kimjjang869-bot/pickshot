@@ -254,8 +254,20 @@ final class CacheSweeper: ObservableObject {
             }
         }
 
+        // v8.9 perf: PreviewImageCache 가 비활성화 (maxBytes==0) 이면 preview sweep 전부 skip.
+        //   적극 모드에서 수천 장 디코드 → 즉시 evict 되는 헛수고 방지. 썸네일 sweep 은 이미 수행됨.
+        if PreviewImageCache.shared.isDisabled {
+            sweepLock.lock()
+            let dropped = pendingPreviews.count
+            pendingPreviews.removeAll()
+            sweepLock.unlock()
+            if dropped > 0 {
+                fputs("[SWEEP] preview cache disabled — preview sweep 스킵 (\(dropped)장)\n", stderr)
+            }
+        }
+
         // 2) 미리보기 — 기본: 선택 인덱스 ±N 범위 / 적극 모드: 전체
-        if !(sweepWork?.isCancelled ?? true) {
+        if !PreviewImageCache.shared.isDisabled, !(sweepWork?.isCancelled ?? true) {
             let selIdx = selectedIndexProvider?() ?? 0
             sweepLock.lock()
             let total = pendingPreviews.count

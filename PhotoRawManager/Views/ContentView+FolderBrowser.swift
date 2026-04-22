@@ -1115,13 +1115,10 @@ struct FolderRowView: View {
                     // 트리 펼치기
                     if item.hasSubfolders && !item.isExpanded { toggleExpand() }
 
-                    // 폴더 로딩 (트리 펼치기와 분리하여 약간의 딜레이)
+                    // v8.9 perf: 0.1s 딜레이 제거 — toggleExpand 와 loadFolder 는 모두 main async 라 충돌 없음.
                     if !isSystem {
                         store.startupMode = .viewer
-                        let targetURL = item.url
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            store.loadFolder(targetURL, restoreRatings: true)
-                        }
+                        store.loadFolder(item.url, restoreRatings: true)
                     }
                 }
 

@@ -18,6 +18,11 @@ final class EmbeddingIndex {
     private let lock = NSLock()
     private let dim = 512  // MobileCLIP-BLT
 
+    /// v8.9 perf: 폴더 전체 임베딩 메모리 캐시 — topK 반복 호출 시 DB 재로드 방지.
+    ///   폴더 전환 / upsert / 삭제 시 무효화.
+    private var _allCache: [(url: URL, vec: [Float])]?
+    private var _allCacheFolder: String?
+
     private init() {}
 
     // MARK: - DB lifecycle
@@ -79,6 +84,7 @@ final class EmbeddingIndex {
             db = nil
             currentFolderPath = nil
         }
+        invalidateAllCache()  // v8.9: 폴더 전환 시 캐시 폐기
     }
 
     private func dbFileURL(for folderURL: URL) -> URL {
@@ -122,6 +128,7 @@ final class EmbeddingIndex {
         sqlite3_bind_double(stmt, 5, Date().timeIntervalSince1970)
 
         let rc = sqlite3_step(stmt)
+        if rc == SQLITE_DONE { invalidateAllCache() }  // v8.9: 쓰기 후 캐시 무효화
         return rc == SQLITE_DONE
     }
 
@@ -164,6 +171,28 @@ final class EmbeddingIndex {
         }
     }
 
+    /// v8.9: 메모리 캐시 사용 loadAll. 폴더 단위 유지, 무효화 시 재로드.
+    private func cachedAll() -> [(url: URL, vec: [Float])] {
+        lock.lock()
+        if let cache = _allCache, _allCacheFolder == currentFolderPath {
+            lock.unlock()
+            return cache
+        }
+        lock.unlock()
+        let fresh = loadAll().map { (url: $0.url, vec: $0.embedding) }
+        lock.lock()
+        _allCache = fresh
+        _allCacheFolder = currentFolderPath
+        lock.unlock()
+        return fresh
+    }
+
+    /// 캐시 무효화 — upsert/remove 후 호출.
+    private func invalidateAllCache() {
+        _allCache = nil
+        _allCacheFolder = nil
+    }
+
     /// 전체 임베딩을 메모리로 로드 (top-K 검색 전 준비).
     /// 규모 10,000장 × 2KB = 20MB 정도라 메모리 로드 가능.
     func loadAll() -> [(url: URL, embedding: [Float])] {
@@ -191,8 +220,9 @@ final class EmbeddingIndex {
     }
 
     /// Top-K 유사도 검색 (브루트포스 코사인). 10,000장 기준 ~50ms.
+    /// v8.9 perf: 폴더 단위 메모리 캐시 사용 — 반복 검색 시 DB 재로드 없음.
     func topK(queryEmbedding: [Float], k: Int = 50, excludePath: String? = nil) -> [(url: URL, score: Float)] {
-        let all = loadAll()
+        let all = cachedAll()
         guard queryEmbedding.count == dim else { return [] }
 
         // 각 임베딩과 코사인 유사도 (둘 다 L2-normalized 가정 → dot product = cosine)

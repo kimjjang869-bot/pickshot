@@ -71,31 +71,32 @@ class PreviewImageCache {
     private var accessCounter: Int = 0
     private var entrySizes: [URL: Int] = [:]  // 항목별 바이트 크기 추적
     private var currentBytes: Int = 0
-    /// v8.6.1: 500MB → 300MB 로 하향 (전체 RSS 6GB 타겟 달성을 위해).
-    /// `reduceCacheLimit()` 로 메모리 압박 시 더 낮춤.
-    private var maxBytes: Int = 300 * 1024 * 1024
+    /// v8.9: 미리보기 캐시 사실상 비활성화 — 전체 메모리 안정성 우선.
+    ///   썸네일 캐시만으로 운영. 프리뷰는 매번 재디코드 (M4 Max 환경에서 실측 충분히 빠름).
+    private var maxBytes: Int = 0
     private let lock = NSLock()
 
-    /// v8.6.1: 메모리 압박 시 상한 절반으로 — 즉시 LRU evict 유도
+    /// v8.9 perf: 캐시 비활성화 상태 (maxBytes == 0) 여부. CacheSweeper 가 preview sweep 경로를 스킵할 때 사용.
+    var isDisabled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return maxBytes == 0
+    }
+
+    /// v8.9: 미리보기 캐시 비활성화 상태에서는 no-op.
     func reduceCacheLimit() {
         lock.lock()
-        let newLimit = max(maxBytes / 2, 50 * 1024 * 1024)
-        maxBytes = newLimit
-        // 초과분 즉시 evict
-        while currentBytes > maxBytes && !cache.isEmpty {
-            if let oldestKey = accessTime.min(by: { $0.value < $1.value })?.key {
-                cache.removeValue(forKey: oldestKey)
-                accessTime.removeValue(forKey: oldestKey)
-                currentBytes -= entrySizes.removeValue(forKey: oldestKey) ?? 0
-            } else { break }
-        }
+        // 이미 비활성화이므로 모든 항목 즉시 비우기
+        cache.removeAll()
+        accessTime.removeAll()
+        entrySizes.removeAll()
+        currentBytes = 0
         lock.unlock()
     }
 
-    /// 원래 상한으로 복원 (cleanup 후).
+    /// 원래 상한으로 복원 (cleanup 후) — v8.9 이후 사실상 no-op.
     func restoreCacheLimit() {
         lock.lock()
-        maxBytes = 300 * 1024 * 1024
+        maxBytes = 0
         lock.unlock()
     }
     private var maxEntries: Int
@@ -223,6 +224,9 @@ class PreviewImageCache {
     }
 
     func set(_ url: URL, image: NSImage) {
+        // v8.9: 미리보기 캐시 비활성화 — maxBytes=0 또는 maxEntries<=0 이면 즉시 반환.
+        //   이렇게 하지 않으면 매 set() 에서 기존 항목 전부 evict → 디스크 I/O 버스트.
+        guard maxBytes > 0, maxEntries > 0 else { return }
         lock.lock()
         let imageBytes = estimateBytes(image)
 
@@ -230,7 +234,7 @@ class PreviewImageCache {
         if cache.count >= maxEntries {
             evictOldest(count: maxEntries / 3)
         }
-        // 바이트 상한 체크 (500MB)
+        // 바이트 상한 체크
         while currentBytes + imageBytes > maxBytes && !cache.isEmpty {
             evictOldest(count: 1)
         }
@@ -408,7 +412,7 @@ class PreviewImageCache {
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, embedOnly as CFDictionary) {
@@ -430,7 +434,7 @@ class PreviewImageCache {
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if canSubsample && subsample > 1 {
@@ -1234,7 +1238,15 @@ struct PhotoPreviewView: View {
             //   아래 cache lookup 이 성공하면 교체. 실패해도 async 로드 후 교체.
             //   (이전 사진이 잠깐 보이는 게 빈 화면보다 낫다)
             if !store.isKeyRepeat {
-                image = nil   // 단일 이동일 때만 즉시 리셋 (메모리 스파이크 방지)
+                // v8.9 perf: image = nil 대신 캐시된 썸네일을 즉시 placeholder 로 표시.
+                //   클릭 후 LowRes(~400ms)+HiRes(~1100ms) 대기 동안 빈 화면을 안 보이게 해서
+                //   "버튼이 한번에 안 눌림" 체감을 제거. 캐시 miss 시에만 nil.
+                if let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder,
+                   let thumb = ThumbnailCache.shared.get(sel.jpgURL) {
+                    image = thumb
+                } else {
+                    image = nil   // 메모리 스파이크 방지
+                }
             }
             isHiResLoaded = false
             firstLoadIsPortrait = nil  // v8.6.2: 사진 바뀌면 aspect 기준 리셋
@@ -2773,7 +2785,17 @@ struct PhotoPreviewView: View {
                         fputs("[HIRES] ⚠️ skip — hi-res \(hiResPx)px < current \(currentPx)px\n", stderr)
                         return
                     }
-                    let cost = hi.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                    // v8.9: NSBitmapImageRep pixelsWide/pixelsHigh 가 lazy decode 상태에서 0 반환 → cost=1 이 되어
+                    //   NSCache 의 totalCostLimit 을 무력화시키던 버그 수정. cgImage 직접 읽어 bytesPerRow * height 사용.
+                    let cost: Int = {
+                        if let cg = hi.cgImage(forProposedRect: nil, context: nil, hints: nil), cg.height > 0 {
+                            return max(1, cg.bytesPerRow * cg.height)
+                        }
+                        if let rep = hi.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+                            return rep.pixelsWide * rep.pixelsHigh * 4
+                        }
+                        return 10 * 1024 * 1024  // 최소 10MB 로 보수적 추정 (cost=1 방지)
+                    }()
                     // 명시적 LRU 사전 purge 후 삽입 (NSCache 자동 evict 타이밍 보완)
                     Self.insertHiRes(hi, forKey: url as NSURL, cost: cost)
                     self.hiResImage = hi
@@ -2895,7 +2917,7 @@ struct PhotoPreviewView: View {
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if let cg = CGImageSourceCreateThumbnailAtIndex(parentSrc, 0, opts as CFDictionary) {
@@ -2946,7 +2968,7 @@ struct PhotoPreviewView: View {
                 kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true
+                kCGImageSourceShouldCacheImmediately: false
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
                 bestPixels = cgImage.width * cgImage.height
@@ -2993,7 +3015,7 @@ struct PhotoPreviewView: View {
         }
         _dimensionCacheLock.unlock()
         // 헤더만 읽기 — ShouldCacheImmediately로 I/O 파이프라인 최적화
-        let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: true]
+        let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, dimOpts as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
               let w = props[kCGImagePropertyPixelWidth as String] as? Int,
