@@ -2016,6 +2016,7 @@ class ThumbnailLoader {
     private var decodeSampleCount: Int = 0
     private var lastAdaptiveAdjustTime: CFAbsoluteTime = 0
     private let adaptiveAdjustInterval: CFAbsoluteTime = 0.8
+    private var memoryCapConcurrency: Int?
 
     init() {
         queue.maxConcurrentOperationCount = 4
@@ -2203,11 +2204,29 @@ class ThumbnailLoader {
     }
 
     private func applyConcurrency() {
-        let base = adaptiveConcurrency ?? normalConcurrency
+        let adaptive = adaptiveConcurrency ?? normalConcurrency
+        let base = min(adaptive, memoryCapConcurrency ?? adaptive)
         let target = isThrottled ? max(1, min(2, base)) : max(1, base)
         if queue.maxConcurrentOperationCount != target {
             queue.maxConcurrentOperationCount = target
         }
+    }
+
+    func updateMemoryPressure(_ usageRatio: Double) {
+        let nextCap: Int?
+        switch usageRatio {
+        case ..<0.12:
+            nextCap = nil
+        case ..<0.16:
+            nextCap = min(normalConcurrency, 3)
+        case ..<0.20:
+            nextCap = min(normalConcurrency, 2)
+        default:
+            nextCap = 1
+        }
+        guard nextCap != memoryCapConcurrency else { return }
+        memoryCapConcurrency = nextCap
+        applyConcurrency()
     }
 
     private func reportDecodeSample(ms: Double) {
@@ -3087,6 +3106,7 @@ class TileDocumentView: NSView {
     // 타일 관리
     private var visibleTiles: [Int: TileLayer] = [:]
     private var recyclePool: [TileLayer] = []
+    private var pendingTileFillWork: DispatchWorkItem?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -3120,6 +3140,8 @@ class TileDocumentView: NSView {
                 if idx >= 0 && idx < photos.count { neededIndices.insert(idx) }
             }
         }
+        let visibleMidRow = (startRow + endRow) / 2
+        let visibleMidIndex = visibleMidRow * cols
 
         // 화면 밖 타일 회수
         for (idx, tile) in visibleTiles where !neededIndices.contains(idx) {
@@ -3130,7 +3152,12 @@ class TileDocumentView: NSView {
         }
 
         // 타일 생성/업데이트
-        for idx in neededIndices {
+        let sortedIndices = neededIndices.sorted { abs($0 - visibleMidIndex) < abs($1 - visibleMidIndex) }
+        let createBudget = (store?.isGridScrolling == true) ? 28 : 72
+        var createdCount = 0
+        var deferred = false
+
+        for idx in sortedIndices {
             let photo = photos[idx]
             let row = idx / cols
             let col = idx % cols
@@ -3160,6 +3187,11 @@ class TileDocumentView: NSView {
                     CATransaction.commit()
                 }
             } else {
+                if createdCount >= createBudget {
+                    deferred = true
+                    continue
+                }
+                createdCount += 1
                 let tile = recyclePool.popLast() ?? TileLayer()
                 tile.frame = tileFrame
                 tile.configure(
@@ -3172,6 +3204,15 @@ class TileDocumentView: NSView {
                 layer?.addSublayer(tile)
                 visibleTiles[idx] = tile
             }
+        }
+
+        if deferred {
+            pendingTileFillWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.updateVisibleTiles()
+            }
+            pendingTileFillWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: work)
         }
     }
 

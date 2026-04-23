@@ -62,6 +62,7 @@ final class MemoryGuardService {
         let sinceFlush = now - lastFlushRamMB
         let totalRamMB = max(1, Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024)))
         let usageRatio = Double(now) / Double(totalRamMB)
+        ThumbnailLoader.shared.updateMemoryPressure(usageRatio)
 
         if usageRatio >= softLimitRatio {
             ThumbnailLoader.shared.throttle()
