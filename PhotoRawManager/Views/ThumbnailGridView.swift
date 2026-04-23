@@ -2008,6 +2008,7 @@ class ThumbnailLoader {
     static let shared = ThumbnailLoader()
     let queue = OperationQueue()
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
+    private var prefetchOperations: [URL: Operation] = [:]
     private let lock = NSLock()
     var normalConcurrency: Int = 4
     private var isThrottled: Bool = false
@@ -2034,6 +2035,7 @@ class ThumbnailLoader {
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
         isThrottled = true
+        cancelPrefetchOperations()
         applyConcurrency()
     }
 
@@ -2294,6 +2296,7 @@ class ThumbnailLoader {
         if pendingCallbacks[url] != nil {
             if let completion {
                 pendingCallbacks[url]?.append(completion)
+                prefetchOperations[url]?.queuePriority = .normal
             }
             lock.unlock()
             return
@@ -2302,6 +2305,9 @@ class ThumbnailLoader {
 
         let op = BlockOperation()
         op.queuePriority = prefetch ? .veryLow : .normal
+        if prefetch {
+            prefetchOperations[url] = op
+        }
         op.addExecutionBlock { [weak self, weak op] in
             // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
             // 없으면 ThumbnailCache 가 evict 해도 CGImageSource/NSImage 가 thread-local pool 에 누적되어
@@ -2329,6 +2335,7 @@ class ThumbnailLoader {
 
                 self?.lock.lock()
                 let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
+                self?.prefetchOperations.removeValue(forKey: url)
                 self?.lock.unlock()
 
                 DispatchQueue.main.async {
@@ -2377,6 +2384,7 @@ class ThumbnailLoader {
             // 콜백 정리 + 실행
             self?.lock.lock()
             let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
+            self?.prefetchOperations.removeValue(forKey: url)
             self?.lock.unlock()
 
             // 취소된 경우 콜백 호출 안함 (placeholder 생성도 방지)
@@ -2388,6 +2396,18 @@ class ThumbnailLoader {
         }
         queue.addOperation(op)
         lock.unlock()
+    }
+
+    private func cancelPrefetchOperations() {
+        lock.lock()
+        let ops = Array(prefetchOperations.values)
+        prefetchOperations.removeAll()
+        // prefetch 전용 엔트리(콜백 없음)는 pending에서도 제거
+        for (key, callbacks) in pendingCallbacks where callbacks.isEmpty {
+            pendingCallbacks.removeValue(forKey: key)
+        }
+        lock.unlock()
+        ops.forEach { $0.cancel() }
     }
 
     // MARK: - HDD 배치 디스크 캐시 저장 (I/O 경합 방지)
