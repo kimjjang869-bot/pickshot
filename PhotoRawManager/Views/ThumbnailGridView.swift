@@ -2259,35 +2259,49 @@ class ThumbnailLoader {
     }
 
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
+        enqueueLoad(url: url, prefetch: false, completion: completion)
+    }
+
+    func prefetch(url: URL) {
+        enqueueLoad(url: url, prefetch: true, completion: nil)
+    }
+
+    private func enqueueLoad(url: URL, prefetch: Bool, completion: ((NSImage) -> Void)?) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
             AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
-            completion(cached)
+            completion?(cached)
             return
         }
         // 2. Disk cache hit → path-only lookup (no stat() — 메인스레드 블로킹 방지)
         if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
             ThumbnailCache.shared.set(url, image: diskCached)
-            completion(diskCached)
+            completion?(diskCached)
             return
         }
+
+        // 프리페치는 스크롤/메모리 억제 상황에서 드롭 허용 (visible 우선)
+        if prefetch && isThrottled { return }
 
         // 3. Need to extract from file — queue it
         lock.lock()
         // Double-check: 다른 스레드가 lock 대기 중 캐시에 저장했을 수 있음
         if let cached = ThumbnailCache.shared.get(url) {
             lock.unlock()
-            completion(cached)
+            completion?(cached)
             return
         }
         if pendingCallbacks[url] != nil {
-            pendingCallbacks[url]?.append(completion)
+            if let completion {
+                pendingCallbacks[url]?.append(completion)
+            }
             lock.unlock()
             return
         }
-        pendingCallbacks[url] = [completion]
+        pendingCallbacks[url] = completion.map { [$0] } ?? []
 
         let op = BlockOperation()
+        op.queuePriority = prefetch ? .veryLow : .normal
         op.addExecutionBlock { [weak self, weak op] in
             // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
             // 없으면 ThumbnailCache 가 evict 해도 CGImageSource/NSImage 가 thread-local pool 에 누적되어
@@ -3283,7 +3297,7 @@ class TileDocumentView: NSView {
             if photo.isFolder || photo.isParentFolder { continue }
             let url = photo.jpgURL
             if ThumbnailCache.shared.get(url) != nil { continue }  // 이미 메모리 캐시
-            ThumbnailLoader.shared.load(url: url) { _ in }  // fire-and-forget
+            ThumbnailLoader.shared.prefetch(url: url)
         }
     }
 

@@ -80,7 +80,7 @@ extension PhotoStore {
                     DispatchQueue.global(qos: .utility).async {
                         let loader = ThumbnailLoader.shared
                         for url in newURLs {
-                            loader.load(url: url) { _ in }
+                            loader.prefetch(url: url)
                         }
                     }
                 }

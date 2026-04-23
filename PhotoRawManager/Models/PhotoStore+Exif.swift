@@ -348,9 +348,8 @@ extension PhotoStore {
             guard !list[i].isFolder && !list[i].isParentFolder else { continue }
             // 이미 캐시에 있으면 스킵
             if ThumbnailCache.shared.get(url) != nil { continue }
-            ThumbnailLoader.shared.load(url: url) { [weak self] _ in
-                guard self?.thumbPrefetchGeneration == gen else { return }
-            }
+            guard thumbPrefetchGeneration == gen else { continue }
+            ThumbnailLoader.shared.prefetch(url: url)
         }
 
         // 진행률 업데이트
