@@ -737,6 +737,7 @@ class PhotoStore: ObservableObject {
     // MARK: - Folder load coalescing
     private var folderLoadInFlight: Set<String> = []
     private var lastFolderLoadStartedAt: [String: CFAbsoluteTime] = [:]
+    private var pendingFolderReloads: [String: (url: URL, restoreRatings: Bool)] = [:]
 
     /// 현재 앱 메모리 사용량 (MB)
     static func currentAppMemoryMB() -> Double {
@@ -787,11 +788,12 @@ class PhotoStore: ObservableObject {
     }
 
     @discardableResult
-    func beginFolderLoad(_ url: URL, minInterval: CFAbsoluteTime = 0.8) -> Bool {
+    func beginFolderLoad(_ url: URL, restoreRatings: Bool, minInterval: CFAbsoluteTime = 0.8) -> Bool {
         let key = url.standardizedFileURL.path
         let now = CFAbsoluteTimeGetCurrent()
 
         if folderLoadInFlight.contains(key) {
+            pendingFolderReloads[key] = (url, restoreRatings)
             AppLogger.log(.folder, "loadFolder skip (in-flight): \(key)")
             return false
         }
@@ -808,6 +810,12 @@ class PhotoStore: ObservableObject {
     func endFolderLoad(_ url: URL) {
         let key = url.standardizedFileURL.path
         folderLoadInFlight.remove(key)
+
+        if let pending = pendingFolderReloads.removeValue(forKey: key) {
+            DispatchQueue.main.async { [weak self] in
+                self?.loadFolder(pending.url, restoreRatings: pending.restoreRatings)
+            }
+        }
     }
 
     // openFolder / navigation / recent / favorite folders → PhotoStore+Folder.swift

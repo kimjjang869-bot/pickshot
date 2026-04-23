@@ -126,7 +126,7 @@ extension PhotoStore {
     // MARK: - Folder Loading
 
     func loadFolder(_ url: URL, restoreRatings: Bool = false) {
-        guard beginFolderLoad(url) else { return }
+        guard beginFolderLoad(url, restoreRatings: restoreRatings) else { return }
 
         // Sandbox: 1) 직접 접근 가능? 2) bookmark 으로 접근? 3) NSOpenPanel
         let canAccess = FileManager.default.isReadableFile(atPath: url.path)
