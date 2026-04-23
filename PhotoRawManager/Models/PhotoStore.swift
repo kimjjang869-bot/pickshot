@@ -214,6 +214,7 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var isLoading = false
+    @Published var isGridScrolling = false
     @Published var loadingProgress: Double = 0  // 0~1
     @Published var loadingStatus: String = ""
     @Published var thumbsLoaded: Int = 0
@@ -730,6 +731,13 @@ class PhotoStore: ObservableObject {
 
     var idlePrefetchGeneration = 0
     var idlePrefetchWork: DispatchWorkItem?
+    var lastScrollDirection: Int = 1   // 1 = down, -1 = up
+    var gridScrollEndWork: DispatchWorkItem?
+
+    // MARK: - Folder load coalescing
+    private var folderLoadInFlight: Set<String> = []
+    private var lastFolderLoadStartedAt: [String: CFAbsoluteTime] = [:]
+    private var pendingFolderReloads: [String: (url: URL, restoreRatings: Bool)] = [:]
 
     /// 현재 앱 메모리 사용량 (MB)
     static func currentAppMemoryMB() -> Double {
@@ -747,6 +755,67 @@ class PhotoStore: ObservableObject {
 
     var hasAnalyzedForSmartSelect: Bool {
         photos.contains { $0.quality?.isAnalyzed == true }
+    }
+
+    var shouldUseTileGrid: Bool {
+        viewMode == .grid && (ThumbnailLoader.shared.isNetworkMode || photos.count >= 1500)
+    }
+
+    var shouldRunBackgroundPrefetch: Bool {
+        !isGridScrolling
+    }
+
+    func beginGridScrolling(direction: Int? = nil) {
+        if let dir = direction {
+            lastScrollDirection = dir
+        }
+        if isGridScrolling { return }
+        isGridScrolling = true
+        ThumbnailLoader.shared.throttle()
+        idlePrefetchGeneration += 1
+    }
+
+    func endGridScrolling(after delay: TimeInterval = 0.2) {
+        gridScrollEndWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.isGridScrolling = false
+            ThumbnailLoader.shared.unthrottle()
+            self.startIdlePreviewPrefetch()
+        }
+        gridScrollEndWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    @discardableResult
+    func beginFolderLoad(_ url: URL, restoreRatings: Bool, minInterval: CFAbsoluteTime = 0.8) -> Bool {
+        let key = url.standardizedFileURL.path
+        let now = CFAbsoluteTimeGetCurrent()
+
+        if folderLoadInFlight.contains(key) {
+            pendingFolderReloads[key] = (url, restoreRatings)
+            AppLogger.log(.folder, "loadFolder skip (in-flight): \(key)")
+            return false
+        }
+        if let last = lastFolderLoadStartedAt[key], now - last < minInterval {
+            AppLogger.log(.folder, "loadFolder skip (debounce): \(key)")
+            return false
+        }
+
+        folderLoadInFlight.insert(key)
+        lastFolderLoadStartedAt[key] = now
+        return true
+    }
+
+    func endFolderLoad(_ url: URL) {
+        let key = url.standardizedFileURL.path
+        folderLoadInFlight.remove(key)
+
+        if let pending = pendingFolderReloads.removeValue(forKey: key) {
+            DispatchQueue.main.async { [weak self] in
+                self?.loadFolder(pending.url, restoreRatings: pending.restoreRatings)
+            }
+        }
     }
 
     // openFolder / navigation / recent / favorite folders → PhotoStore+Folder.swift

@@ -80,7 +80,7 @@ extension PhotoStore {
                     DispatchQueue.global(qos: .utility).async {
                         let loader = ThumbnailLoader.shared
                         for url in newURLs {
-                            loader.load(url: url) { _ in }
+                            loader.prefetch(url: url)
                         }
                     }
                 }
@@ -126,6 +126,8 @@ extension PhotoStore {
     // MARK: - Folder Loading
 
     func loadFolder(_ url: URL, restoreRatings: Bool = false) {
+        guard beginFolderLoad(url, restoreRatings: restoreRatings) else { return }
+
         // Sandbox: 1) 직접 접근 가능? 2) bookmark 으로 접근? 3) NSOpenPanel
         let canAccess = FileManager.default.isReadableFile(atPath: url.path)
             || SandboxBookmarkService.startFolderAccess(for: url)
@@ -146,9 +148,11 @@ extension PhotoStore {
                     SandboxBookmarkService.saveBookmark(for: granted, key: "volume_\(granted.path)")
                     SandboxBookmarkService.saveBookmark(for: granted, key: "lastFolder")
                     let targetURL = FileManager.default.isReadableFile(atPath: url.path) ? url : granted
+                    self?.endFolderLoad(url)
                     self?.loadFolder(targetURL, restoreRatings: restoreRatings)
                 }
             }
+            endFolderLoad(url)
             return
         }
 
@@ -229,7 +233,10 @@ extension PhotoStore {
             }
 
             DispatchQueue.main.async {
-                guard self?.folderURL == url else { return }
+                guard self?.folderURL == url else {
+                    self?.endFolderLoad(url)
+                    return
+                }
 
                 // photos 교체 전에 기존 선택 파일명 캡처 (리로드 시 선택 유지용)
                 var prevFileName: String? = nil
@@ -289,6 +296,7 @@ extension PhotoStore {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     self?.startIdlePreviewPrefetch()
                 }
+                self?.endFolderLoad(url)
             }
 
             // Phase 2: Read EXIF on-demand only (not upfront)

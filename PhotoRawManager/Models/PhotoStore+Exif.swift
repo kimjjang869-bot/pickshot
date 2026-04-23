@@ -182,6 +182,7 @@ extension PhotoStore {
     }
 
     func preloadAllThumbnails() {
+        guard shouldRunBackgroundPrefetch else { return }
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
         thumbsTotal = list.count
         thumbsLoaded = thumbsTotal
@@ -241,6 +242,7 @@ extension PhotoStore {
     }
 
     func startIdlePreviewPrefetch() {
+        guard shouldRunBackgroundPrefetch else { return }
         idlePrefetchGeneration += 1
         let gen = idlePrefetchGeneration
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
@@ -261,6 +263,13 @@ extension PhotoStore {
         let batchSize = 3
         func prefetchBatch(from startIdx: Int) {
             guard startIdx < sorted.count, self.idlePrefetchGeneration == gen else { return }
+            guard self.shouldRunBackgroundPrefetch else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    prefetchBatch(from: startIdx)
+                }
+                return
+            }
 
             // CPU/메모리 체크 — 여유 있을 때만
             let memMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
@@ -311,6 +320,7 @@ extension PhotoStore {
 
     /// 선택 변경 시 호출 — 현재 위치 앞뒤 50장만 프리페치
     func preloadThumbnailsAroundSelection(initialLoad: Bool = false) {
+        guard shouldRunBackgroundPrefetch else { return }
         let list = filteredPhotos
         let total = list.count
         guard total > 0 else { return }
@@ -328,19 +338,18 @@ extension PhotoStore {
             currentIdx = 0
         }
 
-        // 윈도우: 현재 위치에서 앞뒤 100장
-        let windowSize = 100
-        let start = max(0, currentIdx - windowSize)
-        let end = min(total, currentIdx + windowSize)
+        let forwardWindow = lastScrollDirection >= 0 ? 130 : 70
+        let backwardWindow = lastScrollDirection >= 0 ? 50 : 110
+        let start = max(0, currentIdx - backwardWindow)
+        let end = min(total, currentIdx + forwardWindow)
 
         for i in start..<end {
             let url = list[i].jpgURL
             guard !list[i].isFolder && !list[i].isParentFolder else { continue }
             // 이미 캐시에 있으면 스킵
             if ThumbnailCache.shared.get(url) != nil { continue }
-            ThumbnailLoader.shared.load(url: url) { [weak self] _ in
-                guard self?.thumbPrefetchGeneration == gen else { return }
-            }
+            guard thumbPrefetchGeneration == gen else { continue }
+            ThumbnailLoader.shared.prefetch(url: url)
         }
 
         // 진행률 업데이트
@@ -350,9 +359,12 @@ extension PhotoStore {
     }
 
     func prefetchNearby(list: [PhotoItem], centerIndex: Int, range: Int) {
+        guard shouldRunBackgroundPrefetch else { return }
         var urls: [URL] = []
-        let start = max(0, centerIndex - range)
-        let end = min(list.count - 1, centerIndex + range)
+        let forwardRange = lastScrollDirection >= 0 ? Int(Double(range) * 1.5) : range
+        let backwardRange = lastScrollDirection >= 0 ? max(1, range / 2) : Int(Double(range) * 1.5)
+        let start = max(0, centerIndex - backwardRange)
+        let end = min(list.count - 1, centerIndex + forwardRange)
         guard end >= start else { return }
         for i in start...end {
             if i == centerIndex { continue }
@@ -367,15 +379,23 @@ extension PhotoStore {
     }
 
     func prefetchThumbnailsBoth(list: [PhotoItem], centerIndex: Int, count: Int) {
+        guard shouldRunBackgroundPrefetch else { return }
         Self.thumbPrefetchQueue.cancelAllOperations()
 
         // 앞뒤 count장씩 수집 (가까운 것부터)
         var indices: [Int] = []
-        for offset in 1...count {
-            let fwd = centerIndex + offset
-            let bwd = centerIndex - offset
-            if fwd < list.count { indices.append(fwd) }
-            if bwd >= 0 { indices.append(bwd) }
+        let forwardCount = lastScrollDirection >= 0 ? Int(Double(count) * 1.6) : count
+        let backwardCount = lastScrollDirection >= 0 ? max(1, count / 2) : Int(Double(count) * 1.6)
+        let maxOffset = max(forwardCount, backwardCount)
+        for offset in 1...maxOffset {
+            if offset <= forwardCount {
+                let fwd = centerIndex + offset
+                if fwd < list.count { indices.append(fwd) }
+            }
+            if offset <= backwardCount {
+                let bwd = centerIndex - offset
+                if bwd >= 0 { indices.append(bwd) }
+            }
         }
 
         for i in indices {

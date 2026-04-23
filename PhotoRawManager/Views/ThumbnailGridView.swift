@@ -15,8 +15,14 @@ private struct GridWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
+private struct GridScrollMinYKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
+    @State private var lastLazyScrollMinY: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -35,11 +41,23 @@ struct ThumbnailGridView: View {
                         // SwiftUI Table — Finder와 동일한 컬럼 리사이즈/정렬
                         NativeListView()
                             .environmentObject(store)
+                    } else if store.shouldUseTileGrid {
+                        TileGridView()
+                            .environmentObject(store)
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView {
+                                GeometryReader { g in
+                                    Color.clear
+                                        .preference(
+                                            key: GridScrollMinYKey.self,
+                                            value: g.frame(in: .named("thumbScroll")).minY
+                                        )
+                                }
+                                .frame(height: 0)
                                 gridView
                             }
+                            .coordinateSpace(name: "thumbScroll")
                             .scrollIndicators(.visible)
                             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
                                 // Finder 등 외부에서 파일을 드롭하면 현재 폴더로 복사
@@ -94,6 +112,15 @@ struct ThumbnailGridView: View {
                             .onChange(of: store.scrollTrigger) { _ in
                                 guard let id = store.selectedPhotoID else { return }
                                 proxy.scrollTo(id, anchor: nil)
+                            }
+                            .onPreferenceChange(GridScrollMinYKey.self) { minY in
+                                let direction = minY <= lastLazyScrollMinY ? 1 : -1
+                                let delta = abs(minY - lastLazyScrollMinY)
+                                if delta > 0.5 {
+                                    store.beginGridScrolling(direction: direction)
+                                    store.endGridScrolling(after: 0.2)
+                                    lastLazyScrollMinY = minY
+                                }
                             }
                         }
                     }
@@ -1981,8 +2008,16 @@ class ThumbnailLoader {
     static let shared = ThumbnailLoader()
     let queue = OperationQueue()
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
+    private var prefetchOperations: [URL: Operation] = [:]
     private let lock = NSLock()
     var normalConcurrency: Int = 4
+    private var isThrottled: Bool = false
+    private var adaptiveConcurrency: Int?
+    private var rollingDecodeMs: Double = 0
+    private var decodeSampleCount: Int = 0
+    private var lastAdaptiveAdjustTime: CFAbsoluteTime = 0
+    private let adaptiveAdjustInterval: CFAbsoluteTime = 0.8
+    private var memoryCapConcurrency: Int?
 
     init() {
         queue.maxConcurrentOperationCount = 4
@@ -1999,12 +2034,15 @@ class ThumbnailLoader {
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
-        queue.maxConcurrentOperationCount = 2
+        isThrottled = true
+        cancelPrefetchOperations()
+        applyConcurrency()
     }
 
     /// 탐색 멈추면 프리로딩 복구
     func unthrottle() {
-        queue.maxConcurrentOperationCount = normalConcurrency
+        isThrottled = false
+        applyConcurrency()
     }
 
     /// Auto-detect storage type for I/O optimization
@@ -2018,30 +2056,34 @@ class ThumbnailLoader {
             isExternalHDD = false
             // SystemSpec tier 기반 (M1 Pro 16GB = standard → 3)
             let c = SystemSpec.shared.ssdThumbnailConcurrency()
-            queue.maxConcurrentOperationCount = c
             normalConcurrency = c
+            adaptiveConcurrency = c
+            applyConcurrency()
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
         case .externalSSD:
             isNetworkMode = false
             isExternalHDD = false
             // 외장 SSD도 동일 tier 기반 캡 적용
             let c = SystemSpec.shared.ssdThumbnailConcurrency()
-            queue.maxConcurrentOperationCount = c
             normalConcurrency = c
+            adaptiveConcurrency = c
+            applyConcurrency()
             AppLogger.log(.performance, "External SSD: concurrency=\(c)")
         case .externalHDD:
             isNetworkMode = false
             isExternalHDD = true
             // HDD NCQ 큐 깊이 활용 — 6-way까지 sustained throughput 증가 (8-way는 USB 외장에서 역효과)
-            queue.maxConcurrentOperationCount = 6
             normalConcurrency = 6
+            adaptiveConcurrency = 6
+            applyConcurrency()
             AppLogger.log(.performance, "External HDD: concurrency=6, thumbSize=160 for \(path)")
         case .sdCard:
             // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
             isNetworkMode = false
             isExternalHDD = true  // slow disk 취급
-            queue.maxConcurrentOperationCount = 1  // 직렬: 동시 읽기 시 속도 급락
             normalConcurrency = 1
+            adaptiveConcurrency = 1
+            applyConcurrency()
             AppLogger.log(.performance, "SD Card: concurrency=1, thumbSize=120 for \(path)")
         case .network:
             isNetworkMode = true
@@ -2049,8 +2091,9 @@ class ThumbnailLoader {
             // NAS 30-50MB/s 기준: 병목은 네트워크 대역폭
             // 4-way 가 최적 (8+ 은 NIC 포화, TCP retransmit → 오히려 느려짐)
             // 전제: 스테이지1 썸네일은 RAW 임베디드 JPEG (3-5MB) + 부분 읽기
-            queue.maxConcurrentOperationCount = 4
             normalConcurrency = 4
+            adaptiveConcurrency = 4
+            applyConcurrency()
             AppLogger.log(.performance, "NAS/Network: concurrency=4 (대역폭 보호), thumbSize=100 for \(path)")
         }
     }
@@ -2162,36 +2205,109 @@ class ThumbnailLoader {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date.distantPast
     }
 
+    private func applyConcurrency() {
+        let adaptive = adaptiveConcurrency ?? normalConcurrency
+        let base = min(adaptive, memoryCapConcurrency ?? adaptive)
+        let target = isThrottled ? max(1, min(2, base)) : max(1, base)
+        if queue.maxConcurrentOperationCount != target {
+            queue.maxConcurrentOperationCount = target
+        }
+    }
+
+    func updateMemoryPressure(_ usageRatio: Double) {
+        let nextCap: Int?
+        switch usageRatio {
+        case ..<0.12:
+            nextCap = nil
+        case ..<0.16:
+            nextCap = min(normalConcurrency, 3)
+        case ..<0.20:
+            nextCap = min(normalConcurrency, 2)
+        default:
+            nextCap = 1
+        }
+        guard nextCap != memoryCapConcurrency else { return }
+        memoryCapConcurrency = nextCap
+        applyConcurrency()
+    }
+
+    private func reportDecodeSample(ms: Double) {
+        guard ms > 0 else { return }
+        decodeSampleCount += 1
+        if rollingDecodeMs == 0 {
+            rollingDecodeMs = ms
+        } else {
+            rollingDecodeMs = (rollingDecodeMs * 0.85) + (ms * 0.15)
+        }
+        if decodeSampleCount < 8 { return }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastAdaptiveAdjustTime < adaptiveAdjustInterval { return }
+        lastAdaptiveAdjustTime = now
+
+        let current = adaptiveConcurrency ?? normalConcurrency
+        var next = current
+        if rollingDecodeMs > 120 {
+            next = max(1, current - 1)
+        } else if rollingDecodeMs < 45 {
+            next = min(normalConcurrency, current + 1)
+        }
+
+        if next != current {
+            adaptiveConcurrency = next
+            applyConcurrency()
+            AppLogger.log(.performance, "Adaptive thumb concurrency: \(current) → \(next), avg=\(Int(rollingDecodeMs))ms")
+        }
+    }
+
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
+        enqueueLoad(url: url, prefetch: false, completion: completion)
+    }
+
+    func prefetch(url: URL) {
+        enqueueLoad(url: url, prefetch: true, completion: nil)
+    }
+
+    private func enqueueLoad(url: URL, prefetch: Bool, completion: ((NSImage) -> Void)?) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
             AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
-            completion(cached)
+            completion?(cached)
             return
         }
         // 2. Disk cache hit → path-only lookup (no stat() — 메인스레드 블로킹 방지)
         if let diskCached = DiskThumbnailCache.shared.getByPath(url: url) {
             ThumbnailCache.shared.set(url, image: diskCached)
-            completion(diskCached)
+            completion?(diskCached)
             return
         }
+
+        // 프리페치는 스크롤/메모리 억제 상황에서 드롭 허용 (visible 우선)
+        if prefetch && isThrottled { return }
 
         // 3. Need to extract from file — queue it
         lock.lock()
         // Double-check: 다른 스레드가 lock 대기 중 캐시에 저장했을 수 있음
         if let cached = ThumbnailCache.shared.get(url) {
             lock.unlock()
-            completion(cached)
+            completion?(cached)
             return
         }
         if pendingCallbacks[url] != nil {
-            pendingCallbacks[url]?.append(completion)
+            if let completion {
+                pendingCallbacks[url]?.append(completion)
+                prefetchOperations[url]?.queuePriority = .normal
+            }
             lock.unlock()
             return
         }
-        pendingCallbacks[url] = [completion]
+        pendingCallbacks[url] = completion.map { [$0] } ?? []
 
         let op = BlockOperation()
+        op.queuePriority = prefetch ? .veryLow : .normal
+        if prefetch {
+            prefetchOperations[url] = op
+        }
         op.addExecutionBlock { [weak self, weak op] in
             // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
             // 없으면 ThumbnailCache 가 evict 해도 CGImageSource/NSImage 가 thread-local pool 에 누적되어
@@ -2219,6 +2335,7 @@ class ThumbnailLoader {
 
                 self?.lock.lock()
                 let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
+                self?.prefetchOperations.removeValue(forKey: url)
                 self?.lock.unlock()
 
                 DispatchQueue.main.async {
@@ -2245,6 +2362,7 @@ class ThumbnailLoader {
             }
 
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
+            self?.reportDecodeSample(ms: extractElapsed)
             if extractElapsed > 5 {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
             }
@@ -2266,6 +2384,7 @@ class ThumbnailLoader {
             // 콜백 정리 + 실행
             self?.lock.lock()
             let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
+            self?.prefetchOperations.removeValue(forKey: url)
             self?.lock.unlock()
 
             // 취소된 경우 콜백 호출 안함 (placeholder 생성도 방지)
@@ -2277,6 +2396,18 @@ class ThumbnailLoader {
         }
         queue.addOperation(op)
         lock.unlock()
+    }
+
+    private func cancelPrefetchOperations() {
+        lock.lock()
+        let ops = Array(prefetchOperations.values)
+        prefetchOperations.removeAll()
+        // prefetch 전용 엔트리(콜백 없음)는 pending에서도 제거
+        for (key, callbacks) in pendingCallbacks where callbacks.isEmpty {
+            pendingCallbacks.removeValue(forKey: key)
+        }
+        lock.unlock()
+        ops.forEach { $0.cancel() }
     }
 
     // MARK: - HDD 배치 디스크 캐시 저장 (I/O 경합 방지)
@@ -2603,6 +2734,7 @@ class ThumbnailLoader {
 // MARK: - Async Thumbnail View
 
 struct AsyncThumbnailView: View {
+    @EnvironmentObject var store: PhotoStore
     let url: URL
     @State private var image: NSImage?
     @State private var loadedURL: URL?
@@ -2637,6 +2769,11 @@ struct AsyncThumbnailView: View {
             // 재시도 트리거
             if image == nil {
                 loadThumbnail()
+            }
+        }
+        .onChange(of: store.isGridScrolling) { active in
+            if !active {
+                promoteToHighQualityIfNeeded()
             }
         }
     }
@@ -2677,14 +2814,8 @@ struct AsyncThumbnailView: View {
                     guard self.loadedURL == currentURL else { return }
                     self.image = ns
                 }
-                // 고화질 교체 (백그라운드)
-                ThumbnailLoader.shared.load(url: currentURL) { img in
-                    RunLoop.main.perform(inModes: [.common]) {
-                        if self.loadedURL == currentURL, img.size.width > 2 {
-                            self.image = img
-                        }
-                    }
-                }
+                // 고화질 교체 (스크롤 중에는 지연)
+                promoteToHighQualityIfNeeded()
                 return
             }
             // 임베디드 없음 → 생성
@@ -2701,6 +2832,18 @@ struct AsyncThumbnailView: View {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private func promoteToHighQualityIfNeeded() {
+        guard !store.isGridScrolling else { return }
+        guard let currentURL = loadedURL else { return }
+        ThumbnailLoader.shared.load(url: currentURL) { img in
+            RunLoop.main.perform(inModes: [.common]) {
+                if self.loadedURL == currentURL, img.size.width > 2 {
+                    self.image = img
                 }
             }
         }
@@ -2997,6 +3140,7 @@ class TileDocumentView: NSView {
     // 타일 관리
     private var visibleTiles: [Int: TileLayer] = [:]
     private var recyclePool: [TileLayer] = []
+    private var pendingTileFillWork: DispatchWorkItem?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -3030,6 +3174,8 @@ class TileDocumentView: NSView {
                 if idx >= 0 && idx < photos.count { neededIndices.insert(idx) }
             }
         }
+        let visibleMidRow = (startRow + endRow) / 2
+        let visibleMidIndex = visibleMidRow * cols
 
         // 화면 밖 타일 회수
         for (idx, tile) in visibleTiles where !neededIndices.contains(idx) {
@@ -3040,7 +3186,12 @@ class TileDocumentView: NSView {
         }
 
         // 타일 생성/업데이트
-        for idx in neededIndices {
+        let sortedIndices = neededIndices.sorted { abs($0 - visibleMidIndex) < abs($1 - visibleMidIndex) }
+        let createBudget = (store?.isGridScrolling == true) ? 28 : 72
+        var createdCount = 0
+        var deferred = false
+
+        for idx in sortedIndices {
             let photo = photos[idx]
             let row = idx / cols
             let col = idx % cols
@@ -3070,6 +3221,11 @@ class TileDocumentView: NSView {
                     CATransaction.commit()
                 }
             } else {
+                if createdCount >= createBudget {
+                    deferred = true
+                    continue
+                }
+                createdCount += 1
                 let tile = recyclePool.popLast() ?? TileLayer()
                 tile.frame = tileFrame
                 tile.configure(
@@ -3082,6 +3238,15 @@ class TileDocumentView: NSView {
                 layer?.addSublayer(tile)
                 visibleTiles[idx] = tile
             }
+        }
+
+        if deferred {
+            pendingTileFillWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.updateVisibleTiles()
+            }
+            pendingTileFillWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: work)
         }
     }
 
@@ -3100,9 +3265,19 @@ class TileDocumentView: NSView {
     // MARK: - 스크롤
 
     private var scrollPrefetchWork: DispatchWorkItem?
+    private var lastVisibleMinY: CGFloat = 0
 
     @objc func scrollChanged() {
         updateVisibleTiles()
+
+        if let scrollView = enclosingScrollView {
+            let minY = scrollView.documentVisibleRect.minY
+            let direction = minY >= lastVisibleMinY ? 1 : -1
+            lastVisibleMinY = minY
+            store?.lastScrollDirection = direction
+        }
+
+        store?.beginGridScrolling(direction: store?.lastScrollDirection)
 
         // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
         // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
@@ -3112,6 +3287,8 @@ class TileDocumentView: NSView {
         }
         scrollPrefetchWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+
+        store?.endGridScrolling(after: 0.2)
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3121,11 +3298,15 @@ class TileDocumentView: NSView {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
         let visibleRect = scrollView.documentVisibleRect
 
-        // HDD에서도 적극적 prefetch (concurrency 4와 함께 동작) — 사용자가 스크롤 직후 회색 placeholder 보지 않도록
-        let margin = ThumbnailLoader.shared.isSlowDisk ? 4 : 5
-        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
+        let forwardMargin = ThumbnailLoader.shared.isSlowDisk ? 5 : 10
+        let backwardMargin = ThumbnailLoader.shared.isSlowDisk ? 2 : 3
+        let direction = store?.lastScrollDirection ?? 1
+        let before = direction >= 0 ? backwardMargin : forwardMargin
+        let after = direction >= 0 ? forwardMargin : backwardMargin
+
+        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - before)
         let totalRows = (photos.count + cols - 1) / cols
-        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)
+        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + after)
 
         let startIdx = max(0, startRow * cols)
         let endIdx = min(photos.count, endRow * cols)
@@ -3136,7 +3317,7 @@ class TileDocumentView: NSView {
             if photo.isFolder || photo.isParentFolder { continue }
             let url = photo.jpgURL
             if ThumbnailCache.shared.get(url) != nil { continue }  // 이미 메모리 캐시
-            ThumbnailLoader.shared.load(url: url) { _ in }  // fire-and-forget
+            ThumbnailLoader.shared.prefetch(url: url)
         }
     }
 
@@ -3827,4 +4008,3 @@ struct DropIndicatorOverlay: View {
         .shadow(color: Color.blue.opacity(0.6), radius: 4)
     }
 }
-
