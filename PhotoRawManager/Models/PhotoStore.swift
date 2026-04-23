@@ -214,6 +214,7 @@ class PhotoStore: ObservableObject {
         }
     }
     @Published var isLoading = false
+    @Published var isGridScrolling = false
     @Published var loadingProgress: Double = 0  // 0~1
     @Published var loadingStatus: String = ""
     @Published var thumbsLoaded: Int = 0
@@ -730,6 +731,11 @@ class PhotoStore: ObservableObject {
 
     var idlePrefetchGeneration = 0
     var idlePrefetchWork: DispatchWorkItem?
+    var lastScrollDirection: Int = 1   // 1 = down, -1 = up
+
+    // MARK: - Folder load coalescing
+    private var folderLoadInFlight: Set<String> = []
+    private var lastFolderLoadStartedAt: [String: CFAbsoluteTime] = [:]
 
     /// 현재 앱 메모리 사용량 (MB)
     static func currentAppMemoryMB() -> Double {
@@ -747,6 +753,38 @@ class PhotoStore: ObservableObject {
 
     var hasAnalyzedForSmartSelect: Bool {
         photos.contains { $0.quality?.isAnalyzed == true }
+    }
+
+    var shouldUseTileGrid: Bool {
+        viewMode == .grid && (ThumbnailLoader.shared.isNetworkMode || photos.count >= 1500)
+    }
+
+    var shouldRunBackgroundPrefetch: Bool {
+        !isGridScrolling
+    }
+
+    @discardableResult
+    func beginFolderLoad(_ url: URL, minInterval: CFAbsoluteTime = 0.8) -> Bool {
+        let key = url.standardizedFileURL.path
+        let now = CFAbsoluteTimeGetCurrent()
+
+        if folderLoadInFlight.contains(key) {
+            AppLogger.log(.folder, "loadFolder skip (in-flight): \(key)")
+            return false
+        }
+        if let last = lastFolderLoadStartedAt[key], now - last < minInterval {
+            AppLogger.log(.folder, "loadFolder skip (debounce): \(key)")
+            return false
+        }
+
+        folderLoadInFlight.insert(key)
+        lastFolderLoadStartedAt[key] = now
+        return true
+    }
+
+    func endFolderLoad(_ url: URL) {
+        let key = url.standardizedFileURL.path
+        folderLoadInFlight.remove(key)
     }
 
     // openFolder / navigation / recent / favorite folders → PhotoStore+Folder.swift

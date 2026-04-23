@@ -26,6 +26,10 @@ final class MemoryGuardService {
     private let growthThresholdMB: Int = 2000
     /// 연속 flush 방지 간격 (이전 flush 대비 500MB 이상 더 증가해야 재flush)
     private let reflushDeltaMB: Int = 500
+    /// RAM 사용 비율이 이 값 이상이면 prefetch/동시성을 먼저 보수적으로 조정
+    private let softLimitRatio: Double = 0.14
+    /// RAM 사용 비율이 이 값 이상이면 flush 수행 (선제 예산 기반)
+    private let hardLimitRatio: Double = 0.18
 
     private init() {}
 
@@ -56,6 +60,21 @@ final class MemoryGuardService {
         let now = currentRamMB()
         let growth = now - baselineRamMB
         let sinceFlush = now - lastFlushRamMB
+        let totalRamMB = max(1, Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024)))
+        let usageRatio = Double(now) / Double(totalRamMB)
+
+        if usageRatio >= softLimitRatio {
+            ThumbnailLoader.shared.throttle()
+        } else {
+            ThumbnailLoader.shared.unthrottle()
+        }
+
+        if usageRatio >= hardLimitRatio && sinceFlush >= reflushDeltaMB {
+            fputs("[MemGuard] RAM 비율 \(Int(usageRatio * 100))% (hard limit) → 캐시 해제\n", stderr)
+            flushAll()
+            lastFlushRamMB = currentRamMB()
+            return
+        }
 
         // 2GB 이상 증가하고, 지난 flush 대비 500MB 이상 더 늘었으면 flush
         if growth >= growthThresholdMB && sinceFlush >= reflushDeltaMB {

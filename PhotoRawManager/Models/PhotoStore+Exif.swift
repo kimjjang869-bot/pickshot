@@ -182,6 +182,7 @@ extension PhotoStore {
     }
 
     func preloadAllThumbnails() {
+        guard shouldRunBackgroundPrefetch else { return }
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
         thumbsTotal = list.count
         thumbsLoaded = thumbsTotal
@@ -241,6 +242,7 @@ extension PhotoStore {
     }
 
     func startIdlePreviewPrefetch() {
+        guard shouldRunBackgroundPrefetch else { return }
         idlePrefetchGeneration += 1
         let gen = idlePrefetchGeneration
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
@@ -261,6 +263,13 @@ extension PhotoStore {
         let batchSize = 3
         func prefetchBatch(from startIdx: Int) {
             guard startIdx < sorted.count, self.idlePrefetchGeneration == gen else { return }
+            guard self.shouldRunBackgroundPrefetch else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    guard self?.idlePrefetchGeneration == gen else { return }
+                    prefetchBatch(from: startIdx)
+                }
+                return
+            }
 
             // CPU/메모리 체크 — 여유 있을 때만
             let memMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)

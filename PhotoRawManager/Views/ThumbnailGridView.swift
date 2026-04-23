@@ -35,6 +35,9 @@ struct ThumbnailGridView: View {
                         // SwiftUI Table — Finder와 동일한 컬럼 리사이즈/정렬
                         NativeListView()
                             .environmentObject(store)
+                    } else if store.shouldUseTileGrid {
+                        TileGridView()
+                            .environmentObject(store)
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView {
@@ -2603,6 +2606,7 @@ class ThumbnailLoader {
 // MARK: - Async Thumbnail View
 
 struct AsyncThumbnailView: View {
+    @EnvironmentObject var store: PhotoStore
     let url: URL
     @State private var image: NSImage?
     @State private var loadedURL: URL?
@@ -2637,6 +2641,11 @@ struct AsyncThumbnailView: View {
             // 재시도 트리거
             if image == nil {
                 loadThumbnail()
+            }
+        }
+        .onChange(of: store.isGridScrolling) { active in
+            if !active {
+                promoteToHighQualityIfNeeded()
             }
         }
     }
@@ -2677,14 +2686,8 @@ struct AsyncThumbnailView: View {
                     guard self.loadedURL == currentURL else { return }
                     self.image = ns
                 }
-                // 고화질 교체 (백그라운드)
-                ThumbnailLoader.shared.load(url: currentURL) { img in
-                    RunLoop.main.perform(inModes: [.common]) {
-                        if self.loadedURL == currentURL, img.size.width > 2 {
-                            self.image = img
-                        }
-                    }
-                }
+                // 고화질 교체 (스크롤 중에는 지연)
+                promoteToHighQualityIfNeeded()
                 return
             }
             // 임베디드 없음 → 생성
@@ -2701,6 +2704,18 @@ struct AsyncThumbnailView: View {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private func promoteToHighQualityIfNeeded() {
+        guard !store.isGridScrolling else { return }
+        guard let currentURL = loadedURL else { return }
+        ThumbnailLoader.shared.load(url: currentURL) { img in
+            RunLoop.main.perform(inModes: [.common]) {
+                if self.loadedURL == currentURL, img.size.width > 2 {
+                    self.image = img
                 }
             }
         }
@@ -3100,9 +3115,24 @@ class TileDocumentView: NSView {
     // MARK: - 스크롤
 
     private var scrollPrefetchWork: DispatchWorkItem?
+    private var scrollIdleWork: DispatchWorkItem?
+    private var lastVisibleMinY: CGFloat = 0
 
     @objc func scrollChanged() {
         updateVisibleTiles()
+
+        if let scrollView = enclosingScrollView {
+            let minY = scrollView.documentVisibleRect.minY
+            let direction = minY >= lastVisibleMinY ? 1 : -1
+            lastVisibleMinY = minY
+            store?.lastScrollDirection = direction
+        }
+
+        if store?.isGridScrolling != true {
+            store?.isGridScrolling = true
+            ThumbnailLoader.shared.throttle()
+            store?.idlePrefetchGeneration += 1
+        }
 
         // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
         // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
@@ -3112,6 +3142,15 @@ class TileDocumentView: NSView {
         }
         scrollPrefetchWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+
+        scrollIdleWork?.cancel()
+        let idleWork = DispatchWorkItem { [weak self] in
+            self?.store?.isGridScrolling = false
+            ThumbnailLoader.shared.unthrottle()
+            self?.store?.startIdlePreviewPrefetch()
+        }
+        scrollIdleWork = idleWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: idleWork)
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3121,11 +3160,15 @@ class TileDocumentView: NSView {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
         let visibleRect = scrollView.documentVisibleRect
 
-        // HDD에서도 적극적 prefetch (concurrency 4와 함께 동작) — 사용자가 스크롤 직후 회색 placeholder 보지 않도록
-        let margin = ThumbnailLoader.shared.isSlowDisk ? 4 : 5
-        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
+        let forwardMargin = ThumbnailLoader.shared.isSlowDisk ? 5 : 10
+        let backwardMargin = ThumbnailLoader.shared.isSlowDisk ? 2 : 3
+        let direction = store?.lastScrollDirection ?? 1
+        let before = direction >= 0 ? backwardMargin : forwardMargin
+        let after = direction >= 0 ? forwardMargin : backwardMargin
+
+        let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - before)
         let totalRows = (photos.count + cols - 1) / cols
-        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)
+        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + after)
 
         let startIdx = max(0, startRow * cols)
         let endIdx = min(photos.count, endRow * cols)
@@ -3827,4 +3870,3 @@ struct DropIndicatorOverlay: View {
         .shadow(color: Color.blue.opacity(0.6), radius: 4)
     }
 }
-

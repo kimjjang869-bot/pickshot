@@ -209,7 +209,7 @@ enum ColorLabel: String, CaseIterable {
 // MARK: - PhotoItem
 
 struct PhotoItem: Identifiable, Hashable {
-    let id = UUID()
+    let id: UUID
     let jpgURL: URL
     var rawURL: URL?
     var isFolder: Bool = false       // true = this item represents a subfolder
@@ -258,6 +258,43 @@ struct PhotoItem: Identifiable, Hashable {
     var iptcDescription: String = ""     // IPTC Caption / XMP dc:description
     var iptcCreator: String = ""         // IPTC By-line / XMP dc:creator
     var iptcCopyright: String = ""       // IPTC Copyright / XMP dc:rights
+
+    init(
+        jpgURL: URL,
+        rawURL: URL? = nil,
+        isFolder: Bool = false,
+        isParentFolder: Bool = false
+    ) {
+        self.jpgURL = jpgURL
+        self.rawURL = rawURL
+        self.isFolder = isFolder
+        self.isParentFolder = isParentFolder
+        self.id = PhotoItem.stableID(for: jpgURL, rawURL: rawURL, isFolder: isFolder, isParentFolder: isParentFolder)
+    }
+
+    private static func stableID(for jpgURL: URL, rawURL: URL?, isFolder: Bool, isParentFolder: Bool) -> UUID {
+        let rawPath = rawURL?.path ?? ""
+        let seed = "\(jpgURL.path)|\(rawPath)|\(isFolder)|\(isParentFolder)"
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        var bytes = [UInt8](repeating: 0, count: 16)
+        for i in 0..<8 {
+            bytes[i] = UInt8((hash >> (UInt64(i) * 8)) & 0xff)
+            bytes[8 + i] = UInt8(((hash &* 0x9e3779b185ebca87) >> (UInt64(i) * 8)) & 0xff)
+        }
+        bytes[6] = (bytes[6] & 0x0f) | 0x50   // version 5 형태
+        bytes[8] = (bytes[8] & 0x3f) | 0x80   // RFC 4122 variant
+        let tuple: uuid_t = (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: tuple)
+    }
     var iptcUsageTerms: String = ""      // XMP xmpRights:UsageTerms
     var iptcInstructions: String = ""    // IPTC Special Instructions
     var iptcCity: String = ""            // IPTC City
