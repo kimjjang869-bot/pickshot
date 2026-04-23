@@ -15,8 +15,14 @@ private struct GridWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
+private struct GridScrollMinYKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
+    @State private var lastLazyScrollMinY: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -41,8 +47,17 @@ struct ThumbnailGridView: View {
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView {
+                                GeometryReader { g in
+                                    Color.clear
+                                        .preference(
+                                            key: GridScrollMinYKey.self,
+                                            value: g.frame(in: .named("thumbScroll")).minY
+                                        )
+                                }
+                                .frame(height: 0)
                                 gridView
                             }
+                            .coordinateSpace(name: "thumbScroll")
                             .scrollIndicators(.visible)
                             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
                                 // Finder 등 외부에서 파일을 드롭하면 현재 폴더로 복사
@@ -97,6 +112,15 @@ struct ThumbnailGridView: View {
                             .onChange(of: store.scrollTrigger) { _ in
                                 guard let id = store.selectedPhotoID else { return }
                                 proxy.scrollTo(id, anchor: nil)
+                            }
+                            .onPreferenceChange(GridScrollMinYKey.self) { minY in
+                                let direction = minY <= lastLazyScrollMinY ? 1 : -1
+                                let delta = abs(minY - lastLazyScrollMinY)
+                                if delta > 0.5 {
+                                    store.beginGridScrolling(direction: direction)
+                                    store.endGridScrolling(after: 0.2)
+                                    lastLazyScrollMinY = minY
+                                }
                             }
                         }
                     }
@@ -3115,7 +3139,6 @@ class TileDocumentView: NSView {
     // MARK: - 스크롤
 
     private var scrollPrefetchWork: DispatchWorkItem?
-    private var scrollIdleWork: DispatchWorkItem?
     private var lastVisibleMinY: CGFloat = 0
 
     @objc func scrollChanged() {
@@ -3128,11 +3151,7 @@ class TileDocumentView: NSView {
             store?.lastScrollDirection = direction
         }
 
-        if store?.isGridScrolling != true {
-            store?.isGridScrolling = true
-            ThumbnailLoader.shared.throttle()
-            store?.idlePrefetchGeneration += 1
-        }
+        store?.beginGridScrolling(direction: store?.lastScrollDirection)
 
         // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
         // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
@@ -3143,14 +3162,7 @@ class TileDocumentView: NSView {
         scrollPrefetchWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
 
-        scrollIdleWork?.cancel()
-        let idleWork = DispatchWorkItem { [weak self] in
-            self?.store?.isGridScrolling = false
-            ThumbnailLoader.shared.unthrottle()
-            self?.store?.startIdlePreviewPrefetch()
-        }
-        scrollIdleWork = idleWork
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: idleWork)
+        store?.endGridScrolling(after: 0.2)
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.

@@ -732,6 +732,7 @@ class PhotoStore: ObservableObject {
     var idlePrefetchGeneration = 0
     var idlePrefetchWork: DispatchWorkItem?
     var lastScrollDirection: Int = 1   // 1 = down, -1 = up
+    var gridScrollEndWork: DispatchWorkItem?
 
     // MARK: - Folder load coalescing
     private var folderLoadInFlight: Set<String> = []
@@ -761,6 +762,28 @@ class PhotoStore: ObservableObject {
 
     var shouldRunBackgroundPrefetch: Bool {
         !isGridScrolling
+    }
+
+    func beginGridScrolling(direction: Int? = nil) {
+        if let dir = direction {
+            lastScrollDirection = dir
+        }
+        if isGridScrolling { return }
+        isGridScrolling = true
+        ThumbnailLoader.shared.throttle()
+        idlePrefetchGeneration += 1
+    }
+
+    func endGridScrolling(after delay: TimeInterval = 0.2) {
+        gridScrollEndWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.isGridScrolling = false
+            ThumbnailLoader.shared.unthrottle()
+            self.startIdlePreviewPrefetch()
+        }
+        gridScrollEndWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     @discardableResult
