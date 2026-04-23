@@ -2010,6 +2010,12 @@ class ThumbnailLoader {
     private var pendingCallbacks: [URL: [(NSImage) -> Void]] = [:]
     private let lock = NSLock()
     var normalConcurrency: Int = 4
+    private var isThrottled: Bool = false
+    private var adaptiveConcurrency: Int?
+    private var rollingDecodeMs: Double = 0
+    private var decodeSampleCount: Int = 0
+    private var lastAdaptiveAdjustTime: CFAbsoluteTime = 0
+    private let adaptiveAdjustInterval: CFAbsoluteTime = 0.8
 
     init() {
         queue.maxConcurrentOperationCount = 4
@@ -2026,12 +2032,14 @@ class ThumbnailLoader {
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
-        queue.maxConcurrentOperationCount = 2
+        isThrottled = true
+        applyConcurrency()
     }
 
     /// 탐색 멈추면 프리로딩 복구
     func unthrottle() {
-        queue.maxConcurrentOperationCount = normalConcurrency
+        isThrottled = false
+        applyConcurrency()
     }
 
     /// Auto-detect storage type for I/O optimization
@@ -2045,30 +2053,34 @@ class ThumbnailLoader {
             isExternalHDD = false
             // SystemSpec tier 기반 (M1 Pro 16GB = standard → 3)
             let c = SystemSpec.shared.ssdThumbnailConcurrency()
-            queue.maxConcurrentOperationCount = c
             normalConcurrency = c
+            adaptiveConcurrency = c
+            applyConcurrency()
             AppLogger.log(.performance, "Local SSD: concurrency=\(c)")
         case .externalSSD:
             isNetworkMode = false
             isExternalHDD = false
             // 외장 SSD도 동일 tier 기반 캡 적용
             let c = SystemSpec.shared.ssdThumbnailConcurrency()
-            queue.maxConcurrentOperationCount = c
             normalConcurrency = c
+            adaptiveConcurrency = c
+            applyConcurrency()
             AppLogger.log(.performance, "External SSD: concurrency=\(c)")
         case .externalHDD:
             isNetworkMode = false
             isExternalHDD = true
             // HDD NCQ 큐 깊이 활용 — 6-way까지 sustained throughput 증가 (8-way는 USB 외장에서 역효과)
-            queue.maxConcurrentOperationCount = 6
             normalConcurrency = 6
+            adaptiveConcurrency = 6
+            applyConcurrency()
             AppLogger.log(.performance, "External HDD: concurrency=6, thumbSize=160 for \(path)")
         case .sdCard:
             // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
             isNetworkMode = false
             isExternalHDD = true  // slow disk 취급
-            queue.maxConcurrentOperationCount = 1  // 직렬: 동시 읽기 시 속도 급락
             normalConcurrency = 1
+            adaptiveConcurrency = 1
+            applyConcurrency()
             AppLogger.log(.performance, "SD Card: concurrency=1, thumbSize=120 for \(path)")
         case .network:
             isNetworkMode = true
@@ -2076,8 +2088,9 @@ class ThumbnailLoader {
             // NAS 30-50MB/s 기준: 병목은 네트워크 대역폭
             // 4-way 가 최적 (8+ 은 NIC 포화, TCP retransmit → 오히려 느려짐)
             // 전제: 스테이지1 썸네일은 RAW 임베디드 JPEG (3-5MB) + 부분 읽기
-            queue.maxConcurrentOperationCount = 4
             normalConcurrency = 4
+            adaptiveConcurrency = 4
+            applyConcurrency()
             AppLogger.log(.performance, "NAS/Network: concurrency=4 (대역폭 보호), thumbSize=100 for \(path)")
         }
     }
@@ -2189,6 +2202,43 @@ class ThumbnailLoader {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date.distantPast
     }
 
+    private func applyConcurrency() {
+        let base = adaptiveConcurrency ?? normalConcurrency
+        let target = isThrottled ? max(1, min(2, base)) : max(1, base)
+        if queue.maxConcurrentOperationCount != target {
+            queue.maxConcurrentOperationCount = target
+        }
+    }
+
+    private func reportDecodeSample(ms: Double) {
+        guard ms > 0 else { return }
+        decodeSampleCount += 1
+        if rollingDecodeMs == 0 {
+            rollingDecodeMs = ms
+        } else {
+            rollingDecodeMs = (rollingDecodeMs * 0.85) + (ms * 0.15)
+        }
+        if decodeSampleCount < 8 { return }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastAdaptiveAdjustTime < adaptiveAdjustInterval { return }
+        lastAdaptiveAdjustTime = now
+
+        let current = adaptiveConcurrency ?? normalConcurrency
+        var next = current
+        if rollingDecodeMs > 120 {
+            next = max(1, current - 1)
+        } else if rollingDecodeMs < 45 {
+            next = min(normalConcurrency, current + 1)
+        }
+
+        if next != current {
+            adaptiveConcurrency = next
+            applyConcurrency()
+            AppLogger.log(.performance, "Adaptive thumb concurrency: \(current) → \(next), avg=\(Int(rollingDecodeMs))ms")
+        }
+    }
+
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
@@ -2272,6 +2322,7 @@ class ThumbnailLoader {
             }
 
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
+            self?.reportDecodeSample(ms: extractElapsed)
             if extractElapsed > 5 {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
             }
