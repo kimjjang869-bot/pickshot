@@ -267,12 +267,20 @@ struct FileMatchingService {
             let group = DispatchGroup()
             let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .userInitiated, attributes: .concurrent)
 
+            fputs("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n", stderr)
+
             for sub in topFolders {
                 if isCancelled() { break }
                 group.enter()
                 scanQueue.async {
                     semaphore.wait()
+                    let subStart = CFAbsoluteTimeGetCurrent()
                     defer {
+                        let elapsed = (CFAbsoluteTimeGetCurrent() - subStart) * 1000
+                        // 5초 이상 걸린 서브폴더는 stall 후보 — 로그 남김
+                        if elapsed > 5000 {
+                            fputs("[SCAN] SLOW subfolder \(sub.lastPathComponent) took \(Int(elapsed))ms\n", stderr)
+                        }
                         semaphore.signal()
                         group.leave()
                     }

@@ -96,8 +96,12 @@ class PreviewImageCache {
 
     /// v8.9.4: FRV 식 "decode 가 느렸을 때만 캐시" 진입점.
     ///   빠른 디코드는 캐시 안 함 → 메모리 안정.
-    func setIfSlow(_ key: URL, image: NSImage, decodeMs: Double) {
-        guard decodeMs >= Self.cacheThresholdMs else { return }
+    /// - force: 슬로우 디스크처럼 stage1 이 최종 이미지인 케이스에서 무조건 캐시.
+    ///   재방문 시 디코드 반복 회피 (왔다갔다 키 네비게이션 즉시).
+    func setIfSlow(_ key: URL, image: NSImage, decodeMs: Double, force: Bool = false) {
+        if !force {
+            guard decodeMs >= Self.cacheThresholdMs else { return }
+        }
         set(key, image: image)
     }
 
@@ -378,12 +382,12 @@ class PreviewImageCache {
         }
     }
 
-    static func loadOptimized(url: URL, maxPixel: CGFloat) -> NSImage? {
+    static func loadOptimized(url: URL, maxPixel: CGFloat, trace: LoadTrace? = nil) -> NSImage? {
         // 전체 로드 경로를 autoreleasepool 로 감싸서 CGImageSource + 중간 NSImage/CGImage
         // 임시 객체를 즉시 해제. key repeat 꾹 누르기 시 autorelease pool 이 main loop 블록되면
         // 못 비워지는 문제 방지.
         let base = autoreleasepool { () -> NSImage? in
-            _loadOptimizedImpl(url: url, maxPixel: maxPixel)
+            _loadOptimizedImpl(url: url, maxPixel: maxPixel, trace: trace)
         }
         guard let img = base else { return nil }
         // v8.6.2: 사용자 override 회전 (RAW 사이드카 + 앱내부) 적용
@@ -391,7 +395,7 @@ class PreviewImageCache {
         return deg == 0 ? img : RotationService.rotateImage(img, degreesCW: deg)
     }
 
-    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat) -> NSImage? {
+    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat, trace: LoadTrace? = nil) -> NSImage? {
         let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
 
@@ -400,6 +404,12 @@ class PreviewImageCache {
         let origW = (props?[kCGImagePropertyPixelWidth as String] as? Int) ?? 0
         let origH = (props?[kCGImagePropertyPixelHeight as String] as? Int) ?? 0
         let origMax = max(origW, origH)
+        if let t = trace {
+            t.origPx = origMax
+            if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+                t.fileSizeBytes = Int64(size)
+            }
+        }
 
         let ext = url.pathExtension.lowercased()
         let isJPG = ["jpg", "jpeg"].contains(ext)
@@ -410,6 +420,7 @@ class PreviewImageCache {
 
         // JPG: load at original size if smaller than maxPixel
         if isJPG && origMax > 0 && origMax <= Int(maxPixel) {
+            trace?.strategy = "fullImage"
             return NSImage(contentsOf: url)
         }
 
@@ -420,6 +431,7 @@ class PreviewImageCache {
         if isRAW && canDecode && useCIRAW {
             if #available(macOS 12.0, *) {
                 if let rawImage = loadRAWWithCIFilter(url: url, maxPixel: effectiveMaxPx) {
+                    trace?.strategy = "ciraw"
                     return rawImage
                 }
             }
@@ -441,6 +453,7 @@ class PreviewImageCache {
                 let dimMin = min(cgImage.width, cgImage.height)
                 if dimMin >= 600 || dimMin >= Int(maxPixel * 0.3) {
                     let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    trace?.strategy = "embedded"
                     return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                 }
             }
@@ -453,9 +466,13 @@ class PreviewImageCache {
             else if origMax > targetPx * 4 { subsample = 4 }
             else if origMax > targetPx * 2 { subsample = 2 }
 
+            // v8.9.4 fix: IfAbsent → Always 로 변경.
+            //   IfAbsent 는 임베디드 썸네일이 있으면 크기 무시하고 그걸 반환 (Strategy 1 에서 거부된 작은 썸이라도).
+            //   그 결과 stage1 이 800px 요청 → 160px EXIF 썸을 받아 화면이 흐릿하게 표시되던 버그.
+            //   FromImageAlways 로 메인 이미지를 강제 디코드 (subsample 적용 시 빠름).
             var genOpts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
@@ -467,6 +484,8 @@ class PreviewImageCache {
             }
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
                 let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                trace?.strategy = "subsample"
+                trace?.subsample = subsample
                 return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
             }
         }
@@ -517,8 +536,10 @@ class PreviewImageCache {
         //   필요 시 회전 적용. (Sony ARW 와 동일한 correctThumbnailOrientationIfNeeded 패턴.)
         if let img = bestImage,
            let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+            trace?.strategy = "rawFallback"
             return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: parentSource)
         }
+        if bestImage != nil { trace?.strategy = "rawFallback" }
         return bestImage
     }
 
@@ -1937,10 +1958,15 @@ struct PhotoPreviewView: View {
 
                 // Stage 1: 빠른 임베디드 프리뷰 — loadOptimized 내부에서 Strategy 1 (CGImageSource embedded)
                 //   이 즉시 리턴. 50MP JPG 라도 수십 ms 내 완료.
-                let fastImage = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: stage1Px)
+                let s1Trace = LoadTrace()
+                let fastImage = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: stage1Px, trace: s1Trace)
                 if let fast = fastImage, self.pendingPhotoID == id {
-                    let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    fputs("[LD] JPG-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms\n", stderr)
+                    let ms1Double = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                    let ms1 = Int(ms1Double)
+                    let sizeMB = Double(s1Trace.fileSizeBytes) / 1_048_576.0
+                    let stratDesc = s1Trace.strategy == "subsample" ? "subsample=\(s1Trace.subsample)" : s1Trace.strategy
+                    fputs("[LD] JPG-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms size=\(String(format: "%.1f", sizeMB))MB strat=\(stratDesc) orig=\(s1Trace.origPx)px\n", stderr)
+                    ProgressiveLoadStats.shared.record(bucket: "JPG-S1-\(s1Trace.strategy)", ms: ms1Double)
                     // Stage 1 은 썸네일 캐시에만. PreviewImageCache 는 stage2 결과로 채움.
                     ThumbnailCache.shared.set(url, image: fast)
                     RunLoop.main.perform(inModes: [.common]) {
@@ -1953,7 +1979,8 @@ struct PhotoPreviewView: View {
                     // v8.9.4: Fast Culling Mode 켜져있으면 stage2 강제 skip → stage1 만으로 마무리 (FRV 식)
                     if !stage2Needed || store.fastCullingMode {
                         let s1Ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                        PreviewImageCache.shared.setIfSlow(cacheKey, image: fast, decodeMs: s1Ms)
+                        // stage1 이 최종이라면 강제 캐시 — 같은 사진 재방문 즉시 hit (왔다갔다 키 네비)
+                        PreviewImageCache.shared.setIfSlow(cacheKey, image: fast, decodeMs: s1Ms, force: true)
                         store.notePreviewLoaded(url: url)
                         return
                     }
@@ -1963,22 +1990,30 @@ struct PhotoPreviewView: View {
                 guard self.pendingPhotoID == id else { return }
                 if store.currentFolderIsSlowDisk, fastImage != nil {
                     let s1Ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                    PreviewImageCache.shared.setIfSlow(cacheKey, image: fastImage!, decodeMs: s1Ms)
+                    // 슬로우 디스크에서 stage1 이 최종 → 강제 캐시
+                    PreviewImageCache.shared.setIfSlow(cacheKey, image: fastImage!, decodeMs: s1Ms, force: true)
                     store.notePreviewLoaded(url: url)
                     return
                 }
-                let full: NSImage? = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: finalPx)
+                let s2Trace = LoadTrace()
+                let s2Start = CFAbsoluteTimeGetCurrent()
+                let full: NSImage? = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: finalPx, trace: s2Trace)
                     ?? (resolution == 0 ? NSImage(contentsOf: decodeURL) : nil)
                 guard let loaded = full, self.pendingPhotoID == id else {
                     if let fast = fastImage {
                         let s1Ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                        PreviewImageCache.shared.setIfSlow(cacheKey, image: fast, decodeMs: s1Ms)
+                        // stage2 실패해 stage1 이 최종 → 강제 캐시
+                        PreviewImageCache.shared.setIfSlow(cacheKey, image: fast, decodeMs: s1Ms, force: true)
                         store.notePreviewLoaded(url: url)
                     }
                     return
                 }
                 let totalMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                fputs("[LD] JPG-S2 \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(Int(totalMs))ms\n", stderr)
+                let s2OnlyMs = (CFAbsoluteTimeGetCurrent() - s2Start) * 1000
+                let s2Strat = s2Trace.strategy == "subsample" ? "subsample=\(s2Trace.subsample)" : s2Trace.strategy
+                fputs("[LD] JPG-S2 \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) total=\(Int(totalMs))ms s2only=\(Int(s2OnlyMs))ms strat=\(s2Strat)\n", stderr)
+                ProgressiveLoadStats.shared.record(bucket: "JPG-S2-\(s2Trace.strategy)", ms: s2OnlyMs)
+                ProgressiveLoadStats.shared.record(bucket: "JPG-total", ms: totalMs)
                 // v8.9.4: 500ms 이상 걸린 풀 디코드만 캐시 (대부분 RAW). JPG 빠른 건 자동 제외.
                 PreviewImageCache.shared.setIfSlow(cacheKey, image: loaded, decodeMs: totalMs)
                 store.notePreviewLoaded(url: url)
@@ -4298,3 +4333,36 @@ struct RotateToolbarButton: View {
         .help(clockwise ? "시계방향 90° 회전" : "반시계 90° 회전")
     }
 }
+
+// MARK: - Progressive Load Tracing (v8.9.4 측정)
+// loadOptimized 가 사용한 전략을 호출자에게 전달하기 위한 참조 타입.
+// nil 전달 시 오버헤드 없음.
+final class LoadTrace {
+    var strategy: String = "none"   // "embedded" | "subsample" | "fullImage" | "rawFallback" | "ciraw"
+    var subsample: Int = 1
+    var origPx: Int = 0
+    var fileSizeBytes: Int64 = 0
+}
+
+// 세션 내 progressive load 시간을 버킷별로 집계. 20회마다 p50/p95 출력.
+final class ProgressiveLoadStats {
+    static let shared = ProgressiveLoadStats()
+    private let lock = NSLock()
+    private var buckets: [String: [Double]] = [:]
+    private let reportEvery = 20
+
+    func record(bucket: String, ms: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        buckets[bucket, default: []].append(ms)
+        let arr = buckets[bucket] ?? []
+        if arr.count % reportEvery == 0 {
+            let sorted = arr.sorted()
+            let p50 = sorted[sorted.count / 2]
+            let p95 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
+            let avg = arr.reduce(0, +) / Double(arr.count)
+            fputs("[LD-STATS] \(bucket) n=\(arr.count) avg=\(Int(avg))ms p50=\(Int(p50))ms p95=\(Int(p95))ms\n", stderr)
+        }
+    }
+}
+

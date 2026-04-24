@@ -168,6 +168,11 @@ struct FileCopyService {
         developJPEGQuality: CGFloat = 0.92,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
+        // 잠자기 차단 — 대량 export 도중 시스템 슬립으로 복사가 멈추던 문제 방지
+        let sleepGuard = SleepPreventer(reason: "PickShot 셀렉 내보내기 (\(photos.count)장)")
+        sleepGuard.begin()
+        defer { sleepGuard.end() }
+
         let fileManager = FileManager.default
         var result = CopyResult()
 
@@ -385,6 +390,11 @@ struct FileCopyService {
         duplicateHandling: DuplicateHandling = .overwrite,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
+        // 잠자기 차단 — Lightroom export 도중 시스템 슬립 방지
+        let sleepGuard = SleepPreventer(reason: "PickShot Lightroom 내보내기 (\(photos.count)장)")
+        sleepGuard.begin()
+        defer { sleepGuard.end() }
+
         let fileManager = FileManager.default
         var result = CopyResult()
 

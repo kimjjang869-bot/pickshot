@@ -8,36 +8,27 @@ struct PhotoRawManagerApp: App {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     init() {
-        // 중복 실행 방지
-        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-        if runningApps.count > 1 {
-            // 이미 실행 중인 인스턴스를 앞으로 가져오고 현재 인스턴스 종료
-            if let existing = runningApps.first(where: { $0 != .current }) {
-                existing.activate()
+        // 중복 실행 방지 — Release 빌드에서 NSApp.terminate(nil) 후 init 가 계속 실행되며
+        // 종료 중 상태의 싱글톤 접근으로 _assertionFailure 발생하던 문제.
+        // exit(0) 으로 즉시 프로세스 종료 → 후속 init 코드 실행 안 됨.
+        let bid = Bundle.main.bundleIdentifier ?? ""
+        if !bid.isEmpty {
+            let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+            if runningApps.count > 1 {
+                if let existing = runningApps.first(where: { $0 != .current }) {
+                    existing.activate()
+                }
+                fputs("[APP] 중복 실행 감지 → 즉시 종료\n", stderr)
+                exit(0)
             }
-            NSApp.terminate(nil)
         }
 
-        // 스크롤바 항상 표시 (시스템 설정 오버라이드)
+        // 스크롤바 항상 표시 / 툴팁 속도 (가벼운 UserDefaults — init 유지)
         UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
-
-        // 툴팁 표시 속도 단축 (기본 ~2초 → 0.5초)
         UserDefaults.standard.set(500, forKey: "NSInitialToolTipDelay")
 
-        // SystemSpec warm-up (모든 캐시/동시성의 단일 소스)
-        _ = SystemSpec.shared
-        AppLogger.log(.general, SystemSpec.shared.debugSummary)
-
-        // 썸네일 캐시 버전 invalidate — orientation 보정 로직 추가됨 (이전 버전에서 가로/세로 잘못 저장된 캐시 폐기)
-        let thumbCacheVersionKey = "thumbCacheVersion"
-        let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"
-        if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
-            DiskThumbnailCache.shared.clearAll()
-            UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
-            fputs("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n", stderr)
-        }
-
-        SubscriptionManager.shared.checkTrialStatus()
+        // 무거운 부트스트랩(SystemSpec warm-up, 캐시 invalidate, 트라이얼 체크) 은
+        // init 에서 빼고 .task 로 이동 → init 중 _assertionFailure 위험 영역 축소.
     }
 
     var body: some Scene {
@@ -62,6 +53,21 @@ struct PhotoRawManagerApp: App {
                 .environmentObject(store)
                 .frame(minWidth: 1024, minHeight: 700)
                 .task {
+                    // App.init() 에서 옮겨온 무거운 부트스트랩.
+                    // SwiftUI 가 view 활성 후 main 액터에서 호출 → @MainActor 싱글톤 안전.
+                    _ = SystemSpec.shared
+                    AppLogger.log(.general, SystemSpec.shared.debugSummary)
+
+                    let thumbCacheVersionKey = "thumbCacheVersion"
+                    let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"
+                    if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
+                        DiskThumbnailCache.shared.clearAll()
+                        UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
+                        fputs("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n", stderr)
+                    }
+
+                    SubscriptionManager.shared.checkTrialStatus()
+
                     updateService.checkForUpdate(userInitiated: false)
                     // 성능 로그는 로컬 Debug와 테스터 Release 모두에서 문제 재현 자료로 사용한다.
                     // Debug 전용 HUD/스트레스 테스트는 ContentView의 #if DEBUG 경계에서만 노출된다.
