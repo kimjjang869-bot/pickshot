@@ -434,8 +434,12 @@ class PreviewImageCache {
                 kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
+            // v8.9.4: 임베디드 thumb 조건 완화 — 절대 픽셀 600+ 또는 maxPixel*0.3 둘 중 하나만 충족.
+            //   기존엔 작은 JPG 임베디드(160px) 거부 후 풀 디코드로 갔지만, 일부 JPG 는 1024 이상 임베디드
+            //   가지고 있음. 그것을 stage1 에서 활용하면 풀 디코드 회피 가능.
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, embedOnly as CFDictionary) {
-                if cgImage.width >= Int(maxPixel * 0.3) || cgImage.height >= Int(maxPixel * 0.3) {
+                let dimMin = min(cgImage.width, cgImage.height)
+                if dimMin >= 600 || dimMin >= Int(maxPixel * 0.3) {
                     let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                     return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                 }
@@ -706,17 +710,10 @@ struct PhotoPreviewView: View {
                     VideoPlayerView(url: photo.jpgURL)
                         .frame(width: vSize.width, height: vSize.height)
                 } else if let image = image {
-                    // v8.9.4 fix: stableImageSize 가 아직 안 잡혔을 때 image.size (이전 photo 의 thumb/preview)
-                    //   를 쓰면 stage1→stage2 전환에서 aspect 가 바뀌어 "커졌다 작아짐" 발생.
-                    //   → photo.exifData 우선 → photo.displayURL 의 즉시 dim → image.size 순.
-                    let exifDim: CGSize? = {
-                        if let w = photo.exifData?.imageWidth, let h = photo.exifData?.imageHeight,
-                           w > 0, h > 0 {
-                            return CGSize(width: w, height: h)
-                        }
-                        return nil
-                    }()
-                    let resolved = viewState.stableImageSize ?? exifDim ?? image.size
+                    // v8.9.4 fix: image.size 는 orientation 이 이미 적용된 실제 표시 dim → ground truth.
+                    let resolved: CGSize = (image.size.width > 0 && image.size.height > 0)
+                        ? image.size
+                        : (viewState.stableImageSize ?? CGSize(width: 1, height: 1))
                     let imgW: CGFloat = resolved.width
                     let imgH: CGFloat = resolved.height
                     let stableAspect = imgH > 0 ? imgW / imgH : nil
@@ -1410,9 +1407,9 @@ struct PhotoPreviewView: View {
                 if let cached = PreviewImageCache.shared.get(cacheKey2) {
                     image = cached
                     lowResImage = cached
-                } else if !usesRAWPreviewSource(selected), let thumb = ThumbnailCache.shared.get(url) {
-                    image = thumb  // 썸네일이라도 즉시 표시
                 }
+                // v8.9.4: 작은 ThumbnailCache (140px) 가 큰 미리보기 frame 에 표시되면
+                //   심한 픽셀화 → "흐림 → 선명" 점프. 작은 thumb 은 placeholder 로 표시 안 함.
 
                 let delayedWork = DispatchWorkItem {
                     guard self.pendingPhotoID == newID else { return }
@@ -1929,11 +1926,10 @@ struct PhotoPreviewView: View {
             let isJPG = ["jpg", "jpeg"].contains(ext)
 
             if isJPG {
-                // v8.8.1: JPG 2-stage 로딩 (고용량 JPG 로딩 속도 대폭 개선)
-                //   Stage 1: 임베디드 프리뷰 (~1600px, <100ms) → 즉시 표시
-                //   Stage 2: 목표 해상도 풀 디코딩 → 교체
-                //   "원본" (resolution=0) 은 화면 해상도 기반 optimalPreviewSize 를 상한으로 사용.
-                let stage1Px: CGFloat = 1600
+                // v8.9.4: stage1 을 800px 로 축소 → SubsampleFactor 8 적극 사용 가능 → 50MB JPG 도 수십 ms 내
+                //   기존 1600px 은 SubsampleFactor 가 약하게 적용돼 풀 디코드 비용. 작은 stage1 → 큰 stage2 가
+                //   FRV 식 progressive 에 더 가까움.
+                let stage1Px: CGFloat = 800
                 let finalPx: CGFloat = resolution > 0
                     ? CGFloat(resolution)
                     : PreviewImageCache.optimalPreviewSize()

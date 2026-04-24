@@ -2987,20 +2987,32 @@ class ThumbnailLoader {
         for idx in 0..<maxIdx {
             if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                 if cg.width >= 80 && cg.height >= 80 {
-                    if isRAW {
-                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) mainOrient=\(mainOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
-                    }
                     let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                     let thumbLandscape = cg.width > cg.height
-                    // 1) EXIF orientation 5-8: 명시적 회전 정보 → 적용
-                    if isRAW && (mainOrientation >= 5 && mainOrientation <= 8) {
-                        if thumbLandscape, let rotated = applyOrientation(img, orientation: mainOrientation) {
+
+                    // v8.9.4 LibRaw Phase 1: orientation 폴백
+                    //   ImageIO 가 mainOrientation=1 로 읽었지만 LibRaw 가 정확한 회전값을 알 수 있음.
+                    //   특히 Canon CR3 MakerNote 케이스 100% 해결.
+                    var resolvedOrientation = mainOrientation
+                    if isRAW && mainOrientation == 1, let lr = LibRawDecoder(url: url) {
+                        let lrOrient = lr.exifOrientation
+                        if lrOrient != 1 {
+                            resolvedOrientation = lrOrient
+                            fputs("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n", stderr)
+                        }
+                    }
+                    if isRAW {
+                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
+                    }
+
+                    // 1) EXIF orientation 5-8 (LibRaw 또는 ImageIO 가 알려준): 명시적 회전 정보 → 적용
+                    if isRAW && (resolvedOrientation >= 5 && resolvedOrientation <= 8) {
+                        if thumbLandscape, let rotated = applyOrientation(img, orientation: resolvedOrientation) {
                             return rotated
                         }
                     }
-                    // 2) v8.9.4 휴리스틱: orientation=1 이지만 메인이 portrait 인 케이스 (Canon CR3 quirk).
-                    //    thumb 가 landscape 인데 메인은 portrait → 90° CW 회전 (orientation=6)
-                    if isRAW && mainOrientation == 1 && mainIsPortrait && thumbLandscape {
+                    // 2) v8.9.4 휴리스틱 폴백: orientation=1 이지만 메인이 portrait → 90° CW
+                    if isRAW && resolvedOrientation == 1 && mainIsPortrait && thumbLandscape {
                         if let rotated = applyOrientation(img, orientation: 6) {
                             return rotated
                         }

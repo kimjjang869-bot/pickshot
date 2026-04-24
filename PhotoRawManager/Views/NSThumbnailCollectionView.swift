@@ -860,12 +860,17 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
         container.addSubview(borderView)
 
         // Thumbnail image
+        // v8.9.4 fix: wantsLayer + cornerRadius 면 layer.contentsGravity 가 기본 resize 라
+        //   NSImageView 의 imageScaling 무시하고 contents 를 frame 에 강제 stretch.
+        //   → portrait 사진이 가로 셀에 짓눌려 정사각형으로 보임. resizeAspect 강제.
         thumbnailImageView = NSImageView()
         thumbnailImageView.imageScaling = .scaleProportionallyUpOrDown
+        thumbnailImageView.imageAlignment = .alignCenter
         thumbnailImageView.wantsLayer = true
         thumbnailImageView.layer?.cornerRadius = AppTheme.cellCornerRadius
         thumbnailImageView.layer?.masksToBounds = true
         thumbnailImageView.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.15).cgColor
+        thumbnailImageView.layer?.contentsGravity = .resizeAspect
         container.addSubview(thumbnailImageView)
 
         // File name
