@@ -41,6 +41,11 @@ class AppLogger {
         return logDirectory.appendingPathComponent("pickshot_\(dateStr).log")
     }
 
+    /// Open general app log folder in Finder.
+    static func openLogFolder() {
+        NSWorkspace.shared.open(logDirectory)
+    }
+
     static func log(_ category: LogCategory, _ message: String) {
         guard isEnabled else { return }
         let timestamp = String(format: "%.3f", CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000))

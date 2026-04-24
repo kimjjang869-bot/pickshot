@@ -30,7 +30,7 @@ struct PhotoRawManagerApp: App {
 
         // 썸네일 캐시 버전 invalidate — orientation 보정 로직 추가됨 (이전 버전에서 가로/세로 잘못 저장된 캐시 폐기)
         let thumbCacheVersionKey = "thumbCacheVersion"
-        let currentThumbCacheVersion = "v8.7-aspect-fix"
+        let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"
         if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
             DiskThumbnailCache.shared.clearAll()
             UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
@@ -43,13 +43,28 @@ struct PhotoRawManagerApp: App {
     var body: some Scene {
         WindowGroup({
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "8.0"
+            #if DEBUG
+            // v8.9.4: 빌드 시각 태그 (DMG 파일명 타임스탬프와 매칭) — 어떤 테스트 빌드인지 한눈에 식별
+            let buildTag: String = {
+                guard let exe = Bundle.main.executableURL,
+                      let attrs = try? FileManager.default.attributesOfItem(atPath: exe.path),
+                      let mtime = attrs[.modificationDate] as? Date else { return "" }
+                let f = DateFormatter()
+                f.dateFormat = "MMdd-HHmm"
+                return " · test-\(f.string(from: mtime))"
+            }()
+            return "PickShot v\(ver)\(buildTag)"
+            #else
             return "PickShot v\(ver)"
+            #endif
         }()) {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 1024, minHeight: 700)
                 .task {
                     updateService.checkForUpdate(userInitiated: false)
+                    // 성능 로그는 로컬 Debug와 테스터 Release 모두에서 문제 재현 자료로 사용한다.
+                    // Debug 전용 HUD/스트레스 테스트는 ContentView의 #if DEBUG 경계에서만 노출된다.
                     PerformanceMonitor.shared.start()
                     // Google OAuth credentials loaded on-demand when G Select is used
                     // (removed from startup — was blocking main thread via Keychain)

@@ -35,14 +35,10 @@ struct CacheProgressGauge: View {
         guard total > 0 else { return 0 }
         return min(1.0, Double(store.previewsLoaded) / Double(total))
     }
-    private var combinedRatio: Double {
-        guard total > 0 else { return 0 }
-        let denom = Double(total) * 2.0
-        let num = Double(min(store.thumbCacheCount, total) + min(store.previewsLoaded, total))
-        return min(1.0, num / denom)
-    }
+    // v8.9.4: 미리보기 캐시 비활성화 → combinedRatio = 썸네일만
+    private var combinedRatio: Double { thumbRatio }
     private var isComplete: Bool {
-        total > 0 && store.thumbCacheCount >= total && store.previewsLoaded >= total
+        total > 0 && store.thumbCacheCount >= total
     }
 
     var body: some View {
@@ -111,12 +107,8 @@ struct CacheProgressGauge: View {
                     elapsed: store.cacheProgressElapsed,
                     complete: thumbRatio >= 1
                 )
-                row(
-                    label: "미리보기 캐시",
-                    count: store.previewsLoaded, total: total,
-                    elapsed: store.previewsElapsed,
-                    complete: previewRatio >= 1
-                )
+                // v8.9.4: 미리보기 캐시 비활성화 (PreviewImageCache.maxBytes=0).
+                //          neighbor preload(±5~10) 만으로 충분 → 게이지 행 숨김.
             }
         }
         .font(.system(size: 11, design: .monospaced))
@@ -203,5 +195,47 @@ struct AggressiveCacheToggle: View {
         .help(store.aggressiveCache
               ? "캐시 적극 로딩 ON — 폴더 진입 즉시 병렬 로딩 (시스템 부하 ↑)"
               : "캐시 적극 로딩 OFF — 기본 (백그라운드 천천히)")
+    }
+}
+
+// MARK: - v8.9.4 Fast Culling Mode 토글
+
+/// 빠른 셀렉 모드 — 무거운 작업 OFF, viewport 우선.
+/// FastRawViewer 식의 "현재 화면만" 처리하는 모드.
+struct FastCullingToggle: View {
+    @ObservedObject var store: PhotoStore
+    @State private var hovering = false
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                store.fastCullingMode.toggle()
+            }
+        }) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(store.fastCullingMode
+                          ? Color.cyan.opacity(hovering ? 0.35 : 0.25)
+                          : (hovering ? Color.white.opacity(0.08) : Color.clear))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(store.fastCullingMode ? Color.cyan.opacity(0.6) : Color.white.opacity(0.15),
+                                    lineWidth: 1)
+                    )
+                Image(systemName: store.fastCullingMode ? "hare.fill" : "hare")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(
+                        store.fastCullingMode
+                            ? AnyShapeStyle(LinearGradient(colors: [.cyan, .blue],
+                                                           startPoint: .top, endPoint: .bottom))
+                            : AnyShapeStyle(Color.white.opacity(0.7))
+                    )
+            }
+            .frame(width: 26, height: 22)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(store.fastCullingMode
+              ? "빠른 셀렉 모드 ON — preload ↓, AI/스테이지2 OFF (FastRawViewer식)"
+              : "빠른 셀렉 모드 OFF — 기본 (정확 분석/풀 미리보기)")
     }
 }

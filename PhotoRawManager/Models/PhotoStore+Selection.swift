@@ -133,7 +133,19 @@ extension PhotoStore {
     }
 
     func moveSelection(by offset: Int, shiftKey: Bool = false, cmdKey: Bool = false) {
+        // v8.9.4: 방향키 burst 동안 ThumbnailLoader 양보 (concurrency 다운) → 250ms 후 자동 복구
+        ThumbnailLoader.shared.throttle()
+        PhotoStore.scheduleUnthrottle()
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
+    }
+
+    /// burst 끝나면(250ms idle) 자동 unthrottle. 연속 호출 시 마지막 1회만 실행.
+    private static var unthrottleWork: DispatchWorkItem?
+    static func scheduleUnthrottle() {
+        unthrottleWork?.cancel()
+        let w = DispatchWorkItem { ThumbnailLoader.shared.unthrottle() }
+        unthrottleWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
     }
 
     func executeMoveSelection(by offset: Int, shiftKey: Bool, cmdKey: Bool) {

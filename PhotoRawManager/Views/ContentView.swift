@@ -14,6 +14,9 @@ struct ContentView: View {
     // G Select state (used by toolbar extension)
     @ObservedObject var gSelect = GSelectService.shared
     @ObservedObject private var clientSelect = ClientSelectService.shared
+    #if DEBUG
+    @ObservedObject private var memTracker = MemoryLeakTracker.shared
+    #endif
     @State var linkCopied = false
     @State var showGSelectQR = false
 
@@ -35,8 +38,7 @@ struct ContentView: View {
     private var importResultMessage: String {
         guard let r = store.lastImportResult else { return "가져오기 실패" }
         var msg = "매칭 성공: \(r.matched.count)장"
-        let spCount = r.matched.filter { $0.spacePick }.count
-        if spCount > 0 { msg += "\nSP 셀렉: \(spCount)장" }
+        // v8.9.4: SP 셀렉 잔재 메시지 제거 (기능 폐지)
         if !r.unmatched.isEmpty {
             msg += "\n\n미매칭: \(r.unmatched.count)장"
             msg += "\n\(r.unmatched.prefix(5).joined(separator: ", "))"
@@ -194,7 +196,11 @@ struct ContentView: View {
                     } else {
                         // Grid+Preview mode (default)
                         GeometryReader { geo in
-                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
+                            // v8.9.4: 썸네일 패널 최대 5열 분량으로 제한
+                            // cellWidth = thumbnailSize + 10(itemPad) + 12(interSpacing)
+                            // panelWidth = 5 * cellWidth + 16(sectionInset) + 14(trailing pad) + 8(safety)
+                            let maxColsW: CGFloat = 5 * (store.thumbnailSize + 22) + 38
+                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55, maxColsW))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
                             HStack(spacing: 0) {
                                 // Left panel
@@ -248,13 +254,7 @@ struct ContentView: View {
                                                 .foregroundColor(.yellow)
                                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
 
-                                            let spCount = store.spacePickCount
-                                            if spCount > 0 {
-                                                Text("·").foregroundColor(AppTheme.textDim)
-                                                Text("SP: \(spCount)장")
-                                                    .foregroundColor(.red)
-                                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                            }
+                                            // v8.9.4: SP 셀렉 잔재 — 상태바 SP 카운트 표시 제거
 
                                             Text("·").foregroundColor(AppTheme.textDim)
 
@@ -277,11 +277,12 @@ struct ContentView: View {
                                     .gesture(
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
+                                                // v8.9.2 perf: 임계값 0.003→0.008 강화 (60+ 이벤트 → ~20)
                                                 let currentW = geo.size.width * store.hSplitRatio
                                                 let newW = currentW + value.translation.width
                                                 let newRatio = newW / geo.size.width
                                                 let clamped = max(0.10, min(newRatio, 0.55))
-                                                if abs(clamped - store.hSplitRatio) >= 0.003 {
+                                                if abs(clamped - store.hSplitRatio) >= 0.008 {
                                                     store.hSplitRatio = clamped
                                                 }
                                             }
@@ -294,7 +295,7 @@ struct ContentView: View {
                                         MultiPreviewGrid(store: store)
                                             .frame(height: previewH)
                                     } else if let photo = store.selectedPhoto {
-                                        // 단일 선택 — 기존 미리보기
+                                        // v8.9.4: 미리보기 꽉차게 — 하단 메타 영역/DragHandle/frame 제거
                                         PhotoPreviewView(photo: photo)
                                             .overlay(
                                                 photo.isSpacePicked ?
@@ -303,28 +304,6 @@ struct ContentView: View {
                                                     .allowsHitTesting(false)
                                                 : nil
                                             )
-                                            .frame(height: previewH)
-
-                                        // Vertical divider handle
-                                        DragHandle(axis: .vertical)
-                                            .gesture(
-                                                DragGesture()
-                                                    .onChanged { value in
-                                                        let currentH = geo.size.height * store.vSplitRatio
-                                                        let newH = currentH + value.translation.height
-                                                        let newRatio = newH / geo.size.height
-                                                        store.vSplitRatio = max(0.20, min(newRatio, 0.90))
-                                                    }
-                                            )
-
-                                        // Metadata
-                                        ScrollView {
-                                            VStack(spacing: 12) {
-                                                ExifInfoView(photo: photo)
-                                                // AIAnalysisView — 아직 구현 전, 숨김
-                                            }
-                                            .padding()
-                                        }
                                     } else {
                                         Text("사진을 선택하세요")
                                             .font(.title3)
@@ -421,19 +400,25 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             // Navigation Performance HUD (Cmd+Shift+D 로 토글)
+            #if DEBUG
             NavigationPerformanceHUD()
                 .padding(.trailing, 16)
                 .padding(.bottom, 40)
+            #endif
         }
         .overlay(alignment: .bottomLeading) {
-            // v8.6.1: 메모리 누수 추적 HUD. Cmd+Shift+Option+M 로 토글.
-            if MemoryLeakTracker.shared.isTracking {
+            #if DEBUG
+            // v8.6.1: 메모리 누수 추적 HUD. Cmd+Shift+Option+M 또는 Cmd+Ctrl+M 로 토글.
+            // v8.9.3 fix: ObservedObject 로 관찰 — singleton 직접 참조는 SwiftUI 가 변경 감지 못함.
+            if memTracker.isTracking {
                 MemoryLeakHUD()
                     .padding(.leading, 16)
                     .padding(.bottom, 40)
             }
+            #endif
         }
         .onAppear {
+            #if DEBUG
             // v8.6.1: 메모리 누수 추적 스트레스 테스트 provider 연결
             let tracker = MemoryLeakTracker.shared
             tracker.stressPhotoProvider = {
@@ -457,15 +442,49 @@ struct ContentView: View {
             tracker.stressURLProvider = { id in
                 store.photos.first(where: { $0.id == id })?.jpgURL
             }
+            // v8.9.3: 랜덤 폴더 전환 — 현재 폴더의 부모에서 형제 폴더 enumerate
+            tracker.stressFolderProvider = {
+                guard let current = store.folderURL else { return [] }
+                let parent = current.deletingLastPathComponent()
+                let fm = FileManager.default
+                guard let contents = try? fm.contentsOfDirectory(
+                    at: parent,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else { return [] }
+                // 디렉토리만 + 시스템 경로 제외
+                let systemPaths: Set<String> = ["/Volumes", "/System", "/Library", "/usr", "/private"]
+                return contents.filter { url in
+                    var isDir: ObjCBool = false
+                    fm.fileExists(atPath: url.path, isDirectory: &isDir)
+                    return isDir.boolValue && !systemPaths.contains(url.path)
+                }
+            }
+            tracker.stressFolderSwitcher = { url, includeSub in
+                store.startupMode = .viewer
+                if includeSub {
+                    store.loadPhotosRecursive(from: url)
+                } else {
+                    store.loadFolder(url, restoreRatings: true)
+                }
+            }
+            #endif
 
             // v8.6.2: CacheSweeper 의존성 주입 + 활동 훅
             let sweeper = CacheSweeper.shared
             sweeper.isSlowDiskProvider = { ThumbnailLoader.shared.isSlowDisk }
             sweeper.isBusyProvider = {
-                store.isLoading || store.isConverting || store.isAnalyzing
+                var busy = store.isLoading || store.isConverting || store.isAnalyzing
                     || store.isPreloadingThumbs
-                    || MemoryLeakTracker.shared.isStressTesting
+                #if DEBUG
+                busy = busy || MemoryLeakTracker.shared.isStressTesting
+                #endif
+                return busy
             }
+            // v8.9.4: 스크롤 진행 중 sweep 차단 — NSThumbnailCollectionView Coordinator 가 갱신
+            sweeper.isScrollingProvider = { NSThumbnailCollectionView.activeCoordinator?.isScrollingNow ?? false }
+            // v8.9.4: recursive scan 진행 중 sweep 차단
+            sweeper.isRecursiveScanProvider = { [weak store] in store?.isRecursiveScanInProgress ?? false }
             // v8.8.1: 적극 캐시 모드 바인딩
             sweeper.aggressiveModeProvider = { [weak store] in store?.aggressiveCache ?? false }
             sweeper.selectedIndexProvider = {
@@ -843,6 +862,7 @@ struct ContentView: View {
                 return nil
             }
             // Cmd+Shift+D (keyCode 2) — Navigation Performance HUD 토글
+            #if DEBUG
             let cmdShift: NSEvent.ModifierFlags = [.command, .shift]
             if masked == cmdShift && event.keyCode == 2 {
                 DispatchQueue.main.async {
@@ -858,6 +878,16 @@ struct ContentView: View {
                 }
                 return nil
             }
+            // v8.9.3 alt: Cmd+Ctrl+M (keyCode 46) — 메뉴 충돌 회피용 보조 단축키
+            let cmdCtrl: NSEvent.ModifierFlags = [.command, .control]
+            if masked == cmdCtrl && event.keyCode == 46 {
+                DispatchQueue.main.async {
+                    let tracker = MemoryLeakTracker.shared
+                    if tracker.isTracking { tracker.stop() } else { tracker.start() }
+                }
+                return nil
+            }
+            #endif
             return event
         }
     }

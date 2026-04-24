@@ -171,6 +171,14 @@ struct MemoryLeakHUD: View {
                     confirmActualDelete()
                 }
             }
+            // v8.9.3: 랜덤 폴더 전환 + 하위 폴더 포함 모드 (행/열 모드는 cycle 사이 자동 전환)
+            HStack(spacing: 6) {
+                stressButton("🎲 랜덤 폴더",
+                             detail: "20cycle\n폴더 전환 + 하위포함",
+                             color: .purple) {
+                    tracker.runStressTest(mode: .randomFolderNav, cycles: 20)
+                }
+            }
 
             if !tracker.stressProgress.isEmpty {
                 Text(tracker.stressProgress)

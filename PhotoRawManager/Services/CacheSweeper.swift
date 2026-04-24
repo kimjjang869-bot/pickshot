@@ -38,13 +38,14 @@ final class CacheSweeper: ObservableObject {
     private let idleThresholdFast: TimeInterval = 2.0
     private let idleThresholdSlow: TimeInterval = 5.0
     private let slowDiskPerItemDelay: TimeInterval = 0.15
-    // v8.6.3: tier 기반 범위 — low 100 / standard 200 / high 400 / extreme 600
+    // v8.9.4: viewport-우선 스케줄링으로 전환 — 선택 주변 프리뷰 범위 대폭 축소
+    //   기존 100/200/400/600 → 20/40/60/80. 스크롤 중 I/O 점유 줄여 hitch 방지.
     private var previewRangeAroundSelection: Int {
         switch SystemSpec.shared.effectiveTier {
-        case .low: return 100
-        case .standard: return 200
-        case .high: return 400
-        case .extreme: return 600
+        case .low: return 20
+        case .standard: return 40
+        case .high: return 60
+        case .extreme: return 80
         }
     }
 
@@ -56,6 +57,12 @@ final class CacheSweeper: ObservableObject {
     /// v8.8.1: 적극적 캐시 모드 여부 (PhotoStore.aggressiveCache 바인딩).
     ///   true → idle 대기 0초, 사용자 활동 감지해도 중단 안 함, 병렬성 증가, 전체 미리보기 캐싱.
     var aggressiveModeProvider: (() -> Bool)?
+    /// v8.9.4: 스크롤 진행 중 여부 (NSThumbnailCollectionView 에서 주입).
+    ///   true 면 적극 모드여도 sweep 중단 + 재시작 금지.
+    var isScrollingProvider: (() -> Bool)?
+    /// v8.9.4: recursive scan 진행 중 여부 (PhotoStore.isRecursiveScanInProgress).
+    ///   true 면 sweep 완전 중단 + 재시작 금지.
+    var isRecursiveScanProvider: (() -> Bool)?
     /// 현재 선택된 사진 인덱스 (0-based, photos 배열 내에서).
     var selectedIndexProvider: (() -> Int?)?
     /// 미리보기 카운트 업데이트 콜백 (CacheProgressGauge 연동). main thread 외에서도 호출 안전해야 함.
@@ -74,13 +81,15 @@ final class CacheSweeper: ObservableObject {
     func notifyActivity() {
         lastActivity = Date()
         let aggressive = aggressiveModeProvider?() ?? false
-        if !aggressive {
+        let scrolling = isScrollingProvider?() ?? false
+        // v8.9.4: 스크롤 중이면 적극 모드여도 무조건 sweep 중단
+        if !aggressive || scrolling {
             sweepWork?.cancel()
             sweepWork = nil
             if isSweeping {
                 DispatchQueue.main.async { [weak self] in
                     self?.isSweeping = false
-                    self?.sweepMessage = "사용자 활동으로 sweep 중단"
+                    self?.sweepMessage = scrolling ? "스크롤 중 sweep 중단" : "사용자 활동으로 sweep 중단"
                 }
             }
         }
@@ -148,6 +157,10 @@ final class CacheSweeper: ObservableObject {
         assert(Thread.isMainThread, "startSweepIfIdle must run on main")
 
         let aggressive = aggressiveModeProvider?() ?? false
+        let scrolling = isScrollingProvider?() ?? false
+        let recursiveScan = isRecursiveScanProvider?() ?? false
+        // v8.9.4: 스크롤/recursive scan 중이면 적극 모드도 시작 금지
+        if scrolling || recursiveScan { return }
         // 활동이 다시 발생했으면 취소 (적극 모드 제외)
         if !aggressive {
             guard Date().timeIntervalSince(lastActivity) >= currentIdleThreshold * 0.9 else { return }
@@ -261,17 +274,11 @@ final class CacheSweeper: ObservableObject {
             }
         }
 
-        // v8.9 perf: PreviewImageCache 가 비활성화 (maxBytes==0) 이면 preview sweep 전부 skip.
-        //   적극 모드에서 수천 장 디코드 → 즉시 evict 되는 헛수고 방지. 썸네일 sweep 은 이미 수행됨.
-        if PreviewImageCache.shared.isDisabled {
-            sweepLock.lock()
-            let dropped = pendingPreviews.count
-            pendingPreviews.removeAll()
-            sweepLock.unlock()
-            if dropped > 0 {
-                fputs("[SWEEP] preview cache disabled — preview sweep 스킵 (\(dropped)장)\n", stderr)
-            }
-        }
+        // v8.9.4: PreviewImageCache 영구 비활성화 → preview sweep 항상 스킵.
+        //   neighbor preload(scheduleSmartPreload, ±5~10장) 가 체감 속도 담당.
+        sweepLock.lock()
+        pendingPreviews.removeAll()
+        sweepLock.unlock()
 
         // 2) 미리보기 — 기본: 선택 인덱스 ±N 범위 / 적극 모드: 전체
         if !PreviewImageCache.shared.isDisabled, !(sweepWork?.isCancelled ?? true) {

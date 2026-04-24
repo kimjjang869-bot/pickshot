@@ -2477,9 +2477,32 @@ class ThumbnailLoader {
     private let lock = NSLock()
     var normalConcurrency: Int = 4
 
+    // v8.9.4: viewport-우선 스케줄러
+    //   - generation: 스크롤/선택 이동마다 +1 → 옛 작업의 결과는 폐기
+    //   - activeURLs: 현재 보이는 셀 + 작은 버퍼. 이 set 밖이면 즉시 reject.
+    private var generation: UInt64 = 0
+    private var activeURLs: Set<URL> = []
+    private let genLock = NSLock()
+
     init() {
         queue.maxConcurrentOperationCount = 4
-        queue.qualityOfService = .utility
+        // v8.9.4: viewport 셀 우선 — userInitiated 로 격상
+        // (CacheSweeper sweep queue 는 utility 로 분리되어 있어 우선순위 충돌 없음)
+        queue.qualityOfService = .userInitiated
+    }
+
+    /// 스크롤/선택 이동마다 호출 → 옛 작업 무효화
+    func bumpGeneration() {
+        genLock.lock()
+        generation &+= 1
+        genLock.unlock()
+    }
+
+    /// 현재 보이는 셀 URL 갱신 (visible + 버퍼). callback 직전 활성 여부 검사.
+    func setActiveURLs(_ urls: Set<URL>) {
+        genLock.lock()
+        activeURLs = urls
+        genLock.unlock()
     }
 
     /// 스크롤 시 대기 중인 작업 전부 취소 (보이는 셀만 새로 요청)
@@ -2488,6 +2511,48 @@ class ThumbnailLoader {
         lock.lock()
         pendingCallbacks.removeAll()
         lock.unlock()
+        bumpGeneration()
+    }
+
+    /// v8.9.4: 보이는 URL은 유지하고 그 외만 취소
+    func cancelPending(keeping keepURLs: Set<URL>) {
+        // OperationQueue 자체는 selective cancel 불가 → 옛 세대 표시로 callback 단계에서 차단
+        bumpGeneration()
+        setActiveURLs(keepURLs)
+        lock.lock()
+        // 보이지 않는 URL 의 pending callback 즉시 폐기
+        let toRemove = pendingCallbacks.keys.filter { !keepURLs.contains($0) }
+        for u in toRemove { pendingCallbacks.removeValue(forKey: u) }
+        lock.unlock()
+    }
+
+    /// 현재 generation snapshot (작업 시작 시점)
+    fileprivate func currentGeneration() -> UInt64 {
+        genLock.lock(); defer { genLock.unlock() }
+        return generation
+    }
+
+    /// callback 직전 검사: generation 일치 + activeURLs 안에 있어야 통과
+    fileprivate func shouldDeliver(url: URL, gen: UInt64) -> Bool {
+        genLock.lock(); defer { genLock.unlock() }
+        if gen != generation && !activeURLs.contains(url) {
+            ThumbnailLoader.droppedCallbacks &+= 1
+            return false
+        }
+        return true
+    }
+
+    // v8.9.4: 측정용 카운터 — viewport 스케줄러 효과 검증
+    static var droppedCallbacks: UInt64 = 0
+    var pendingCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return pendingCallbacks.count
+    }
+    /// stderr 로 현재 상태 출력 — 디버그 콘솔에서 확인
+    func dumpStats() {
+        let pending = pendingCount
+        let ops = queue.operationCount
+        fputs("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n", stderr)
     }
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
@@ -2707,6 +2772,8 @@ class ThumbnailLoader {
         }
         pendingCallbacks[url] = [completion]
 
+        // v8.9.4: 작업 시작 시점의 generation 캡처
+        let opGen = currentGeneration()
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
             // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
@@ -2714,6 +2781,13 @@ class ThumbnailLoader {
             // key repeat 꾹 누르기 중 RAM 이 GB 단위로 증가함
             autoreleasepool {
             guard let op = op, !op.isCancelled else { return }
+            // v8.9.4: 작업 시작 직전 generation/visible 검사 → 옛 작업 즉시 폐기
+            if let self = self, !self.shouldDeliver(url: url, gen: opGen) {
+                self.lock.lock()
+                self.pendingCallbacks.removeValue(forKey: url)
+                self.lock.unlock()
+                return
+            }
             let isNAS = ThumbnailLoader.shared.isNetworkMode
             let isHDD = ThumbnailLoader.shared.isExternalHDD
 
@@ -2737,8 +2811,12 @@ class ThumbnailLoader {
                 let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
                 self?.lock.unlock()
 
-                DispatchQueue.main.async {
-                    for cb in callbacks { cb(diskCached) }
+                // v8.9.4: callback 직전 generation/visible 검사
+                let deliver = self?.shouldDeliver(url: url, gen: opGen) ?? true
+                if deliver {
+                    DispatchQueue.main.async {
+                        for cb in callbacks { cb(diskCached) }
+                    }
                 }
                 return
             }
@@ -2796,6 +2874,9 @@ class ThumbnailLoader {
 
             // 취소된 경우 콜백 호출 안함 (placeholder 생성도 방지)
             guard !op.isCancelled, let image = image else { return }
+            // v8.9.4: callback 직전 generation/visible 검사 — 옛 작업의 결과는 UI 미반영
+            let deliver = self?.shouldDeliver(url: url, gen: opGen) ?? true
+            guard deliver else { return }
             DispatchQueue.main.async {
                 for cb in callbacks { cb(image) }
             }
@@ -2863,16 +2944,33 @@ class ThumbnailLoader {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
 
         // 메인 이미지 EXIF orientation 읽기 (RAW 썸네일에 orientation이 없을 수 있음)
-        // v8.8.0 fix: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        // v8.8.0: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        // v8.9.4: Canon CR3 등은 top-level/TIFF 모두 1 (가로) 로 보고하지만 실제 portrait 촬영.
+        //         → Exif dict 의 PixelXDimension/YDimension 으로 실제 표시 비율 추정.
         var mainOrientation: Int = 1
+        var mainW: Int? = nil
+        var mainH: Int? = nil
         if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
             if let orient = props[kCGImagePropertyOrientation as String] as? Int {
                 mainOrientation = orient
             } else if let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
                       let orient = tiff[kCGImagePropertyTIFFOrientation as String] as? Int {
                 mainOrientation = orient
+            } else if let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any],
+                      let orient = exif["Orientation"] as? Int {
+                mainOrientation = orient
             }
+            // Exif PixelX/Y Dimension 에서 실제 표시 W/H 추출
+            if let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any] {
+                mainW = exif[kCGImagePropertyExifPixelXDimension as String] as? Int
+                mainH = exif[kCGImagePropertyExifPixelYDimension as String] as? Int
+            }
+            if mainW == nil { mainW = props[kCGImagePropertyPixelWidth as String] as? Int }
+            if mainH == nil { mainH = props[kCGImagePropertyPixelHeight as String] as? Int }
         }
+        // CR3 휴리스틱: orientation 메타가 1(가로)인데 thumb 이 가로(W>H)이고
+        //   메인이 portrait 이어야 하는 경우 식별 어려움. mainW/mainH 가 portrait 이면 thumb 회전 필요.
+        let mainIsPortrait: Bool = (mainW ?? 0) > 0 && (mainH ?? 0) > 0 && (mainH! > mainW!)
 
         // 임베디드 썸네일만 시도 (파일 전체 디코딩 안 함)
         let embedOpts: [NSString: Any] = [
@@ -2889,14 +2987,21 @@ class ThumbnailLoader {
         for idx in 0..<maxIdx {
             if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                 if cg.width >= 80 && cg.height >= 80 {
+                    if isRAW {
+                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) mainOrient=\(mainOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
+                    }
                     let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-                    // v8.8.0 fix: NEF 등 일부 RAW 는 임베디드 preview 에 orientation 정보가 없어
-                    //   kCGImageSourceCreateThumbnailWithTransform 이 회전을 적용 못 함.
-                    //   메인 파일의 orientation (5-8 = 90°/270° rotated) 이고 thumb 이 landscape 면
-                    //   실제 display 는 portrait 이어야 하므로 수동 회전.
+                    let thumbLandscape = cg.width > cg.height
+                    // 1) EXIF orientation 5-8: 명시적 회전 정보 → 적용
                     if isRAW && (mainOrientation >= 5 && mainOrientation <= 8) {
-                        let thumbLandscape = cg.width > cg.height
                         if thumbLandscape, let rotated = applyOrientation(img, orientation: mainOrientation) {
+                            return rotated
+                        }
+                    }
+                    // 2) v8.9.4 휴리스틱: orientation=1 이지만 메인이 portrait 인 케이스 (Canon CR3 quirk).
+                    //    thumb 가 landscape 인데 메인은 portrait → 90° CW 회전 (orientation=6)
+                    if isRAW && mainOrientation == 1 && mainIsPortrait && thumbLandscape {
+                        if let rotated = applyOrientation(img, orientation: 6) {
                             return rotated
                         }
                     }

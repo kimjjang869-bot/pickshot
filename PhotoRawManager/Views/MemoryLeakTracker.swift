@@ -84,6 +84,13 @@ final class MemoryLeakTracker: ObservableObject {
     // MARK: - Sampling
 
     func sampleOnce(trigger: String) {
+        // v8.9.3 fix: background thread 에서 호출되면 전체 함수를 main 으로 dispatch.
+        //   여러 @Published 변수 (currentRSSMB, peakRSSMB, growthRateMBPerMin, snapshots) 가
+        //   background 에서 modify 될 때 SwiftUI body 동기 재계산 → stack overflow.
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.sampleOnce(trigger: trigger) }
+            return
+        }
         let rssMB = Self.currentProcessRSSMB()
         currentRSSMB = rssMB
         if rssMB > peakRSSMB { peakRSSMB = rssMB }
@@ -158,10 +165,20 @@ final class MemoryLeakTracker: ObservableObject {
     var externalPhotosCount: Int = 0
 
     private func appendSnapshot(_ s: Snapshot) {
-        snapshots.append(s)
-        // 링버퍼 500개 유지
-        if snapshots.count > 500 {
-            snapshots.removeFirst(snapshots.count - 500)
+        // v8.9.3 fix: snapshots 도 @Published — background 에서 modify 시 SwiftUI body 동기 재계산으로 stack overflow.
+        if Thread.isMainThread {
+            snapshots.append(s)
+            if snapshots.count > 500 {
+                snapshots.removeFirst(snapshots.count - 500)
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.snapshots.append(s)
+                if self.snapshots.count > 500 {
+                    self.snapshots.removeFirst(self.snapshots.count - 500)
+                }
+            }
         }
     }
 
@@ -270,12 +287,16 @@ final class MemoryLeakTracker: ObservableObject {
     var stressDeleteAction: ((Set<UUID>) -> Void)?  // 실제 삭제 (휴지통, Cmd+Z 복원 가능)
     var stressCacheInvalidator: (([URL]) -> Void)?  // 삭제 시뮬레이션 (파일 안 건드리고 캐시만)
     var stressURLProvider: ((UUID) -> URL?)?        // UUID → URL
+    // v8.9.3: 랜덤 폴더 전환용
+    var stressFolderProvider: (() -> [URL])?        // 후보 폴더 URL 배열 (현재 폴더의 형제들)
+    var stressFolderSwitcher: ((URL, Bool) -> Void)? // (URL, includeSubfolders) → 폴더 로드
 
     enum StressMode: String {
         case columnNav          // 열 이동 (20/sec) — 프리뷰 로드 부하
         case rowNav             // 행 이동 (10/sec) — 실제 검토 패턴
         case deleteSimulation   // safe — 캐시 정리 코드만 호출
         case actualDelete       // 실제 휴지통 이동 (35장, Cmd+Z 복원 가능)
+        case randomFolderNav    // v8.9.3: 랜덤 폴더 전환 + 행/열/삭제 혼합 + 하위 폴더 포함 50%
     }
 
     func runStressTest(mode: StressMode, cycles: Int = 50) {
@@ -301,6 +322,7 @@ final class MemoryLeakTracker: ObservableObject {
             case .rowNav: self.runRowNav(photoIDs: photoIDs, cycles: cycles, selector: selector)
             case .deleteSimulation: self.runDeleteSimulation(photoIDs: photoIDs, cycles: cycles)
             case .actualDelete: self.runActualDelete(photoIDs: photoIDs)
+            case .randomFolderNav: self.runRandomFolderNav(cycles: cycles, selector: selector)
             }
             DispatchQueue.main.async {
                 self.sampleOnce(trigger: "stress_end_\(mode.rawValue)")
@@ -316,41 +338,66 @@ final class MemoryLeakTracker: ObservableObject {
     }
 
     private func runColumnNav(photoIDs: [UUID], cycles: Int, selector: @escaping (UUID) -> Void) {
+        var currentIDs = photoIDs
         for cycle in 0..<cycles {
-            for (i, id) in photoIDs.enumerated() {
+            for (i, id) in currentIDs.enumerated() {
                 if stressAbortRequested { return }
-                // v8.6.2: main.async → main.sync (백로그 방지) + autoreleasepool
                 DispatchQueue.main.sync { autoreleasepool { selector(id) } }
                 Thread.sleep(forTimeInterval: 0.05)  // 20/sec
-                if i % 50 == 0 { logCycle("col", cycle+1, cycles, i, photoIDs.count) }
+                if i % 50 == 0 { logCycle("col", cycle+1, cycles, i, currentIDs.count) }
             }
+            // v8.9.3: cycle 끝에 50% 확률 랜덤 폴더 전환 (하위 포함 25%)
+            if let next = maybeSwitchFolder() { currentIDs = next }
         }
     }
 
     /// 행 이동 — gridCols 만큼 점프. 사용자의 실제 검토 패턴(↑↓).
     private func runRowNav(photoIDs: [UUID], cycles: Int, selector: @escaping (UUID) -> Void) {
+        var currentIDs = photoIDs
         let cols = max(1, stressGridColsProvider?() ?? 6)
         DispatchQueue.main.async { self.stressProgress = "행 이동 시작 (cols=\(cols))" }
         for cycle in 0..<cycles {
             var i = 0
-            while i < photoIDs.count {
+            while i < currentIDs.count {
                 if stressAbortRequested { return }
-                let id = photoIDs[i]   // v8.6.2: 로컬 캡처 (closure 크래시 방지)
+                let id = currentIDs[i]
                 DispatchQueue.main.sync { autoreleasepool { selector(id) } }
                 Thread.sleep(forTimeInterval: 0.1)  // 10/sec
                 i += cols
-                if (i / cols) % 20 == 0 { logCycle("row↓", cycle+1, cycles, i, photoIDs.count) }
+                if (i / cols) % 20 == 0 { logCycle("row↓", cycle+1, cycles, i, currentIDs.count) }
             }
             // 역방향
-            i = photoIDs.count - 1
+            i = currentIDs.count - 1
             while i >= 0 {
                 if stressAbortRequested { return }
-                let id = photoIDs[i]   // v8.6.2: 로컬 캡처
+                let id = currentIDs[i]
                 DispatchQueue.main.sync { autoreleasepool { selector(id) } }
                 Thread.sleep(forTimeInterval: 0.1)
                 i -= cols
             }
+            // v8.9.3: cycle 끝에 50% 확률 랜덤 폴더 전환
+            if let next = maybeSwitchFolder() { currentIDs = next }
         }
+    }
+
+    /// v8.9.3: 50% 확률로 랜덤 폴더로 전환. 그 중 50% 는 "하위 폴더 포함 열기" 모드.
+    /// 반환: 전환됐으면 새 photoIDs, 아니면 nil.
+    private func maybeSwitchFolder() -> [UUID]? {
+        guard Bool.random() else { return nil }  // 50% 만 전환
+        guard let folderProvider = stressFolderProvider,
+              let folderSwitcher = stressFolderSwitcher,
+              let photoProvider = stressPhotoProvider else { return nil }
+        let folders = folderProvider()
+        guard let target = folders.randomElement() else { return nil }
+        let includeSub = Bool.random()
+        DispatchQueue.main.sync { folderSwitcher(target, includeSub) }
+        Thread.sleep(forTimeInterval: 0.6)  // 폴더 로드 대기
+        let newIDs = DispatchQueue.main.sync { photoProvider() }
+        DispatchQueue.main.async {
+            self.stressProgress = "🎲 → \(target.lastPathComponent)\(includeSub ? " [+sub]" : "") (\(newIDs.count)장)"
+        }
+        sampleOnce(trigger: "switch_\(includeSub ? "sub" : "flat")")
+        return newIDs.isEmpty ? nil : newIDs
     }
 
     /// 삭제 시뮬레이션 (파일 건드리지 않고 캐시 정리만) — safe 테스트
@@ -401,5 +448,55 @@ final class MemoryLeakTracker: ObservableObject {
             self.stressProgress = "\(name) cycle \(cycle)/\(total) — photo \(i)/\(n)  RSS=\(self.currentRSSMB)MB"
         }
         sampleOnce(trigger: "\(name)_c\(cycle)_p\(i)")
+    }
+
+    // MARK: - Random Folder Nav (v8.9.3)
+
+    /// 랜덤 폴더 전환 + 행/열/삭제 혼합 — 50% 확률로 "하위 폴더 포함 열기" 모드.
+    /// 형제 폴더들을 무작위로 진입하며 사진 클릭 / 행 점프 / 캐시 무효화를 섞는다.
+    private func runRandomFolderNav(cycles: Int, selector: @escaping (UUID) -> Void) {
+        guard let folderProvider = stressFolderProvider,
+              let folderSwitcher = stressFolderSwitcher,
+              let photoProvider = stressPhotoProvider else {
+            DispatchQueue.main.async { self.stressProgress = "❌ folder provider 미연결" }
+            return
+        }
+        let folders = folderProvider()
+        guard !folders.isEmpty else {
+            DispatchQueue.main.async { self.stressProgress = "❌ 후보 폴더 없음 (부모 디렉토리 확인)" }
+            return
+        }
+        DispatchQueue.main.async { self.stressProgress = "🎲 랜덤 폴더 전환 시작 (\(folders.count)개 후보)" }
+
+        for cycle in 0..<cycles {
+            if stressAbortRequested { return }
+            // 랜덤 폴더 + 50% 확률 하위 폴더 포함
+            guard let target = folders.randomElement() else { continue }
+            let includeSub = Bool.random()
+            DispatchQueue.main.sync { folderSwitcher(target, includeSub) }
+            // 폴더 로드 + 첫 사진 표시 대기
+            Thread.sleep(forTimeInterval: 0.6)
+            if stressAbortRequested { return }
+            // 현재 로드된 사진들에서 무작위 클릭
+            let photoIDs = DispatchQueue.main.sync { photoProvider() }
+            if photoIDs.isEmpty {
+                logCycle("rndFolder", cycle+1, cycles, 0, 0)
+                continue
+            }
+            // 5~12장 무작위 점프
+            let jumps = Int.random(in: 5...12)
+            for j in 0..<jumps {
+                if stressAbortRequested { return }
+                let id = photoIDs.randomElement()!
+                DispatchQueue.main.sync { autoreleasepool { selector(id) } }
+                Thread.sleep(forTimeInterval: Double.random(in: 0.05...0.15))
+                if j == jumps - 1 {
+                    DispatchQueue.main.async {
+                        self.stressProgress = "🎲 \(target.lastPathComponent)\(includeSub ? " [+sub]" : "") cycle \(cycle+1)/\(cycles) — \(jumps)장 \(self.currentRSSMB)MB"
+                    }
+                }
+            }
+            sampleOnce(trigger: "rndFolder_c\(cycle)_\(includeSub ? "sub" : "flat")")
+        }
     }
 }

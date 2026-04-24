@@ -283,6 +283,21 @@ class PhotoStore: ObservableObject {
             CacheSweeper.shared.notifyActivity()
         }
     }
+    /// v8.9.4: Fast Culling Mode — 빠른 셀렉을 위해 무거운 작업 모두 OFF
+    ///   ON: AI 분석 자동 OFF, Stage2 미리보기 스킵, preload range 1/3 축소,
+    ///       임베디드 JPEG 강제 사용, hiResCache 작게 유지
+    @Published var fastCullingMode: Bool = UserDefaults.standard.bool(forKey: "fastCullingMode") {
+        didSet {
+            UserDefaults.standard.set(fastCullingMode, forKey: "fastCullingMode")
+            CacheSweeper.shared.notifyActivity()
+        }
+    }
+
+    // v8.9.4: 하위폴더 포함 열기 — generation 토큰 + 진행 중 플래그.
+    //   generation 은 새 recursive scan 시작마다 +1 → 옛 onBatch callback 폐기.
+    //   isRecursiveScanInProgress 는 sweep/preload/exif 작업 차단용.
+    var recursiveScanGeneration: UInt64 = 0
+    @Published var isRecursiveScanInProgress: Bool = false
     @Published var qualityFilter: QualityFilter = .all { didSet { invalidateFilterCache() } }
     @Published var isAnalyzing = false
     @Published var analyzeProgress: Double = 0

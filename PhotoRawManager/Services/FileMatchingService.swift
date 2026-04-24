@@ -180,6 +180,8 @@ struct FileMatchingService {
         folderURL: URL,
         recursive: Bool,
         isSlowDisk: Bool = false,
+        // v8.9.4: cancel token — 새 recursive scan 시작 시 옛 batch callback 차단
+        isCancelled: @escaping () -> Bool = { false },
         onBatch: @escaping ([PhotoItem]) -> Void,
         onComplete: @escaping (Int) -> Void
     ) {
@@ -187,9 +189,9 @@ struct FileMatchingService {
             let overallStart = CFAbsoluteTimeGetCurrent()
 
             if !recursive {
-                // 단일 폴더 — 기존 동기 경로
                 let items = scanAndMatch(folderURL: folderURL, recursive: false)
                 DispatchQueue.main.async {
+                    guard !isCancelled() else { onComplete(0); return }
                     if !items.isEmpty { onBatch(items) }
                     onComplete(items.filter { !$0.isFolder && !$0.isParentFolder }.count)
                 }
@@ -206,26 +208,67 @@ struct FileMatchingService {
                 (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             }
 
-            // 1) 최상위 파일 먼저 (빠름) — 단일 폴더 스캔
-            let topLevelOnly = scanAndMatch(folderURL: folderURL, recursive: false)
-                .filter { !$0.isFolder && !$0.isParentFolder }
-            var totalCount = 0
-            let countLock = NSLock()
-            if !topLevelOnly.isEmpty {
-                countLock.lock(); totalCount += topLevelOnly.count; countLock.unlock()
-                let batch = topLevelOnly
-                DispatchQueue.main.async { onBatch(batch) }
+            // v8.9.4: batch coalescing — 250ms 또는 300개마다 flush.
+            //   기존엔 서브폴더마다 즉시 main async → photosVersion bump 폭주 → reloadData 폭주.
+            //   v8.9.4-fix: collectorQueue 의 timer event handler 안에서 collectorQueue.sync 를 호출하면
+            //               dispatch_sync deadlock crash → _doFlush 는 항상 collectorQueue 위에서 실행되는
+            //               것을 전제로 호출자가 책임지고 dispatch.async 로 진입.
+            let collectorQueue = DispatchQueue(label: "com.pickshot.scan.collector")
+            // 클로저 내 mutable 캡처를 위해 class 박스 사용 (Swift @Sendable 위반 회피)
+            final class CollectorState {
+                var pendingBatch: [PhotoItem] = []
+                var lastFlushAt: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+                var totalCount: Int = 0
+            }
+            let state = CollectorState()
+            let flushIntervalMs: Double = 250
+            let flushSizeThreshold = 300
+
+            // 항상 collectorQueue 위에서만 호출.
+            func _doFlushOnQueue(force: Bool) {
+                let now = CFAbsoluteTimeGetCurrent()
+                let elapsedMs = (now - state.lastFlushAt) * 1000
+                let shouldFlush = force
+                    || state.pendingBatch.count >= flushSizeThreshold
+                    || (state.pendingBatch.count > 0 && elapsedMs >= flushIntervalMs)
+                if shouldFlush && !state.pendingBatch.isEmpty {
+                    let batch = state.pendingBatch
+                    state.pendingBatch.removeAll(keepingCapacity: true)
+                    state.lastFlushAt = now
+                    DispatchQueue.main.async {
+                        guard !isCancelled() else { return }
+                        onBatch(batch)
+                    }
+                }
             }
 
-            // 2) 최상위 서브폴더 병렬 스캔
-            //    - SSD: min(N, 4) 병렬
-            //    - HDD/NAS: 1 (디스크 헤드 경합 회피)
-            let maxConcurrent = isSlowDisk ? 1 : min(max(topFolders.count, 1), 4)
+            // 외부 (scan worker) 에서 호출 — async 로 큐에 넣기만 함
+            func appendItems(_ items: [PhotoItem]) {
+                collectorQueue.async {
+                    state.pendingBatch.append(contentsOf: items)
+                    state.totalCount += items.count
+                    _doFlushOnQueue(force: false)
+                }
+            }
+
+            // 1) 최상위 파일 먼저
+            if isCancelled() { DispatchQueue.main.async { onComplete(0) }; return }
+            let topLevelOnly = scanAndMatch(folderURL: folderURL, recursive: false)
+                .filter { !$0.isFolder && !$0.isParentFolder }
+            if !topLevelOnly.isEmpty {
+                appendItems(topLevelOnly)
+            }
+
+            // 2) 서브폴더 병렬 스캔 — v8.9.4: SSD 4 → 2 보수화 (file-system contention 감소)
+            //   - SSD: 2
+            //   - HDD/NAS/SD: 1
+            let maxConcurrent = isSlowDisk ? 1 : min(max(topFolders.count, 1), 2)
             let semaphore = DispatchSemaphore(value: maxConcurrent)
             let group = DispatchGroup()
             let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .userInitiated, attributes: .concurrent)
 
             for sub in topFolders {
+                if isCancelled() { break }
                 group.enter()
                 scanQueue.async {
                     semaphore.wait()
@@ -233,20 +276,36 @@ struct FileMatchingService {
                         semaphore.signal()
                         group.leave()
                     }
+                    if isCancelled() { return }
                     let subItems = scanAndMatch(folderURL: sub, recursive: true)
                         .filter { !$0.isFolder && !$0.isParentFolder }
-                    if !subItems.isEmpty {
-                        countLock.lock(); totalCount += subItems.count; countLock.unlock()
-                        let batch = subItems
-                        DispatchQueue.main.async { onBatch(batch) }
+                    if !subItems.isEmpty && !isCancelled() {
+                        appendItems(subItems)
                     }
                 }
             }
 
+            // 주기 flush — coalescing 사이에 시간이 비면 강제 flush 보장
+            // Timer event handler 는 collectorQueue 위에서 실행되므로 _doFlushOnQueue 직접 호출 (sync 금지!).
+            let flushTimer = DispatchSource.makeTimerSource(queue: collectorQueue)
+            flushTimer.schedule(deadline: .now() + 0.25, repeating: 0.25)
+            flushTimer.setEventHandler {
+                if !isCancelled() { _doFlushOnQueue(force: false) }
+            }
+            flushTimer.resume()
+
             group.notify(queue: .main) {
-                let elapsed = (CFAbsoluteTimeGetCurrent() - overallStart) * 1000
-                fputs("[SCAN] streaming total \(totalCount) photos in \(Int(elapsed))ms (parallel=\(maxConcurrent))\n", stderr)
-                onComplete(totalCount)
+                flushTimer.cancel()
+                // 마지막 잔여 flush + totalCount 회수 — collectorQueue 에 async 로 진입
+                collectorQueue.async {
+                    _doFlushOnQueue(force: true)
+                    let final = state.totalCount
+                    DispatchQueue.main.async {
+                        let elapsed = (CFAbsoluteTimeGetCurrent() - overallStart) * 1000
+                        fputs("[SCAN] streaming total \(final) photos in \(Int(elapsed))ms (parallel=\(maxConcurrent))\n", stderr)
+                        onComplete(isCancelled() ? 0 : final)
+                    }
+                }
             }
         }
     }
@@ -402,7 +461,9 @@ struct FileMatchingService {
             }
         result.append(contentsOf: imageOnlyItems)
 
-        // Video files (duration extracted lightweight)
+        // Video files
+        // v8.9.4: videoDuration(url:) 는 AVAsset 동기 로드 (비싸고 NAS 에서 매우 느림).
+        //         초기 스캔에선 0 으로 두고 PhotoPreviewView 가 첫 표시 직전 lazy 로드.
         let videoItems = videoFiles
             .sorted { $0.key < $1.key }
             .map { baseName, vidInfo in
@@ -412,7 +473,7 @@ struct FileMatchingService {
                 )
                 item.fileModDate = vidInfo.modDate
                 item.jpgFileSize = vidInfo.size
-                item.videoDuration = videoDuration(url: vidInfo.url)
+                // item.videoDuration = 0 (default) — preview 표시 시점에 lazy 채움
                 return item
             }
         result.append(contentsOf: videoItems)

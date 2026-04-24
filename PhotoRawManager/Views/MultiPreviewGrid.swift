@@ -85,11 +85,15 @@ struct MultiPreviewCell: View {
             if let hi = hiResImage {
                 Image(nsImage: hi)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: cellW, height: cellH)
+                    .clipped()
             } else if let thumb = ThumbnailCache.shared.get(photo.jpgURL) {
                 Image(nsImage: thumb)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: cellW, height: cellH)
+                    .clipped()
             } else {
                 ProgressView().scaleEffect(0.5)
             }
@@ -151,7 +155,9 @@ struct MultiPreviewCell: View {
     }
 
     private func loadHiRes() {
-        let url = photo.jpgURL
+        // RAW+JPG 페어는 JPG placeholder 로 즉시 보여준 뒤, RAW displayURL 기준 고화질로 교체한다.
+        // 셀 자체는 fill+clip 이라 JPG/RAW aspect 차이로 검은 바가 드러나지 않는다.
+        let url = photo.displayURL
         // 셀 실제 표시 크기 × Retina 2배 — 최소 1600px 확보해서 선명도 유지
         // (이전 800px 는 Retina 에서 업스케일되어 뭉개짐)
         let scale = NSScreen.main?.backingScaleFactor ?? 2.0

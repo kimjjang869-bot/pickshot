@@ -317,8 +317,17 @@ extension PhotoStore {
         AppLogger.log(.folder, "loadPhotosRecursive: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        // 이전 썸네일 로딩 취소
-        ThumbnailLoader.shared.cancelAll()
+        // v8.9.4: scan generation +1 → 옛 onBatch callback 모두 폐기
+        recursiveScanGeneration &+= 1
+        let myGen = recursiveScanGeneration
+        isRecursiveScanInProgress = true
+
+        // v8.9.4: 모든 진행 중 캐싱/프리패치 작업 강제 중단
+        ThumbnailLoader.shared.cancelPending()
+        ThumbnailLoader.shared.bumpGeneration()
+        ThumbnailLoader.shared.setActiveURLs([])
+        PreviewImageCache.shared.clearCache()
+        CacheSweeper.shared.cancel()
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
@@ -331,30 +340,25 @@ extension PhotoStore {
         folderURL = url
         isRecursiveMode = true
 
-        // 폴더 정보 저장 (논블로킹)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.saveLastFolder()
             self?.addRecentFolder(url)
         }
         addToFolderHistory(url)
 
-        // NAS/네트워크 볼륨 최적화
+        // v8.9.4: slow disk 를 scan 시작 직전에 정확히 재계산 (stale currentFolderIsSlowDisk 의존 제거)
         ThumbnailLoader.shared.optimizeForPath(url.path)
+        let isSlowDisk = ThumbnailLoader.shared.isSlowDisk
+        self.currentFolderIsSlowDisk = isSlowDisk
 
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
             self?.loadingStatus = "하위 폴더 스캔 중..."
         }
 
-        // v8.6.3: 스트리밍 + 병렬 스캔
-        //   - 최상위 서브폴더마다 동시 스캔 (SSD: 최대 4 병렬, HDD: 1)
-        //   - 배치 단위로 photos 누적 → 첫 사진이 ~200ms 내 보임
-        //   - 전체 완료 후 선택 + prewarm
-        let isSlowDisk = self.currentFolderIsSlowDisk
-
-        // 먼저 상위폴더 네비게이션 아이템 투입 (즉시)
+        // 상위폴더 네비게이션 아이템 즉시 투입
         DispatchQueue.main.async { [weak self] in
-            guard self?.folderURL == url else { return }
+            guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else { return }
             let parent = url.deletingLastPathComponent()
             let home = FileManager.default.homeDirectoryForCurrentUser
             let desktop = home.appendingPathComponent("Desktop")
@@ -366,20 +370,40 @@ extension PhotoStore {
                 parentItem.isParentFolder = true
                 initialItems.append(parentItem)
             }
-            self?.photos = initialItems
+            self.photos = initialItems
         }
 
         var firstSelectionMade = false
 
+        fputs("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n", stderr)
         FileMatchingService.scanAndMatchStreaming(
             folderURL: url,
             recursive: true,
             isSlowDisk: isSlowDisk,
+            isCancelled: { [weak self] in
+                // 폴더 변경되거나 generation 바뀌면 옛 batch 폐기
+                guard let self = self else {
+                    fputs("[REC] cancel: self released\n", stderr)
+                    return true
+                }
+                if self.folderURL != url {
+                    fputs("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n", stderr)
+                    return true
+                }
+                if self.recursiveScanGeneration != myGen {
+                    fputs("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n", stderr)
+                    return true
+                }
+                return false
+            },
             onBatch: { [weak self] batch in
-                guard let self = self, self.folderURL == url else { return }
-                // 각 배치는 main thread 에서 append — SwiftUI diff 는 incremental
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
+                    fputs("[REC] batch dropped (gen/url mismatch)\n", stderr)
+                    return
+                }
+                fputs("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n", stderr)
                 self.photos.append(contentsOf: batch)
-                // 첫 배치 직후 첫 사진 자동 선택 (여러 번 호출돼도 한 번만)
+                // 첫 배치 직후 첫 사진 자동 선택 (1회만)
                 if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
                     firstSelectionMade = true
                     self.selectedPhotoID = first.id
@@ -388,18 +412,31 @@ extension PhotoStore {
                 }
             },
             onComplete: { [weak self] photoCount in
-                guard let self = self, self.folderURL == url else { return }
+                fputs("[REC] onComplete photoCount=\(photoCount)\n", stderr)
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
+                    fputs("[REC] onComplete dropped (gen/url mismatch)\n", stderr)
+                    return
+                }
                 let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
                 AppLogger.log(.folder, "Recursive scan (streaming): \(photoCount) photos in \(String(format: "%.1f", phase1Elapsed))ms")
 
                 self.isLoading = false
                 self.loadingStatus = ""
+                self.isRecursiveScanInProgress = false   // ← prewarming/sweep 해금
                 self.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
 
-                // 썸네일 prewarming
-                let prewarmDelay: TimeInterval = isSlowDisk ? 2.0 : 1.5
+                // v8.9.4: prewarming 은 scan 끝나고 + 사용자 idle 일 때만.
+                //   slow disk 는 더 오래 양보. 적극 모드면 짧게.
+                let prewarmDelay: TimeInterval = isSlowDisk ? 3.0 : 2.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) { [weak self] in
-                    self?.preloadAllThumbnails()
+                    guard let self = self,
+                          self.folderURL == url,
+                          self.recursiveScanGeneration == myGen,
+                          !self.isRecursiveScanInProgress else { return }
+                    // CacheSweeper 가 viewport-aware sweep 담당. 전체 prewarm 은 적극 모드에서만.
+                    if self.aggressiveCache {
+                        self.preloadAllThumbnails()
+                    }
                 }
             }
         )
