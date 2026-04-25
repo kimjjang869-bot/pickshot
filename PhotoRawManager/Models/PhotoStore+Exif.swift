@@ -6,19 +6,52 @@ import CoreLocation
 extension PhotoStore {
     // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
 
-    func prefetchNearbyThumbnails() {
-        // 디바운스 짧게 (10ms) — 빠른 연타 시 마지막 한 번만, 단일 이동은 즉시
+    func scheduleSelectionIdleWork(for photoID: UUID, delay: TimeInterval = 0.55) {
+        selectionIdleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self,
+                  !self.isKeyRepeat,
+                  self.selectedPhotoID == photoID else { return }
+
+            self.scheduleNavigationIdlePrefetch(delay: 0.0)
+            self.reverseGeocodeIfNeeded(for: photoID)
+        }
+        selectionIdleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func scheduleNavigationIdlePrefetch(delay: TimeInterval = 0.45) {
         prefetchWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, let id = self.selectedPhotoID else { return }
+            guard let self = self, !self.isKeyRepeat else { return }
+            self.prefetchNearbyThumbnails()
+        }
+        prefetchWorkItem = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func prefetchNearbyThumbnails() {
+        // FRV식: 방향키/클릭 반응이 먼저다. 주변 썸네일은 사용자가 잠깐 멈춘 뒤 보수적으로 채운다.
+        prefetchWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, let id = self.selectedPhotoID, !self.isKeyRepeat else { return }
             let list = self.filteredPhotos
             self.ensureFilteredIndex()
             guard let idx = self._filteredIndex[id] else { return }
 
-            // ±30장 (총 60장) 임베디드 JPEG 직접 추출 → ThumbnailCache 적재
+            // 주변 임베디드 JPEG 추출 → ThumbnailCache 적재.
+            // 하드웨어 끝까지 쓰지 않고 약 20% 여유를 남기도록 tier별 범위/동시성을 제한한다.
             // ThumbnailLoader 우회: 내부 lock/queue 경합 회피 + 풀 디코드 방지
-            let start = max(0, idx - 30)
-            let end = min(list.count - 1, idx + 30)
+            let radius: Int = {
+                switch SystemSpec.shared.effectiveTier {
+                case .low: return 6
+                case .standard: return 8
+                case .high: return 10
+                case .extreme: return 12
+                }
+            }()
+            let start = max(0, idx - radius)
+            let end = min(list.count - 1, idx + radius)
             guard start <= end else { return }
 
             var toLoad: [URL] = []
@@ -30,13 +63,17 @@ extension PhotoStore {
                 }
             }
 
-            // 8-way concurrent 추출 — v8.8.0: ThumbnailLoader 경유로 변경.
+            // 제한된 병렬 추출 — v8.8.0: ThumbnailLoader 경유로 변경.
             //   직접 CGImageSourceCreateThumbnailAtIndex 호출 시 NEF 등 RAW 의 EXIF orientation
             //   이 적용 안 돼서 세로 사진이 가로로 캐시되는 버그 발생. generateThumbnailSync 는
             //   내부에서 extractThumbnailFast 를 통해 orientation 을 정확히 처리.
-            let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .userInitiated, attributes: .concurrent)
-            for url in toLoad.prefix(60) {
+            let concurrency = max(1, min(2, SystemSpec.shared.ssdThumbnailConcurrency()))
+            let semaphore = DispatchSemaphore(value: concurrency)
+            let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .utility, attributes: .concurrent)
+            for url in toLoad.prefix(radius * 2) {
                 concurrentQueue.async {
+                    semaphore.wait()
+                    defer { semaphore.signal() }
                     autoreleasepool {
                         if ThumbnailCache.shared.get(url) != nil { return }
                         if let img = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
@@ -53,7 +90,7 @@ extension PhotoStore {
             }
         }
         prefetchWorkItem = work
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.01, execute: work)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
     /// Lazy-load RAW EXIF when a photo is selected (not at folder load time)

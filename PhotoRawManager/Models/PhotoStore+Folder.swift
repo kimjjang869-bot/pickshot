@@ -425,6 +425,13 @@ extension PhotoStore {
                 self.isRecursiveScanInProgress = false   // ← prewarming/sweep 해금
                 self.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
 
+                // v8.9.6 fix: 하위폴더 포함 모드에서 정렬이 시각적으로 반영 안 되던 문제.
+                //   NSThumbnailCollectionView 가 isRecursiveScanInProgress 동안 250ms throttle
+                //   걸어서, 마지막 batch (또는 throttle 윈도우 안의 batch들) 의 정렬 결과가
+                //   reloadData 되지 않고 묻혔다. throttle 해제된 지금 photosVersion 한 번 더
+                //   bump 해서 최종 정렬 상태를 강제 반영.
+                self.invalidateFilterCache()
+
                 // v8.9.4: prewarming 은 scan 끝나고 + 사용자 idle 일 때만.
                 //   slow disk 는 더 오래 양보. 적극 모드면 짧게.
                 let prewarmDelay: TimeInterval = isSlowDisk ? 3.0 : 2.0

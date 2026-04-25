@@ -172,11 +172,14 @@ class PhotoStore: ObservableObject {
             if isKeyRepeat {
                 // 연속 이동 중: 이전 예약만 취소하고 새로 예약하지 않음
                 prefetchWorkItem?.cancel()
+                selectionIdleWorkItem?.cancel()
             } else {
-                prefetchNearbyThumbnails()
+                if let id = selectedPhotoID {
+                    scheduleSelectionIdleWork(for: id)
+                } else {
+                    selectionIdleWorkItem?.cancel()
+                }
             }
-            // 지오코딩은 키 떼는 순간에만
-            if !isKeyRepeat, let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
         }
     }
     @Published var selectedPhotoIDs: Set<UUID> = []
@@ -789,6 +792,7 @@ class PhotoStore: ObservableObject {
     // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
 
     var prefetchWorkItem: DispatchWorkItem?
+    var selectionIdleWorkItem: DispatchWorkItem?
 
     // Fast O(1) lookup instead of O(n) linear search
     var _photoIndex: [UUID: Int] = [:]

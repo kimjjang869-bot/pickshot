@@ -960,7 +960,9 @@ class KeyCaptureView: NSView {
         store?.isKeyRepeat = false
         // 키 놓은 순간에 prefetch 한번만 수행 (꾹 누르기 중엔 스킵했음)
         // wasRepeat == true 면 꾹 누르기 끝 → 이제 prefetch
-        if wasRepeat { store?.prefetchNearbyThumbnails() }
+        if wasRepeat, let id = store?.selectedPhotoID {
+            store?.scheduleSelectionIdleWork(for: id, delay: 0.35)
+        }
         super.keyUp(with: event)
     }
 

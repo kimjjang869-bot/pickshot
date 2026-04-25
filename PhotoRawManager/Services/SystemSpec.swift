@@ -6,6 +6,9 @@ import Metal
 // 기존에 6곳(HardwareAcceleration, PhotoPreviewView, ThumbnailGridView,
 // ImageAnalysisService, FileCopyService, PhotoStore+Collections)에 분산되어 있던
 // RAM/코어 기반 분기 로직을 단일 진입점으로 통합한다.
+//
+// PickShot은 벤치마크 앱이 아니라 셀렉 앱이다. 하드웨어를 끝까지 쓰기보다
+// UI 입력/스크롤/프리뷰 전환을 위해 항상 약 20% 여유를 남기는 보수적 기본값을 쓴다.
 
 /// 하드웨어 성능 티어 (M1 Pro 16GB 테스터 crystal 이슈 해결을 위해 standard tier 신설)
 enum PerformanceTier: String {
@@ -147,10 +150,10 @@ final class SystemSpec {
     /// AggressiveImageCache(HardwareAcceleration.swift) 용량 (MB)
     func aggressiveCacheLimitMB() -> Int {
         switch effectiveTier {
-        case .low:      return 150
-        case .standard: return 200  // M1 Pro 16GB 타겟 (기존 300MB에서 더 축소)
-        case .high:     return 500
-        case .extreme:  return 1024
+        case .low:      return 120
+        case .standard: return 160
+        case .high:     return 400
+        case .extreme:  return 800
         }
     }
 
@@ -159,103 +162,103 @@ final class SystemSpec {
     ///   너무 높이면 피크 메모리 25GB+ 찍음. 현재 + 이웃 소수만 유지.
     func hiResCacheCount() -> Int {
         switch effectiveTier {
-        case .low:      return 2   // 현재 + 다음 1장
-        case .standard: return 3
-        case .high:     return 5
-        case .extreme:  return 8   // 현재 + ±3 정도
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// hiResCache 총 비용(MB).
     func hiResCacheCostMB() -> Int {
         switch effectiveTier {
-        case .low:      return 200
-        case .standard: return 400
-        case .high:     return 700
-        case .extreme:  return 1200   // ~4장 분량 캡
+        case .low:      return 160
+        case .standard: return 320
+        case .high:     return 560
+        case .extreme:  return 900
         }
     }
 
-    /// HiRes 프리페치 이웃 반경 — 작게 유지 (직렬 디코드 × 반경 = 체감 latency).
+    /// HiRes 프리페치 이웃 반경 — 매우 작게 유지. 현재 사진 반응성이 우선이다.
     func hiResPrefetchRadius() -> Int {
         switch effectiveTier {
         case .low:      return 0   // 프리페치 안 함
-        case .standard: return 1
-        case .high:     return 2
-        case .extreme:  return 3
+        case .standard: return 0
+        case .high:     return 1
+        case .extreme:  return 1
         }
     }
 
     /// ThumbnailCache L1(ThumbnailGridView.swift) MB
     func thumbnailCacheMB() -> Int {
         switch effectiveTier {
-        case .low:      return 100
-        case .standard: return 150
-        case .high:     return 300
-        case .extreme:  return 500
+        case .low:      return 80
+        case .standard: return 120
+        case .high:     return 240
+        case .extreme:  return 400
         }
     }
 
     /// ImageAnalysisService 동시성
     func imageAnalysisConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3  // crystal: 4 → 3 한 단계 더 조임
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// 로컬 SSD 썸네일 로드 동시성
     func ssdThumbnailConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// FileCopyService 동시성
     func fileCopyConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// 프리뷰 최대 해상도 (0 = 원본)
     func previewMaxPixel() -> Int {
         switch effectiveTier {
-        case .low:      return 3000
-        case .standard: return 0    // original (기존 >= 16GB 동일)
-        case .high:     return 0
-        case .extreme:  return 0
+        case .low:      return 2000
+        case .standard: return 2400
+        case .high:     return 3000
+        case .extreme:  return 3600
         }
     }
 
     /// 미리보기 Stage1 (빠른 첫 표시) 해상도
-    /// low 머신은 800px로 표시 즉응성 우선, high+는 1600px로 화질 우선
+    /// v8.9.6: 5K/Retina 화면에서 1200px 가 stretched 시 너무 흐려 보이던 문제 (사용자 보고).
+    ///   subsample 디코드 효과 유지하면서 스케일만 상향.
     func previewStage1MaxPixel() -> CGFloat {
         switch effectiveTier {
-        case .low:      return 800
+        case .low:      return 1000
         case .standard: return 1200
         case .high:     return 1600
-        case .extreme:  return 1600
+        case .extreme:  return 1800
         }
     }
 
     /// 미리보기 Stage2 (후속 고화질) 해상도. 0 = 원본
-    /// low: stage2도 1600px로 메모리 절감 (스파이크 ~40% 축소)
-    /// extreme: 원본 로드
+    /// v8.9.6: 5K Retina 에서 100% 줌 시도 시 부드러운 표시 위해 상향.
     func previewStage2MaxPixel() -> CGFloat {
         switch effectiveTier {
         case .low:      return 1600
         case .standard: return 2400
         case .high:     return 3200
-        case .extreme:  return 0    // 원본
+        case .extreme:  return 4000
         }
     }
 
@@ -285,16 +288,19 @@ final class SystemSpec {
             return false
         }
 
-        // 4) 용량 ≤256GB → SD/USB 메모리로 추정 → slow
+        // 4) 용량 ≤64GB → SD카드/USB stick 으로 확정 → slow
+        //   (이전 ≤256GB 기준은 외장 SSD 도 slow 처리 → stage2 무조건 skip → 미리보기 흐림 버그)
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
             let sizeGB = totalSize / (1024 * 1024 * 1024)
-            if sizeGB <= 256 { return true }
+            if sizeGB <= 64 { return true }
         }
 
-        // 5) 그 외 외장 — HDD 가능성 → slow 취급
-        return true
+        // 5) v8.9.6: 대용량 외장 (>64GB) — 2024+ 기준 대부분 SSD.
+        //   ThumbnailLoader.detectStorageType 의 "externalSSD 로 가정" 정책과 통일.
+        //   HDD 로 과도 추정하면 stage2 SKIP → 미리보기 1200px 만 표시 → 5K 화면에서 흐려짐.
+        return false
     }
 
     // MARK: - 디버깅/로그용 요약

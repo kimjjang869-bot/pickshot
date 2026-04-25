@@ -116,8 +116,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             optionsChanged || sizeChanged
         // v8.9.4: recursive scan 중에는 reload 를 250ms throttle (batch coalescing 와 정합)
         //   첫 batch 와 sizeChanged/optionsChanged 는 즉시 반영, 그 외는 250ms 누적.
+        // v8.9.6: scan 종료 직후 첫 update 는 강제 reload — throttle 윈도우에 묻혀서
+        //   마지막 batch 의 정렬 결과가 화면에 반영 안 되던 버그 수정.
+        let scanJustEnded = coordinator.wasRecursiveScanInProgress && !store.isRecursiveScanInProgress
+        coordinator.wasRecursiveScanInProgress = store.isRecursiveScanInProgress
         if photosChanged && store.isRecursiveScanInProgress
-            && !coordinator.photos.isEmpty && !sizeChanged && !optionsChanged {
+            && !coordinator.photos.isEmpty && !sizeChanged && !optionsChanged
+            && !scanJustEnded {
             let now = Date()
             if now.timeIntervalSince(coordinator.lastRecursiveReloadAt) < 0.25 {
                 // 옛 photos snapshot 만 갱신 (다음 throttle 후 reload 시 fresh)
@@ -236,6 +241,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         var lastScrollTrigger: Int = 0
         // v8.9.4: recursive scan 중 reload throttle 타임스탬프
         var lastRecursiveReloadAt: Date = .distantPast
+        // v8.9.6: 직전 update 시점의 recursive scan 진행 상태 — 종료 직후 first update 강제 reload 용
+        var wasRecursiveScanInProgress: Bool = false
 
         init(store: PhotoStore) {
             self.store = store
@@ -289,8 +296,9 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 return
             }
             let items = visible.map { $0.item }
-            let minIdx = max(0, (items.min() ?? 0) - 5)   // 위 1줄(약 5장) 버퍼
-            let maxIdx = min(photos.count - 1, (items.max() ?? 0) + 5) // 아래 1줄 버퍼
+            let rowBuffer = max(2, min(store.actualColumnsPerRow, 8))
+            let minIdx = max(0, (items.min() ?? 0) - rowBuffer)
+            let maxIdx = min(photos.count - 1, (items.max() ?? 0) + rowBuffer)
             guard minIdx <= maxIdx, !photos.isEmpty else { return }
             var urls: Set<URL> = []
             urls.reserveCapacity(maxIdx - minIdx + 1)
@@ -431,9 +439,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             guard indexPath.item < photos.count else { return }
             let photo = photos[indexPath.item]
             guard !photo.isParentFolder else { return }
+            let beforeCount = store.selectedPhotoIDs.count
             if !store.selectedPhotoIDs.contains(photo.id) {
+                fputs("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n", stderr)
                 store.selectedPhotoIDs = [photo.id]
                 store.selectedPhotoID = photo.id
+            } else {
+                fputs("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n", stderr)
             }
         }
 
@@ -683,14 +695,25 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 guard !name.isEmpty, let folderURL = store.folderURL else { return }
                 let newDir = folderURL.appendingPathComponent(name)
                 try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+                let selectionAtMove = store.selectedPhotoIDs
+                fputs("[MOVE-NEW] selection count at move=\(selectionAtMove.count)\n", stderr)
                 var fileURLs: [URL] = []
-                for id in store.selectedPhotoIDs {
-                    guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+                var skippedNoIndex = 0
+                var skippedFolder = 0
+                for id in selectionAtMove {
+                    guard let idx = store._photoIndex[id], idx < store.photos.count else {
+                        skippedNoIndex += 1
+                        continue
+                    }
                     let photo = store.photos[idx]
-                    guard !photo.isFolder && !photo.isParentFolder else { continue }
+                    guard !photo.isFolder && !photo.isParentFolder else {
+                        skippedFolder += 1
+                        continue
+                    }
                     fileURLs.append(photo.jpgURL)
                     if let raw = photo.rawURL, raw != photo.jpgURL { fileURLs.append(raw) }
                 }
+                fputs("[MOVE-NEW] fileURLs=\(fileURLs.count) (skipped: noIndex=\(skippedNoIndex), folder=\(skippedFolder))\n", stderr)
                 store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
             }
         }
@@ -772,6 +795,23 @@ private final class ThumbnailNSCollectionView: NSCollectionView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
+    }
+
+    // v8.9.6 fix: 다중 선택 후 우클릭하면 NSCollectionView 기본 동작이 우클릭한 셀로 단일 선택을
+    //   덮어써서 "다중 선택 → 새 폴더로 이동" 시 1장만 옮겨지던 버그.
+    //   우클릭 셀이 이미 multi-selection 에 있으면 super 호출 생략 → 선택 유지.
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let ip = indexPathForItem(at: point), selectionIndexPaths.contains(ip),
+           selectionIndexPaths.count > 1 {
+            // 멀티 선택 상태에서 그 안의 셀에 우클릭 — 선택 유지하고 menu 만 띄움
+            window?.makeFirstResponder(self)
+            if let menu = self.menu(for: event) {
+                NSMenu.popUpContextMenu(menu, with: event, for: self)
+            }
+            return
+        }
+        super.rightMouseDown(with: event)
     }
 
     override func keyDown(with event: NSEvent) {

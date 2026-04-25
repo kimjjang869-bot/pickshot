@@ -185,7 +185,7 @@ struct FileMatchingService {
         onBatch: @escaping ([PhotoItem]) -> Void,
         onComplete: @escaping (Int) -> Void
     ) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .utility).async {
             let overallStart = CFAbsoluteTimeGetCurrent()
 
             if !recursive {
@@ -208,7 +208,7 @@ struct FileMatchingService {
                 (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             }
 
-            // v8.9.4: batch coalescing — 250ms 또는 300개마다 flush.
+            // v8.9.4: batch coalescing — main reload 폭주 방지.
             //   기존엔 서브폴더마다 즉시 main async → photosVersion bump 폭주 → reloadData 폭주.
             //   v8.9.4-fix: collectorQueue 의 timer event handler 안에서 collectorQueue.sync 를 호출하면
             //               dispatch_sync deadlock crash → _doFlush 는 항상 collectorQueue 위에서 실행되는
@@ -221,8 +221,8 @@ struct FileMatchingService {
                 var totalCount: Int = 0
             }
             let state = CollectorState()
-            let flushIntervalMs: Double = 250
-            let flushSizeThreshold = 300
+            let flushIntervalMs: Double = isSlowDisk ? 600 : 400
+            let flushSizeThreshold = isSlowDisk ? 500 : 400
 
             // 항상 collectorQueue 위에서만 호출.
             func _doFlushOnQueue(force: Bool) {
@@ -265,7 +265,7 @@ struct FileMatchingService {
             let maxConcurrent = isSlowDisk ? 1 : min(max(topFolders.count, 1), 2)
             let semaphore = DispatchSemaphore(value: maxConcurrent)
             let group = DispatchGroup()
-            let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .userInitiated, attributes: .concurrent)
+            let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .utility, attributes: .concurrent)
 
             fputs("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n", stderr)
 
@@ -296,7 +296,8 @@ struct FileMatchingService {
             // 주기 flush — coalescing 사이에 시간이 비면 강제 flush 보장
             // Timer event handler 는 collectorQueue 위에서 실행되므로 _doFlushOnQueue 직접 호출 (sync 금지!).
             let flushTimer = DispatchSource.makeTimerSource(queue: collectorQueue)
-            flushTimer.schedule(deadline: .now() + 0.25, repeating: 0.25)
+            let flushInterval = flushIntervalMs / 1000.0
+            flushTimer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
             flushTimer.setEventHandler {
                 if !isCancelled() { _doFlushOnQueue(force: false) }
             }

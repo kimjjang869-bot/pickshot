@@ -48,12 +48,9 @@ extension PhotoStore {
         // 폴더/상위폴더는 선택 불가
         if let idx = _photoIndex[id], idx < photos.count {
             let photo = photos[idx]
-            AppLogger.log(.selection, "selectPhoto: \(photo.fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
             // 무결성 검증: id 불일치 감지
             if photo.id != id {
                 fputs("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n", stderr)
-            } else {
-                fputs("[SELECT] click: id=\(id.uuidString.prefix(8)) → \(photo.fileName)\n", stderr)
             }
         } else {
             fputs("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n", stderr)
@@ -154,64 +151,44 @@ extension PhotoStore {
 
         ensureFilteredIndex()
 
-        guard let currentID = selectedPhotoID else { return }
-        guard let currentIndex = _filteredIndex[currentID] else {
-            let firstID = list[0].id
-            selectedPhotoIDs = [firstID]
-            selectedPhotoID = firstID
-            return
-        }
-
-        let newIndex = currentIndex + offset
-        guard newIndex >= 0 && newIndex < list.count else { return }
-
-        let newID = list[newIndex].id
+        guard let result = NavigationCore.move(.init(
+            photos: list,
+            filteredIndex: _filteredIndex,
+            currentID: selectedPhotoID,
+            currentSelection: selectedPhotoIDs,
+            shiftAnchorIndex: shiftAnchorIndex,
+            offset: offset,
+            shiftKey: shiftKey,
+            cmdKey: cmdKey
+        )) else { return }
 
         scrollAnchor = offset > 0 ? .bottom : .top
-
-        if shiftKey {
-            // Shift: range select from anchor to new position
-            if shiftAnchorIndex == nil {
-                shiftAnchorIndex = currentIndex
-            }
-            guard let anchor = shiftAnchorIndex else { return }
-            let rangeStart = min(anchor, newIndex)
-            let rangeEnd = max(anchor, newIndex)
-            var newSelection = Set<UUID>()
-            for i in rangeStart...rangeEnd {
-                newSelection.insert(list[i].id)
-            }
-            selectedPhotoIDs = newSelection
-        } else if cmdKey {
-            // Cmd: toggle individual selection, keep existing
-            if selectedPhotoIDs.contains(newID) {
-                // Already selected - just move focus
-            } else {
-                selectedPhotoIDs.insert(newID)
-            }
-            shiftAnchorIndex = nil
-        } else {
-            // Normal: single select
-            selectedPhotoIDs = [newID]
-            shiftAnchorIndex = nil
-        }
+        selectedPhotoIDs = result.selection
+        shiftAnchorIndex = result.shiftAnchorIndex
 
         // 성능 측정 시작 — scrollTrigger/selectedPhotoID 변경 직전에 측정 시작
         // (SwiftUI body 재계산 + onChange 호출이 모두 동기 구간에 포함되도록)
-        let dirSymbol = offset == 1 ? "→" : offset == -1 ? "←" : (offset > 0 ? "↓" : "↑")
-        let capturedIndex = newIndex
-        let measuring = Thread.isMainThread
+        let measuring: Bool = {
+            #if DEBUG
+            guard Thread.isMainThread else { return false }
+            return MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.isEnabled
+            }
+            #else
+            return false
+            #endif
+        }()
         if measuring {
             MainActor.assumeIsolated {
-                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: capturedIndex, direction: dirSymbol)
+                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: result.targetIndex, direction: result.directionSymbol)
             }
         }
 
-        selectedPhotoID = newID
+        selectedPhotoID = result.focusedID
         scrollTrigger &+= 1
 
         // 빠른 탐색: 썸네일 즉시 표시 (SwiftUI onChange 병합 우회)
-        let photo = list[newIndex]
+        let photo = list[result.targetIndex]
         if !photo.isFolder && !photo.isParentFolder {
             onQuickPreview?(photo.jpgURL)
         }
@@ -227,20 +204,14 @@ extension PhotoStore {
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }
     func selectLeft(shift: Bool = false, cmd: Bool = false) { moveSelection(by: -1, shiftKey: shift, cmdKey: cmd) }
     func selectDown(shift: Bool = false, cmd: Bool = false) {
-        fputs("[NAV] down cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
         // 마지막 행에서 아래로 갈 곳이 없으면 가장 마지막 파일로 점프
         ensureFilteredIndex()
         let list = filteredPhotos
         if !list.isEmpty,
            let currentID = selectedPhotoID,
            let currentIdx = _filteredIndex[currentID] {
-            let targetIdx = currentIdx + columnsPerRow
-            if targetIdx >= list.count {
-                // 아래 행이 없음 → 마지막 파일로 이동
-                let lastIdx = list.count - 1
-                if lastIdx > currentIdx {
-                    moveSelection(by: lastIdx - currentIdx, shiftKey: shift, cmdKey: cmd)
-                }
+            if let offset = NavigationCore.downOffset(currentIndex: currentIdx, count: list.count, columns: columnsPerRow) {
+                moveSelection(by: offset, shiftKey: shift, cmdKey: cmd)
                 return
             }
         }
@@ -248,7 +219,6 @@ extension PhotoStore {
         moveSelection(by: columnsPerRow, shiftKey: shift, cmdKey: cmd)
     }
     func selectUp(shift: Bool = false, cmd: Bool = false) {
-        fputs("[NAV] up cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
         moveSelection(by: -columnsPerRow, shiftKey: shift, cmdKey: cmd)
     }
 }

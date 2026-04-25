@@ -31,11 +31,15 @@
 		A10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* ContentView.swift */; };
 		A10003 /* PhotoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* PhotoItem.swift */; };
 		A10004 /* PhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004 /* PhotoStore.swift */; };
+		NAV10001 /* NavigationCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = NAV10002 /* NavigationCore.swift */; };
 		A10005 /* FileMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* FileMatchingService.swift */; };
 		A10006 /* ExifService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* ExifService.swift */; };
 		A10007 /* FileCopyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* FileCopyService.swift */; };
 		A10008 /* ThumbnailGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* ThumbnailGridView.swift */; };
 		A10009 /* PhotoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* PhotoPreviewView.swift */; };
+		PDS10001 /* PreviewDecodeScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = PDS10002 /* PreviewDecodeScheduler.swift */; };
+		PLP10001 /* PreviewLoadingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = PLP10002 /* PreviewLoadingPolicy.swift */; };
+		PPL10001 /* PreviewPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = PPL10002 /* PreviewPipeline.swift */; };
 		A10010 /* StarRatingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* StarRatingView.swift */; };
 		A10011 /* ExifInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ExifInfoView.swift */; };
 		A10012 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* ExportView.swift */; };
@@ -244,11 +248,15 @@
 		B10002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B10003 /* PhotoItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoItem.swift; sourceTree = "<group>"; };
 		B10004 /* PhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
+		NAV10002 /* NavigationCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCore.swift; sourceTree = "<group>"; };
 		B10005 /* FileMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMatchingService.swift; sourceTree = "<group>"; };
 		B10006 /* ExifService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifService.swift; sourceTree = "<group>"; };
 		B10007 /* FileCopyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCopyService.swift; sourceTree = "<group>"; };
 		B10008 /* ThumbnailGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGridView.swift; sourceTree = "<group>"; };
 		B10009 /* PhotoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
+		PDS10002 /* PreviewDecodeScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewDecodeScheduler.swift; sourceTree = "<group>"; };
+		PLP10002 /* PreviewLoadingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewLoadingPolicy.swift; sourceTree = "<group>"; };
+		PPL10002 /* PreviewPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewPipeline.swift; sourceTree = "<group>"; };
 		B10010 /* StarRatingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
 		B10011 /* ExifInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExifInfoView.swift; sourceTree = "<group>"; };
 		B10012 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
@@ -498,6 +506,7 @@
 			children = (
 				B10003 /* PhotoItem.swift */,
 				B10004 /* PhotoStore.swift */,
+				NAV10002 /* NavigationCore.swift */,
 				PSC20002 /* PhotoStore+Collections.swift */,
 				PSU20002 /* PhotoStore+UI.swift */,
 				PSE20002 /* PhotoStore+Exif.swift */,
@@ -537,6 +546,9 @@
 				B10008 /* ThumbnailGridView.swift */,
 				B10056 /* NSThumbnailCollectionView.swift */,
 				B10009 /* PhotoPreviewView.swift */,
+				PDS10002 /* PreviewDecodeScheduler.swift */,
+				PLP10002 /* PreviewLoadingPolicy.swift */,
+				PPL10002 /* PreviewPipeline.swift */,
 				B10010 /* StarRatingView.swift */,
 				B10011 /* ExifInfoView.swift */,
 				B10012 /* ExportView.swift */,
@@ -837,6 +849,7 @@
 				A10002 /* ContentView.swift in Sources */,
 				A10003 /* PhotoItem.swift in Sources */,
 				A10004 /* PhotoStore.swift in Sources */,
+				NAV10001 /* NavigationCore.swift in Sources */,
 				PSC20001 /* PhotoStore+Collections.swift in Sources */,
 				PSU20001 /* PhotoStore+UI.swift in Sources */,
 				PSE20001 /* PhotoStore+Exif.swift in Sources */,
@@ -855,6 +868,9 @@
 				A10007 /* FileCopyService.swift in Sources */,
 				A10008 /* ThumbnailGridView.swift in Sources */,
 				A10009 /* PhotoPreviewView.swift in Sources */,
+				PDS10001 /* PreviewDecodeScheduler.swift in Sources */,
+				PLP10001 /* PreviewLoadingPolicy.swift in Sources */,
+				PPL10001 /* PreviewPipeline.swift in Sources */,
 				A10010 /* StarRatingView.swift in Sources */,
 				A10011 /* ExifInfoView.swift in Sources */,
 				A10012 /* ExportView.swift in Sources */,
@@ -1120,7 +1136,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1137,7 +1153,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.5;
+				MARKETING_VERSION = 8.9.6;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
@@ -1157,7 +1173,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1174,7 +1190,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.5;
+				MARKETING_VERSION = 8.9.6;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;

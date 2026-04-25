@@ -2535,7 +2535,11 @@ class ThumbnailLoader {
     /// callback 직전 검사: generation 일치 + activeURLs 안에 있어야 통과
     fileprivate func shouldDeliver(url: URL, gen: UInt64) -> Bool {
         genLock.lock(); defer { genLock.unlock() }
-        if gen != generation && !activeURLs.contains(url) {
+        if !activeURLs.isEmpty && !activeURLs.contains(url) {
+            ThumbnailLoader.droppedCallbacks &+= 1
+            return false
+        }
+        if gen != generation && activeURLs.isEmpty {
             ThumbnailLoader.droppedCallbacks &+= 1
             return false
         }
@@ -2557,7 +2561,7 @@ class ThumbnailLoader {
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
-        queue.maxConcurrentOperationCount = 2
+        queue.maxConcurrentOperationCount = 1
     }
 
     /// 탐색 멈추면 프리로딩 복구
@@ -2590,10 +2594,10 @@ class ThumbnailLoader {
         case .externalHDD:
             isNetworkMode = false
             isExternalHDD = true
-            // HDD NCQ 큐 깊이 활용 — 6-way까지 sustained throughput 증가 (8-way는 USB 외장에서 역효과)
-            queue.maxConcurrentOperationCount = 6
-            normalConcurrency = 6
-            AppLogger.log(.performance, "External HDD: concurrency=6, thumbSize=160 for \(path)")
+            // HDD/USB 외장은 랜덤 읽기 경합이 체감 렉으로 바로 이어짐 → 보수적으로 2-way.
+            queue.maxConcurrentOperationCount = 2
+            normalConcurrency = 2
+            AppLogger.log(.performance, "External HDD: concurrency=2, thumbSize=160 for \(path)")
         case .sdCard:
             // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
             isNetworkMode = false
@@ -2604,12 +2608,10 @@ class ThumbnailLoader {
         case .network:
             isNetworkMode = true
             isExternalHDD = false
-            // NAS 30-50MB/s 기준: 병목은 네트워크 대역폭
-            // 4-way 가 최적 (8+ 은 NIC 포화, TCP retransmit → 오히려 느려짐)
-            // 전제: 스테이지1 썸네일은 RAW 임베디드 JPEG (3-5MB) + 부분 읽기
-            queue.maxConcurrentOperationCount = 4
-            normalConcurrency = 4
-            AppLogger.log(.performance, "NAS/Network: concurrency=4 (대역폭 보호), thumbSize=100 for \(path)")
+            // NAS는 대역폭보다 latency/packet 재전송이 문제라 UI 반응성을 위해 2-way로 제한.
+            queue.maxConcurrentOperationCount = 2
+            normalConcurrency = 2
+            AppLogger.log(.performance, "NAS/Network: concurrency=2 (UI headroom), thumbSize=100 for \(path)")
         }
     }
 
@@ -2759,6 +2761,10 @@ class ThumbnailLoader {
 
         // 3. Need to extract from file — queue it
         lock.lock()
+        if !isURLActiveOrUnbounded(url) {
+            lock.unlock()
+            return
+        }
         // Double-check: 다른 스레드가 lock 대기 중 캐시에 저장했을 수 있음
         if let cached = ThumbnailCache.shared.get(url) {
             lock.unlock()
@@ -2884,6 +2890,11 @@ class ThumbnailLoader {
         }
         queue.addOperation(op)
         lock.unlock()
+    }
+
+    private func isURLActiveOrUnbounded(_ url: URL) -> Bool {
+        genLock.lock(); defer { genLock.unlock() }
+        return activeURLs.isEmpty || activeURLs.contains(url)
     }
 
     // MARK: - HDD 배치 디스크 캐시 저장 (I/O 경합 방지)

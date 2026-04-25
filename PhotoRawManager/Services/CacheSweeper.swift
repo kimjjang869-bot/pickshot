@@ -42,10 +42,10 @@ final class CacheSweeper: ObservableObject {
     //   기존 100/200/400/600 → 20/40/60/80. 스크롤 중 I/O 점유 줄여 hitch 방지.
     private var previewRangeAroundSelection: Int {
         switch SystemSpec.shared.effectiveTier {
-        case .low: return 20
-        case .standard: return 40
-        case .high: return 60
-        case .extreme: return 80
+        case .low: return 16
+        case .standard: return 32
+        case .high: return 48
+        case .extreme: return 64
         }
     }
 
@@ -200,9 +200,9 @@ final class CacheSweeper: ObservableObject {
             guard aggressive else { return 1 }
             switch SystemSpec.shared.effectiveTier {
             case .low: return 2
-            case .standard: return 4
-            case .high: return 6
-            case .extreme: return 8
+            case .standard: return 3
+            case .high: return 4
+            case .extreme: return 6
             }
         }()
         var thumbsDone = 0
@@ -315,9 +315,9 @@ final class CacheSweeper: ObservableObject {
             if aggressive {
                 switch tier {
                 case .low: opQueue.maxConcurrentOperationCount = 2
-                case .standard: opQueue.maxConcurrentOperationCount = 4
-                case .high: opQueue.maxConcurrentOperationCount = 6
-                case .extreme: opQueue.maxConcurrentOperationCount = 8
+                case .standard: opQueue.maxConcurrentOperationCount = 3
+                case .high: opQueue.maxConcurrentOperationCount = 4
+                case .extreme: opQueue.maxConcurrentOperationCount = 6
                 }
             } else {
                 opQueue.maxConcurrentOperationCount = (slowDisk || tier == .low) ? 1 : 2
