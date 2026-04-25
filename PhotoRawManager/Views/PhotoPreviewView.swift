@@ -1324,13 +1324,15 @@ struct PhotoPreviewView: View {
             developedImage = nil
             developedForPhotoID = nil
 
-            // 사진 전환 즉시 hi-res 캐시 사전 purge (memory pressure 대기 X)
-            // 현재 선택된 사진을 제외한 나머지는 모두 해제해서 피크 메모리 스파이크 방지
-            let currentHiResURL: NSURL? = {
-                guard let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder else { return nil }
-                return sel.displayURL as NSURL
-            }()
-            Self.purgeHiResCacheExcept(currentURL: currentHiResURL)
+            // 빠른 키 이동 중에는 hi-res 캐시를 매번 비우지 않는다.
+            // M1 Max 로그에서 selection마다 purge + 재디코드가 반복되며 CPU 200~330%까지 튀는 병목 확인.
+            if !store.isKeyRepeat {
+                let currentHiResURL: NSURL? = {
+                    guard let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder else { return nil }
+                    return sel.displayURL as NSURL
+                }()
+                Self.purgeHiResCacheExcept(currentURL: currentHiResURL)
+            }
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil
@@ -1450,13 +1452,19 @@ struct PhotoPreviewView: View {
                 loadImageDirect(for: url, id: newID)
             }
 
-            // v8.6.2: hi-res 로딩 지연 800ms → 150ms 로 단축.
-            //   이유: loadHiResImage 가 parent CGImageSource 경로로 10배 빨라졌고(1400→140ms),
-            //   idle sweep 으로 캐시도 채워지기 때문. 방향키 꾹 누르기엔 hiResWorkItem.cancel() 이
-            //   이미 다음 사진 선택 시 호출되어 전작업이 cancel 됨.
+            // 빠른 셀렉 모드는 FRV처럼 저해상도/임베디드 프리뷰 우선. hi-res는 사용자가 멈춘 뒤에만 올린다.
+            if store.fastCullingMode {
+                hiResWorkItem?.cancel()
+                return
+            }
+
+            // v8.9.6: 키 반복 중 hi-res 디코드가 시작되면 cancel 되어도 이미 CPU를 먹는다.
+            //   반복 이동 중엔 충분히 늦게 예약하고, 키를 놓은 뒤 마지막 선택만 고화질로 승격한다.
             let newURL = url
+            let wasKeyRepeat = store.isKeyRepeat
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
+                if wasKeyRepeat && self.store.isKeyRepeat { return }
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
@@ -1465,9 +1473,8 @@ struct PhotoPreviewView: View {
                 let key = newURL as NSURL
                 return Self.hiResCache.object(forKey: key) != nil
             }()
-            // v8.6.2: 저사양(8GB) 은 HiRes 지연 400ms — 빠른 네비 중 HiRes 스킵해 CPU 여유 확보
             let tier = SystemSpec.shared.effectiveTier
-            let missDelay: TimeInterval = tier == .low ? 0.4 : 0.15
+            let missDelay: TimeInterval = wasKeyRepeat ? 0.65 : (tier == .low ? 0.4 : 0.18)
             let delay: TimeInterval = alreadyCached ? 0.0 : missDelay
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
@@ -1947,10 +1954,10 @@ struct PhotoPreviewView: View {
             let isJPG = ["jpg", "jpeg"].contains(ext)
 
             if isJPG {
-                // v8.9.4: stage1 을 800px 로 축소 → SubsampleFactor 8 적극 사용 가능 → 50MB JPG 도 수십 ms 내
-                //   기존 1600px 은 SubsampleFactor 가 약하게 적용돼 풀 디코드 비용. 작은 stage1 → 큰 stage2 가
-                //   FRV 식 progressive 에 더 가까움.
-                let stage1Px: CGFloat = 800
+                // v8.9.4: stage1 800px → SubsampleFactor 적극 사용 가능
+                // v8.9.5: 1200px 로 상향 — 800px 은 16" Retina 화면에서 fit-to-window 시 흐림.
+                //   subsample=4 여전히 효과 (orig 4000+→1000 수준), 디코드 비용 작은 추가만.
+                let stage1Px: CGFloat = 1200
                 let finalPx: CGFloat = resolution > 0
                     ? CGFloat(resolution)
                     : PreviewImageCache.optimalPreviewSize()
@@ -2252,12 +2259,31 @@ struct PhotoPreviewView: View {
 
     /// Preload neighbors into PreviewImageCache with smart resolution selection.
     /// v8.6.2: 열/행 이동 모두 cover — ±10 순차(열) + ±cols*5 행 방향(행) 프리페치.
+    /// v8.9.5 hotfix: 메인에서 photos/index/cols 를 한꺼번에 스냅샷해 racy mutation 회피.
+    ///   이전엔 bg 에서 store.photos / _filteredIndex 를 직접 read → 메인이 동시 write 시
+    ///   swift_bridgeObjectRelease 트랩으로 크래시 (M1 Pro tester 보고됨).
     private func preloadNeighborsBatch(currentID: UUID, resolution: Int) {
-        let photos = store.filteredPhotos
-        // v8.6.2: O(n) firstIndex → O(1) _filteredIndex dict (하위폴더 포함 10k 폴더 대응)
-        store.ensureFilteredIndex()
-        guard let currentIdx = store._filteredIndex[currentID] else { return }
-        let cols = max(1, store.actualColumnsPerRow)
+        // 메인 스냅샷 (sync) — Array/Dict COW 가 mid-write 일 때 bg read 가 트랩하던 문제 회피.
+        // sync 비용은 미미 (수 µs), preload 자체가 background-qos 라 main 블로킹 없음.
+        var photos: [PhotoItem] = []
+        var rawByJpg: [URL: URL] = [:]
+        var currentIdx: Int = -1
+        var cols: Int = 1
+        var fastCullingMode = false
+        DispatchQueue.main.sync {
+            photos = store.filteredPhotos
+            store.ensureFilteredIndex()
+            currentIdx = store._filteredIndex[currentID] ?? -1
+            cols = max(1, store.actualColumnsPerRow)
+            fastCullingMode = store.fastCullingMode
+            // JPG → RAW 매핑을 한 번에 빌드 (이전엔 entry 마다 store.photos 순회 → race)
+            for p in store.photos {
+                if let raw = p.rawURL, raw != p.jpgURL {
+                    rawByJpg[p.jpgURL] = raw
+                }
+            }
+        }
+        guard currentIdx >= 0 else { return }
 
         // v8.9.4: 사용자 설정 우선 (Settings → 미리 읽기 거리), 0 이면 tier 자동
         let userDepth = Int(UserDefaults.standard.double(forKey: "previewPrefetchDepth"))
@@ -2275,7 +2301,7 @@ struct PhotoPreviewView: View {
             case .extreme: colRange = 10; rowMult = 4
             }
         }
-        if store.fastCullingMode {
+        if fastCullingMode {
             colRange = max(1, colRange / 3)
             rowMult = max(0, rowMult / 3)
         }
@@ -2326,20 +2352,10 @@ struct PhotoPreviewView: View {
                 let maxPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
 
                 // v8.6.2: RAW+JPG 쌍에선 RAW 임베디드 프리뷰로 디코드 (loadImageDirect 와 동일 정책)
+                // v8.9.5 hotfix: rawByJpg 스냅샷 사용 — bg 에서 store.photos 직접 순회하던 race 제거.
                 let decodeURL: URL = {
                     if entry.isRAW { return entry.url }
-                    // JPG 에 RAW 형제가 있으면 RAW 로
-                    if let idx = store._filteredIndex[currentID] {
-                        _ = idx  // unused
-                    }
-                    // 간단히: 파일명 매칭으로 RAW 찾기
-                    for p in store.photos {
-                        if p.jpgURL == entry.url {
-                            if let raw = p.rawURL, raw != entry.url { return raw }
-                            break
-                        }
-                    }
-                    return entry.url
+                    return rawByJpg[entry.url] ?? entry.url
                 }()
 
                 if let img = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: maxPx) {
@@ -2924,6 +2940,10 @@ struct PhotoPreviewView: View {
 
     /// Prefetch hi-res for ±2 neighboring photos (background, 메모리 절약)
     private func prefetchHiResNeighbors() {
+        // 빠른 이동/빠른 셀렉 중에는 이웃 hi-res 디코드를 쌓지 않는다.
+        // 현재 사진 표시보다 백그라운드 고화질 프리페치가 CPU를 선점하면 방향키 반응이 늦어진다.
+        guard !store.isKeyRepeat, !store.fastCullingMode else { return }
+
         let list = store.filteredPhotos
         guard let currentID = store.selectedPhotoID,
               let currentIdx = list.firstIndex(where: { $0.id == currentID }) else { return }
@@ -4365,4 +4385,3 @@ final class ProgressiveLoadStats {
         }
     }
 }
-

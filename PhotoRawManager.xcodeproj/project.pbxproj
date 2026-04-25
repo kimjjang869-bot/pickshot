@@ -1120,7 +1120,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 35;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1137,7 +1137,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.0;
+				MARKETING_VERSION = 8.9.5;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
@@ -1157,7 +1157,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 35;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1174,7 +1174,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.0;
+				MARKETING_VERSION = 8.9.5;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
