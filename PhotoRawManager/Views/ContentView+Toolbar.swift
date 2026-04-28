@@ -24,11 +24,6 @@ extension ContentView {
                 }
                 .help("시작 화면으로 돌아가기")
 
-                iconButton("cable.connector", active: false) {
-                    store.startupMode = .tethering
-                }
-                .help("테더링 (카메라 연결)")
-
                 iconButton("sidebar.leading", active: store.showFolderBrowser) {
                     store.showFolderBrowser.toggle()
                 }
@@ -50,12 +45,14 @@ extension ContentView {
                         }
                         .buttonStyle(.plain)
                     }
-                    // v8.6.2: 캐시 생성 진행률 원형 게이지 (썸네일+미리보기 통합)
-                    CacheProgressGauge(store: store)
+                    // v8.9.7+: 캐시 진행률 게이지 제거 — 미리보기 토글로 통합 표시.
                     // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
                     AggressiveCacheToggle(store: store)
                     // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
                     FastCullingToggle(store: store)
+                    // v8.9.7+: 초기 미리보기 토글 — 토끼 옆 (FastCullingToggle 직후)
+                    InitialPreviewToggle()
+                        .fixedSize(horizontal: true, vertical: true)
                     // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
                     activeFilterBadge
                 }
@@ -199,14 +196,16 @@ extension ContentView {
                         // v8.9.4: Spacer 제거 — 모든 버튼 좌측 정렬
 
                         // Search bar (항상 표시)
+                        // v8.9.7+: 정렬 메뉴와 height 통일 (AppTheme.buttonHeight) + 폭 고정 →
+                        //   썸네일 폭/슬라이더 조절해도 크기 변하지 않음.
                         HStack(spacing: 4) {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 10))
+                                .font(.system(size: AppTheme.iconSmall))
                                 .foregroundColor(.secondary)
                             TextField("검색", text: $store.searchText)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 11))
-                                .frame(width: 90)  // v8.9.4: 폭 고정 축소 (140→90)
+                                .font(.system(size: AppTheme.fontBody))
+                                .frame(width: 90)
                                 .onExitCommand {
                                     store.restoreKeyFocus()
                                 }
@@ -226,14 +225,15 @@ extension ContentView {
                                     .clipShape(Capsule())
                                 Button(action: { store.searchText = "" }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
+                                        .font(.system(size: AppTheme.fontBody))
                                         .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 8)
+                        .frame(height: AppTheme.buttonHeight)
+                        .fixedSize(horizontal: true, vertical: true)
                         .background(AppTheme.toolbarButtonBg)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
@@ -270,9 +270,10 @@ extension ContentView {
                                 }
                             }
                         } label: {
-                            toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
+                            toolbarButton(icon: store.sortMode.icon, text: store.sortMode.compactLabel, color: AppTheme.accent, active: false)
                         }
-                        .help("정렬 / 파일 번호 범위 필터")
+                        .fixedSize(horizontal: true, vertical: true)
+                        .tooltip("정렬 / 파일 번호 범위 필터")
                         // v8.9.4: AI 분류 메뉴 → 클라이언트 왼쪽으로 이동 (row1)
                         // v8.9.4: 스마트 컬렉션 → 비활성화
                     }
@@ -409,7 +410,7 @@ extension ContentView {
                     }
                 }
             } label: {
-                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
+                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.compactLabel, color: AppTheme.accent, active: false)
             }
             .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
@@ -1106,9 +1107,9 @@ extension ContentView {
                 }) {
                     // v8.9.4: 카운트 숫자 오버레이 제거 (글자 작아서 확인 어려움)
                     Image(systemName: shouldFill ? "star.fill" : "star")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: AppTheme.iconSmall, weight: .semibold))
                         .foregroundColor(shouldFill ? AppTheme.starGold : Color.white.opacity(0.45))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .help("별 \(rating) 만 표시 (\(count)장) / Cmd·Shift+클릭: 다중 선택")
@@ -1129,9 +1130,9 @@ extension ContentView {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: AppTheme.pillSize)
+        .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
         .background(AppTheme.toolbarButtonBg)
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     /// 컬러라벨 필터 — Lightroom/Photo Mechanic 스타일 인라인 5색 스와치
@@ -1161,7 +1162,7 @@ extension ContentView {
                     // v8.9.4: 카운트 숫자 오버레이 제거 (글자 작아서 확인 어려움)
                     Circle()
                         .fill((label.color ?? .gray).opacity(isActive ? 1.0 : 0.45))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                         .overlay(
                             Circle().stroke(
                                 isActive ? Color.white : Color.white.opacity(0.15),
@@ -1183,9 +1184,9 @@ extension ContentView {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: AppTheme.pillSize)
+        .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
         .background(AppTheme.toolbarButtonBg)
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     /// 선택만 토글 — 체크박스 아이콘만 (텍스트 없음)
@@ -1198,7 +1199,7 @@ extension ContentView {
         }) {
             HStack(spacing: 4) {
                 Image(systemName: store.showOnlySelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: AppTheme.iconSmall, weight: .semibold))
                 Text("\(count)")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
@@ -1209,13 +1210,13 @@ extension ContentView {
                     .background(Capsule().fill(Color.black.opacity(0.45)))
             }
             .padding(.horizontal, 10)
-            .frame(height: AppTheme.pillSize)
+            .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
             .opacity(canActivate ? 1.0 : 0.5)
         }
         .buttonStyle(.plain)
         .foregroundColor(store.showOnlySelected ? .white : .primary)
         .background(store.showOnlySelected ? Color.blue.opacity(0.85) : AppTheme.toolbarButtonBg)
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .help(canActivate ? "선택한 \(count)장만 표시" : "선택된 사진 없음")
     }
 

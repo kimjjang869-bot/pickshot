@@ -50,6 +50,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
         // Initial data load
         coordinator.photos = store.filteredPhotos
+        coordinator.rebuildIndexMap()
         coordinator.photosVersion = store.photosVersion
         collectionView.reloadData()
         fputs("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n", stderr)
@@ -68,6 +69,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        let _t0 = CFAbsoluteTimeGetCurrent()
+        defer {
+            let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
+            if ms > 1 {
+                fputs("[GRID-UPDATE] \(String(format: "%.0f", ms))ms (photos=\(self.store.filteredPhotos.count))\n", stderr)
+            }
+        }
         let coordinator = context.coordinator
         guard let collectionView = coordinator.collectionView else { return }
         coordinator.store = store
@@ -94,8 +102,9 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         //   DispatchQueue.main.async 로 다음 런루프에 지연시켜 업데이트 사이클 탈출.
         let gridWidth = scrollView.frame.width - 16  // sectionInset left+right
         let cellWidth = newSize + 10 + 12  // itemWidth + interItemSpacing
-        // v8.9.4: 최대 5열로 제한 (방향키 행이동 일관성 + 패널 폭 캡과 일치)
-        let cols = max(1, min(5, Int(gridWidth / cellWidth)))
+        // v8.9.7+: 5열 cap 제거 — Bridge 스타일. 썸네일 작으면 컬럼 많이, 크면 적게.
+        //   사용자가 패널 폭을 늘리면 컬럼이 자동으로 늘어남 (이전 5열 cap 으로 막혀있던 문제).
+        let cols = max(1, Int(gridWidth / cellWidth))
         if store.actualColumnsPerRow != cols {
             DispatchQueue.main.async {
                 if store.actualColumnsPerRow != cols {
@@ -135,6 +144,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         if photosChanged {
             coordinator.isBatchUpdating = true
             coordinator.photos = newPhotos
+            coordinator.rebuildIndexMap()
             coordinator.photosVersion = store.photosVersion
             // v8.9.4: 셀 애니메이션 완전 차단 — 다른 PC (구형 GPU/macOS)에서
             //         옛 프레임 잔상이 새 프레임 위에 보이는 현상 해결.
@@ -183,7 +193,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         if coordinator.lastScrollTrigger != newScroll {
             coordinator.lastScrollTrigger = newScroll
             if let selectedID = store.selectedPhotoID,
-               let idx = coordinator.photos.firstIndex(where: { $0.id == selectedID }) {
+               let idx = coordinator.indexByID[selectedID] {
                 let indexPath = IndexPath(item: idx, section: 0)
                 let visiblePaths = collectionView.indexPathsForVisibleItems()
                 // 정확히 visible 안에 들어있으면 (가려진 일부분 셀까지 포함) scroll 호출 안 함.
@@ -191,7 +201,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 if !visiblePaths.contains(indexPath) {
                     NSAnimationContext.runAnimationGroup { ctx in
                         ctx.duration = 0  // no animation — 즉시 점프
-                        collectionView.scrollToItems(at: [indexPath], scrollPosition: .nearestHorizontalEdge)
+                        collectionView.scrollToItems(at: [indexPath], scrollPosition: .nearestVerticalEdge)
                     }
                 }
             }
@@ -199,9 +209,27 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
     }
 
     private func syncSelectionToCollectionView(coordinator: Coordinator, collectionView: NSCollectionView) {
-        let storeSelection = store.selectedPhotoIDs
+        let focusedID = store.selectedPhotoID
+        var storeSelection = store.selectedPhotoIDs
+        if let focusedID, !storeSelection.contains(focusedID) {
+            if storeSelection.count <= 1 {
+                storeSelection = [focusedID]
+            } else {
+                storeSelection.insert(focusedID)
+            }
+            DispatchQueue.main.async {
+                if self.store.selectedPhotoID == focusedID,
+                   !self.store.selectedPhotoIDs.contains(focusedID) {
+                    if self.store.selectedPhotoIDs.count <= 1 {
+                        self.store.selectedPhotoIDs = [focusedID]
+                    } else {
+                        self.store.selectedPhotoIDs.insert(focusedID)
+                    }
+                }
+            }
+        }
         let storeIndexPaths = Set(storeSelection.compactMap { id -> IndexPath? in
-            guard let idx = coordinator.photos.firstIndex(where: { $0.id == id }) else { return nil }
+            guard let idx = coordinator.indexByID[id] else { return nil }
             return IndexPath(item: idx, section: 0)
         })
 
@@ -211,16 +239,41 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             coordinator.isBatchUpdating = true
             collectionView.selectionIndexPaths = storeIndexPaths
             coordinator.isBatchUpdating = false
+            CATransaction.flush()
         }
 
-        // Refresh visible cells for focus/selection highlighting
-        for indexPath in collectionView.indexPathsForVisibleItems() {
+        let oldSelection = coordinator.lastSyncedSelection
+        let oldFocusedID = coordinator.lastSyncedFocusedID
+        coordinator.lastSyncedSelection = storeSelection
+        coordinator.lastSyncedFocusedID = focusedID
+
+        let visiblePaths = collectionView.indexPathsForVisibleItems()
+        let pathsToRefresh: Set<IndexPath>
+        let changedIDs = oldSelection.symmetricDifference(storeSelection)
+        if changedIDs.count > 24 || abs(oldSelection.count - storeSelection.count) > 24 {
+            pathsToRefresh = visiblePaths
+        } else {
+            var paths = Set(changedIDs.compactMap { id -> IndexPath? in
+                guard let idx = coordinator.indexByID[id] else { return nil }
+                return IndexPath(item: idx, section: 0)
+            })
+            if let oldFocusedID, let idx = coordinator.indexByID[oldFocusedID] {
+                paths.insert(IndexPath(item: idx, section: 0))
+            }
+            if let focusedID, let idx = coordinator.indexByID[focusedID] {
+                paths.insert(IndexPath(item: idx, section: 0))
+            }
+            pathsToRefresh = paths.intersection(visiblePaths)
+        }
+
+        // Refresh only cells whose selection/focus may have changed.
+        for indexPath in pathsToRefresh {
             if let item = collectionView.item(at: indexPath) as? ThumbnailCollectionViewItem {
                 let idx = indexPath.item
                 guard idx < coordinator.photos.count else { continue }
                 let photo = coordinator.photos[idx]
                 let isSelected = storeSelection.contains(photo.id)
-                let isFocused = store.selectedPhotoID == photo.id
+                let isFocused = focusedID == photo.id
                 item.updateSelection(isSelected: isSelected, isFocused: isFocused, isSpacePicked: photo.isSpacePicked)
             }
         }
@@ -233,6 +286,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         var collectionView: NSCollectionView?
         var scrollView: NSScrollView?
         var photos: [PhotoItem] = []
+        var indexByID: [UUID: Int] = [:]
         var photosVersion: Int = -1
         var thumbnailSize: CGFloat = 120
         var showFileExtension: Bool = true
@@ -243,6 +297,11 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         var lastRecursiveReloadAt: Date = .distantPast
         // v8.9.6: 직전 update 시점의 recursive scan 진행 상태 — 종료 직후 first update 강제 reload 용
         var wasRecursiveScanInProgress: Bool = false
+        var lastSyncedSelection: Set<UUID> = []
+        var lastSyncedFocusedID: UUID?
+        private var lastArrowMoveTime: CFAbsoluteTime = 0
+        private var lastNewDirectionKeyCode: UInt16?
+        private var lastNewDirectionTime: CFAbsoluteTime = 0
 
         init(store: PhotoStore) {
             self.store = store
@@ -250,6 +309,14 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
         deinit {
             NotificationCenter.default.removeObserver(self)
+        }
+
+        func rebuildIndexMap() {
+            indexByID.removeAll(keepingCapacity: true)
+            indexByID.reserveCapacity(photos.count)
+            for (idx, photo) in photos.enumerated() {
+                indexByID[photo.id] = idx
+            }
         }
 
         private var lastScrollY: CGFloat = 0
@@ -296,7 +363,9 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 return
             }
             let items = visible.map { $0.item }
-            let rowBuffer = max(2, min(store.actualColumnsPerRow, 8))
+            let rowBuffer = store.isRecursiveMode
+                ? max(1, min(store.actualColumnsPerRow, 3))
+                : max(2, min(store.actualColumnsPerRow, 8))
             let minIdx = max(0, (items.min() ?? 0) - rowBuffer)
             let maxIdx = min(photos.count - 1, (items.max() ?? 0) + rowBuffer)
             guard minIdx <= maxIdx, !photos.isEmpty else { return }
@@ -369,15 +438,19 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
             switch keyCode {
             case 123:
+                guard prepareArrowNavigation(event: event) else { return true }
                 store.selectLeft(shift: hasShift, cmd: hasCmd)
                 return true
             case 124:
+                guard prepareArrowNavigation(event: event) else { return true }
                 store.selectRight(shift: hasShift, cmd: hasCmd)
                 return true
             case 125:
+                guard prepareArrowNavigation(event: event) else { return true }
                 store.selectDown(shift: hasShift, cmd: hasCmd)
                 return true
             case 126:
+                guard prepareArrowNavigation(event: event) else { return true }
                 store.selectUp(shift: hasShift, cmd: hasCmd)
                 return true
             case 51, 117:
@@ -433,6 +506,37 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             return false
         }
 
+        private func prepareArrowNavigation(event: NSEvent) -> Bool {
+            let keyCode = event.keyCode
+            let now = CFAbsoluteTimeGetCurrent()
+
+            store.isKeyRepeat = event.isARepeat
+
+            if !event.isARepeat {
+                lastNewDirectionKeyCode = keyCode
+                lastNewDirectionTime = now
+            } else if let lastCode = lastNewDirectionKeyCode,
+                      lastCode != keyCode,
+                      now - lastNewDirectionTime < 0.10 {
+                return false
+            }
+
+            lastArrowMoveTime = now
+            return true
+        }
+
+        func handleKeyUp(event: NSEvent) -> Bool {
+            let arrowKeys: Set<UInt16> = [123, 124, 125, 126]
+            guard arrowKeys.contains(event.keyCode) else { return false }
+
+            let wasRepeat = store.isKeyRepeat
+            store.isKeyRepeat = false
+            if wasRepeat, let id = store.selectedPhotoID {
+                store.scheduleSelectionIdleWork(for: id, delay: 0.08)
+            }
+            return true
+        }
+
         // MARK: Context Menu
 
         func selectForContextMenu(at indexPath: IndexPath) {
@@ -444,6 +548,28 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 fputs("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n", stderr)
                 store.selectedPhotoIDs = [photo.id]
                 store.selectedPhotoID = photo.id
+                // v8.9.7+: 메뉴가 main runloop 을 잡고 있는 동안 SwiftUI 재렌더가 지연되어 파란 선택 표시가
+                //   메뉴 닫힐 때까지 안 보임. NSCollectionView 의 selectionIndexPaths 와 cell border 를
+                //   즉시 동기적으로 업데이트해서 메뉴 표시 직전에 파란색이 보이도록 강제.
+                if let cv = collectionView {
+                    cv.selectionIndexPaths = [indexPath]
+                    // CATransaction 으로 layer 변경 강제 commit. CALayer.borderColor/backgroundColor 는
+                    //   runloop end 의 implicit transaction 에서 flush 되는데, 메뉴가 그 전에 popup →
+                    //   파란 선택 표시가 안 보임. CATransaction.flush 로 즉시 commit.
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    let visiblePaths = cv.indexPathsForVisibleItems()
+                    for ip in visiblePaths {
+                        guard ip.item < photos.count else { continue }
+                        let p = photos[ip.item]
+                        if let item = cv.item(at: ip) as? ThumbnailCollectionViewItem {
+                            let isSelected = (p.id == photo.id)
+                            item.updateSelection(isSelected: isSelected, isFocused: isSelected, isSpacePicked: p.isSpacePicked)
+                        }
+                    }
+                    CATransaction.commit()
+                    CATransaction.flush()
+                }
             } else {
                 fputs("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n", stderr)
             }
@@ -732,6 +858,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
         private func handleSelectionChange(_ collectionView: NSCollectionView) {
             let selectedIndexPaths = collectionView.selectionIndexPaths
+            let oldIDs = store.selectedPhotoIDs
+            let oldFocus = store.selectedPhotoID
             var newIDs = Set<UUID>()
             var focusID: UUID? = nil
 
@@ -752,8 +880,25 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             }
 
             // Handle folder/parent folder double-click is in shouldSelectItems
-            // Update visual state for visible cells
-            for indexPath in collectionView.indexPathsForVisibleItems() {
+            // Update visual state only for changed visible cells.
+            let visiblePaths = collectionView.indexPathsForVisibleItems()
+            let changedIDs = oldIDs.symmetricDifference(newIDs)
+            var pathsToRefresh = Set(changedIDs.compactMap { id -> IndexPath? in
+                guard let idx = indexByID[id] else { return nil }
+                return IndexPath(item: idx, section: 0)
+            })
+            if let oldFocus, let idx = indexByID[oldFocus] {
+                pathsToRefresh.insert(IndexPath(item: idx, section: 0))
+            }
+            if let focusID, let idx = indexByID[focusID] {
+                pathsToRefresh.insert(IndexPath(item: idx, section: 0))
+            }
+            if pathsToRefresh.count > 24 {
+                pathsToRefresh = visiblePaths
+            } else {
+                pathsToRefresh = pathsToRefresh.intersection(visiblePaths)
+            }
+            for indexPath in pathsToRefresh {
                 if let item = collectionView.item(at: indexPath) as? ThumbnailCollectionViewItem {
                     let i = indexPath.item
                     guard i < photos.count else { continue }
@@ -763,6 +908,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                     item.updateSelection(isSelected: sel, isFocused: foc, isSpacePicked: photo.isSpacePicked)
                 }
             }
+            lastSyncedSelection = newIDs
+            lastSyncedFocusedID = store.selectedPhotoID
         }
 
         // MARK: Double click for folders
@@ -800,18 +947,29 @@ private final class ThumbnailNSCollectionView: NSCollectionView {
     // v8.9.6 fix: 다중 선택 후 우클릭하면 NSCollectionView 기본 동작이 우클릭한 셀로 단일 선택을
     //   덮어써서 "다중 선택 → 새 폴더로 이동" 시 1장만 옮겨지던 버그.
     //   우클릭 셀이 이미 multi-selection 에 있으면 super 호출 생략 → 선택 유지.
+    // v8.9.7+: 비선택 셀 우클릭 시 super 호출 이전에 selectForContextMenu + 메뉴를 직접 popup.
+    //   super 의 NSCollectionView 기본 동작은 selection 변경 + AppKit menu 호출이 비동기로 진행되어
+    //   파란색 선택 표시가 메뉴 닫힐 때까지 안 보이던 문제.
     override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
-        if let ip = indexPathForItem(at: point), selectionIndexPaths.contains(ip),
-           selectionIndexPaths.count > 1 {
-            // 멀티 선택 상태에서 그 안의 셀에 우클릭 — 선택 유지하고 menu 만 띄움
-            window?.makeFirstResponder(self)
-            if let menu = self.menu(for: event) {
+        let indexPath = indexPathForItem(at: point)
+
+        // Multi-selection 안의 셀 우클릭 → 선택 유지
+        if let ip = indexPath, selectionIndexPaths.contains(ip), selectionIndexPaths.count > 1 {
+            if let menu = thumbnailCoordinator?.buildContextMenu(for: ip) {
                 NSMenu.popUpContextMenu(menu, with: event, for: self)
             }
             return
         }
-        super.rightMouseDown(with: event)
+
+        // 단일/비선택 셀 우클릭 → 선택 + 동기 redraw + 메뉴 popup
+        if let ip = indexPath {
+            thumbnailCoordinator?.selectForContextMenu(at: ip)
+        }
+        if let menu = thumbnailCoordinator?.buildContextMenu(for: indexPath) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -821,7 +979,16 @@ private final class ThumbnailNSCollectionView: NSCollectionView {
         super.keyDown(with: event)
     }
 
+    override func keyUp(with event: NSEvent) {
+        if thumbnailCoordinator?.handleKeyUp(event: event) == true {
+            return
+        }
+        super.keyUp(with: event)
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
+        // v8.9.7+: rightMouseDown 에서 직접 popup 하므로 menu(for:) 는 호출되지 않지만
+        //   다른 경로 (Ctrl+클릭 등) 대비 fallback 유지.
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         let indexPath = indexPathForItem(at: point)

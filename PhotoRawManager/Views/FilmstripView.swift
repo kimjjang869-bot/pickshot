@@ -9,6 +9,13 @@ private struct FilmstripCellFrameKey: PreferenceKey {
     }
 }
 
+private struct FilmstripResizeHandleFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 struct FilmstripView: View {
     @EnvironmentObject var store: PhotoStore
     @AppStorage("filmstripHeight") private var filmstripHeight: Double = 120
@@ -16,6 +23,8 @@ struct FilmstripView: View {
     /// v8.6.2: Filmstrip scrollTo 쓰로틀용 (빠른 이동 시 썸네일 스크롤이 못따라오는 문제 해결)
     @State private var scrollThrottleLastFire: Date = .distantPast
     @State private var scrollTrailingWork: DispatchWorkItem?
+    @State private var isResizingFilmstrip = false
+    @State private var suppressFilmstripSelectionUntil: Date = .distantPast
 
     // v8.7: Finder 로 멀티 파일 드래그 — NSView 오버레이 대신 글로벌 이벤트 모니터 방식.
     //   SwiftUI 의 탭/선택을 방해하지 않으면서 드래그 임계값 초과 시 NSDraggingSession 개시.
@@ -72,26 +81,38 @@ struct FilmstripView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Resize handle
-            Rectangle()
-                .fill(Color.gray.opacity(0.3))
-                .frame(height: 4)
-                .frame(maxWidth: .infinity)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.gray.opacity(0.6))
-                        .frame(width: 40, height: 3)
-                )
-                .contentShape(Rectangle())
-                .gesture(DragGesture()
-                    .onChanged { value in
-                        filmstripHeight = max(80, min(300, filmstripHeight - value.translation.height))
-                    }
-                )
-                .onHover { hovering in
-                    if hovering { NSCursor.resizeUpDown.push() }
-                    else { NSCursor.pop() }
+            // v8.9.7+: 단일 resize handle — 8pt 높이 (이전 4pt 너무 얇아 잡기 힘들었음).
+            //   별도 24pt overlay 중복 핸들 제거 (cells 와 레이어 충돌 → 폭조절 시 썸네일 선택 버그).
+            ZStack {
+                Color.gray.opacity(0.3)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.gray.opacity(0.6))
+                    .frame(width: 40, height: 3)
+            }
+            .frame(height: 8)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    beginFilmstripResize()
+                    filmstripHeight = max(80, min(300, filmstripHeight - value.translation.height))
                 }
+                .onEnded { _ in
+                    endFilmstripResize()
+                }
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: FilmstripResizeHandleFrameKey.self,
+                        value: geo.frame(in: .global)
+                    )
+                }
+            )
+            .onHover { hovering in
+                if hovering { NSCursor.resizeUpDown.push() }
+                else { NSCursor.pop() }
+            }
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: true) {
@@ -100,11 +121,20 @@ struct FilmstripView: View {
                             cellRow(for: photo)
                                 .id(photo.id)
                                 .background(
-                                    GeometryReader { geo in
-                                        Color.clear.preference(
-                                            key: FilmstripCellFrameKey.self,
-                                            value: [photo.id: geo.frame(in: .global)]
-                                        )
+                                    // v8.9.7+: burst 중엔 cellFrames 수집 SKIP — GeometryReader 의 매-selection-변경
+                                    //   layout 재계산 + onPreferenceChange 폭주 차단 → 20→30fps+.
+                                    //   burst 끝나면 다음 frame 에 자동 재수집.
+                                    Group {
+                                        if !store.isFastNavigation {
+                                            GeometryReader { geo in
+                                                Color.clear.preference(
+                                                    key: FilmstripCellFrameKey.self,
+                                                    value: [photo.id: geo.frame(in: .global)]
+                                                )
+                                            }
+                                        } else {
+                                            Color.clear
+                                        }
                                     }
                                 )
                         }
@@ -122,6 +152,9 @@ struct FilmstripView: View {
                             return true
                         }
                 )
+                .allowsHitTesting(!isResizingFilmstrip)
+                // v8.9.7+: 중복 24pt overlay 드래그 핸들 제거 — cells 위에 레이어돼 폭조절 중 썸네일 선택 충돌 유발.
+                //   resize 는 위쪽 8pt 핸들만 사용.
                 .scrollIndicators(.visible)
                 .focusable()
                 .onKeyPress { press in
@@ -149,10 +182,43 @@ struct FilmstripView: View {
                 //   필름스트립은 LazyHStack 이라 scrollTo 비용 작음 (LazyVGrid 10k 와 달리 빠름).
                 .onChange(of: store.scrollTrigger) { _, _ in
                     guard let id = store.selectedPhotoID else { return }
-                    proxy.scrollTo(id, anchor: .center)
+                    // v8.9.7+: scrollTo 30fps cap — 매 nav 발사 시 LazyHStack 5000장 layout 재계산 누적 → 20fps 정체.
+                    //   33ms throttle 로 30fps 보장. trailing fire 로 마지막 위치 보장.
+                    let now = Date()
+                    if now.timeIntervalSince(scrollThrottleLastFire) >= 0.033 {
+                        scrollThrottleLastFire = now
+                        proxy.scrollTo(id, anchor: .center)
+                        scrollTrailingWork?.cancel()
+                    } else {
+                        scrollTrailingWork?.cancel()
+                        let work = DispatchWorkItem {
+                            if let lastID = store.selectedPhotoID {
+                                proxy.scrollTo(lastID, anchor: .center)
+                                scrollThrottleLastFire = Date()
+                            }
+                        }
+                        scrollTrailingWork = work
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+                    }
                 }
             }
         }
+        .onPreferenceChange(FilmstripResizeHandleFrameKey.self) { frame in
+            dragMonitor.resizeHandleFrame = frame
+        }
+    }
+
+    private func beginFilmstripResize() {
+        isResizingFilmstrip = true
+        dragMonitor.isResizeActive = true
+        suppressFilmstripSelectionUntil = .distantFuture
+    }
+
+    private func endFilmstripResize() {
+        isResizingFilmstrip = false
+        dragMonitor.isResizeActive = false
+        dragMonitor.resizeEndedAt = Date()
+        suppressFilmstripSelectionUntil = Date().addingTimeInterval(0.35)
     }
 
     // MARK: - Cell row (썸네일뷰 PhotoCellWrapper 와 동일한 드래그/드롭/컨텍스트 메뉴)
@@ -161,16 +227,19 @@ struct FilmstripView: View {
     private func cellRow(for photo: PhotoItem) -> some View {
         // 공통 탭 핸들러 — overlay 뒤에 적용해야 NSView MultiFileDragView 와 충돌하지 않음
         let tap = {
+            guard !isResizingFilmstrip,
+                  Date() >= suppressFilmstripSelectionUntil else { return }
             let clickCount = NSApp.currentEvent?.clickCount ?? 1
             if clickCount >= 2, photo.isFolder || photo.isParentFolder {
                 store.loadFolder(photo.jpgURL, restoreRatings: true)
                 return
             }
-            if photo.isFolder || photo.isParentFolder {
+            // v8.9.7+: 폴더도 단일 클릭 시 cmd/shift modifier 지원 (parentFolder 만 단일 선택).
+            let flags = NSEvent.modifierFlags
+            if photo.isParentFolder {
                 store.selectedPhotoID = photo.id
                 store.selectedPhotoIDs = [photo.id]
             } else {
-                let flags = NSEvent.modifierFlags
                 store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
             }
         }
@@ -208,6 +277,12 @@ struct FilmstripView: View {
                     return true
                 }
                 .onTapGesture(perform: tap)
+                .background(RightClickSelector {
+                    // v8.9.7+: 우클릭 시 해당 사진을 선택 — 썸네일뷰/리스트뷰와 동일 UX
+                    if !store.selectedPhotoIDs.contains(photo.id) {
+                        store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                    }
+                })
                 .contextMenu {
                     Button("Finder에서 열기") {
                         NSWorkspace.shared.open(photo.jpgURL)
@@ -232,6 +307,12 @@ struct FilmstripView: View {
                 .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
                     photo: photo, store: store, cellWidth: (filmstripHeight - 20) * 1.3
                 ))
+                .background(RightClickSelector {
+                    // v8.9.7+: 우클릭 시 해당 사진을 선택 — 썸네일뷰/리스트뷰와 동일 UX
+                    if !store.selectedPhotoIDs.contains(photo.id) {
+                        store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                    }
+                })
                 .contextMenu {
                     PhotoContextMenu(photo: photo, store: store)
                 }
@@ -534,12 +615,18 @@ final class FilmstripDragMonitor: ObservableObject {
     private var downLocation: NSPoint?
     private var downPhotoID: UUID?
     private var didStartDrag = false
+    private var suppressUntilMouseUp = false
     private let threshold: CGFloat = 6  // macOS 드래그 임계값 표준 (너무 크면 둔함)
     private weak var store: PhotoStore?
 
     /// 현재 필름스트립에 표시된 각 셀의 global(screen) frame — PreferenceKey 로 업데이트.
     /// @MainActor 에서 SwiftUI onPreferenceChange 가 세팅.
     var cellFrames: [UUID: CGRect] = [:]
+    var resizeHandleFrame: CGRect = .zero
+    var isResizeActive = false
+    /// v8.9.7+: resize 종료 후 cooldown — 마지막 resize 종료 시점부터 250ms 동안 drag 차단.
+    var resizeEndedAt: Date = .distantPast
+
 
     func install(store: PhotoStore) {
         self.store = store
@@ -565,12 +652,22 @@ final class FilmstripDragMonitor: ObservableObject {
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
+            // v8.9.7+: resize 활성 또는 종료 후 250ms 안엔 모든 drag 차단.
+            let inResizeCooldown = Date().timeIntervalSince(resizeEndedAt) < 0.25
+            if isResizeHandleEvent(event) || isResizeActive || inResizeCooldown {
+                suppressUntilMouseUp = true
+                downLocation = nil
+                downPhotoID = nil
+                didStartDrag = false
+                return
+            }
             downLocation = event.locationInWindow
             downPhotoID = photoAt(event: event)
             didStartDrag = false
             fputs("[FilmDrag] mouseDown frames=\(cellFrames.count) hit=\(downPhotoID != nil ? "YES" : "no")\n", stderr)
 
         case .leftMouseDragged:
+            guard !suppressUntilMouseUp, !isResizeActive else { return }
             guard !didStartDrag,
                   let start = downLocation,
                   let id = downPhotoID,
@@ -584,6 +681,7 @@ final class FilmstripDragMonitor: ObservableObject {
             initiateDrag(event: event, anchorPhotoID: id, store: store)
 
         case .leftMouseUp:
+            suppressUntilMouseUp = false
             downLocation = nil
             downPhotoID = nil
             didStartDrag = false
@@ -598,6 +696,24 @@ final class FilmstripDragMonitor: ObservableObject {
     /// NSEvent window.convertPoint(toScreen:) → AppKit bottom-origin
     /// → Y 축을 뒤집어서 SwiftUI 좌표계에 맞춘 후 hit test.
     private func photoAt(event: NSEvent) -> UUID? {
+        guard !isResizeHandleEvent(event) else { return nil }
+        guard let hitPoint = swiftUIGlobalPoint(for: event) else { return nil }
+        for (id, rect) in cellFrames where rect.contains(hitPoint) {
+            return id
+        }
+        return nil
+    }
+
+    private func isResizeHandleEvent(_ event: NSEvent) -> Bool {
+        guard !resizeHandleFrame.isEmpty,
+              let hitPoint = swiftUIGlobalPoint(for: event) else { return false }
+        // 실제 사용자는 4px 핸들보다 조금 위/아래 경계선을 잡고 높이를 조절한다.
+        // 이 얇은 경계 영역에서 시작한 드래그가 썸네일 셀 프레임과 겹치면 파일 드래그로 오인되므로
+        // 세로 여유를 넓게 둔다. x는 핸들이 전체 폭이라 사실상 전체 필름스트립 폭을 커버한다.
+        return resizeHandleFrame.insetBy(dx: -48, dy: -48).contains(hitPoint)
+    }
+
+    private func swiftUIGlobalPoint(for event: NSEvent) -> NSPoint? {
         guard let window = event.window else { return nil }
         let appkitScreenPt = window.convertPoint(toScreen: event.locationInWindow)
         // 이벤트가 발생한 스크린 찾기 (멀티 디스플레이 대응)
@@ -605,11 +721,7 @@ final class FilmstripDragMonitor: ObservableObject {
         guard let screenFrame = screen?.frame else { return nil }
         // AppKit (bottom-origin) → SwiftUI (top-origin) 변환
         let swiftUIY = screenFrame.origin.y + screenFrame.height - appkitScreenPt.y
-        let hitPoint = NSPoint(x: appkitScreenPt.x, y: swiftUIY)
-        for (id, rect) in cellFrames where rect.contains(hitPoint) {
-            return id
-        }
-        return nil
+        return NSPoint(x: appkitScreenPt.x, y: swiftUIY)
     }
 
     /// NSDraggingSession 시작 — 선택된 모든 파일 + JPG/RAW 쌍 포함.
@@ -701,4 +813,3 @@ final class FilmstripDragSource: NSObject, NSDraggingSource {
         return context == .outsideApplication ? .copy : .move
     }
 }
-

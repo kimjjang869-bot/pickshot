@@ -16,6 +16,9 @@ struct ContentView: View {
     @ObservedObject private var clientSelect = ClientSelectService.shared
     #if DEBUG
     @ObservedObject private var memTracker = MemoryLeakTracker.shared
+    @State private var debugStressTimer: DispatchSourceTimer?
+    @State private var debugStressStarted = false
+    @State private var debugOpenedEnvPath = false
     #endif
     @State var linkCopied = false
     @State var showGSelectQR = false
@@ -196,11 +199,10 @@ struct ContentView: View {
                     } else {
                         // Grid+Preview mode (default)
                         GeometryReader { geo in
-                            // v8.9.4: 썸네일 패널 최대 5열 분량으로 제한
-                            // cellWidth = thumbnailSize + 10(itemPad) + 12(interSpacing)
-                            // panelWidth = 5 * cellWidth + 16(sectionInset) + 14(trailing pad) + 8(safety)
-                            let maxColsW: CGFloat = 5 * (store.thumbnailSize + 22) + 38
-                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55, maxColsW))
+                            // v8.9.7+: 패널 폭은 유저 드래그(hSplitRatio)로만 결정. 썸네일 크기는 cell
+                            //   렌더링만 영향 — Bridge 스타일. 이전엔 maxColsW 로 썸네일 크기에 따라
+                            //   패널 폭이 자동 변경되어 사용자 의도와 다른 동작.
+                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.7))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
                             HStack(spacing: 0) {
                                 // Left panel
@@ -398,23 +400,12 @@ struct ContentView: View {
             .animation(.easeInOut, value: store.isClassifyingScenes)
             .animation(.easeInOut, value: store.isGroupingFaces)
         }
-        .overlay(alignment: .bottomTrailing) {
-            // Navigation Performance HUD (Cmd+Shift+D 로 토글)
+        .overlay(alignment: .topTrailing) {
+            // v8.9.7+: 통합 디버그 HUD — preview 정보 + nav perf + memory tracker 한 창에 모음.
             #if DEBUG
-            NavigationPerformanceHUD()
+            UnifiedDebugHUD()
                 .padding(.trailing, 16)
-                .padding(.bottom, 40)
-            #endif
-        }
-        .overlay(alignment: .bottomLeading) {
-            #if DEBUG
-            // v8.6.1: 메모리 누수 추적 HUD. Cmd+Shift+Option+M 또는 Cmd+Ctrl+M 로 토글.
-            // v8.9.3 fix: ObservedObject 로 관찰 — singleton 직접 참조는 SwiftUI 가 변경 감지 못함.
-            if memTracker.isTracking {
-                MemoryLeakHUD()
-                    .padding(.leading, 16)
-                    .padding(.bottom, 40)
-            }
+                .padding(.top, 60)
             #endif
         }
         .onAppear {
@@ -485,6 +476,7 @@ struct ContentView: View {
             sweeper.isScrollingProvider = { NSThumbnailCollectionView.activeCoordinator?.isScrollingNow ?? false }
             // v8.9.4: recursive scan 진행 중 sweep 차단
             sweeper.isRecursiveScanProvider = { [weak store] in store?.isRecursiveScanInProgress ?? false }
+            sweeper.isRecursiveModeProvider = { [weak store] in store?.isRecursiveMode ?? false }
             // v8.8.1: 적극 캐시 모드 바인딩
             sweeper.aggressiveModeProvider = { [weak store] in store?.aggressiveCache ?? false }
             sweeper.selectedIndexProvider = {
@@ -496,13 +488,13 @@ struct ContentView: View {
             sweeper.storeNotePreview = { [weak store] url in
                 store?.notePreviewLoaded(url: url)
             }
-            // v8.6.2: RAW+JPG 쌍에서 RAW 를 decode 소스로 사용 (JPG 20MB → NEF 1/10)
+            // 프리뷰와 동일한 소스 정책 사용.
+            // RAW+JPG 페어는 카메라 JPG 색감을 유지하고, RAW-only 항목만 RAW/embedded 경로를 탄다.
             sweeper.resolveDecodeURLProvider = { [weak store] jpgURL in
                 guard let store = store else { return nil }
                 for p in store.photos {
                     if p.jpgURL == jpgURL {
-                        if let raw = p.rawURL, raw != jpgURL { return raw }
-                        break
+                        return PreviewLoadingPolicy.previewSourceURL(for: p)
                     }
                 }
                 return nil
@@ -528,6 +520,12 @@ struct ContentView: View {
             guard let url = store.folderURL else { return }
             sweepPrepareWork?.cancel()
             let work = DispatchWorkItem {
+                guard !store.isRecursiveMode else {
+                    // 하위폴더 포함 3~4만 장에서 전체 thumbnail sweep 을 준비하면
+                    // 단일 폴더보다 훨씬 무거워진다. 재귀 모드는 보이는 셀/선택 주변 로딩만 사용한다.
+                    CacheSweeper.shared.cancel()
+                    return
+                }
                 let urls = store.photos.compactMap { p -> URL? in
                     guard !p.isFolder, !p.isParentFolder else { return nil }
                     return p.jpgURL
@@ -543,6 +541,9 @@ struct ContentView: View {
             }
             sweepPrepareWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+            #if DEBUG
+            startDebugStressDriverIfRequested()
+            #endif
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
@@ -711,6 +712,10 @@ struct ContentView: View {
             setupMouseSideButtonMonitor()
             setupCacheSweeperActivityMonitor()
             setupVisualSearchCropObserver()
+            #if DEBUG
+            scheduleDebugRecursivePathOpenIfRequested()
+            startDebugStressDriverIfRequested()
+            #endif
         }
         .onDisappear {
             teardownMouseSideButtonMonitor()
@@ -720,6 +725,115 @@ struct ContentView: View {
     }
 
     @State private var visualSearchCropObserver: NSObjectProtocol?
+
+    #if DEBUG
+    private func scheduleDebugRecursivePathOpenIfRequested() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            openDebugRecursivePathIfRequested()
+        }
+    }
+
+    private func openDebugRecursivePathIfRequested() {
+        guard !debugOpenedEnvPath else { return }
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["PICKSHOT_DEBUG_OPEN_RECURSIVE_PATH"], !path.isEmpty else { return }
+        debugOpenedEnvPath = true
+        let url = URL(fileURLWithPath: path)
+        store.startupMode = .viewer
+        store.loadPhotosRecursive(from: url)
+        fputs("[DEBUG-OPEN] recursive path=\(path)\n", stderr)
+    }
+
+    private func startDebugStressDriverIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard env["PICKSHOT_STRESS_DRIVER"] == "1" else { return }
+        guard !debugStressStarted else { return }
+
+        let selectableCount = store.photoCount
+        guard selectableCount > 0 else {
+            debugStressStarted = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                debugStressStarted = false
+                startDebugStressDriverIfRequested()
+            }
+            return
+        }
+
+        debugStressStarted = true
+
+        let pattern = env["PICKSHOT_STRESS_PATTERN"] ?? "mixed"
+        let intervalMs = max(5, min(200, Int(env["PICKSHOT_STRESS_INTERVAL_MS"] ?? "") ?? 10))
+        let durationSec = max(5, min(1800, Int(env["PICKSHOT_STRESS_DURATION_SEC"] ?? "") ?? 120))
+        let layout = env["PICKSHOT_STRESS_LAYOUT"] ?? "grid"
+
+        if layout == "filmstrip" {
+            store.setLayoutMode(.filmstrip)
+            store.showFolderBrowser = false
+        } else {
+            store.setLayoutMode(.gridPreview)
+            store.showFolderBrowser = true
+        }
+
+        let start = Date()
+        var step = 0
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+        timer.schedule(deadline: .now() + 0.3, repeating: .milliseconds(intervalMs), leeway: .milliseconds(1))
+        timer.setEventHandler {
+            DispatchQueue.main.async {
+                let elapsed = Date().timeIntervalSince(start)
+                if elapsed >= Double(durationSec) {
+                    timer.cancel()
+                    return
+                }
+                guard !store.isLoading, !store.filteredPhotos.isEmpty else { return }
+
+                store.isKeyRepeat = true
+                switch pattern {
+                case "right":
+                    store.selectRight()
+                case "row":
+                    store.selectDown()
+                case "diagonal":
+                    (step % 2 == 0) ? store.selectRight() : store.selectDown()
+                case "zigzag":
+                    let phase = step % 120
+                    if phase < 45 { store.selectRight() }
+                    else if phase < 60 { store.selectDown() }
+                    else if phase < 105 { store.selectLeft() }
+                    else { store.selectDown() }
+                default:
+                    let phase = step % 20
+                    if phase < 12 { store.selectRight() }
+                    else if phase < 15 { store.selectDown() }
+                    else if phase < 18 { store.selectLeft() }
+                    else { store.selectUp() }
+                }
+                step += 1
+
+                let logEvery = max(1, 1000 / intervalMs)
+                if step % logEvery == 0 {
+                    let rss = Int(PhotoStore.currentAppMemoryMB())
+                    let selectedName = store.selectedPhoto?.fileName ?? "-"
+                    fputs("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n", stderr)
+                }
+            }
+        }
+        timer.setCancelHandler {
+            DispatchQueue.main.async {
+                store.isKeyRepeat = false
+                if let id = store.selectedPhotoID {
+                    store.scheduleSelectionIdleWork(for: id, delay: 0.05)
+                }
+                debugStressTimer = nil
+                let rss = Int(PhotoStore.currentAppMemoryMB())
+                fputs("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n", stderr)
+            }
+        }
+        debugStressTimer = timer
+        timer.resume()
+        fputs("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n", stderr)
+    }
+    #endif
 
     private func setupVisualSearchCropObserver() {
         if visualSearchCropObserver != nil { return }

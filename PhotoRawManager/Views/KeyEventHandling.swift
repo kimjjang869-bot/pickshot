@@ -901,6 +901,9 @@ class KeyCaptureView: NSView {
     static var lastNewDirKeyTime: CFAbsoluteTime = 0
     /// v8.6.2: 행 이동(↑/↓) 최소 간격 강제용. 열 이동(←/→)은 제약 없음.
     static var lastRowMoveTime: CFAbsoluteTime = 0
+    /// v8.9.7: 키 리피트 시 실제 이동 간격(ms) 측정용.
+    static var lastNavTime: CFAbsoluteTime = 0
+    static var navIntervalSamples: [Double] = []
     var store: PhotoStore? {
         didSet { touchBarProvider.store = store }
     }
@@ -961,7 +964,7 @@ class KeyCaptureView: NSView {
         // 키 놓은 순간에 prefetch 한번만 수행 (꾹 누르기 중엔 스킵했음)
         // wasRepeat == true 면 꾹 누르기 끝 → 이제 prefetch
         if wasRepeat, let id = store?.selectedPhotoID {
-            store?.scheduleSelectionIdleWork(for: id, delay: 0.35)
+            store?.scheduleSelectionIdleWork(for: id, delay: 0.08)
         }
         super.keyUp(with: event)
     }
@@ -1347,7 +1350,12 @@ class KeyCaptureView: NSView {
         }
 
         // Arrow keys, Enter, Delete (keyCode-only)
-        store.isKeyRepeat = event.isARepeat
+        // v8.9.7: 방향 전환 시 첫 press (isARepeat=false) 도 직전 nav 가 1초 이내면 burst 로 간주.
+        //   ↓ burst → → 전환 시 첫 → 가 isKeyRepeat=false 로 들어와 200장 누적된 S1 큐가
+        //   main 으로 쏟아지며 5-30초 freeze 가 발생하던 문제 차단.
+        let nowForBurst = CFAbsoluteTimeGetCurrent()
+        let isContinuingBurst = !event.isARepeat && (nowForBurst - Self.lastNavTime) < 1.0
+        store.isKeyRepeat = event.isARepeat || isContinuingBurst
 
         // v8.6.2: 방향 전환 직후 이전 방향의 stale repeat 이벤트 drop.
         //   "↓ 꾹 누른 상태로 ← 눌렀을 때 대각선으로 한 칸 튀는" + "멈추는" 현상 해결.
@@ -1367,16 +1375,18 @@ class KeyCaptureView: NSView {
                 // 새 방향 바뀐 지 100ms 안 됐는데 다른 방향의 repeat → drop
                 return
             }
-            // v8.6.2: 행 이동 (↑/↓) 만 최소 100ms 간격 강제.
+            // v8.6.2: 행 이동 (↑/↓) 최소 간격 강제.
             //   한 번 점프에 ±cols 장 (보통 6~10장) 씩 건너뛰어 preview 로드가 따라오지 못함.
-            //   열 이동 (←/→) 은 ±1 이라 부담 적으니 그대로 진행.
-            if rowKeys.contains(keyCode) && event.isARepeat {
-                let minRowInterval: CFAbsoluteTime = 0.1  // 100ms (10 fps)
-                if now - Self.lastRowMoveTime < minRowInterval {
+            // v8.9.7: 열 이동 (←/→) 도 30ms 강제 — 너무 빨라서 (60-70ms 간격) PREFETCH-KR 가
+            //   serial 로 못 따라가고 캐시 hit 이 떨어지는 문제. ARW 썸네일 추출 ~50ms × 직렬 →
+            //   nav 가 30ms 보다 빠르면 영원히 따라잡지 못함.
+            if event.isARepeat {
+                let minInterval: CFAbsoluteTime = 0.03  // 30ms (≈33 fps)
+                if now - Self.lastRowMoveTime < minInterval {
                     return  // drop 이 repeat — 너무 빠름
                 }
                 Self.lastRowMoveTime = now
-            } else if rowKeys.contains(keyCode) {
+            } else {
                 Self.lastRowMoveTime = now  // 첫 press 는 기록만
             }
         }
@@ -1384,6 +1394,44 @@ class KeyCaptureView: NSView {
         // 영상 파일이어도 방향키는 썸네일 이동 전용 — 영상 제어는 JKL / Space 사용
         // (영상 프레임 스텝/점프는 JKL 로 충분, 방향키는 일관된 파일 탐색)
 
+        // v8.9.7: 키 리피트 이동 간격 측정 (체감 속도 진단)
+        let arrowSet: Set<UInt16> = [123, 124, 125, 126]
+        if arrowSet.contains(keyCode) {
+            let now = CFAbsoluteTimeGetCurrent()
+            if event.isARepeat && Self.lastNavTime > 0 {
+                let deltaMs = (now - Self.lastNavTime) * 1000
+                Self.navIntervalSamples.append(deltaMs)
+                let arrow: String = {
+                    switch keyCode {
+                    case 123: return "←"; case 124: return "→"
+                    case 125: return "↓"; case 126: return "↑"
+                    default: return "?"
+                    }
+                }()
+                fputs("[NAV] \(arrow) \(String(format: "%.0f", deltaMs))ms (sample #\(Self.navIntervalSamples.count))\n", stderr)
+                // 매 20개마다 요약: avg / min / max / p50 / p90
+                if Self.navIntervalSamples.count % 20 == 0 {
+                    let s = Self.navIntervalSamples.suffix(20).sorted()
+                    let avg = s.reduce(0,+) / Double(s.count)
+                    let p50 = s[s.count/2]
+                    let p90 = s[Int(Double(s.count) * 0.9)]
+                    fputs("[NAV-SUMMARY] last 20: avg=\(String(format: "%.0f", avg))ms min=\(String(format: "%.0f", s.first ?? 0))ms p50=\(String(format: "%.0f", p50))ms p90=\(String(format: "%.0f", p90))ms max=\(String(format: "%.0f", s.last ?? 0))ms\n", stderr)
+                }
+            } else if !event.isARepeat {
+                // 새 burst 시작 → 샘플 리셋
+                Self.navIntervalSamples.removeAll()
+            }
+            Self.lastNavTime = now
+        }
+
+        // v8.9.7: keyDown handler 자체 시간 측정 — main 250ms 점유 원인 추적
+        let _kdT0 = CFAbsoluteTimeGetCurrent()
+        defer {
+            if arrowSet.contains(keyCode) {
+                let kdMs = (CFAbsoluteTimeGetCurrent() - _kdT0) * 1000
+                if kdMs > 5 { fputs("[KEYDOWN-SYNC] \(String(format: "%.0f", kdMs))ms key=\(keyCode)\n", stderr) }
+            }
+        }
         switch keyCode {
         case 123: store.selectLeft(shift: hasShift, cmd: hasCmd)    // <-
         case 124: store.selectRight(shift: hasShift, cmd: hasCmd)   // ->

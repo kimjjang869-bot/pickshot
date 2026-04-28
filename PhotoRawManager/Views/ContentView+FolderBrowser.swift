@@ -934,7 +934,7 @@ struct FolderBrowserView: View {
                             VStack(spacing: 4) {
                                 Image(systemName: "folder.fill")
                                     .font(.system(size: 28))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(store.recursiveScannedFolders.contains(item.url.path) ? .yellow : .blue)
                                 Text(item.name)
                                     .font(.system(size: 10))
                                     .lineLimit(2)
@@ -1371,6 +1371,10 @@ struct FolderRowView: View {
     }
 
     private var folderColor: Color {
+        // v8.9.7+: 재귀 모드에 포함된 폴더는 노란 아이콘
+        if store.recursiveScannedFolders.contains(item.url.path) {
+            return .yellow
+        }
         if item.url.path.hasPrefix("/Volumes") && level == 0 {
             return .green
         }

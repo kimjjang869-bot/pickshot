@@ -233,7 +233,13 @@ class GoogleDriveService {
             fputs("[GDRIVE] resumable session started: \(fileName)\n", stderr)
 
             // Step 2: 파일 데이터 PUT (uploadTask로 스트리밍 — 메모리에 전체 로드 안 함)
-            var putRequest = URLRequest(url: URL(string: uploadURL)!)
+            // v9.0: 서버 응답 URL 파싱 실패 시 force unwrap 크래시 방지.
+            guard let putURL = URL(string: uploadURL) else {
+                fputs("[GDRIVE] invalid upload URL from server: \(uploadURL)\n", stderr)
+                completion(nil, NSError(domain: "GoogleDrive", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"]))
+                return
+            }
+            var putRequest = URLRequest(url: putURL)
             putRequest.httpMethod = "PUT"
             putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             putRequest.setValue(mimeType, forHTTPHeaderField: "Content-Type")

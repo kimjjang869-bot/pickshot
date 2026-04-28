@@ -123,6 +123,20 @@ struct GeneralSettingsTab: View {
                         Text("메모리카드(SD/CF) 연결 시 자동으로 백업 폴더를 묻고 복사합니다")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
+
+                        Divider()
+
+                        // v8.9.7+: 셀렉 백업 파일 (.pickshot_selection.json) 수동 불러오기
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("셀렉 백업 파일 불러오기")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("폴더 안의 .pickshot_selection.json 파일을 선택해 별점/SP/컬러라벨을 복원합니다")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Button(action: importSelectionBackup) {
+                                Label("셀렉 백업 가져오기...", systemImage: "square.and.arrow.down")
+                            }
+                        }
                     }
                     .padding(4)
                 }
@@ -136,6 +150,42 @@ struct GeneralSettingsTab: View {
             appearance = "system"; showNotifications = true; autoSaveOnExit = true
             autoBackupEnabled = false
         }
+    }
+
+    // v8.9.7+: 셀렉 백업 파일 수동 불러오기.
+    private func importSelectionBackup() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.json]
+        panel.message = ".pickshot_selection.json 파일 선택"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            NotificationCenter.default.post(name: .init("ImportSelectionBackupFailed"), object: nil)
+            return
+        }
+
+        let ratings = (json["ratings"] as? [String: Int]) ?? [:]
+        let spPicks = (json["spPicks"] as? [String: Bool]) ?? [:]
+        let colors = (json["colorLabels"] as? [String: String]) ?? [:]
+        let folderInBackup = (json["folder"] as? String) ?? ""
+
+        let alert = NSAlert()
+        alert.messageText = "셀렉 백업 가져오기"
+        alert.informativeText = "원본 폴더: \(folderInBackup)\n\n별점 \(ratings.count)개 / SP \(spPicks.count)개 / 컬러 \(colors.count)개\n\n현재 열린 폴더의 사진과 파일명이 일치하면 적용됩니다."
+        alert.addButton(withTitle: "적용")
+        alert.addButton(withTitle: "취소")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // 현재 열린 폴더의 PhotoStore 에 적용
+        NotificationCenter.default.post(
+            name: .init("ApplyImportedSelection"),
+            object: nil,
+            userInfo: ["ratings": ratings, "spPicks": spPicks, "colorLabels": colors]
+        )
     }
 }
 

@@ -13,7 +13,7 @@ import SwiftUI
 
 struct NavigationPerformanceHUD: View {
     @ObservedObject var monitor = NavigationPerformanceMonitor.shared
-    @State private var isCompact: Bool = false
+    @State private var isCompact: Bool = true
 
     @State private var flushResult: String = ""
 
@@ -30,7 +30,7 @@ struct NavigationPerformanceHUD: View {
                 }
             }
             .padding(10)
-            .frame(width: isCompact ? 300 : 440)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.black.opacity(0.88))

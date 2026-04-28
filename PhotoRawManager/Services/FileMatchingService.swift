@@ -221,8 +221,10 @@ struct FileMatchingService {
                 var totalCount: Int = 0
             }
             let state = CollectorState()
-            let flushIntervalMs: Double = isSlowDisk ? 600 : 400
-            let flushSizeThreshold = isSlowDisk ? 500 : 400
+            // 대량 재귀 스캔은 main reload/정렬 비용이 병목이 되므로 조금 크게 묶는다.
+            // 첫 배치는 timer 로 곧 올라오고, 이후에는 단일 폴더와 비슷하게 viewport 로딩이 우선된다.
+            let flushIntervalMs: Double = isSlowDisk ? 900 : 700
+            let flushSizeThreshold = isSlowDisk ? 1200 : 1600
 
             // 항상 collectorQueue 위에서만 호출.
             func _doFlushOnQueue(force: Bool) {
@@ -334,7 +336,7 @@ struct FileMatchingService {
             enumOptions.insert(.skipsSubdirectoryDescendants)
         }
         // 파일 크기/날짜를 enumerator에서 한번에 가져와 stat() 중복 제거
-        let prefetchKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
+        let prefetchKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
         guard let enumerator = fileManager.enumerator(
             at: folderURL,
             includingPropertiesForKeys: Array(prefetchKeys),
@@ -356,8 +358,14 @@ struct FileMatchingService {
         var otherFiles: [String: URL] = [:]
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let rv = try? fileURL.resourceValues(forKeys: prefetchKeys),
-                  rv.isRegularFile == true else { continue }
+            guard let rv = try? fileURL.resourceValues(forKeys: prefetchKeys) else { continue }
+            if recursive, rv.isDirectory == true {
+                if shouldSkipRecursiveDirectory(fileURL) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+            guard rv.isRegularFile == true else { continue }
 
             let baseName = fileURL.deletingPathExtension().lastPathComponent.lowercased()
             let info = FileInfo(
@@ -500,6 +508,19 @@ struct FileMatchingService {
         result.insert(contentsOf: folderItems, at: 0)
 
         return result
+    }
+
+    private static func shouldSkipRecursiveDirectory(_ url: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        if name.hasSuffix(".lrdata")
+            || name.hasSuffix(".lrcat-data")
+            || name.hasSuffix(".photoslibrary")
+            || name.hasSuffix(".aplibrary")
+            || name.hasSuffix(".photolibrary")
+            || name.hasSuffix(".app") {
+            return true
+        }
+        return false
     }
 }
 

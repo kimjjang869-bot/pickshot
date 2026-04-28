@@ -10,9 +10,10 @@ extension PhotoStore {
         selectionIdleWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self,
-                  !self.isKeyRepeat,
+                  !self.isFastNavigation,
                   self.selectedPhotoID == photoID else { return }
 
+            NotificationCenter.default.post(name: .pickShotSelectionSettled, object: photoID)
             self.scheduleNavigationIdlePrefetch(delay: 0.0)
             self.reverseGeocodeIfNeeded(for: photoID)
         }
@@ -23,18 +24,19 @@ extension PhotoStore {
     func scheduleNavigationIdlePrefetch(delay: TimeInterval = 0.45) {
         prefetchWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, !self.isKeyRepeat else { return }
+            guard let self = self, !self.isFastNavigation else { return }
             self.prefetchNearbyThumbnails()
         }
         prefetchWorkItem = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
+        let effectiveDelay = isRecursiveMode ? max(delay, 0.25) : delay
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + effectiveDelay, execute: work)
     }
 
     func prefetchNearbyThumbnails() {
         // FRV식: 방향키/클릭 반응이 먼저다. 주변 썸네일은 사용자가 잠깐 멈춘 뒤 보수적으로 채운다.
         prefetchWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, let id = self.selectedPhotoID, !self.isKeyRepeat else { return }
+            guard let self = self, let id = self.selectedPhotoID, !self.isFastNavigation else { return }
             let list = self.filteredPhotos
             self.ensureFilteredIndex()
             guard let idx = self._filteredIndex[id] else { return }
@@ -43,6 +45,9 @@ extension PhotoStore {
             // 하드웨어 끝까지 쓰지 않고 약 20% 여유를 남기도록 tier별 범위/동시성을 제한한다.
             // ThumbnailLoader 우회: 내부 lock/queue 경합 회피 + 풀 디코드 방지
             let radius: Int = {
+                if self.isRecursiveMode {
+                    return ThumbnailLoader.shared.isSlowDisk ? 2 : 3
+                }
                 switch SystemSpec.shared.effectiveTier {
                 case .low: return 6
                 case .standard: return 8
@@ -67,10 +72,11 @@ extension PhotoStore {
             //   직접 CGImageSourceCreateThumbnailAtIndex 호출 시 NEF 등 RAW 의 EXIF orientation
             //   이 적용 안 돼서 세로 사진이 가로로 캐시되는 버그 발생. generateThumbnailSync 는
             //   내부에서 extractThumbnailFast 를 통해 orientation 을 정확히 처리.
-            let concurrency = max(1, min(2, SystemSpec.shared.ssdThumbnailConcurrency()))
+            let concurrency = self.isRecursiveMode ? 1 : max(1, min(2, SystemSpec.shared.ssdThumbnailConcurrency()))
             let semaphore = DispatchSemaphore(value: concurrency)
             let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .utility, attributes: .concurrent)
-            for url in toLoad.prefix(radius * 2) {
+            let limit = self.isRecursiveMode ? min(4, radius * 2) : radius * 2
+            for url in toLoad.prefix(limit) {
                 concurrentQueue.async {
                     semaphore.wait()
                     defer { semaphore.signal() }
@@ -90,7 +96,8 @@ extension PhotoStore {
             }
         }
         prefetchWorkItem = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.05, execute: work)
+        let delay: TimeInterval = isRecursiveMode ? 0.18 : 0.05
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Lazy-load RAW EXIF when a photo is selected (not at folder load time)
@@ -212,6 +219,7 @@ extension PhotoStore {
 
     /// 목록뷰 전환 시 전체 EXIF 배치 로딩
     func triggerListExifLoad() {
+        guard !isRecursiveMode else { return }
         let needExif = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }.count
         fputs("[EXIF] triggerListExifLoad: need=\(needExif), version=\(photosVersion), last=\(lastExifLoadVersion)\n", stderr)
         guard lastExifLoadVersion != photosVersion else { return }
@@ -221,6 +229,11 @@ extension PhotoStore {
     }
 
     func preloadAllThumbnails() {
+        guard !isRecursiveMode else {
+            thumbsTotal = photos.count
+            thumbsLoaded = thumbsTotal
+            return
+        }
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
         thumbsTotal = list.count
         thumbsLoaded = thumbsTotal
@@ -241,9 +254,15 @@ extension PhotoStore {
         // 외장 HDD 는 NCQ 활용으로 100장 유지
         let isNetwork = ThumbnailLoader.shared.isNetworkMode
         let radius: Int
-        if isNetwork { radius = 30 }       // NAS: 현재 화면 주변만 prewarm
-        else if isSlow { radius = 100 }    // 외장 HDD
-        else { radius = 40 }               // SSD
+        if fastCullingMode || isRecursiveScanInProgress {
+            // 빠른 셀렉/대량 재귀 스캔 직후에는 보이는 주변만 얇게 채운다.
+            // 전체 성능을 다 쓰지 않고 입력/스크롤 여유를 남기는 보수적 기본값.
+            if isNetwork { radius = 10 }
+            else if isSlow { radius = 24 }
+            else { radius = 18 }
+        } else if isNetwork { radius = 30 }       // NAS: 현재 화면 주변만 prewarm
+        else if isSlow { radius = 100 }           // 외장 HDD
+        else { radius = 40 }                      // SSD
         let start = max(0, currentIdx - radius)
         let end = min(list.count, currentIdx + radius)
         guard start < end else { return }
@@ -254,7 +273,9 @@ extension PhotoStore {
         // HDD: prewarming concurrency 2로 제한 — visible 로딩(ThumbnailLoader 6-way)과 디스크 경합 최소화
         // (HDD에서 동시 8+ way seek은 NCQ 한계 초과 → 모두 느려짐)
         // SSD: tier 기반 (low=2, standard=3, high=4)
-        let concurrency = isSlow ? 2 : SystemSpec.shared.ssdThumbnailConcurrency()
+        let concurrency = (fastCullingMode || isRecursiveScanInProgress)
+            ? 1
+            : (isSlow ? 2 : SystemSpec.shared.ssdThumbnailConcurrency())
         let sem = DispatchSemaphore(value: concurrency)
         let concurrentQueue = DispatchQueue(label: "preview.thumb.prewarm", qos: .utility, attributes: .concurrent)
         for url in urls {
@@ -276,6 +297,7 @@ extension PhotoStore {
     }
 
     func startIdlePreviewPrefetch() {
+        guard !fastCullingMode, !isRecursiveScanInProgress, !isRecursiveMode else { return }
         idlePrefetchGeneration += 1
         let gen = idlePrefetchGeneration
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
@@ -319,7 +341,7 @@ extension PhotoStore {
                         guard self?.idlePrefetchGeneration == gen else { return }
                         let photo = list[sorted[i]]
                         let url = photo.jpgURL
-                        let cacheKey = url.appendingPathExtension("orig")
+                        let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: 0, sourceURL: url)
 
                         // 이미 캐시에 있으면 스킵
                         if PreviewImageCache.shared.get(cacheKey) != nil { return }

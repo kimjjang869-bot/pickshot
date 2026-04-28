@@ -172,10 +172,10 @@ final class SystemSpec {
     /// hiResCache 총 비용(MB).
     func hiResCacheCostMB() -> Int {
         switch effectiveTier {
-        case .low:      return 160
-        case .standard: return 320
-        case .high:     return 560
-        case .extreme:  return 900
+        case .low:      return 128
+        case .standard: return 256
+        case .high:     return 420
+        case .extreme:  return 640
         }
     }
 
@@ -192,10 +192,31 @@ final class SystemSpec {
     /// ThumbnailCache L1(ThumbnailGridView.swift) MB
     func thumbnailCacheMB() -> Int {
         switch effectiveTier {
-        case .low:      return 80
-        case .standard: return 120
-        case .high:     return 240
-        case .extreme:  return 400
+        case .low:      return 64
+        case .standard: return 96
+        case .high:     return 180
+        case .extreme:  return 320
+        }
+    }
+
+    /// PreviewImageCache RAM budget (MB). Stage1/Stage2 캐시는 재방문 즉시성만 담당하고,
+    /// HiRes/thumbnail 캐시와 겹치지 않도록 작게 유지한다.
+    func previewImageCacheMB() -> Int {
+        switch effectiveTier {
+        case .low:      return 96
+        case .standard: return 160
+        case .high:     return 280
+        case .extreme:  return 420
+        }
+    }
+
+    /// PreviewImageCache entry cap. 큰 RAW 프리뷰가 몇 장만 쌓여도 체감 메모리가 커져서 보수적으로 제한한다.
+    func previewImageCacheEntries() -> Int {
+        switch effectiveTier {
+        case .low:      return 3
+        case .standard: return 5
+        case .high:     return 7
+        case .extreme:  return 9
         }
     }
 

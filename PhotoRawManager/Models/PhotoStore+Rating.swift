@@ -196,16 +196,62 @@ extension PhotoStore {
                 let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
                 XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.sp)
             }
+
+            // v8.9.7+: 폴더에 직접 JSON 백업 — UserDefaults 손상/마이그레이션 대비 2중 백업.
+            //   .pickshot_selection.json 으로 폴더 안에 저장. 셀렉 변경 시마다 갱신.
+            let backupURL = URL(fileURLWithPath: folderPath).appendingPathComponent(".pickshot_selection.json")
+            let payload: [String: Any] = [
+                "version": 1,
+                "savedAt": ISO8601DateFormatter().string(from: Date()),
+                "folder": folderPath,
+                "ratings": ratings,
+                "spPicks": spPicks,
+                "colorLabels": colorLabels
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: backupURL, options: .atomic)
+                // Finder/iCloud 백업 제외 + macOS 자동 정리 대상
+                var url = backupURL
+                var rv = URLResourceValues()
+                rv.isExcludedFromBackup = true
+                try? url.setResourceValues(rv)
+                fputs("[BACKUP] selection saved \(ratings.count) ratings, \(spPicks.count) SP, \(colorLabels.count) colors → \(backupURL.lastPathComponent)\n", stderr)
+            }
         }
     }
 
+    /// v8.9.7+: 폴더의 .pickshot_selection.json 백업에서 셀렉 정보 복구.
+    ///   UserDefaults 가 비어있을 때만 fallback 으로 사용. 우선순위: UserDefaults > JSON 백업.
+    func loadSelectionBackup() -> (ratings: [String: Int], spPicks: [String: Bool], colors: [String: String])? {
+        guard let folderPath = folderURL?.path else { return nil }
+        let backupURL = URL(fileURLWithPath: folderPath).appendingPathComponent(".pickshot_selection.json")
+        guard let data = try? Data(contentsOf: backupURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let ratings = (json["ratings"] as? [String: Int]) ?? [:]
+        let spPicks = (json["spPicks"] as? [String: Bool]) ?? [:]
+        let colors = (json["colorLabels"] as? [String: String]) ?? [:]
+        fputs("[BACKUP] loaded from JSON \(ratings.count) ratings, \(spPicks.count) SP, \(colors.count) colors\n", stderr)
+        return (ratings, spPicks, colors)
+    }
+
     func applySavedRatings() {
-        let savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
+        var savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
         let folderPath = folderURL?.path ?? ""
         let allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]]
         let allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]]
-        let savedSP = allSP?[folderPath]
-        let savedColors = allColors?[folderPath]
+        var savedSP = allSP?[folderPath]
+        var savedColors = allColors?[folderPath]
+
+        // v8.9.7+: UserDefaults 가 비어있으면 JSON 백업에서 복구 (마이그레이션/손상 대응).
+        if (savedRatings?.isEmpty ?? true) && (savedSP?.isEmpty ?? true) && (savedColors?.isEmpty ?? true) {
+            if let backup = loadSelectionBackup() {
+                if !backup.ratings.isEmpty { savedRatings = backup.ratings }
+                if !backup.spPicks.isEmpty { savedSP = backup.spPicks }
+                if !backup.colors.isEmpty { savedColors = backup.colors }
+                fputs("[RESTORE] UserDefaults 비어있음 → JSON 백업에서 복구\n", stderr)
+            }
+        }
 
         fputs("[RESTORE] folder=\(folderURL?.lastPathComponent ?? "nil"), ratings=\(savedRatings?.count ?? 0), SP=\(savedSP?.count ?? 0), colors=\(savedColors?.count ?? 0)\n", stderr)
 

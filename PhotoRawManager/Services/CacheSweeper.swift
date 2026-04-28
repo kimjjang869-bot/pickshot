@@ -33,6 +33,7 @@ final class CacheSweeper: ObservableObject {
     private var pendingPreviews: [URL] = []
     private var currentFolder: URL?
     private let sweepLock = NSLock()
+    var recursiveModeActive: Bool = false
 
     // MARK: - 설정
     private let idleThresholdFast: TimeInterval = 2.0
@@ -63,6 +64,8 @@ final class CacheSweeper: ObservableObject {
     /// v8.9.4: recursive scan 진행 중 여부 (PhotoStore.isRecursiveScanInProgress).
     ///   true 면 sweep 완전 중단 + 재시작 금지.
     var isRecursiveScanProvider: (() -> Bool)?
+    /// 하위폴더 포함 모드 여부. 완료 후에도 전체 폴더 sweep 대신 viewport 로딩만 사용한다.
+    var isRecursiveModeProvider: (() -> Bool)?
     /// 현재 선택된 사진 인덱스 (0-based, photos 배열 내에서).
     var selectedIndexProvider: (() -> Int?)?
     /// 미리보기 카운트 업데이트 콜백 (CacheProgressGauge 연동). main thread 외에서도 호출 안전해야 함.
@@ -103,6 +106,16 @@ final class CacheSweeper: ObservableObject {
 
     /// 폴더 로드 완료 시 호출. sweep 대상 재구성.
     func prepareForFolder(url: URL, photos: [URL]) {
+        if recursiveModeActive || (isRecursiveModeProvider?() ?? false) {
+            sweepLock.lock()
+            currentFolder = nil
+            pendingThumbnails.removeAll()
+            pendingPreviews.removeAll()
+            sweepLock.unlock()
+            cancel()
+            fputs("[SWEEP] skipped recursive folder \(url.lastPathComponent): viewport-only loading\n", stderr)
+            return
+        }
         sweepLock.lock()
         currentFolder = url
         // 썸네일: 디스크 캐시 miss 인 것만 대상
@@ -154,7 +167,9 @@ final class CacheSweeper: ObservableObject {
     private func startSweepIfIdle() {
         // v8.8.1 fix: main thread 에서 호출 보장 (Timer fire = main, 이외 경로도 main 으로 통일).
         //   race 방지를 위해 isSweeping 체크 + 설정을 같은 tick 에 동기 처리.
-        assert(Thread.isMainThread, "startSweepIfIdle must run on main")
+        // v9.0: assert → dispatchPrecondition (Release 빌드에서도 활성).
+        //   비-main 호출 시 sweepWork 중복 실행 → swift_deallocClassInstance 크래시 위험.
+        dispatchPrecondition(condition: .onQueue(.main))
 
         let aggressive = aggressiveModeProvider?() ?? false
         let scrolling = isScrollingProvider?() ?? false
@@ -332,7 +347,8 @@ final class CacheSweeper: ObservableObject {
                 if let work = sweepWork, work.isCancelled { break }
                 // 적극 모드면 busy 체크 스킵 (캐시 빌드 우선)
                 if !aggressive, bust?() ?? false { break }
-                let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
+                let decodeURL = resolveDecodeURL?(url) ?? url
+                let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: res, sourceURL: decodeURL)
                 if PreviewImageCache.shared.has(cacheKey) {
                     previewsSkipped += 1
                     // v8.8.1 fix: 이미 캐시된 항목도 진행률에 반영 (이전 세션 잔존 캐시 / 뷰가 선로드한 것 포함).
@@ -343,8 +359,6 @@ final class CacheSweeper: ObservableObject {
 
                 opQueue.addOperation {
                     autoreleasepool {
-                        // RAW+JPG 쌍이면 RAW 임베디드 프리뷰로 디코드 (JPG 20MB → 1/10)
-                        let decodeURL = resolveDecodeURL?(url) ?? url
                         if let img = PreviewImageCache.loadOptimized(url: decodeURL, maxPixel: maxPx) {
                             PreviewImageCache.shared.set(cacheKey, image: img)
                             notePreview?(url)

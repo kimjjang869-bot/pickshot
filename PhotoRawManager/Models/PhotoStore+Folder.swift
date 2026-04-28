@@ -153,6 +153,7 @@ extension PhotoStore {
         }
 
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
+        CacheSweeper.shared.recursiveModeActive = false
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         // 이전 폴더의 pending save를 먼저 플러시 (폴더 바뀌기 전 현재 폴더 경로로 저장)
@@ -161,6 +162,12 @@ extension PhotoStore {
         // 이전 폴더 로딩/프리페치 취소 + 미리보기 캐시 비움
         ThumbnailLoader.shared.cancelAll()
         PreviewImageCache.shared.clearCache()
+        // v8.9.7+: 폴더 변경 시 즉시 InitialPreviewGenerator 취소.
+        //   다른 폴더 가서 진행 중이면 작업 중단. 다시 돌아오면 DiskThumbnailCache 체크로 자동 재개.
+        InitialPreviewGenerator.shared.cancel()
+        // v8.9.7+: 재귀 모드 set 도 초기화 (폴더 트리 노란 표시 해제).
+        recursiveRootPath = nil
+        recursiveScannedFolders = []
         idlePrefetchGeneration += 1  // 이전 프리페치 취소
         thumbsGeneration += 1
         thumbsLoaded = 0
@@ -291,15 +298,37 @@ extension PhotoStore {
                 // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
                 let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
                 DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
+                    guard self?.folderURL == url, self?.isRecursiveMode == false else { return }
                     self?.preloadAllThumbnails()
+                }
+                // v8.9.7+: Lightroom 식 초기 미리보기 사전 생성 (옵트인). burst 100% cache hit 목표.
+                //   대용량 폴더 (>10000) 또는 재귀 모드는 스파이크 위험 → SKIP.
+                let autoInit = UserDefaults.standard.bool(forKey: "autoInitialPreview")
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay + 0.5) { [weak self] in
+                    guard let self,
+                          self.folderURL == url,
+                          autoInit,
+                          !self.isRecursiveMode,
+                          self.photos.count <= 10000
+                    else { return }
+                    let urls = self.photos.compactMap { p -> URL? in
+                        (p.isFolder || p.isParentFolder) ? nil : p.jpgURL
+                    }
+                    InitialPreviewGenerator.shared.start(urls: urls)
                 }
                 // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard self?.folderURL == url,
+                          self?.fastCullingMode == false,
+                          self?.isRecursiveMode == false else { return }
                     let count = self?.viewMode == .list ? 200 : 50
                     self?.batchLoadExif(count: count)
                 }
                 // 아이들 시 고화질 미리보기 프리캐싱 (3초 후 시작)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    guard self?.folderURL == url,
+                          self?.fastCullingMode == false,
+                          self?.isRecursiveMode == false else { return }
                     self?.startIdlePreviewPrefetch()
                 }
             }
@@ -320,7 +349,11 @@ extension PhotoStore {
         // v8.9.4: scan generation +1 → 옛 onBatch callback 모두 폐기
         recursiveScanGeneration &+= 1
         let myGen = recursiveScanGeneration
+        recursiveScanUIFlushWork?.cancel()
+        recursiveScanUIFlushWork = nil
+        recursiveScanLastUIFlush = 0
         isRecursiveScanInProgress = true
+        CacheSweeper.shared.recursiveModeActive = true
 
         // v8.9.4: 모든 진행 중 캐싱/프리패치 작업 강제 중단
         ThumbnailLoader.shared.cancelPending()
@@ -328,6 +361,8 @@ extension PhotoStore {
         ThumbnailLoader.shared.setActiveURLs([])
         PreviewImageCache.shared.clearCache()
         CacheSweeper.shared.cancel()
+        // v8.9.7+: 재귀 모드 진입 시 InitialPreviewGenerator 즉시 취소.
+        InitialPreviewGenerator.shared.cancel()
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
@@ -339,6 +374,9 @@ extension PhotoStore {
 
         folderURL = url
         isRecursiveMode = true
+        // v8.9.7+: 재귀 루트 + 하위 폴더 경로 set 초기화 (폴더 트리 노란 표시용).
+        recursiveRootPath = url.path
+        recursiveScannedFolders = [url.path]
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.saveLastFolder()
@@ -402,7 +440,7 @@ extension PhotoStore {
                     return
                 }
                 fputs("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n", stderr)
-                self.photos.append(contentsOf: batch)
+                self.appendRecursiveScanBatch(batch, forceFlush: !firstSelectionMade)
                 // 첫 배치 직후 첫 사진 자동 선택 (1회만)
                 if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
                     firstSelectionMade = true
@@ -420,17 +458,12 @@ extension PhotoStore {
                 let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
                 AppLogger.log(.folder, "Recursive scan (streaming): \(photoCount) photos in \(String(format: "%.1f", phase1Elapsed))ms")
 
+                self.flushRecursiveScanUI(final: true)
+                CacheSweeper.shared.cancel()
                 self.isLoading = false
                 self.loadingStatus = ""
                 self.isRecursiveScanInProgress = false   // ← prewarming/sweep 해금
                 self.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
-
-                // v8.9.6 fix: 하위폴더 포함 모드에서 정렬이 시각적으로 반영 안 되던 문제.
-                //   NSThumbnailCollectionView 가 isRecursiveScanInProgress 동안 250ms throttle
-                //   걸어서, 마지막 batch (또는 throttle 윈도우 안의 batch들) 의 정렬 결과가
-                //   reloadData 되지 않고 묻혔다. throttle 해제된 지금 photosVersion 한 번 더
-                //   bump 해서 최종 정렬 상태를 강제 반영.
-                self.invalidateFilterCache()
 
                 // v8.9.4: prewarming 은 scan 끝나고 + 사용자 idle 일 때만.
                 //   slow disk 는 더 오래 양보. 적극 모드면 짧게.
@@ -447,6 +480,63 @@ extension PhotoStore {
                 }
             }
         )
+    }
+
+    private func appendRecursiveScanBatch(_ batch: [PhotoItem], forceFlush: Bool) {
+        isRecursiveMode = true
+        CacheSweeper.shared.recursiveModeActive = true
+        _suppressDidSet = true
+        photos.append(contentsOf: batch)
+        _suppressDidSet = false
+        // v8.9.7+: 배치 내 사진들이 속한 부모 폴더 경로를 set 에 추가 — 폴더 트리 노란 표시.
+        var newDirs: Set<String> = []
+        for p in batch {
+            let dir = p.jpgURL.deletingLastPathComponent().path
+            if !recursiveScannedFolders.contains(dir) {
+                newDirs.insert(dir)
+            }
+        }
+        if !newDirs.isEmpty {
+            recursiveScannedFolders.formUnion(newDirs)
+        }
+        scheduleRecursiveScanUIFlush(force: forceFlush)
+    }
+
+    private func scheduleRecursiveScanUIFlush(force: Bool) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let minInterval: CFAbsoluteTime = currentFolderIsSlowDisk ? 1.0 : 0.7
+        if force || recursiveScanLastUIFlush == 0 || (now - recursiveScanLastUIFlush) >= minInterval {
+            flushRecursiveScanUI(final: false)
+            return
+        }
+
+        recursiveScanUIFlushWork?.cancel()
+        let delay = max(0.05, minInterval - (now - recursiveScanLastUIFlush))
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushRecursiveScanUI(final: false)
+        }
+        recursiveScanUIFlushWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func flushRecursiveScanUI(final: Bool) {
+        recursiveScanUIFlushWork?.cancel()
+        recursiveScanUIFlushWork = nil
+        recursiveScanLastUIFlush = CFAbsoluteTimeGetCurrent()
+        if isRecursiveScanInProgress || final {
+            isRecursiveMode = true
+            CacheSweeper.shared.recursiveModeActive = true
+        }
+
+        // 하위폴더 포함에서는 batch 수가 많아 photos.didSet 전체 작업을 매번 돌리면
+        // 3~4만 장 기준 정렬/필터/폴더용량 계산이 UI를 누른다. 스캔 중에는
+        // 목록 갱신만 주기적으로 발행하고, 비싼 정리는 완료 시 한 번만 수행한다.
+        invalidateFilterCache()
+        rebuildIndex()
+        if final {
+            updateFolderSizeCache()
+            pruneStaleSelections()
+        }
     }
 
     /// 재귀 모드 해제 — 현재 폴더만 다시 로드

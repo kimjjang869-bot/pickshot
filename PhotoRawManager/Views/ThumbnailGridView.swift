@@ -995,7 +995,7 @@ struct LazyThumbnailWrapper: View, Equatable {
         } else if photo.isFolder {
             // Subfolder item — 미리보기 사진 4장 or 폴더 아이콘
             VStack(spacing: 4) {
-                if store.showFolderPreview {
+                if store.showFolderPreview && !store.isRecursiveMode {
                     FolderPreviewGrid(folderURL: photo.jpgURL, size: size)
                 } else {
                     ZStack {
@@ -2458,7 +2458,7 @@ class ThumbnailCache {
 
     /// v8.6.1: 메모리 압박 시 cost/count 상한 절반으로 축소 (즉시 evict 유도).
     func reduceCacheLimit() {
-        cache.totalCostLimit = max(cache.totalCostLimit / 2, 256 * 1024 * 1024)  // 최소 256MB
+        cache.totalCostLimit = max(cache.totalCostLimit / 2, 64 * 1024 * 1024)  // 최소 64MB
         cache.countLimit = max(cache.countLimit / 2, 500)
     }
 
@@ -3012,9 +3012,11 @@ class ThumbnailLoader {
                             fputs("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n", stderr)
                         }
                     }
-                    if isRAW {
+                    #if DEBUG
+                    if isRAW && ProcessInfo.processInfo.environment["PICKSHOT_THUMB_ORIENT_LOG"] == "1" {
                         fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
                     }
+                    #endif
 
                     // 1) EXIF orientation 5-8 (LibRaw 또는 ImageIO 가 알려준): 명시적 회전 정보 → 적용
                     if isRAW && (resolvedOrientation >= 5 && resolvedOrientation <= 8) {
@@ -3256,8 +3258,9 @@ class ThumbnailLoader {
         var bestSize = 0
 
         for offset in offsets {
-            let end = min(offset + 1_500_000, data.count)
-            let subData = data.subdata(in: offset..<end)
+            guard let jpegRange = completeJPEGRange(in: data, from: offset, maxLength: 1_500_000),
+                  jpegRange.count > 4_096 else { continue }
+            let subData = data.subdata(in: jpegRange)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
@@ -3277,6 +3280,23 @@ class ThumbnailLoader {
         }
 
         return bestImage
+    }
+
+    private static func completeJPEGRange(in data: Data, from offset: Int, maxLength: Int) -> Range<Int>? {
+        guard offset >= 0, offset + 3 < data.count,
+              data[offset] == 0xFF, data[offset + 1] == 0xD8 else { return nil }
+
+        let endLimit = min(offset + maxLength, data.count)
+        guard endLimit - offset > 4 else { return nil }
+
+        var cursor = offset + 2
+        while cursor + 1 < endLimit {
+            if data[cursor] == 0xFF, data[cursor + 1] == 0xD9 {
+                return offset..<(cursor + 2)
+            }
+            cursor += 1
+        }
+        return nil
     }
 }
 
@@ -3821,14 +3841,15 @@ class TileDocumentView: NSView {
     @objc func scrollChanged() {
         updateVisibleTiles()
 
-        // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
-        // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
+        // 스크롤 멈춤 감지 debounce → visible 주변만 prefetch
+        // 대량 재귀 폴더는 스크롤/선택 즉시성을 위해 더 늦고 작게 채운다.
         scrollPrefetchWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.prefetchAroundVisible()
         }
         scrollPrefetchWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+        let delay: TimeInterval = photos.count > 10_000 ? 0.18 : 0.08
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3838,8 +3859,9 @@ class TileDocumentView: NSView {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
         let visibleRect = scrollView.documentVisibleRect
 
-        // HDD에서도 적극적 prefetch (concurrency 4와 함께 동작) — 사용자가 스크롤 직후 회색 placeholder 보지 않도록
-        let margin = ThumbnailLoader.shared.isSlowDisk ? 4 : 5
+        // 대량 재귀 폴더에서는 보이는 범위를 벗어난 디코드를 최소화한다.
+        let isHugeFolder = photos.count > 10_000
+        let margin = isHugeFolder ? 1 : (ThumbnailLoader.shared.isSlowDisk ? 4 : 5)
         let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
         let totalRows = (photos.count + cols - 1) / cols
         let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)

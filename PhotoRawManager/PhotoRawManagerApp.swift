@@ -3,6 +3,25 @@ import UniformTypeIdentifiers
 
 @main
 struct PhotoRawManagerApp: App {
+    #if DEBUG
+    static var stallTimer: DispatchSourceTimer?
+    static var stallLastFire: CFAbsoluteTime = 0
+    static func startMainRunloopStallDetector() {
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + 0.5, repeating: .milliseconds(16), leeway: .milliseconds(2))
+        stallLastFire = CFAbsoluteTimeGetCurrent()
+        t.setEventHandler {
+            let now = CFAbsoluteTimeGetCurrent()
+            let gapMs = (now - stallLastFire) * 1000
+            stallLastFire = now
+            if gapMs > 30 {
+                fputs("[STALL] main runloop blocked \(String(format: "%.0f", gapMs))ms\n", stderr)
+            }
+        }
+        t.resume()
+        stallTimer = t
+    }
+    #endif
     @StateObject private var store = PhotoStore()
     @ObservedObject private var updateService = UpdateService.shared
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
@@ -26,6 +45,12 @@ struct PhotoRawManagerApp: App {
         // 스크롤바 항상 표시 / 툴팁 속도 (가벼운 UserDefaults — init 유지)
         UserDefaults.standard.set("Always", forKey: "AppleShowScrollBars")
         UserDefaults.standard.set(500, forKey: "NSInitialToolTipDelay")
+
+        #if DEBUG
+        // v8.9.7: main runloop stall 감지 — 16ms 마다 main 으로 dispatch, 이전 fire 와의 간격이
+        //   30ms 이상이면 stall 로 간주하고 로그. burst 동안 main thread 가 무엇으로 차단되는지 추적.
+        Self.startMainRunloopStallDetector()
+        #endif
 
         // 무거운 부트스트랩(SystemSpec warm-up, 캐시 invalidate, 트라이얼 체크) 은
         // init 에서 빼고 .task 로 이동 → init 중 _assertionFailure 위험 영역 축소.

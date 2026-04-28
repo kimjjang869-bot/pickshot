@@ -48,6 +48,25 @@ enum SortMode: String, CaseIterable {
         case .customOrder: return "hand.draw"
         }
     }
+
+    /// v8.9.7+: 툴바 표시용 짧은 라벨 — 별점/검색 버튼과 폭 통일.
+    /// 메뉴 안에선 풀 라벨(rawValue) 사용.
+    var compactLabel: String {
+        switch self {
+        case .dateAsc: return "오래된순"
+        case .dateDesc: return "최신순"
+        case .nameAsc: return "이름↑"
+        case .nameDesc: return "이름↓"
+        case .ratingDesc: return "별점↑"
+        case .ratingAsc: return "별점↓"
+        case .spacePickFirst: return "셀렉 우선"
+        case .sizeDesc: return "크기↑"
+        case .sizeAsc: return "크기↓"
+        case .extensionSort: return "확장자"
+        case .cameraSort: return "카메라"
+        case .customOrder: return "수동"
+        }
+    }
 }
 
 enum QualityFilter: String, CaseIterable {
@@ -166,10 +185,17 @@ class PhotoStore: ObservableObject {
     @Published var cachedFolderSizeText: String = ""
     @Published var selectedPhotoID: UUID? {
         didSet {
+            if let id = selectedPhotoID, !selectedPhotoIDs.contains(id) {
+                if selectedPhotoIDs.count <= 1 {
+                    selectedPhotoIDs = [id]
+                } else {
+                    selectedPhotoIDs.insert(id)
+                }
+            }
             // 키 꾹 누르기 중에는 prefetch 스킵 — 매 이동마다 60장 concurrent async 를 큐에 쌓으면
             // 키 놓았을 때 수천 개 작업이 한꺼번에 실행되며 10초+ 렉 발생
             // 키가 떨어진 순간에 마지막 한 번만 prefetch (디바운스 1초)
-            if isKeyRepeat {
+            if isFastNavigation {
                 // 연속 이동 중: 이전 예약만 취소하고 새로 예약하지 않음
                 prefetchWorkItem?.cancel()
                 selectionIdleWorkItem?.cancel()
@@ -188,6 +214,11 @@ class PhotoStore: ObservableObject {
     var scrollAnchor: UnitPoint = .bottom
     /// true when key is held down (OS key repeat), false for actual press
     var isKeyRepeat: Bool = false
+    /// true for very fast repeated taps. Treat like key-repeat for preview/EXIF scheduling.
+    var isNavigationBurst: Bool = false
+    var isFastNavigation: Bool { isKeyRepeat || isNavigationBurst }
+    static var lastNavigationMoveTime: CFAbsoluteTime = 0
+    static var navigationBurstWork: DispatchWorkItem?
     /// Cmd+X 로 잘라낸 사진 ID — 썸네일 흐리게 표시용 (paste 완료 시 clear)
     @Published var pendingCutPhotoIDs: Set<UUID> = []
     /// v8.9: 연사 베스트 선별 다이얼로그 표시 토글
@@ -300,6 +331,8 @@ class PhotoStore: ObservableObject {
     //   generation 은 새 recursive scan 시작마다 +1 → 옛 onBatch callback 폐기.
     //   isRecursiveScanInProgress 는 sweep/preload/exif 작업 차단용.
     var recursiveScanGeneration: UInt64 = 0
+    var recursiveScanUIFlushWork: DispatchWorkItem?
+    var recursiveScanLastUIFlush: CFAbsoluteTime = 0
     @Published var isRecursiveScanInProgress: Bool = false
     @Published var qualityFilter: QualityFilter = .all { didSet { invalidateFilterCache() } }
     @Published var isAnalyzing = false
@@ -620,6 +653,10 @@ class PhotoStore: ObservableObject {
     @Published var showFolderBrowser: Bool = true
     /// 하위 폴더 포함 모드 활성화 여부
     @Published var isRecursiveMode: Bool = false
+    /// v8.9.7+: 재귀 모드에 포함된 하위 폴더 경로 set — 폴더 트리에서 노란 아이콘 표시용.
+    @Published var recursiveScannedFolders: Set<String> = []
+    /// 재귀 모드 루트 폴더 경로 (이것 자체도 노란 표시).
+    @Published var recursiveRootPath: String? = nil
     @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
@@ -711,9 +748,44 @@ class PhotoStore: ObservableObject {
     let folderWatcher = FolderWatcherService()
     var folderReloadWork: DispatchWorkItem?
 
+    private func migrateLegacySelectionDefaultsIfNeeded() {
+        let legacySuiteNames = [
+            "com.pickshot.PhotoRawManager",
+            "PhotoRawManager"
+        ]
+
+        func dictionaryIsMissingOrEmpty(_ key: String) -> Bool {
+            guard let dict = defaults.dictionary(forKey: key) else { return true }
+            return dict.isEmpty
+        }
+
+        let dictKeys = [
+            ratingsKey,
+            "folderSpacePicks",
+            "folderColorLabels"
+        ]
+
+        var migratedKeys: [String] = []
+        for suiteName in legacySuiteNames {
+            guard let legacy = UserDefaults(suiteName: suiteName) else { continue }
+            for key in dictKeys where dictionaryIsMissingOrEmpty(key) {
+                guard let legacyDict = legacy.dictionary(forKey: key),
+                      !legacyDict.isEmpty else { continue }
+                defaults.set(legacyDict, forKey: key)
+                migratedKeys.append("\(suiteName):\(key)")
+            }
+        }
+
+        if !migratedKeys.isEmpty {
+            defaults.synchronize()
+            AppLogger.log(.general, "Migrated legacy selection defaults: \(migratedKeys.joined(separator: ", "))")
+        }
+    }
+
     init() {
         // 첫 실행 시 시스템 사양 기반 자동 최적화
         autoOptimizeOnFirstLaunch()
+        migrateLegacySelectionDefaultsIfNeeded()
 
         // Restore layout mode
         if let savedLayout = defaults.string(forKey: layoutModeKey),
@@ -733,6 +805,31 @@ class PhotoStore: ObservableObject {
         ) { [weak self] note in
             guard let url = note.object as? URL else { return }
             self?.noteThumbCacheInserted(url: url)
+        }
+
+        // v8.9.7+: 설정에서 셀렉 백업 가져오기 → 현재 폴더 사진에 적용 (파일명 매치).
+        NotificationCenter.default.addObserver(
+            forName: .init("ApplyImportedSelection"), object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let info = note.userInfo,
+                  let ratings = info["ratings"] as? [String: Int],
+                  let spPicks = info["spPicks"] as? [String: Bool],
+                  let colors = info["colorLabels"] as? [String: String]
+            else { return }
+            var applied = (rating: 0, sp: 0, color: 0)
+            for i in 0..<self.photos.count {
+                let name = self.photos[i].fileName
+                if let r = ratings[name] { self.photos[i].rating = r; applied.rating += 1 }
+                if spPicks[name] == true { self.photos[i].isSpacePicked = true; applied.sp += 1 }
+                if let c = colors[name], let cl = ColorLabel(rawValue: c) {
+                    self.photos[i].colorLabel = cl
+                    applied.color += 1
+                }
+            }
+            self.invalidateFilterCache()
+            self.saveRatings()
+            fputs("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n", stderr)
         }
 
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제

@@ -74,6 +74,22 @@ class DiskThumbnailCache {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
+        // v8.9.7+: 더 작은 이미지로 큰 이미지 덮어쓰기 차단 (픽셀 기준, NSImage.size point 단위 회피).
+        let newMax: Int = {
+            if let rep = image.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
+            return max(Int(image.size.width), Int(image.size.height))
+        }()
+        if let existing = getByPath(url: url) {
+            let existingMax: Int = {
+                if let rep = existing.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
+                return max(Int(existing.size.width), Int(existing.size.height))
+            }()
+            if existingMax > newMax {
+                fputs("[DiskThumbCache] SKIP write — existing \(existingMax)px > new \(newMax)px\n", stderr)
+                return
+            }
+        }
+
         guard let jpegData = jpegData(from: image) else { return }
         let dataSize = Int64(jpegData.count)
 
@@ -109,11 +125,21 @@ class DiskThumbnailCache {
     }
 
     /// Delete entire cache directory
+    /// v9.0: lock 분리 — I/O (외장 NAS 수백 ms) 를 lock 밖에서 수행해 다른 get()/set() 직렬화 방지.
     func clearAll() {
         lock.lock()
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        accessTime.removeAll()
+        fileIndex.removeAll()
+        fileIndexBuilt = false
+        _trackedSize = 0
+        let dir = cacheDir
         lock.unlock()
+
+        let fm = FileManager.default
+        if (try? fm.removeItem(at: dir)) == nil {
+            fputs("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n", stderr)
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
     /// Fast NAS lookup: find any cached thumbnail for this file path (ignores modDate).
@@ -233,19 +259,25 @@ class DiskThumbnailCache {
 
     /// LRU eviction: remove oldest files until under maxCacheBytes
     /// 메모리 기반 accessTime을 참조하여 최근 사용 파일은 보존
+    /// v9.0: lock 점유 시간 최소화 — accessTime snapshot 만 lock 안에서, I/O 는 lock 밖.
+    ///   이전엔 lock 점유한 채 enumerator + removeItem N회 → 수천장 폴더에서 수백 ms freeze.
     private func evictIfNeeded() {
+        // 1) lock 안에서 accessTime snapshot + maxCacheBytes 만 읽기
         lock.lock()
-        defer {
-            _evictionInProgress = false
-            lock.unlock()
-        }
+        let accessSnapshot = accessTime
+        let maxBytes = maxCacheBytes
+        lock.unlock()
 
+        // 2) lock 밖에서 디렉토리 스캔 (수십~수백 ms 소요)
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: cacheDir,
             includingPropertiesForKeys: [.fileSizeKey],
             options: [.skipsHiddenFiles]
-        ) else { return }
+        ) else {
+            lock.lock(); _evictionInProgress = false; lock.unlock()
+            return
+        }
 
         struct CacheEntry {
             let url: URL
@@ -260,26 +292,39 @@ class DiskThumbnailCache {
         for case let fileURL as URL in enumerator {
             let size = Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             let name = (fileURL.lastPathComponent as NSString).deletingPathExtension
-            let lastAccess = accessTime[name] ?? 0
+            let lastAccess = accessSnapshot[name] ?? 0
             entries.append(CacheEntry(url: fileURL, size: size, key: name, lastAccess: lastAccess))
             totalSize += size
         }
 
-        guard totalSize > maxCacheBytes else { return }
+        guard totalSize > maxBytes else {
+            lock.lock(); _evictionInProgress = false; _trackedSize = totalSize; lock.unlock()
+            return
+        }
 
         // 메모리 LRU 카운터 오름차순 (0=미접근이 가장 먼저 삭제)
         entries.sort { $0.lastAccess < $1.lastAccess }
 
+        // 3) lock 밖에서 removeItem 수행 — 삭제된 키 목록만 모아둠
         var evicted: Int64 = 0
+        var removedKeys: [String] = []
         for entry in entries {
-            guard totalSize > maxCacheBytes else { break }
+            guard totalSize > maxBytes else { break }
             try? fm.removeItem(at: entry.url)
             totalSize -= entry.size
             evicted += entry.size
-            accessTime.removeValue(forKey: entry.key)
+            removedKeys.append(entry.key)
+        }
+
+        // 4) lock 안에서 상태만 업데이트
+        lock.lock()
+        for key in removedKeys {
+            accessTime.removeValue(forKey: key)
         }
         if evicted > 0 {
             _trackedSize = totalSize
         }
+        _evictionInProgress = false
+        lock.unlock()
     }
 }

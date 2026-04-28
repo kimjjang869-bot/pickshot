@@ -68,7 +68,7 @@ enum PreviewPipeline {
                 context.onDisplayImage(fast)
             }
 
-            if !stagePlan.needsStage2 || context.fastCullingMode {
+            if !stagePlan.needsStage2 || context.fastCullingMode || context.isKeyRepeat {
                 let s1Ms = (CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000
                 PreviewImageCache.shared.setIfSlow(context.cacheKey, image: fast, decodeMs: s1Ms, force: true)
                 context.notePreviewLoaded(context.url)
@@ -123,7 +123,15 @@ enum PreviewPipeline {
         guard let fast = PreviewImageCache.loadOptimized(
             url: context.decodeURL,
             maxPixel: min(stagePlan.stage1MaxPixel, stagePlan.finalMaxPixel)
-        ) else { return }
+        ) else {
+            // v9.0: RAW 디코드 실패 (손상/지원 안되는 포맷/권한 등) — 무음 return 대신 로그.
+            //   notePreviewLoaded 호출해 카운터는 진행하고 (deadlock 방지) stderr 로그 남김.
+            fputs("[LD] RAW-FAIL \(context.fileName) — decode failed (corrupted/unsupported)\n", stderr)
+            DispatchQueue.main.async {
+                context.notePreviewLoaded(context.url)
+            }
+            return
+        }
         guard context.isCurrent() else { return }
 
         let ms1 = Int((CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000)
@@ -140,8 +148,8 @@ enum PreviewPipeline {
         context.notePreviewLoaded(context.url)
 
         guard context.isCurrent() else { return }
-        if context.currentFolderIsSlowDisk {
-            fputs("[LD] RAW-S2 SKIP (slow disk) \(context.fileName)\n", stderr)
+        if context.isKeyRepeat {
+            fputs("[LD] RAW-S2 SKIP (key repeat) \(context.fileName)\n", stderr)
             PreviewImageCache.shared.set(context.cacheKey, image: fast)
             return
         }

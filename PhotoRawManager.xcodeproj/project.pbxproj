@@ -138,6 +138,7 @@
 		NIKONADPT10001 /* NikonCameraAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = NIKONADPT10002 /* NikonCameraAdapter.swift */; };
 		NP10001 /* NavigationPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10002 /* NavigationPerformanceMonitor.swift */; };
 		NP10003 /* NavigationPerformanceHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = NP10004 /* NavigationPerformanceHUD.swift */; };
+		DH10001 /* DebugHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH10002 /* DebugHUD.swift */; };
 		NR10001 /* NASOptimizedReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = NR10002 /* NASOptimizedReader.swift */; };
 		NSCV10002 /* NSCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = NSCV10001 /* NSCropView.swift */; };
 		NTLV10002 /* NativeTableListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = NTLV10001 /* NativeTableListView.swift */; };
@@ -345,6 +346,7 @@
 		NIKONADPT10002 /* NikonCameraAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NikonCameraAdapter.swift; sourceTree = "<group>"; };
 		NP10002 /* NavigationPerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceMonitor.swift; path = PhotoRawManager/Services/NavigationPerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
 		NP10004 /* NavigationPerformanceHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceHUD.swift; path = PhotoRawManager/Views/NavigationPerformanceHUD.swift; sourceTree = SOURCE_ROOT; };
+		DH10002 /* DebugHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DebugHUD.swift; path = PhotoRawManager/Views/DebugHUD.swift; sourceTree = SOURCE_ROOT; };
 		NR10002 /* NASOptimizedReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
 		NSCV10001 /* NSCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCropView.swift; sourceTree = "<group>"; };
 		NTLV10001 /* NativeTableListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTableListView.swift; sourceTree = "<group>"; };
@@ -668,6 +670,7 @@
 				CPO10002 /* ClientPenOverlayView.swift */,
 				NP10002 /* NavigationPerformanceMonitor.swift */,
 				NP10004 /* NavigationPerformanceHUD.swift */,
+				DH10002 /* DebugHUD.swift */,
 				MG10002 /* MemoryGuardService.swift */,
 				DEV10003 /* DevelopStore.swift */,
 				DEV10005 /* DevelopPipeline.swift */,
@@ -1002,6 +1005,7 @@
 				CPO10001 /* ClientPenOverlayView.swift in Sources */,
 				NP10001 /* NavigationPerformanceMonitor.swift in Sources */,
 				NP10003 /* NavigationPerformanceHUD.swift in Sources */,
+				DH10001 /* DebugHUD.swift in Sources */,
 				MG10001 /* MemoryGuardService.swift in Sources */,
 				DEV10002 /* DevelopSettings.swift in Sources */,
 				DEV10004 /* DevelopStore.swift in Sources */,
@@ -1136,7 +1140,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1153,7 +1157,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.6;
+				MARKETING_VERSION = 9.0.0;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
@@ -1173,7 +1177,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1190,7 +1194,7 @@
 					"$(SRCROOT)/PhotoRawManager/Services",
 					/opt/homebrew/lib,
 				);
-				MARKETING_VERSION = 8.9.6;
+				MARKETING_VERSION = 9.0.0;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;

@@ -234,7 +234,9 @@ final class BurstPickerService {
             var rgba = [UInt8](repeating: 0, count: 4)
             let ctx = ciContext
             ctx.render(out, toBitmap: &rgba, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-            brightness = Double(rgba[0] + rgba[1] + rgba[2]) / (3.0 * 255.0)
+            // v9.0: UInt8 합산 overflow 방지 — 각 채널 Double 변환 후 합산.
+            //   이전: Double(rgba[0] + rgba[1] + rgba[2]) → 255+255+255=765 = UInt8 overflow → arithmetic overflow 크래시.
+            brightness = (Double(rgba[0]) + Double(rgba[1]) + Double(rgba[2])) / (3.0 * 255.0)
         }
         let brightDiff = abs(brightness - 0.5)
         let exposure = max(0, 1.0 - brightDiff * 3.0)
