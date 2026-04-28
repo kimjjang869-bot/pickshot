@@ -20,13 +20,10 @@ struct VideoPlayerView: View {
             AVPlayerLayerView(player: manager.player)
                 .background(Color.black)
 
-            // 컨트롤바 오버레이
-            if showControls || isHovering || isScrubbing {
-                VStack {
-                    Spacer()
-                    controlBar
-                        .transition(.opacity)
-                }
+            // 컨트롤바 오버레이 — v8.8.1: 항상 표시 (사용자 요청)
+            VStack {
+                Spacer()
+                controlBar
             }
 
             // JKL 속도 오버레이 — 배속 표시 (x1/x2/x3/x4, 역재생 포함)
@@ -48,29 +45,18 @@ struct VideoPlayerView: View {
         }
         .onAppear {
             manager.loadVideo(url: url)
-            scheduleHideControls()
         }
         .onDisappear {
-            hideTimer?.cancel()
-            hideTimer = nil
             manager.pause()
         }
-        .onChange(of: url) { newURL in
+        .onChange(of: url) { _, newURL in
             manager.loadVideo(url: newURL)
-            showControls = true
-            scheduleHideControls()
         }
         .onHover { hovering in
             isHovering = hovering
-            if hovering {
-                showControls = true
-                scheduleHideControls()
-            }
         }
         .onTapGesture {
             manager.togglePlayPause()
-            showControls = true
-            scheduleHideControls()
         }
     }
 
@@ -561,20 +547,6 @@ struct VideoPlayerView: View {
         manager.applyLUTFromFile(lut)
     }
 
-    // MARK: - 컨트롤 자동 숨기기
-
-    private func scheduleHideControls() {
-        hideTimer?.cancel()
-        let work = DispatchWorkItem {
-            if manager.isPlaying && !isHovering && !isScrubbing {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    showControls = false
-                }
-            }
-        }
-        hideTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
-    }
 }
 
 // MARK: - AVPlayerLayer NSView 래퍼

@@ -93,7 +93,11 @@ struct ImageCorrectionService {
 
         // 1. Auto Horizon — Vision 프레임워크
         if options.autoHorizon {
-            let handler = VNImageRequestHandler(ciImage: image, options: [:])
+            // v8.6.1: EXIF orientation 을 handler 에 전달 (이전엔 []로 전달되어 세로 사진에서
+            // 수평선 감지가 90° 틀어지는 버그). CGImagePropertyOrientation(rawValue:) 로 변환.
+            let exifOri = originalImage.properties[kCGImagePropertyOrientation as String] as? Int ?? 1
+            let orientation = CGImagePropertyOrientation(rawValue: UInt32(exifOri)) ?? .up
+            let handler = VNImageRequestHandler(ciImage: image, orientation: orientation, options: [:])
             let horizonRequest = VNDetectHorizonRequest()
             do {
                 try handler.perform([horizonRequest])
@@ -233,7 +237,10 @@ struct ImageCorrectionService {
             }
 
             // 3b. 얼굴 영역 밝기 측정 → 어두우면 노출 보정
-            let faceHandler = VNImageRequestHandler(ciImage: image, options: [:])
+            // v8.6.1: orientation 전달 (세로 사진 얼굴 감지 정확도 개선)
+            let exifOri2 = originalImage.properties[kCGImagePropertyOrientation as String] as? Int ?? 1
+            let faceOrient = CGImagePropertyOrientation(rawValue: UInt32(exifOri2)) ?? .up
+            let faceHandler = VNImageRequestHandler(ciImage: image, orientation: faceOrient, options: [:])
             let faceRequest = VNDetectFaceRectanglesRequest()
             try? faceHandler.perform([faceRequest])
 

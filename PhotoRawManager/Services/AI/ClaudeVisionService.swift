@@ -595,8 +595,10 @@ struct ClaudeVisionService {
                 }
             }
 
+            // v8.6.3: Swift 6 대비 — results.count 를 MainActor 밖에서 스냅샷 후 전달
+            let count = results.count
             await MainActor.run {
-                progress(results.count, total)  // 성공한 것만 카운트
+                progress(count, total)  // 성공한 것만 카운트
             }
         }
 

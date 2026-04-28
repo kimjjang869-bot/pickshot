@@ -91,7 +91,6 @@ extension PhotoStore {
             }
             rebuildIndex()
             _suppressDidSet = false
-            photosVersion += 1
             invalidateFilterCache()
 
             // 복원된 사진 선택
@@ -164,14 +163,15 @@ extension PhotoStore {
         var ratings: [String: Int] = [:]
         var spPicks: [String: Bool] = [:]
         var colorLabels: [String: String] = [:]
-        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel)] = []
+        // v8.6.1: SP 상태도 XMP 에 반영 (이전엔 spacePicked: false 하드코딩으로 XMP 에 안 나감)
+        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel, sp: Bool)] = []
         xmpSnapshot.reserveCapacity(photos.count)
         for photo in photos {
             if photo.rating > 0 { ratings[photo.fileName] = photo.rating }
             if photo.isSpacePicked { spPicks[photo.fileName] = true }
             if photo.colorLabel != .none { colorLabels[photo.fileName] = photo.colorLabel.rawValue }
-            if photo.rating > 0 || photo.colorLabel != .none {
-                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel))
+            if photo.rating > 0 || photo.colorLabel != .none || photo.isSpacePicked {
+                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel, photo.isSpacePicked))
             }
         }
 
@@ -194,18 +194,64 @@ extension PhotoStore {
             // XMP 사이드카
             for item in xmpSnapshot {
                 let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
-                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: false)
+                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.sp)
+            }
+
+            // v8.9.7+: 폴더에 직접 JSON 백업 — UserDefaults 손상/마이그레이션 대비 2중 백업.
+            //   .pickshot_selection.json 으로 폴더 안에 저장. 셀렉 변경 시마다 갱신.
+            let backupURL = URL(fileURLWithPath: folderPath).appendingPathComponent(".pickshot_selection.json")
+            let payload: [String: Any] = [
+                "version": 1,
+                "savedAt": ISO8601DateFormatter().string(from: Date()),
+                "folder": folderPath,
+                "ratings": ratings,
+                "spPicks": spPicks,
+                "colorLabels": colorLabels
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: backupURL, options: .atomic)
+                // Finder/iCloud 백업 제외 + macOS 자동 정리 대상
+                var url = backupURL
+                var rv = URLResourceValues()
+                rv.isExcludedFromBackup = true
+                try? url.setResourceValues(rv)
+                fputs("[BACKUP] selection saved \(ratings.count) ratings, \(spPicks.count) SP, \(colorLabels.count) colors → \(backupURL.lastPathComponent)\n", stderr)
             }
         }
     }
 
+    /// v8.9.7+: 폴더의 .pickshot_selection.json 백업에서 셀렉 정보 복구.
+    ///   UserDefaults 가 비어있을 때만 fallback 으로 사용. 우선순위: UserDefaults > JSON 백업.
+    func loadSelectionBackup() -> (ratings: [String: Int], spPicks: [String: Bool], colors: [String: String])? {
+        guard let folderPath = folderURL?.path else { return nil }
+        let backupURL = URL(fileURLWithPath: folderPath).appendingPathComponent(".pickshot_selection.json")
+        guard let data = try? Data(contentsOf: backupURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let ratings = (json["ratings"] as? [String: Int]) ?? [:]
+        let spPicks = (json["spPicks"] as? [String: Bool]) ?? [:]
+        let colors = (json["colorLabels"] as? [String: String]) ?? [:]
+        fputs("[BACKUP] loaded from JSON \(ratings.count) ratings, \(spPicks.count) SP, \(colors.count) colors\n", stderr)
+        return (ratings, spPicks, colors)
+    }
+
     func applySavedRatings() {
-        let savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
+        var savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
         let folderPath = folderURL?.path ?? ""
         let allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]]
         let allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]]
-        let savedSP = allSP?[folderPath]
-        let savedColors = allColors?[folderPath]
+        var savedSP = allSP?[folderPath]
+        var savedColors = allColors?[folderPath]
+
+        // v8.9.7+: UserDefaults 가 비어있으면 JSON 백업에서 복구 (마이그레이션/손상 대응).
+        if (savedRatings?.isEmpty ?? true) && (savedSP?.isEmpty ?? true) && (savedColors?.isEmpty ?? true) {
+            if let backup = loadSelectionBackup() {
+                if !backup.ratings.isEmpty { savedRatings = backup.ratings }
+                if !backup.spPicks.isEmpty { savedSP = backup.spPicks }
+                if !backup.colors.isEmpty { savedColors = backup.colors }
+                fputs("[RESTORE] UserDefaults 비어있음 → JSON 백업에서 복구\n", stderr)
+            }
+        }
 
         fputs("[RESTORE] folder=\(folderURL?.lastPathComponent ?? "nil"), ratings=\(savedRatings?.count ?? 0), SP=\(savedSP?.count ?? 0), colors=\(savedColors?.count ?? 0)\n", stderr)
 
@@ -268,63 +314,176 @@ extension PhotoStore {
 
     func setColorLabel(_ label: ColorLabel, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
-        photos[i].colorLabel = (photos[i].colorLabel == label) ? .none : label
+        let anchorIdx = captureSelectionAnchorIndex()
+        let target: ColorLabel = (photos[i].colorLabel == label) ? .none : label
+        photos[i].colorLabel = target
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습용 이벤트 기록
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .colorLabel,
+            payload: target.rawValue
+        )
     }
 
     func setColorLabelForSelected(_ label: ColorLabel) {
+        // v8.6.1: undo 등록 추가 (다른 벌크 작업과 일관성). 이전엔 누락돼 Cmd+Z 불가.
+        pushUndo(action: "일괄 컬러라벨 변경", photoIDs: selectedPhotoIDs)
+        // v8.8.2: 토글 동작 — 선택 전부가 이미 해당 라벨이면 해제(.none), 아니면 전부 라벨 적용.
+        let allHaveLabel = selectedPhotoIDs.allSatisfy { id in
+            guard let i = _photoIndex[id], i < photos.count else { return false }
+            return photos[i].colorLabel == label
+        }
+        let target: ColorLabel = allHaveLabel ? .none : label
+        let anchorIdx = captureSelectionAnchorIndex()
+        let affectedIDs = selectedPhotoIDs  // 기록용 스냅샷
         _suppressDidSet = true
         for id in selectedPhotoIDs {
-            if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = label }
+            if let i = _photoIndex[id], i < photos.count { photos[i].colorLabel = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습 DB 기록 (벌크) — 뿌리 데이터 유실 방지.
+        recordBulkEvent(ids: affectedIDs, kind: .colorLabel, payload: target.rawValue)
     }
 
     func toggleSpacePick(for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         pushUndo(action: "SP 토글", photoIDs: [photoID])
         photos[i].isSpacePicked.toggle()
+        let newValue = photos[i].isSpacePicked
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .spacePick,
+            payload: newValue ? "true" : "false"
+        )
     }
 
     func toggleSpacePickForSelected() {
         pushUndo(action: "일괄 SP 토글", photoIDs: selectedPhotoIDs)
+        let affectedIDs = selectedPhotoIDs
         _suppressDidSet = true
         for id in selectedPhotoIDs {
             if let i = _photoIndex[id] { photos[i].isSpacePicked.toggle() }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        // 벌크 SP 토글 — 개별 최종 상태 기록
+        for id in affectedIDs {
+            guard let i = _photoIndex[id], i < photos.count else { continue }
+            SelectionEventStore.shared.record(
+                photoUUID: id.uuidString,
+                photoPath: photos[i].jpgURL.path,
+                folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+                kind: .spacePick,
+                payload: photos[i].isSpacePicked ? "true" : "false"
+            )
+        }
+    }
+
+    /// v8.9: 벌크 이벤트 기록 헬퍼 — affectedIDs 전체를 동일 payload 로 일괄 append.
+    private func recordBulkEvent(ids: Set<UUID>, kind: SelectionEventKind, payload: String?) {
+        for id in ids {
+            guard let i = _photoIndex[id], i < photos.count else { continue }
+            SelectionEventStore.shared.record(
+                photoUUID: id.uuidString,
+                photoPath: photos[i].jpgURL.path,
+                folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+                kind: kind,
+                payload: payload
+            )
+        }
     }
 
     func setRatingForSelected(_ rating: Int) {
         pushUndo(action: "일괄 별점 변경", photoIDs: selectedPhotoIDs)
+        // v8.8.2: 토글 동작 — 선택 전부가 이미 해당 별점이면 0 으로 해제, 아니면 전부 해당 별점.
+        let allHaveRating = selectedPhotoIDs.allSatisfy { id in
+            guard let i = _photoIndex[id], i < photos.count else { return false }
+            return photos[i].rating == rating
+        }
+        let target = allHaveRating ? 0 : rating
+        let anchorIdx = captureSelectionAnchorIndex()
+        let affectedIDs = selectedPhotoIDs
         _suppressDidSet = true
         for id in selectedPhotoIDs {
-            if let i = _photoIndex[id] { photos[i].rating = rating }
+            if let i = _photoIndex[id] { photos[i].rating = target }
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습 DB 기록 (벌크 별점)
+        recordBulkEvent(ids: affectedIDs, kind: .rated, payload: "\(target)")
     }
 
     func setRating(_ rating: Int, for photoID: UUID) {
         guard let i = idx(photoID) else { return }
         AppLogger.log(.rating, "setRating: \(photos[i].fileName) → \(rating) (was \(photos[i].rating))")
         pushUndo(action: "별점 변경", photoIDs: [photoID])
-        photos[i].rating = (photos[i].rating == rating) ? 0 : rating
+        let anchorIdx = captureSelectionAnchorIndex()
+        let targetRating = (photos[i].rating == rating) ? 0 : rating
+        photos[i].rating = targetRating
         invalidateFilterCache()
-        photosVersion += 1
         saveRatings()
+        advanceSelectionAfterMutation(fromAnchor: anchorIdx)
+        // v8.9: 학습용 이벤트 기록
+        SelectionEventStore.shared.record(
+            photoUUID: photoID.uuidString,
+            photoPath: photos[i].jpgURL.path,
+            folderPath: photos[i].jpgURL.deletingLastPathComponent().path,
+            kind: .rated,
+            payload: "\(targetRating)"
+        )
+    }
+
+    /// v8.8.3: 선택된 마지막 사진이 현재 filteredPhotos 에서 어느 위치(인덱스)인지 기록.
+    ///   rating 변경으로 필터에서 빠지기 전에 호출해둬야 다음 선택 대상을 정확히 찾음.
+    private func captureSelectionAnchorIndex() -> Int? {
+        let visibleFiles = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        guard !visibleFiles.isEmpty else { return nil }
+        // 포커스 된 selectedPhotoID 우선, 없으면 selectedPhotoIDs 중 하나.
+        let anchorID = selectedPhotoID ?? selectedPhotoIDs.first
+        guard let id = anchorID else { return nil }
+        return visibleFiles.firstIndex(where: { $0.id == id })
+    }
+
+    /// v8.8.3: rating/color 변경 후 호출. 기존 선택이 현재 필터에서 사라졌다면
+    ///   앵커 위치의 다음 썸네일로 자동 이동. 더 이상 보일 게 없으면 필터를 All 로 리셋.
+    private func advanceSelectionAfterMutation(fromAnchor anchor: Int?) {
+        let visibleFiles = filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }
+        let visibleIDs = Set(visibleFiles.map { $0.id })
+
+        // 숨어버린 선택 제거
+        let hidden = selectedPhotoIDs.subtracting(visibleIDs)
+        if !hidden.isEmpty { selectedPhotoIDs.subtract(hidden) }
+        if let sid = selectedPhotoID, !visibleIDs.contains(sid) { selectedPhotoID = nil }
+
+        // 선택이 여전히 살아 있으면 종료
+        if !selectedPhotoIDs.isEmpty { return }
+
+        // filteredPhotos 에 아직 보여줄 사진이 있으면 앵커 근처로 선택 이동
+        if let anchor = anchor, !visibleFiles.isEmpty {
+            let targetIdx = min(anchor, visibleFiles.count - 1)
+            let next = visibleFiles[targetIdx]
+            selectedPhotoIDs = [next.id]
+            selectedPhotoID = next.id
+            scrollTrigger += 1
+            return
+        }
+
+        // 보여줄 게 전혀 없으면 필터 리셋
+        resetFiltersIfEmpty()
     }
 }

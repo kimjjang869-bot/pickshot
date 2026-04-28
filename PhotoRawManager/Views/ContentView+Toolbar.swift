@@ -24,11 +24,6 @@ extension ContentView {
                 }
                 .help("시작 화면으로 돌아가기")
 
-                iconButton("cable.connector", active: false) {
-                    store.startupMode = .tethering
-                }
-                .help("테더링 (카메라 연결)")
-
                 iconButton("sidebar.leading", active: store.showFolderBrowser) {
                     store.showFolderBrowser.toggle()
                 }
@@ -36,23 +31,34 @@ extension ContentView {
 
                 if let url = store.folderURL {
                     BreadcrumbPathView(url: url, store: store)
+                    Spacer().frame(width: 12)  // 경로 ↔ 게이지 간격
+                    // v8.8.2: "하위 포함" 배지를 진행률 게이지보다 먼저 표시
+                    if store.isRecursiveMode {
+                        Button { store.exitRecursiveMode() } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "folder.badge.plus").font(.system(size: 10))
+                                Text("하위 포함").font(.system(size: AppTheme.fontMicro, weight: .medium))
+                            }
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.15)).foregroundColor(.orange)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // v8.9.7+: 캐시 진행률 게이지 제거 — 미리보기 토글로 통합 표시.
+                    // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
+                    AggressiveCacheToggle(store: store)
+                    // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
+                    FastCullingToggle(store: store)
+                    // v8.9.7+: 초기 미리보기 토글 — 토끼 옆 (FastCullingToggle 직후)
+                    InitialPreviewToggle()
+                        .fixedSize(horizontal: true, vertical: true)
+                    // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
+                    activeFilterBadge
                 }
 
                 if store.isLoading {
                     ProgressView().scaleEffect(0.6)
-                }
-
-                if store.isRecursiveMode {
-                    Button { store.exitRecursiveMode() } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "folder.badge.plus").font(.system(size: 10))
-                            Text("하위 포함").font(.system(size: AppTheme.fontMicro, weight: .medium))
-                        }
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(Color.orange.opacity(0.15)).foregroundColor(.orange)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
                 }
 
                 if store.selectionCount > 1 {
@@ -92,6 +98,11 @@ extension ContentView {
 
                 if !store.photos.isEmpty {
                     Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
+
+                    // v8.9.4: AI 드롭다운 — 클라이언트 왼쪽 (row1) 으로 이동
+                    if !AppConfig.hideAIFeatures {
+                        qualityFilterMenu
+                    }
 
                     // 클라이언트 셀렉
                     Menu {
@@ -150,19 +161,9 @@ extension ContentView {
                     .buttonStyle(.plain)
                     .help("파일명/JPG/AI 매칭 셀렉")
 
-                    // AI 스마트 셀렉
-                    if !AppConfig.hideAIFeatures {
-                        Button(action: { store.showSmartCull = true }) {
-                            actionLabel("brain", "AI 셀렉", .indigo)
-                        }
-                        .buttonStyle(.plain)
-                        .help("유사 그룹핑 + A컷 자동 추천")
-                    }
+                    // v8.9.4: AI 셀렉/인물그룹/내취향 → 통합 AI 메뉴 안으로 흡수 (헷갈림 해소)
 
-                    // 인물 그룹 필터
-                    if !AppConfig.hideAIFeatures {
-                        faceGroupFilterMenu
-                    }
+                    // v8.9.4: 번호 필터 → 정렬 메뉴 안으로 이동 (외부 아이콘 제거)
 
                     // G Select
                     gSelectButton
@@ -182,83 +183,29 @@ extension ContentView {
                 HStack(spacing: 0) {
                     // 썸네일 영역에 맞춘 좌측 섹션 (별점 + 라벨 + 검색 + 정렬)
                     HStack(spacing: 8) {
-                        // Star filter — 별점 필터
-                        HStack(spacing: 3) {
-                            ForEach([0, 1, 2, 3, 4, 5], id: \.self) { rating in
-                                Button(action: { store.minimumRatingFilter = rating }) {
-                                    Group {
-                                        if rating == 0 {
-                                            Text("All")
-                                                .font(.system(size: AppTheme.fontCaption, weight: .semibold))
-                                        } else {
-                                            HStack(spacing: 1) {
-                                                Image(systemName: "star.fill")
-                                                    .font(.system(size: 8))
-                                                Text("\(rating)")
-                                                    .font(.system(size: AppTheme.fontCaption, weight: .semibold))
-                                            }
-                                        }
-                                    }
-                                    .frame(width: AppTheme.pillSize, height: AppTheme.pillSize)
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(store.minimumRatingFilter == rating ? .white : (rating == 0 ? .primary : AppTheme.starGold))
-                                .background(
-                                    store.minimumRatingFilter == rating
-                                        ? AppTheme.starGold.opacity(0.85)
-                                        : AppTheme.toolbarButtonBg
-                                )
-                                .clipShape(Capsule())
-                                .help(rating == 0 ? "모든 별점 표시" : "별점 \(rating) 이상 필터")
-                            }
-                        }
+                        // 선택만 토글 — v8.9.4: 맨 왼쪽 (체크박스 아이콘만)
+                        selectedOnlyButton
 
                         Divider().frame(height: AppTheme.toolbarDividerHeight).opacity(0.15)
 
-                        // Color label filter — 라벨 필터 (다중 선택)
-                        HStack(spacing: 5) {
-                            ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
-                                let isActive = store.colorLabelFilters.contains(label)
-                                Button(action: {
-                                    if isActive { store.colorLabelFilters.remove(label) }
-                                    else { store.colorLabelFilters.insert(label) }
-                                }) {
-                                    Circle()
-                                        .fill(label.color ?? .clear)
-                                        .frame(width: 12, height: 12)
-                                        .overlay(
-                                            isActive
-                                                ? Circle().stroke(Color.white, lineWidth: 2.5)
-                                                : Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                                        )
-                                        .shadow(color: isActive ? (label.color ?? .clear).opacity(0.7) : .clear, radius: 4)
-                                        .opacity(isActive ? 1.0 : 0.5)
-                                        .frame(width: AppTheme.minTouchTarget, height: AppTheme.minTouchTarget)
-                                }
-                                .buttonStyle(.plain)
-                                .help("\(label.rawValue) 라벨 필터 (\(label.key.isEmpty ? "" : "키: \(label.key)"))")
-                            }
-                            if !store.colorLabelFilters.isEmpty {
-                                Button(action: { store.colorLabelFilters.removeAll() }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("라벨 필터 해제")
-                            }
-                        }
-                        Spacer(minLength: 4)
+                        // Star filter — 인라인 5별 스와치 (v8.9.4)
+                        starFilterMenu
+
+                        // Color label filter — 인라인 5색 스와치 (v8.9.4)
+                        colorLabelFilterMenu
+                        // v8.9.4: Spacer 제거 — 모든 버튼 좌측 정렬
 
                         // Search bar (항상 표시)
+                        // v8.9.7+: 정렬 메뉴와 height 통일 (AppTheme.buttonHeight) + 폭 고정 →
+                        //   썸네일 폭/슬라이더 조절해도 크기 변하지 않음.
                         HStack(spacing: 4) {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 10))
+                                .font(.system(size: AppTheme.iconSmall))
                                 .foregroundColor(.secondary)
                             TextField("검색", text: $store.searchText)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 11))
-                                .frame(minWidth: 60, maxWidth: 140)
+                                .font(.system(size: AppTheme.fontBody))
+                                .frame(width: 90)
                                 .onExitCommand {
                                     store.restoreKeyFocus()
                                 }
@@ -278,87 +225,57 @@ extension ContentView {
                                     .clipShape(Capsule())
                                 Button(action: { store.searchText = "" }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
+                                        .font(.system(size: AppTheme.fontBody))
                                         .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 8)
+                        .frame(height: AppTheme.buttonHeight)
+                        .fixedSize(horizontal: true, vertical: true)
                         .background(AppTheme.toolbarButtonBg)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-                        // 정렬 + AI + 컬렉션 (넓을 때만 표시)
-                        if thumbWidth > 550 {
-                            // Sort menu
-                            Menu {
-                                ForEach(SortMode.allCases, id: \.self) { mode in
-                                    Button(action: { store.sortMode = mode }) {
-                                        HStack {
-                                            Image(systemName: mode.icon)
-                                            Text(mode.rawValue)
-                                            if store.sortMode == mode { Image(systemName: "checkmark") }
-                                        }
+                        // v8.9.4: 정렬 메뉴 — thumbWidth 와 무관하게 항상 표시 (이전엔 >550 일 때만)
+                        Menu {
+                            ForEach(SortMode.allCases, id: \.self) { mode in
+                                Button(action: { store.sortMode = mode }) {
+                                    HStack {
+                                        Image(systemName: mode.icon)
+                                        Text(mode.rawValue)
+                                        if store.sortMode == mode { Image(systemName: "checkmark") }
                                     }
                                 }
-                            } label: {
-                                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
                             }
-                            .help("정렬 순서 변경 (촬영시간/파일명/별점)")
-
-                            // AI 분류
-                            if !AppConfig.hideAIFeatures {
-                                qualityFilterMenu
+                            Divider()
+                            Section("필터") {
+                                let rangeActive = store.rangeFilterMin != nil || store.rangeFilterMax != nil
+                                let rangeLabel: String = {
+                                    if let lo = store.rangeFilterMin, let hi = store.rangeFilterMax { return "파일 번호 \(lo)–\(hi)" }
+                                    if let lo = store.rangeFilterMin { return "파일 번호 \(lo)–" }
+                                    if let hi = store.rangeFilterMax { return "파일 번호 –\(hi)" }
+                                    return "파일 번호 범위..."
+                                }()
+                                Button(action: { showRangeFilterDialog() }) {
+                                    Label(rangeLabel, systemImage: rangeActive ? "checkmark.circle.fill" : "number.circle")
+                                }
+                                if rangeActive {
+                                    Button(action: {
+                                        store.rangeFilterMin = nil
+                                        store.rangeFilterMax = nil
+                                    }) {
+                                        Label("파일 번호 필터 해제", systemImage: "xmark.circle")
+                                    }
+                                }
                             }
-
-                            // 스마트 컬렉션
-                            Menu {
-                                if store.savedCollections.isEmpty {
-                                    Text("저장된 컬렉션 없음")
-                                } else {
-                                    ForEach(store.savedCollections) { col in
-                                        Button(action: { store.applyCollection(col) }) {
-                                            Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
-                                        }
-                                    }
-                                    Divider()
-                                    Button("전체 삭제", role: .destructive) {
-                                        store.savedCollections.removeAll()
-                                    }
-                                }
-                                Divider()
-                                Button("현재 필터 저장...") {
-                                    let alert = NSAlert()
-                                    alert.messageText = "스마트 컬렉션 이름"
-                                    alert.informativeText = "현재 필터 설정을 저장합니다."
-                                    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-                                    textField.stringValue = "내 컬렉션"
-                                    alert.accessoryView = textField
-                                    alert.addButton(withTitle: "저장")
-                                    alert.addButton(withTitle: "취소")
-                                    if alert.runModal() == .alertFirstButtonReturn {
-                                        let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
-                                        if !name.isEmpty {
-                                            store.saveCurrentFilter(name: name)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "line.3.horizontal.decrease.circle")
-                                        .font(.system(size: 11))
-                                    if !store.savedCollections.isEmpty {
-                                        Text("\(store.savedCollections.count)")
-                                            .font(.system(size: 9, weight: .bold))
-                                    }
-                                }
-                                .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
-                            }
-                            .menuStyle(.borderlessButton)
-                            .frame(width: 35)
-                            .help("스마트 컬렉션")
+                        } label: {
+                            toolbarButton(icon: store.sortMode.icon, text: store.sortMode.compactLabel, color: AppTheme.accent, active: false)
                         }
+                        .fixedSize(horizontal: true, vertical: true)
+                        .tooltip("정렬 / 파일 번호 범위 필터")
+                        // v8.9.4: AI 분류 메뉴 → 클라이언트 왼쪽으로 이동 (row1)
+                        // v8.9.4: 스마트 컬렉션 → 비활성화
                     }
                     .frame(maxWidth: max(300, thumbWidth), alignment: .leading)
                     .padding(.horizontal, 10)
@@ -493,61 +410,12 @@ extension ContentView {
                     }
                 }
             } label: {
-                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.rawValue, color: AppTheme.accent, active: false)
+                toolbarButton(icon: store.sortMode.icon, text: store.sortMode.compactLabel, color: AppTheme.accent, active: false)
             }
             .help("정렬 순서 변경 (촬영시간/파일명/별점)")
 
-            // AI 분류 (품질 + 장면 통합)
-            if !AppConfig.hideAIFeatures {
-                qualityFilterMenu
-            }
-
-            // 스마트 컬렉션
-            Menu {
-                if store.savedCollections.isEmpty {
-                    Text("저장된 컬렉션 없음")
-                } else {
-                    ForEach(store.savedCollections) { col in
-                        Button(action: { store.applyCollection(col) }) {
-                            Label(col.name, systemImage: "line.3.horizontal.decrease.circle")
-                        }
-                    }
-                    Divider()
-                    Button("전체 삭제", role: .destructive) {
-                        store.savedCollections.removeAll()
-                    }
-                }
-                Divider()
-                Button("현재 필터 저장...") {
-                    let alert = NSAlert()
-                    alert.messageText = "스마트 컬렉션 이름"
-                    alert.informativeText = "현재 필터 설정을 저장합니다."
-                    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-                    textField.stringValue = "내 컬렉션"
-                    alert.accessoryView = textField
-                    alert.addButton(withTitle: "저장")
-                    alert.addButton(withTitle: "취소")
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
-                        if !name.isEmpty {
-                            store.saveCurrentFilter(name: name)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 11))
-                    if !store.savedCollections.isEmpty {
-                        Text("\(store.savedCollections.count)")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                }
-                .foregroundColor(store.savedCollections.isEmpty ? .secondary : .accentColor)
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: 35)
-            .help("스마트 컬렉션")
+            // v8.9.4: AI 분류 메뉴 → 클라이언트 왼쪽(row1)으로 이동
+            // v8.9.4: 스마트 컬렉션 → 비활성화
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
@@ -558,7 +426,11 @@ extension ContentView {
     var qualityFilterMenu: some View {
         let aiCount = store.photos.filter { $0.isAIPick }.count
 
-        return Menu {
+        let groups = store.availableFaceGroups
+        let hasGroups = !groups.isEmpty
+        return HStack(spacing: 4) {
+        Menu {
+            // ── 보기 (필터) ──
             Button(action: { store.qualityFilter = .all }) {
                 Label("전체", systemImage: store.qualityFilter == .all ? "checkmark" : "")
             }
@@ -572,26 +444,64 @@ extension ContentView {
             Button(action: { store.qualityFilter = .issuesOnly }) {
                 Label("문제 있음", systemImage: "exclamationmark.triangle")
             }
-            Divider()
-            Divider()
-            Button(action: { store.showAnalysisOptions = true }) {
-                Label("PickShot AI 분류 실행...", systemImage: "wand.and.stars")
-            }
-            Divider()
-            // 장면 분류 필터
-            let tags = store.availableSceneTags
-            if !tags.isEmpty {
-                ForEach(tags, id: \.self) { tag in
-                    Button(action: { store.sceneTagFilter = store.sceneTagFilter == tag ? nil : tag }) {
-                        Label(tag, systemImage: store.sceneTagFilter == tag ? "checkmark" : "")
+
+            // 인물 그룹 — v8.9.4: AI 메뉴로 통합 (별도 외부 메뉴 제거)
+            if hasGroups {
+                Divider()
+                Section("👤 인물") {
+                    Button(action: {
+                        store.faceGroupFilter = nil
+                        store.faceGroupFilters = []
+                    }) {
+                        Label("전체 인물", systemImage: (store.faceGroupFilter == nil && store.faceGroupFilters.isEmpty) ? "checkmark" : "person.2")
+                    }
+                    ForEach(groups, id: \.self) { gid in
+                        let count = store.faceGroups[gid]?.count ?? 0
+                        Button(action: {
+                            store.faceGroupFilter = (store.faceGroupFilter == gid) ? nil : gid
+                            store.faceGroupFilters = []
+                        }) {
+                            Label("\(store.faceGroupName(for: gid)) (\(count)장)",
+                                  systemImage: store.faceGroupFilter == gid ? "checkmark" : "person.crop.circle")
+                        }
                     }
                 }
+            }
+
+            Divider()
+            // ── 셀렉 도구 (실행) ──
+            Section("🧠 AI 셀렉 도구") {
+                Button(action: { store.showSmartCull = true }) {
+                    Label("AI 셀렉 (유사 그룹 + A컷)", systemImage: "brain")
+                }
+                Button(action: { store.showPreferenceTrainingDialog = true }) {
+                    let trained = UserPreferenceService.shared.profile.isTrained
+                    Label(trained ? "내 취향 (학습됨) — 관리" : "내 취향 학습 시작", systemImage: "brain.head.profile")
+                }
+                Button(action: { store.showAnalysisOptions = true }) {
+                    Label("PickShot AI 분류 실행...", systemImage: "wand.and.stars")
+                }
+                Button(action: { store.classifyScenes() }) {
+                    Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
+                }
+                .disabled(store.isClassifyingScenes)
+                Button(action: { store.showBurstPickerDialog = true }) {
+                    Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                }
+            }
+
+            // ── 장면 태그 (분류 결과 필터) ──
+            let tags = store.availableSceneTags
+            if !tags.isEmpty {
                 Divider()
+                Section("📂 장면") {
+                    ForEach(tags, id: \.self) { tag in
+                        Button(action: { store.sceneTagFilter = store.sceneTagFilter == tag ? nil : tag }) {
+                            Label(tag, systemImage: store.sceneTagFilter == tag ? "checkmark" : "")
+                        }
+                    }
+                }
             }
-            Button(action: { store.classifyScenes() }) {
-                Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
-            }
-            .disabled(store.isClassifyingScenes)
 
             Divider()
 
@@ -634,6 +544,7 @@ extension ContentView {
                     Label("선택된 사진만 분류 (\(selectedCount)장)", systemImage: "checkmark.circle")
                 }
                 .disabled(store.isAIClassifying || selectedCount == 0)
+                // v8.9.4: 연사 베스트는 "AI 셀렉 도구" 섹션으로 이동됨
             }
         } label: {
             toolbarButton(
@@ -649,12 +560,74 @@ extension ContentView {
             AnalysisOptionsView(store: store)
         }
 
+        // v8.9.4: "내 취향" 외부 버튼 → AI 메뉴 안 "AI 셀렉 도구" 섹션으로 흡수
         if store.isClassifyingScenes || store.isAnalyzing {
             ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
         }
+        }  // HStack close
     }
 
     // MARK: - Face Group Filter Menu
+
+    // MARK: - v8.7 Range (파일 번호) 필터 메뉴
+
+    // v8.9.4: rangeFilterMenu 는 deprecated (정렬 메뉴 안으로 이동). 빈 뷰 유지 - 호출처 제거 전 호환용.
+    func showRangeFilterDialog() {
+        let alert = NSAlert()
+        alert.messageText = "파일 번호 범위 필터"
+        alert.informativeText = "파일명의 마지막 숫자를 기준으로 필터링합니다.\n예: DSC01234.ARW → 1234.\n비워두면 제한 없음."
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 56))
+        let loField = NSTextField(frame: NSRect(x: 0, y: 28, width: 100, height: 22))
+        loField.placeholderString = "최소 (예: 1000)"
+        loField.stringValue = store.rangeFilterMin.map { String($0) } ?? ""
+        let sep = NSTextField(labelWithString: "~")
+        sep.frame = NSRect(x: 110, y: 30, width: 20, height: 18)
+        sep.alignment = .center
+        let hiField = NSTextField(frame: NSRect(x: 140, y: 28, width: 100, height: 22))
+        hiField.placeholderString = "최대 (예: 1500)"
+        hiField.stringValue = store.rangeFilterMax.map { String($0) } ?? ""
+        let hint = NSTextField(labelWithString: "현재 폴더: 전체 \(store.photos.count)장")
+        hint.frame = NSRect(x: 0, y: 0, width: 240, height: 18)
+        hint.font = .systemFont(ofSize: 10)
+        hint.textColor = .secondaryLabelColor
+        container.addSubview(loField); container.addSubview(sep); container.addSubview(hiField); container.addSubview(hint)
+        alert.accessoryView = container
+        alert.addButton(withTitle: "적용")
+        alert.addButton(withTitle: "해제")
+        alert.addButton(withTitle: "취소")
+        let resp = alert.runModal()
+        if resp == .alertFirstButtonReturn {
+            store.rangeFilterMin = Int(loField.stringValue.trimmingCharacters(in: .whitespaces))
+            store.rangeFilterMax = Int(hiField.stringValue.trimmingCharacters(in: .whitespaces))
+        } else if resp == .alertSecondButtonReturn {
+            store.rangeFilterMin = nil
+            store.rangeFilterMax = nil
+        }
+    }
+
+    var rangeFilterMenu: some View {
+        EmptyView()  // deprecated — 정렬 메뉴 안으로 이동
+    }
+    // unreachable
+    var _rangeFilterMenuLegacy: some View {
+        let active = store.rangeFilterMin != nil || store.rangeFilterMax != nil
+        let labelText: String = {
+            if let lo = store.rangeFilterMin, let hi = store.rangeFilterMax { return "\(lo)-\(hi)" }
+            if let lo = store.rangeFilterMin { return "\(lo)-" }
+            if let hi = store.rangeFilterMax { return "-\(hi)" }
+            return "번호"
+        }()
+        return Button(action: { showRangeFilterDialog() }) {
+            toolbarButton(
+                icon: "number.circle",
+                text: labelText,
+                color: .teal,
+                active: active
+            )
+        }
+        .buttonStyle(.plain)
+        .help("파일 번호 범위 필터 (예: 1000~1500)")
+    }
 
     var faceGroupFilterMenu: some View {
         let groups = store.availableFaceGroups
@@ -662,13 +635,27 @@ extension ContentView {
 
         return HStack(spacing: 4) {
             Menu {
-                Button(action: { store.faceGroupFilter = nil }) {
-                    Label("전체", systemImage: store.faceGroupFilter == nil ? "checkmark" : "")
+                Button(action: {
+                    store.faceGroupFilter = nil
+                    store.faceGroupFilters = []
+                }) {
+                    Label("전체", systemImage: (store.faceGroupFilter == nil && store.faceGroupFilters.isEmpty) ? "checkmark" : "")
                 }
                 Divider()
+                // v8.7: 다중 인물 선택 (신랑 + 신부 등 OR 조합)
+                if hasGroups && !store.faceGroupFilters.isEmpty {
+                    Button(action: { store.faceGroupFilters = [] }) {
+                        Label("다중 선택 해제 (\(store.faceGroupFilters.count)명)", systemImage: "xmark.circle")
+                    }
+                    Divider()
+                }
                 if hasGroups {
                     ForEach(groups, id: \.self) { gid in
-                        Button(action: { store.faceGroupFilter = gid }) {
+                        // 단일 선택 (기존)
+                        Button(action: {
+                            store.faceGroupFilter = gid
+                            store.faceGroupFilters = []
+                        }) {
                             let count = store.faceGroups[gid]?.count ?? 0
                             HStack(spacing: 8) {
                                 // Face thumbnail
@@ -694,6 +681,23 @@ extension ContentView {
                                         .foregroundColor(.blue)
                                 }
                             }
+                        }
+                    }
+                    Divider()
+                    // v8.7: 다중 선택 토글 (한 메뉴에서 여러 명 체크)
+                    Text("여러 명 선택 (OR)").font(.system(size: 10)).foregroundColor(.secondary)
+                    ForEach(groups, id: \.self) { gid in
+                        Button(action: {
+                            var set = store.faceGroupFilters
+                            if set.contains(gid) { set.remove(gid) } else { set.insert(gid) }
+                            store.faceGroupFilters = set
+                            if !set.isEmpty { store.faceGroupFilter = nil }  // 단일 필터와 충돌 방지
+                        }) {
+                            let isSelected = store.faceGroupFilters.contains(gid)
+                            Label(
+                                "\(isSelected ? "✓ " : "+  ")\(store.faceGroupName(for: gid))",
+                                systemImage: isSelected ? "checkmark.square.fill" : "square"
+                            )
                         }
                     }
                     Divider()
@@ -729,9 +733,10 @@ extension ContentView {
             } label: {
                 toolbarButton(
                     icon: "person.2.fill",
-                    text: store.faceGroupFilter != nil ? store.faceGroupName(for: store.faceGroupFilter!) : "인물",
+                    text: store.faceGroupFilter != nil ? store.faceGroupName(for: store.faceGroupFilter!)
+                        : (!store.faceGroupFilters.isEmpty ? "인물 \(store.faceGroupFilters.count)명" : "인물"),
                     color: .orange,
-                    active: store.faceGroupFilter != nil
+                    active: store.faceGroupFilter != nil || !store.faceGroupFilters.isEmpty
                 )
             }
             .help("인물 그룹 필터")
@@ -992,18 +997,250 @@ extension ContentView {
         }
     }
 
+    // MARK: - Active Filter Badge (v8.9.4)
+
+    /// 적극로딩 아이콘 옆에 표시되는 활성 필터 요약 — 무엇이 몇 개 필터됐는지 한눈에
+    @ViewBuilder
+    var activeFilterBadge: some View {
+        let stars = store.ratingFilters.sorted()
+        let labels = store.colorLabelFilters
+        let selectedOnly = store.showOnlySelected
+        let visualSearch = store.visualSearchActive
+        let recursive = store.isRecursiveMode
+        let hasFilter = !stars.isEmpty || !labels.isEmpty || selectedOnly || visualSearch
+        if hasFilter {
+            Button(action: {
+                // 한 번 누르면 모든 필터 해제 (recursive 제외)
+                store.batchUpdateFilters {
+                    store.ratingFilters = []
+                    store.minimumRatingFilter = 0
+                    store.colorLabelFilters = []
+                    store.showOnlySelected = false
+                    if visualSearch {
+                        VisualSearchService.shared.clearAll()
+                        store.visualSearchActive = false
+                    }
+                }
+            }) {
+                HStack(spacing: 5) {
+                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.cyan)
+                    // 활성 필터 칩들 (가로 나열)
+                    HStack(spacing: 3) {
+                        ForEach(stars, id: \.self) { r in
+                            HStack(spacing: 1) {
+                                Image(systemName: "star.fill").font(.system(size: 8))
+                                Text("\(r)").font(.system(size: 9, weight: .bold, design: .monospaced))
+                            }
+                            .foregroundColor(AppTheme.starGold)
+                        }
+                        ForEach(ColorLabel.allCases.filter { labels.contains($0) }, id: \.self) { l in
+                            Circle()
+                                .fill(l.color ?? .clear)
+                                .frame(width: 8, height: 8)
+                                .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 0.5))
+                        }
+                        if selectedOnly {
+                            Image(systemName: "checkmark.square.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.blue)
+                        }
+                        if visualSearch {
+                            Image(systemName: "sparkle.magnifyingglass")
+                                .font(.system(size: 9))
+                                .foregroundColor(.purple)
+                        }
+                    }
+                    Text("·").foregroundColor(.white.opacity(0.4))
+                    Text("\(store.filteredPhotos.count)장")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(Color.cyan.opacity(0.15))
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 0.5))
+                )
+            }
+            .buttonStyle(.plain)
+            .help("활성 필터 요약 (클릭: 모든 필터 해제) · 하위포함\(recursive ? " ON" : "")")
+        }
+    }
+
+    // MARK: - Filter Menus (v8.9.4)
+
+    /// 별점 필터 — Lightroom 스타일
+    /// • 별 N개 클릭 → 1~N개 모두 칠해짐 (누적 시각), 정확히 N별 사진만 필터
+    /// • 동일 별 재클릭 → 해제 (=All)
+    /// • Cmd·Shift+클릭 → 다중 선택 (예: 1·3·5 별 동시 표시) 시 칠해지는 건 단순히 활성 별만
+    var starFilterMenu: some View {
+        let activeRatings = store.ratingFilters
+        // 단일 선택 모드인 경우 "최대 활성 별점" 추출 → 그 이하는 모두 채움.
+        let isMulti = activeRatings.count > 1
+        let cumulativeMax = isMulti ? 0 : (activeRatings.max() ?? 0)
+        return HStack(spacing: 3) {
+            ForEach([1, 2, 3, 4, 5], id: \.self) { rating in
+                let isExactlyActive = activeRatings.contains(rating)
+                // 누적 칠하기: 단일 선택 모드일 때 rating <= cumulativeMax 면 fill
+                let shouldFill = isMulti ? isExactlyActive : (rating <= cumulativeMax)
+                let count = store.photos.filter { $0.rating == rating && !$0.isFolder && !$0.isParentFolder }.count
+                Button(action: {
+                    let flags = NSEvent.modifierFlags
+                    let multi = flags.contains(.command) || flags.contains(.shift)
+                    if multi {
+                        if isExactlyActive { store.ratingFilters.remove(rating) }
+                        else { store.ratingFilters.insert(rating) }
+                    } else {
+                        // 동일 별 재클릭 → 해제. 그 외 → 정확히 그 별점만 표시
+                        if activeRatings.count == 1 && isExactlyActive {
+                            store.ratingFilters = []
+                        } else {
+                            store.ratingFilters = [rating]
+                        }
+                    }
+                    store.minimumRatingFilter = 0
+                }) {
+                    // v8.9.4: 카운트 숫자 오버레이 제거 (글자 작아서 확인 어려움)
+                    Image(systemName: shouldFill ? "star.fill" : "star")
+                        .font(.system(size: AppTheme.iconSmall, weight: .semibold))
+                        .foregroundColor(shouldFill ? AppTheme.starGold : Color.white.opacity(0.45))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("별 \(rating) 만 표시 (\(count)장) / Cmd·Shift+클릭: 다중 선택")
+            }
+            if !activeRatings.isEmpty {
+                Button(action: {
+                    store.batchUpdateFilters {
+                        store.ratingFilters = []
+                        store.minimumRatingFilter = 0
+                    }
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("별점 필터 해제")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
+        .background(AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    /// 컬러라벨 필터 — Lightroom/Photo Mechanic 스타일 인라인 5색 스와치
+    /// 활성: 채워진 원 + 흰 링 / 비활성: 어둡게 + 가는 링 / Cmd·Shift+클릭으로 다중
+    var colorLabelFilterMenu: some View {
+        let activeLabels = store.colorLabelFilters
+        return HStack(spacing: 3) {
+            ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
+                let isActive = activeLabels.contains(label)
+                let count = store.photos.filter {
+                    $0.colorLabel == label && !$0.isFolder && !$0.isParentFolder
+                }.count
+                Button(action: {
+                    let flags = NSEvent.modifierFlags
+                    let multi = flags.contains(.command) || flags.contains(.shift)
+                    if multi {
+                        if isActive { store.colorLabelFilters.remove(label) }
+                        else { store.colorLabelFilters.insert(label) }
+                    } else {
+                        if activeLabels.count == 1 && isActive {
+                            store.colorLabelFilters = []
+                        } else {
+                            store.colorLabelFilters = [label]
+                        }
+                    }
+                }) {
+                    // v8.9.4: 카운트 숫자 오버레이 제거 (글자 작아서 확인 어려움)
+                    Circle()
+                        .fill((label.color ?? .gray).opacity(isActive ? 1.0 : 0.45))
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle().stroke(
+                                isActive ? Color.white : Color.white.opacity(0.15),
+                                lineWidth: isActive ? 2 : 1
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("\(label.rawValue) 라벨 (\(count)장)\(label.key.isEmpty ? "" : " · 키: \(label.key)") / Cmd·Shift+클릭: 다중 선택")
+            }
+            if !activeLabels.isEmpty {
+                Button(action: { store.colorLabelFilters.removeAll() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("라벨 필터 해제")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
+        .background(AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    /// 선택만 토글 — 체크박스 아이콘만 (텍스트 없음)
+    /// v8.9.4: 선택 0일 때도 항상 표시 (배치 흔들림 방지). 카운트 배지는 항상 노출 (0 포함)
+    var selectedOnlyButton: some View {
+        let count = store.selectedPhotoIDs.count
+        let canActivate = count > 0
+        return Button(action: {
+            if canActivate { store.showOnlySelected.toggle() }
+        }) {
+            HStack(spacing: 4) {
+                Image(systemName: store.showOnlySelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: AppTheme.iconSmall, weight: .semibold))
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 5)
+                    .frame(height: 14)
+                    .background(Capsule().fill(Color.black.opacity(0.45)))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: AppTheme.buttonHeight)  // v8.9.7+: 검색/정렬과 통일 (32→38)
+            .opacity(canActivate ? 1.0 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(store.showOnlySelected ? .white : .primary)
+        .background(store.showOnlySelected ? Color.blue.opacity(0.85) : AppTheme.toolbarButtonBg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help(canActivate ? "선택한 \(count)장만 표시" : "선택된 사진 없음")
+    }
+
     // MARK: - Toolbar Button Helper
+
+    /// v8.8: 숫자 배지 포맷 — 1000 이상은 "1.2k" 형식으로 압축
+    func formatCountBadge(_ count: Int) -> String {
+        if count < 1000 { return "\(count)" }
+        let k = Double(count) / 1000.0
+        if k >= 10 { return "\(Int(k))k" }
+        return String(format: "%.1fk", k)
+    }
 
     func toolbarButton(icon: String, text: String, color: Color, active: Bool) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: AppTheme.iconSmall))
+                .foregroundColor(active ? .white : color)  // 아이콘은 컬러 유지
             Text(text)
                 .font(.system(size: AppTheme.fontBody, weight: .medium))
+                .foregroundColor(.white)                   // v8.7: 텍스트는 항상 흰색
         }
         .padding(.horizontal, 8)
         .frame(height: AppTheme.buttonHeight)
-        .foregroundColor(active ? .white : color)
         .background(active ? color : AppTheme.toolbarButtonBg)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
@@ -1095,7 +1332,7 @@ extension ContentView {
                 }
                 let result = PickshotFileService.applyPickshotFile(url: url, to: &store.photos, photoIndex: store._photoIndex)
                 if let result = result {
-                    store.photosVersion += 1
+                    store.invalidateFilterCache()
                     store.buildClientComments()
                     store.lastImportResult = result
                     store.showPickshotImportSheet = true

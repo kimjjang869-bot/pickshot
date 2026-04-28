@@ -109,6 +109,10 @@ class TetherService: NSObject, ObservableObject {
         isConnected = false
         cameraName = ""
         batteryLevel = nil
+        // v9.0: pendingDownloads 누수 방지 — disconnect 시 cleanup.
+        //   delegate 콜백 안 오는 케이스(연결 해제)에서 항목 영구 잔류 → 재연결 후
+        //   같은 파일명 다운로드 차단되던 버그.
+        pendingDownloads.removeAll()
     }
 
     /// Ensure the output folder exists.
@@ -466,7 +470,8 @@ extension TetherService: ICCameraDeviceDelegate {
 // MARK: - ICCameraDeviceDownloadDelegate
 
 extension TetherService: ICCameraDeviceDownloadDelegate {
-    func didDownloadFile(_ file: ICCameraFile, error: (any Error)?, options: [ICDownloadOption : Any], contextInfo: UnsafeMutableRawPointer?) {
+    // v8.6.3: 프로토콜이 macOS 14 에서 [String:Any] 로 변경됨. 내부에선 options 미사용.
+    func didDownloadFile(_ file: ICCameraFile, error: (any Error)?, options: [String : Any] = [:], contextInfo: UnsafeMutableRawPointer?) {
         let originalFileName = file.name ?? "unknown"
         pendingDownloads.remove(originalFileName)
 

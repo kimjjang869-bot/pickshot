@@ -239,7 +239,7 @@ struct MetadataEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .onChange(of: selectedTemplateName) { name in
+                .onChange(of: selectedTemplateName) { _, name in
                     if let t = templates.first(where: { $0.name == name }) {
                         applyTemplate(t)
                     }
@@ -401,7 +401,7 @@ struct MetadataEditorView: View {
                 if !isBatch || applyCountry { store.photos[idx].iptcCountry = meta.country }
             }
         }
-        store.photosVersion += 1
+        store.invalidateFilterCache()
     }
 
     private func removeKeyword(_ kw: String) {

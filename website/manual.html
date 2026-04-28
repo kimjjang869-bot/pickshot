@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="PickShot 사용 설명서 — 설치부터 현장 워크플로우, 단축키, 클라이언트 전달까지.">
+<meta name="theme-color" content="#050614">
+<title>PickShot 매뉴얼 — 현장에서 30분에 끝내는 사용법</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="manual.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="starfield" aria-hidden="true"><canvas id="stars-canvas"></canvas></div>
+<div class="aurora" aria-hidden="true">
+  <div class="aurora-blob b1"></div>
+  <div class="aurora-blob b2"></div>
+  <div class="aurora-blob b3"></div>
+</div>
+
+<!-- ============ NAV ============ -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-orb"></span>
+      <span class="logo-text">PickShot</span>
+      <span class="logo-ver">매뉴얼</span>
+    </a>
+    <div class="nav-links">
+      <a href="#quickstart">빠른 시작</a>
+      <a href="#workflow">워크플로우</a>
+      <a href="#shortcuts">단축키</a>
+      <a href="#features">기능</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a href="index.html" class="btn btn-secondary btn-sm">← 홈으로</a>
+  </div>
+</nav>
+
+<!-- ============ MANUAL LAYOUT ============ -->
+<div class="manual-layout">
+
+  <!-- Sidebar TOC -->
+  <aside class="manual-toc" aria-label="목차">
+    <div class="toc-head">
+      <div class="toc-title">목차</div>
+      <div class="toc-sub">v8.9 기준</div>
+    </div>
+    <nav class="toc-nav">
+      <a href="#quickstart" class="toc-link"><span>01</span> 빠른 시작</a>
+      <a href="#install" class="toc-link"><span>02</span> 설치와 첫 실행</a>
+      <a href="#workflow" class="toc-link"><span>03</span> 현장 워크플로우</a>
+      <a href="#gselect" class="toc-link"><span>04</span> G-Select 원리</a>
+      <a href="#shortcuts" class="toc-link"><span>05</span> 단축키 전부</a>
+      <a href="#backup" class="toc-link"><span>06</span> 메모리카드 자동 백업</a>
+      <a href="#cache" class="toc-link"><span>07</span> 적극 캐시 모드</a>
+      <a href="#client" class="toc-link"><span>08</span> 클라이언트 뷰어</a>
+      <a href="#features" class="toc-link"><span>09</span> 추가 기능</a>
+      <a href="#troubleshoot" class="toc-link"><span>10</span> 문제 해결</a>
+      <a href="#faq" class="toc-link"><span>11</span> FAQ</a>
+    </nav>
+  </aside>
+
+  <!-- Main content -->
+  <main class="manual-main">
+
+    <!-- ============ HEADER ============ -->
+    <header class="manual-header">
+      <div class="kicker">PickShot 매뉴얼</div>
+      <h1 class="manual-title">
+        현장에서 30분에 끝내는<br>
+        <span class="italic">사용법</span>.
+      </h1>
+      <p class="manual-lead">
+        10,000장을 추리는 가장 빠른 길. 설치부터 클라이언트 전달까지
+        30분 안에 몸에 붙이는 순서대로 정리했습니다.
+      </p>
+      <div class="manual-meta">
+        <span class="meta-item">버전 v8.9 기준</span>
+        <span class="meta-dot">·</span>
+        <span class="meta-item">최종 업데이트 2026-04-22</span>
+        <span class="meta-dot">·</span>
+        <span class="meta-item">읽는 시간 약 12분</span>
+      </div>
+    </header>
+
+    <!-- ============ 01 QUICK START ============ -->
+    <section class="chapter" id="quickstart">
+      <div class="chapter-num">01</div>
+      <h2 class="chapter-title">빠른 시작 — 5분 요약</h2>
+      <p class="chapter-lead">
+        자세한 설명이 필요 없다면 아래 5단계만 따라 해도 현장에서 바로 씁니다.
+      </p>
+
+      <ol class="quick-steps">
+        <li class="quick-step">
+          <div class="qs-num">1</div>
+          <div class="qs-body">
+            <div class="qs-title">폴더 열기</div>
+            <div class="qs-desc">
+              <kbd>⌘O</kbd> 또는 Finder에서 사진 폴더를 드래그 앤 드롭.
+              2,000장 RAW면 약 <strong>1.5초</strong>에 떴습니다.
+            </div>
+          </div>
+        </li>
+        <li class="quick-step">
+          <div class="qs-num">2</div>
+          <div class="qs-body">
+            <div class="qs-title">별점으로 훑기</div>
+            <div class="qs-desc">
+              방향키로 이동, 숫자키 <kbd>1</kbd>~<kbd>4</kbd>로 등급.
+              베스트컷은 <kbd>Space</kbd>로 별 5점 원핸드 셀렉.
+            </div>
+          </div>
+        </li>
+        <li class="quick-step">
+          <div class="qs-num">3</div>
+          <div class="qs-body">
+            <div class="qs-title">클라이언트용 픽은 G</div>
+            <div class="qs-desc">
+              별점과 독립된 레이어. 클라이언트에게 보낼 컷만 <kbd>G</kbd>로 묶습니다.
+            </div>
+          </div>
+        </li>
+        <li class="quick-step">
+          <div class="qs-num">4</div>
+          <div class="qs-body">
+            <div class="qs-title">필터 + 내보내기</div>
+            <div class="qs-desc">
+              상단 필터에서 <strong>★5</strong> 또는 <strong>G</strong> 선택 →
+              <kbd>⌘E</kbd>로 폴더 지정 내보내기.
+            </div>
+          </div>
+        </li>
+        <li class="quick-step">
+          <div class="qs-num">5</div>
+          <div class="qs-body">
+            <div class="qs-title">클라이언트에게 링크 전달</div>
+            <div class="qs-desc">
+              Google Drive 한 번 연결 후 <strong>공유 → 링크 복사</strong>.
+              별점/펜/코멘트가 내 Mac에 실시간 반영됩니다.
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout callout-tip">
+        <div class="callout-label">현장 팁</div>
+        <p>
+          촬영 중이라면 <strong>2번 단계부터</strong> 시작하세요. 메모리카드를 꽂으면
+          백업이 자동으로 돌면서 PickShot에 실시간으로 썸네일이 채워집니다.
+          복사가 끝날 때쯤이면 셀렉도 같이 끝나 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 02 INSTALL ============ -->
+    <section class="chapter" id="install">
+      <div class="chapter-num">02</div>
+      <h2 class="chapter-title">설치와 첫 실행</h2>
+
+      <h3 class="sub-title">시스템 요구사항</h3>
+      <div class="req-grid">
+        <div class="req-card">
+          <div class="req-label">macOS</div>
+          <div class="req-value">13 Ventura 이상</div>
+          <div class="req-note">14 Sonoma / 15 Sequoia 권장</div>
+        </div>
+        <div class="req-card">
+          <div class="req-label">프로세서</div>
+          <div class="req-value">Apple Silicon 권장</div>
+          <div class="req-note">Intel Mac도 지원 (M1 기준 1.5초, Intel 평균 2.8초)</div>
+        </div>
+        <div class="req-card">
+          <div class="req-label">메모리</div>
+          <div class="req-value">8 GB 이상</div>
+          <div class="req-note">16 GB 권장 (v8.9부터 221 MB 수준 유지)</div>
+        </div>
+        <div class="req-card">
+          <div class="req-label">저장공간</div>
+          <div class="req-value">앱 32 MB + 캐시 최대 2 GB</div>
+          <div class="req-note">캐시는 설정에서 용량 제한 가능</div>
+        </div>
+      </div>
+
+      <h3 class="sub-title">설치 순서</h3>
+      <ol class="numbered-list">
+        <li>
+          <a href="https://github.com/kimjjang869-bot/pickshot/releases/latest" target="_blank">GitHub 릴리즈</a>에서
+          최신 <code>PickShot_v8.9.x.dmg</code> 다운로드
+        </li>
+        <li>DMG를 열어 PickShot을 <strong>응용 프로그램</strong> 폴더로 드래그</li>
+        <li>
+          처음 실행 시 Gatekeeper가 차단하면 — <em>시스템 설정 → 개인정보 및 보안 →
+          "확인 없이 열기"</em> 클릭 (Apple Developer ID 공증 완료됐지만 신규 앱은 처음 한 번만 필요)
+        </li>
+        <li>권한 요청이 뜨면 <strong>파일 및 폴더 접근</strong> · <strong>이동식 볼륨</strong> 모두 허용</li>
+        <li>
+          Google Drive 연동을 쓰려면 <em>설정 → 통합 → Google 로그인</em>.
+          OAuth 2.0 토큰은 Keychain에만 저장됩니다.
+        </li>
+      </ol>
+
+      <div class="callout callout-warn">
+        <div class="callout-label">주의</div>
+        <p>
+          외장 SSD에서 직접 작업할 수 있지만, <strong>USB 3.2 Gen 2 (10 Gbps) 이상</strong>을 권장합니다.
+          USB-C 허브에 물린 구형 SSD에서는 캐시가 병목이 됩니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 03 WORKFLOW ============ -->
+    <section class="chapter" id="workflow">
+      <div class="chapter-num">03</div>
+      <h2 class="chapter-title">현장 워크플로우 — 10,000장을 30분에</h2>
+      <p class="chapter-lead">
+        제가 매주 페스티벌에서 쓰는 순서 그대로 옮겨 놓았습니다.
+        상황에 맞게 일부만 쓰셔도 됩니다.
+      </p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-time">0분</div>
+          <div class="flow-content">
+            <div class="flow-title">메모리카드 삽입</div>
+            <p>
+              카드 리더를 꽂는 순간 PickShot이 감지합니다. 복사 대상 폴더는
+              <strong>년월일_행사명</strong> 형식으로 자동 생성 (수정 가능).
+              복사가 시작되면서 <em>동시에 썸네일이 채워집니다</em>.
+            </p>
+          </div>
+        </div>
+
+        <div class="flow-step">
+          <div class="flow-time">0~3분</div>
+          <div class="flow-content">
+            <div class="flow-title">복사 + 1차 훑기 동시 진행</div>
+            <p>
+              채워지는 썸네일을 방향키로 훑으면서 명백한 실패컷 <kbd>X</kbd>로 제외,
+              베스트 후보 <kbd>Space</kbd>로 별 5점. 복사가 끝나기 전에 약 30% 선셀렉이 됩니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="flow-step">
+          <div class="flow-time">3~15분</div>
+          <div class="flow-content">
+            <div class="flow-title">본 셀렉</div>
+            <p>
+              필터를 <strong>★3 이상</strong>으로 걸고 집중 훑기.
+              비슷한 컷은 연사 그룹으로 자동 묶여 베스트만 보입니다 (v8.9 CLIP 유사도).
+              얼굴 그룹 필터로 <strong>특정 인물만</strong> 볼 수도 있습니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="flow-step">
+          <div class="flow-time">15~22분</div>
+          <div class="flow-content">
+            <div class="flow-title">클라이언트용 G 픽</div>
+            <p>
+              별 5점 중 클라이언트에게 바로 보낼 컷에만 <kbd>G</kbd>.
+              필요하면 얼굴 태그로 "박신혜 중심 12컷"처럼 따로 묶기.
+            </p>
+          </div>
+        </div>
+
+        <div class="flow-step">
+          <div class="flow-time">22~27분</div>
+          <div class="flow-content">
+            <div class="flow-title">비파괴 보정 + 내보내기</div>
+            <p>
+              G 픽에만 간단한 보정 프리셋 일괄 적용 (화이트밸런스·노출·컬러).
+              <kbd>⌘E</kbd>로 JPG 또는 DNG 내보내기. XMP는 Lightroom에서 그대로 읽힙니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="flow-step">
+          <div class="flow-time">27~30분</div>
+          <div class="flow-content">
+            <div class="flow-title">클라이언트 전달</div>
+            <p>
+              내보내기 중 Google Drive 자동 업로드.
+              <strong>공유 링크 복사</strong> 후 카톡으로 전달. 클라이언트가 브라우저에서
+              별점/코멘트 남기면 내 PickShot에 실시간 반영됩니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-tip">
+        <div class="callout-label">왜 이렇게 빠른가</div>
+        <p>
+          Lightroom은 <em>카탈로그를 만든 뒤</em> 셀렉을 시작합니다. PickShot은
+          <em>파일이 도착하는 대로</em> 바로 셀렉합니다. 대기 시간 자체가 0에 수렴하기 때문에
+          체감 속도가 다릅니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 04 G-SELECT ============ -->
+    <section class="chapter" id="gselect">
+      <div class="chapter-num">04</div>
+      <h2 class="chapter-title">G-Select — 내 기준과 클라이언트용을 분리</h2>
+      <p class="chapter-lead">
+        가장 자주 받는 질문: "별점이 있는데 G가 왜 또 필요하나요?"
+        답은 간단합니다 — <strong>평가 기준이 다르기 때문</strong>입니다.
+      </p>
+
+      <div class="gs-compare">
+        <div class="gs-col">
+          <div class="gs-col-head">
+            <span class="gs-dot star"></span>
+            <span>별점 <span class="gs-col-note">1~5</span></span>
+          </div>
+          <div class="gs-col-sub">내 기준 — 사진의 절대 품질</div>
+          <ul>
+            <li>초점·노출·구도·표정 기준의 <strong>품질 등급</strong></li>
+            <li>한 번 정하면 <strong>잘 안 바꾸는</strong> 레이어</li>
+            <li>포트폴리오·아카이브·연간 베스트 고를 때 기준</li>
+            <li>5점은 <kbd>Space</kbd>로 원핸드 빠른 셀렉</li>
+          </ul>
+        </div>
+        <div class="gs-col">
+          <div class="gs-col-head">
+            <span class="gs-dot g"></span>
+            <span>G <span class="gs-col-note">켜짐 / 꺼짐</span></span>
+          </div>
+          <div class="gs-col-sub">클라이언트용 — 이번 전달에 넣을 컷</div>
+          <ul>
+            <li>클라이언트 요구·컨셉에 맞는 <strong>선별</strong></li>
+            <li>프로젝트마다 <strong>갈아끼우는</strong> 레이어</li>
+            <li>별점 3점인데 클라이언트가 좋아할 순간 → G</li>
+            <li>별점 5점인데 분위기 안 맞음 → G 제외</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 class="sub-title">실전 예시</h3>
+      <div class="example">
+        <div class="ex-scene">페스티벌 촬영 2,000장</div>
+        <div class="ex-row">
+          <span class="ex-key">★5</span>
+          <span class="ex-val">80장</span>
+          <span class="ex-desc">기술·감정 모두 완성된 내 베스트</span>
+        </div>
+        <div class="ex-row">
+          <span class="ex-key">G</span>
+          <span class="ex-val">120장</span>
+          <span class="ex-desc">이번 클라이언트(음반사)가 요구한 "아티스트 중심, 관중 리액션"에 맞는 컷</span>
+        </div>
+        <div class="ex-row">
+          <span class="ex-key">★5 ∩ G</span>
+          <span class="ex-val">45장</span>
+          <span class="ex-desc">둘 다 해당 — 메인 전달용</span>
+        </div>
+        <div class="ex-row">
+          <span class="ex-key">★5 − G</span>
+          <span class="ex-val">35장</span>
+          <span class="ex-desc">내 베스트지만 이 클라이언트엔 안 맞음 — 포트폴리오 보관</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 05 SHORTCUTS ============ -->
+    <section class="chapter" id="shortcuts">
+      <div class="chapter-num">05</div>
+      <h2 class="chapter-title">단축키 전부</h2>
+      <p class="chapter-lead">
+        Lightroom · Photo Mechanic · Premiere 쓰시던 분 손에 맞게 맵핑했습니다.
+        대부분 한 손으로 누릅니다.
+      </p>
+
+      <div class="kb-grid">
+        <div class="kb-group">
+          <div class="kb-group-title">셀렉 · 별점</div>
+          <div class="kb-row"><span class="kb-keys"><kbd>1</kbd>~<kbd>4</kbd></span><span class="kb-desc">별점 1~4점 (내 기준 등급)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>Space</kbd></span><span class="kb-desc">별 5점 원핸드 빠른 셀렉</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>0</kbd></span><span class="kb-desc">별점 해제</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>G</kbd></span><span class="kb-desc">클라이언트 전달용 토글</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>X</kbd></span><span class="kb-desc">제외 플래그 (Lightroom 호환)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>P</kbd></span><span class="kb-desc">Pick 플래그 (Lightroom 호환)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>U</kbd></span><span class="kb-desc">플래그 해제 (Lightroom 호환)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>T</kbd></span><span class="kb-desc">태그 (Photo Mechanic 호환)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>Y</kbd></span><span class="kb-desc">태그 해제 (Photo Mechanic 호환)</span></div>
+        </div>
+
+        <div class="kb-group">
+          <div class="kb-group-title">이동 · 뷰</div>
+          <div class="kb-row"><span class="kb-keys"><kbd>←</kbd> <kbd>→</kbd></span><span class="kb-desc">이전 / 다음 사진</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>↑</kbd> <kbd>↓</kbd></span><span class="kb-desc">그리드에서 행 이동</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>1</kbd></span><span class="kb-desc">그리드 뷰</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>2</kbd></span><span class="kb-desc">단일 프리뷰 뷰</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>3</kbd></span><span class="kb-desc">A/B 비교 뷰</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>F</kbd></span><span class="kb-desc">전체 화면 토글</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>Z</kbd></span><span class="kb-desc">100% 확대 (클릭한 곳 중심)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>,</kbd> <kbd>.</kbd></span><span class="kb-desc">썸네일 크기 축소 / 확대</span></div>
+        </div>
+
+        <div class="kb-group">
+          <div class="kb-group-title">비디오 (Premiere · FCP 호환)</div>
+          <div class="kb-row"><span class="kb-keys"><kbd>J</kbd></span><span class="kb-desc">역재생 (연속 입력 시 배속)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>K</kbd></span><span class="kb-desc">정지</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>L</kbd></span><span class="kb-desc">재생 (연속 입력 시 배속)</span></div>
+        </div>
+
+        <div class="kb-group">
+          <div class="kb-group-title">파일 · 내보내기</div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>O</kbd></span><span class="kb-desc">폴더 열기</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>E</kbd></span><span class="kb-desc">선택 항목 내보내기</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>E</kbd></span><span class="kb-desc">G 픽 전부 내보내기</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>C</kbd></span><span class="kb-desc">보정값 복사</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>V</kbd></span><span class="kb-desc">보정값 붙여넣기</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>F</kbd></span><span class="kb-desc">자연어 검색 (v8.9+)</span></div>
+          <div class="kb-row"><span class="kb-keys"><kbd>⌘</kbd>+<kbd>,</kbd></span><span class="kb-desc">설정</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 06 BACKUP ============ -->
+    <section class="chapter" id="backup">
+      <div class="chapter-num">06</div>
+      <h2 class="chapter-title">메모리카드 자동 백업</h2>
+      <p class="chapter-lead">
+        이 기능 하나 때문에 PickShot을 쓰기 시작한 분이 많습니다.
+        한 번 설정하면 현장에서 카드만 꽂으면 끝입니다.
+      </p>
+
+      <h3 class="sub-title">최초 1회 설정</h3>
+      <ol class="numbered-list">
+        <li><em>설정 → 메모리카드 백업</em> 열기</li>
+        <li>
+          <strong>대상 폴더</strong> 지정 —
+          보통 외장 SSD 루트 (<code>/Volumes/SSD-WORK/</code>)
+        </li>
+        <li>
+          <strong>폴더 이름 규칙</strong> 선택 —
+          <code>YYYYMMDD_행사명</code>이 기본. 촬영마다 행사명만 바꾸면 됩니다.
+        </li>
+        <li>
+          <strong>완료 후 언마운트</strong> 체크 —
+          복사 끝나면 카드가 안전하게 튕겨 나옵니다.
+        </li>
+        <li>
+          <strong>해시 검증 (SHA-256)</strong> 체크 —
+          원본/사본 무결성 확인. 1~2% 시간 추가되지만 안전합니다.
+        </li>
+      </ol>
+
+      <h3 class="sub-title">현장에서 쓰는 법</h3>
+      <div class="card-list">
+        <div class="card-item">
+          <div class="card-step">1</div>
+          <div>
+            <strong>카드 삽입</strong>
+            <p>PickShot이 자동 감지하고 복사 시작. 진행률은 우하단 상태바에 실시간 표시.</p>
+          </div>
+        </div>
+        <div class="card-item">
+          <div class="card-step">2</div>
+          <div>
+            <strong>복사 중 셀렉</strong>
+            <p>복사가 끝나기를 기다릴 필요 없이, 채워지는 썸네일을 바로 훑습니다.</p>
+          </div>
+        </div>
+        <div class="card-item">
+          <div class="card-step">3</div>
+          <div>
+            <strong>자동 언마운트</strong>
+            <p>완료되면 카드가 알아서 언마운트. 빼서 다음 카드를 꽂으면 같은 행사 폴더에 이어 붙습니다.</p>
+          </div>
+        </div>
+        <div class="card-item">
+          <div class="card-step">4</div>
+          <div>
+            <strong>6장 연속 촬영 중 손 놓기</strong>
+            <p>카드 6장을 연속으로 꽂아도 대기 없이 전부 백업. 촬영에만 집중할 수 있습니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-warn">
+        <div class="callout-label">안전 원칙</div>
+        <p>
+          PickShot은 <strong>카드에서 삭제하지 않습니다</strong>. 백업이 끝나고
+          SSD에서 실제 파일 확인 후, 카드는 카메라에서 포맷하세요.
+          해시 검증을 켰다면 <em>검증 완료 ✓</em> 표시를 확인하고 포맷하시길 권합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 07 CACHE ============ -->
+    <section class="chapter" id="cache">
+      <div class="chapter-num">07</div>
+      <h2 class="chapter-title">적극 캐시 모드</h2>
+      <p class="chapter-lead">
+        툴바의 <span class="icon-inline">⚡</span> 아이콘. 폴더 진입 즉시 전체 프리뷰를
+        병렬로 미리 캐싱합니다. 10,000장 폴더도 <strong>40초</strong>에 풀 예열.
+      </p>
+
+      <h3 class="sub-title">언제 켜야 하나</h3>
+      <ul class="bullet-list">
+        <li><strong>행사 끝나고 사무실 돌아왔을 때</strong> — 커피 한 잔 하는 사이 전부 예열</li>
+        <li><strong>다음 날 다시 열 폴더</strong> — 닫기 전에 캐시 유지 옵션만 켜두면 그대로 유지</li>
+        <li><strong>클라이언트 미팅 직전</strong> — 회의 들어가기 전 1~2분으로 풀스피드 보장</li>
+      </ul>
+
+      <h3 class="sub-title">언제 꺼야 하나</h3>
+      <ul class="bullet-list">
+        <li><strong>현장에서 배터리 아끼고 싶을 때</strong> — 팬 속도·전력 최소화</li>
+        <li><strong>디스크 공간 빠듯할 때</strong> — 캐시 최대 용량을 설정에서 제한 가능 (기본 2 GB)</li>
+      </ul>
+
+      <div class="callout callout-info">
+        <div class="callout-label">v8.9 변경점</div>
+        <p>
+          메모리 상주량을 18 GB → 221 MB로 줄였습니다 (98.8% 감소).
+          적극 캐시를 켜도 램을 잡아먹지 않으니 안심하고 쓰세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 08 CLIENT VIEWER ============ -->
+    <section class="chapter" id="client">
+      <div class="chapter-num">08</div>
+      <h2 class="chapter-title">클라이언트 뷰어 — 링크 한 줄로 끝</h2>
+      <p class="chapter-lead">
+        클라이언트는 로그인도, 앱 설치도 필요 없습니다.
+        브라우저만 있으면 별점·펜·코멘트로 의사를 전달할 수 있습니다.
+      </p>
+
+      <h3 class="sub-title">최초 1회 연결</h3>
+      <ol class="numbered-list">
+        <li><em>설정 → 통합 → Google 계정 연결</em></li>
+        <li>OAuth 동의 창에서 <strong>Drive 파일 업로드 권한</strong>만 허용 (전체 접근 아님)</li>
+        <li>업로드 대상 폴더 지정 (기본: <code>PickShot/Client</code>)</li>
+      </ol>
+
+      <h3 class="sub-title">공유 순서</h3>
+      <ol class="numbered-list">
+        <li>G 픽 또는 ★5 컷을 <kbd>⌘E</kbd>로 내보내기 (웹사이즈 JPEG 자동 생성)</li>
+        <li>완료되면 툴바에 <strong>공유 링크 복사</strong> 버튼 활성화</li>
+        <li>클립보드에 복사된 링크를 카톡·메일로 전달</li>
+        <li>클라이언트의 액션(별점·코멘트)은 내 PickShot 상단 알림에 실시간 도착</li>
+      </ol>
+
+      <div class="callout callout-tip">
+        <div class="callout-label">프라이버시</div>
+        <p>
+          RAW 원본은 절대 업로드되지 않습니다. 2560px 웹사이즈 JPEG만 올라가고,
+          링크에는 만료 기한(기본 30일)을 걸 수 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 09 FEATURES ============ -->
+    <section class="chapter" id="features">
+      <div class="chapter-num">09</div>
+      <h2 class="chapter-title">추가 기능</h2>
+
+      <h3 class="sub-title">얼굴 그룹 (AdaFace R18)</h3>
+      <p>
+        같은 사람 자동 그룹핑. 99.82% 정확도. 모든 추론이 <strong>온디바이스</strong>에서
+        돌아가므로 서버로 전송되는 데이터는 없습니다. 인물에 이름을 태그하면 이후
+        <strong>"박신혜"</strong>만 필터로 걸어서 볼 수 있습니다.
+      </p>
+
+      <h3 class="sub-title">연사 베스트 자동 선별 (v8.9)</h3>
+      <p>
+        CLIP 유사도로 비슷한 컷을 그룹으로 묶고, 초점·표정·구도 점수로 베스트 1장을 추천.
+        <strong>연사 10장 중 9장 자동 숨김 → 결정 시간 1/10</strong>.
+      </p>
+
+      <h3 class="sub-title">같은 옷 검색 (v8.9)</h3>
+      <p>
+        한 장 선택 후 <em>"비슷한 옷"</em>. CLIP 임베딩이 같은 의상을 입은 컷을 찾아줍니다.
+        웨딩·패션·인터뷰에서 룩 단위 셀렉에 유용합니다.
+      </p>
+
+      <h3 class="sub-title">사용자 학습 (v8.9)</h3>
+      <p>
+        셀렉한 사진들의 패턴에서 개인 취향 프로필을 자동 생성.
+        다음 폴더에서 <strong>AI 추천</strong>이 내 스타일에 맞게 튜닝됩니다.
+        학습 데이터는 Mac 로컬에만 저장됩니다.
+      </p>
+
+      <h3 class="sub-title">비파괴 보정 + XMP</h3>
+      <p>
+        밝기·컨트라스트·컬러·프리셋·복사 붙여넣기. 보정값은 XMP 사이드카에 저장되어
+        Lightroom에서 그대로 읽습니다. <strong>양방향</strong>이라 Lightroom에서 만든 XMP도
+        PickShot이 인식합니다.
+      </p>
+
+      <h3 class="sub-title">LOG 영상 자동 LUT</h3>
+      <p>
+        S-Log3 · V-Log · D-Log 메타데이터 자동 감지. 내가 설정한 LUT를 다음 클립부터
+        자동 적용. 프리미어 켜기 전에 영상 셀렉이 끝납니다.
+      </p>
+
+      <h3 class="sub-title">자연어 의미 검색 (v8.9+)</h3>
+      <p>
+        <em>"노을에서 웃는 여자"</em> 같은 문장으로 검색. MobileCLIP-BLT 로컬 임베딩.
+        얼굴·옷·포즈·장면 다중 조합 가능. 전부 온디바이스 처리.
+      </p>
+    </section>
+
+    <!-- ============ 10 TROUBLESHOOT ============ -->
+    <section class="chapter" id="troubleshoot">
+      <div class="chapter-num">10</div>
+      <h2 class="chapter-title">문제 해결</h2>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 앱이 "손상된 파일" 경고로 열리지 않습니다</div>
+        <div class="trouble-a">
+          <em>시스템 설정 → 개인정보 및 보안 → "확인 없이 열기"</em>를 클릭하세요.
+          다운로드 직후 macOS가 한 번 차단하는 것이 정상입니다.
+          그래도 안 되면 터미널에서 <code>xattr -cr /Applications/PickShot.app</code>.
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 외장 SSD에서 썸네일이 느립니다</div>
+        <div class="trouble-a">
+          <strong>적극 캐시 모드</strong>(⚡)를 켜시거나, 허브를 통하지 말고
+          Mac에 직결하세요. USB 3.2 Gen 2 이상 케이블인지도 확인.
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 메모리카드 백업이 시작되지 않습니다</div>
+        <div class="trouble-a">
+          <em>시스템 설정 → 개인정보 → 파일 및 폴더</em>에서 PickShot의
+          <strong>이동식 볼륨</strong> 권한이 켜져 있는지 확인.
+          카드가 FAT32 또는 exFAT이어야 합니다 (ExFAT 권장).
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. Lightroom에서 별점이 안 보입니다</div>
+        <div class="trouble-a">
+          PickShot <em>설정 → 내보내기 → XMP 사이드카 쓰기</em>가 켜져 있어야 합니다.
+          Lightroom 카탈로그에 추가한 뒤 <em>메타데이터 → 파일에서 메타데이터 읽기</em> 실행.
+          G 픽은 Lightroom 컬러 레이블(녹색)로 매핑됩니다.
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 클라이언트 뷰어 링크가 열리지 않는다고 합니다</div>
+        <div class="trouble-a">
+          Google Drive 공유 설정에서 <strong>"링크를 가진 모든 사용자"</strong>가
+          선택돼 있는지 확인. 회사 계정은 정책상 외부 공유가 차단될 수 있습니다.
+          그 경우 개인 Google 계정으로 재연결하세요.
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 저장된 별점·G가 사라졌습니다</div>
+        <div class="trouble-a">
+          PickShot 메타데이터는 파일별 XMP + 로컬 SQLite 양쪽에 저장됩니다.
+          파일을 다른 폴더로 옮기셨다면 XMP가 같이 따라갔는지 확인.
+          그래도 안 보이면 <em>설정 → 데이터베이스 → 폴더 다시 스캔</em>.
+        </div>
+      </div>
+
+      <div class="trouble">
+        <div class="trouble-q">Q. 크래시 로그를 어떻게 보내나요?</div>
+        <div class="trouble-a">
+          <em>Help → 진단 리포트 보내기</em>. 익명으로 스택 트레이스만 전송됩니다.
+          또는
+          <a href="https://github.com/kimjjang869-bot/pickshot/issues" target="_blank">GitHub Issues</a>
+          에 직접 올려주셔도 됩니다.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 11 FAQ ============ -->
+    <section class="chapter" id="faq">
+      <div class="chapter-num">11</div>
+      <h2 class="chapter-title">자주 묻는 질문</h2>
+
+      <div class="faq">
+        <div class="faq-q">Lightroom을 완전히 대체하나요?</div>
+        <div class="faq-a">
+          아니요. PickShot은 <strong>셀렉·전달</strong>에 특화된 도구입니다.
+          심화 보정·프린트 컬러 매니지먼트는 Lightroom이 강합니다.
+          "Lightroom 켜기 전에 쓰는 도구"로 생각하시는 게 정확합니다.
+        </div>
+      </div>
+
+      <div class="faq">
+        <div class="faq-q">RAW 원본이 서버로 올라가나요?</div>
+        <div class="faq-a">
+          절대 올라가지 않습니다. 모든 AI(얼굴·CLIP·장면)는 온디바이스.
+          클라이언트 뷰어는 <strong>2560px JPEG</strong>만 Google Drive에 올립니다.
+        </div>
+      </div>
+
+      <div class="faq">
+        <div class="faq-q">Intel Mac에서도 쓸 만 한가요?</div>
+        <div class="faq-a">
+          네. 다만 체감 속도가 Apple Silicon의 절반 정도입니다 (2,000장 RAW 기준 M1 1.5초, Intel 2.8초).
+          얼굴·CLIP 기능은 첫 스캔이 조금 길어질 수 있습니다.
+        </div>
+      </div>
+
+      <div class="faq">
+        <div class="faq-q">카드 취소는 어떻게 하나요?</div>
+        <div class="faq-a">
+          <em>설정 → 계정 → 구독 관리</em>에서 언제든 즉시 취소.
+          결제 주기 끝까지는 계속 사용 가능. 환불도 지원합니다.
+        </div>
+      </div>
+
+      <div class="faq">
+        <div class="faq-q">팀 라이선스 있나요?</div>
+        <div class="faq-a">
+          준비 중입니다. 현재는 개인 라이선스로 운영되며,
+          스튜디오·에이전시 문의는 <a href="mailto:kimjjang869@gmail.com">kimjjang869@gmail.com</a>
+          으로 주시면 개별 견적 가능합니다.
+        </div>
+      </div>
+
+      <div class="faq">
+        <div class="faq-q">업데이트는 자동인가요?</div>
+        <div class="faq-a">
+          네. 앱 시작 시 GitHub Releases 기준으로 최신 버전을 확인하고,
+          새 버전이 있으면 알림. 수동 업데이트를 원하시면 설정에서 비활성화 가능합니다.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOOTER CTA ============ -->
+    <div class="manual-outro">
+      <div class="outro-kicker">아직 답을 못 찾으셨나요?</div>
+      <h3 class="outro-title">
+        <a href="mailto:kimjjang869@gmail.com">메일로 직접 답변</a>드립니다.
+      </h3>
+      <p class="outro-sub">
+        12년차 개발자 겸 사진가가 직접 운영합니다. 버그 · 기능 요청 · 사용법 모두 환영입니다.
+      </p>
+      <div class="outro-links">
+        <a href="https://github.com/kimjjang869-bot/pickshot/issues" target="_blank" class="btn btn-secondary">GitHub에 신고</a>
+        <a href="index.html#download" class="btn btn-primary">7일 무료 시작</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="footer-logo"><span class="logo-orb"></span> PickShot</div>
+      <div class="footer-tag">
+        12년차 커머셜 포토그래퍼가 만든 macOS 컬링 엔진.<br>
+        Made in Seoul · Apple Silicon 최적화
+      </div>
+    </div>
+    <div class="footer-cols">
+      <div class="footer-col">
+        <div class="footer-head">제품</div>
+        <a href="index.html#gselect">G-Select</a>
+        <a href="index.html#speed">속도</a>
+        <a href="index.html#features">기능</a>
+        <a href="index.html#pricing">가격</a>
+        <a href="manual.html">매뉴얼</a>
+      </div>
+      <div class="footer-col">
+        <div class="footer-head">지원</div>
+        <a href="https://github.com/kimjjang869-bot/pickshot/issues" target="_blank">버그 신고</a>
+        <a href="https://github.com/kimjjang869-bot/pickshot/releases" target="_blank">릴리즈 노트</a>
+        <a href="mailto:kimjjang869@gmail.com">이메일 문의</a>
+      </div>
+      <div class="footer-col">
+        <div class="footer-head">법적</div>
+        <a href="privacy.html">개인정보처리방침</a>
+        <a href="terms.html">이용약관</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bot">
+    © 2026 PickShot · 12년차 사진가가 매주 쓰는 도구
+  </div>
+</footer>
+
+<script src="script.js" defer></script>
+<script>
+// TOC active highlight + smooth scroll
+(() => {
+  const links = document.querySelectorAll('.toc-link');
+  const chapters = [...document.querySelectorAll('.chapter')];
+  const byId = id => document.querySelector(`.toc-link[href="#${id}"]`);
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const link = byId(e.target.id);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-40% 0px -55% 0px' });
+
+  chapters.forEach(c => observer.observe(c));
+})();
+</script>
+</body>
+</html>

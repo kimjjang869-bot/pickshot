@@ -3,6 +3,43 @@ import Foundation
 import AppKit
 
 extension PhotoStore {
+
+    // MARK: - XMP Sidecar Helper (v8.6.1)
+
+    /// 원본 파일 옆에 `.xmp` 사이드카가 있으면 동일한 상대 경로로 함께 이동.
+    /// Adobe Bridge/Lightroom/Camera Raw 가 생성하는 XMP 가 이동 시 고아가 되는 문제 해결.
+    static func moveXMPSidecarIfExists(from src: URL, to dst: URL) {
+        let fm = FileManager.default
+        // e.g. photo.ARW → photo.xmp (확장자 치환), photo.JPG → photo.xmp
+        let srcXMP = src.deletingPathExtension().appendingPathExtension("xmp")
+        let dstXMP = dst.deletingPathExtension().appendingPathExtension("xmp")
+        guard fm.fileExists(atPath: srcXMP.path), !fm.fileExists(atPath: dstXMP.path) else { return }
+        try? fm.moveItem(at: srcXMP, to: dstXMP)
+    }
+
+    // MARK: - Cache Invalidation (v8.6.1 메모리 누수 수정)
+
+    /// 삭제/이동된 사진 URL 들의 모든 캐시 엔트리 일괄 제거.
+    /// 이전에는 photos[] 에서만 제거하고 ThumbnailCache / PreviewImageCache / hiResCache /
+    /// FolderPreviewCache / DevelopStore / _dimensionCache 등에 NSImage 들이 그대로 남아
+    /// 35회 삭제에서 수백 MB ~ 수 GB 씩 누수가 발생. 60GB 메모리 사용 + 38GB 스왑 유발.
+    static func invalidateCachesForDeletedURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        // 1) 프리뷰 전용 캐시 (메모리 + 디스크)
+        for url in urls {
+            PreviewImageCache.shared.remove(url: url)
+            ThumbnailCache.shared.remove(url: url)
+            PhotoPreviewView.invalidateImageDimensions(for: url)
+            PhotoPreviewView.removeHiResCache(for: url)
+            DevelopStore.shared.invalidateMemory(for: url)
+        }
+        // 2) 디스크 썸네일 — getByPath path-only key 기반
+        for url in urls {
+            DiskThumbnailCache.shared.invalidate(url: url)
+        }
+        fputs("[CACHE-INVALIDATE] \(urls.count) URLs 캐시 정리 완료\n", stderr)
+    }
+
     // MARK: - Remove / Delete
 
     /// Remove selected photos from the list (NOT from disk)
@@ -120,6 +157,7 @@ extension PhotoStore {
         var deleted = 0
         var failed = 0
         var trashMoves: [FileMove] = []   // 휴지통 복원용
+        var deletedURLs: [URL] = []       // v8.6.1: 삭제된 URL 캐시 무효화용
 
         for id in ids {
             // 안전장치: _photoIndex가 스테일할 수 있으므로 photo.id == id 검증
@@ -136,20 +174,33 @@ extension PhotoStore {
             }
             guard !photo.isFolder && !photo.isParentFolder else { continue }
 
+            // v8.6.1: 삭제되는 파일의 모든 캐시 엔트리 수집 → 아래에서 일괄 제거
+            deletedURLs.append(photo.jpgURL)
+            if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
+                deletedURLs.append(rawURL)
+            }
+
             // 무엇을 삭제하는지 명시 로그 (디버깅 용)
             let rawLog = photo.rawURL.map { $0.lastPathComponent } ?? "nil"
             fputs("[DELETE] 삭제 대상: jpgURL=\(photo.jpgURL.lastPathComponent), rawURL=\(rawLog)\n", stderr)
 
             // Delete JPG → 휴지통 (복원 경로 기록)
-            do {
-                if fm.fileExists(atPath: photo.jpgURL.path) {
+            // v8.6.1: JPG 삭제 실패 시 RAW 도 건드리지 않음 (반쪽 삭제로 페어 깨짐 방지)
+            var jpgDeleteOK = true
+            if fm.fileExists(atPath: photo.jpgURL.path) {
+                do {
                     var trashURL: NSURL?
                     try fm.trashItem(at: photo.jpgURL, resultingItemURL: &trashURL)
                     if let t = trashURL as URL? {
                         trashMoves.append(FileMove(sourceURL: photo.jpgURL, destURL: t))
                     }
+                } catch {
+                    failed += 1
+                    jpgDeleteOK = false
                 }
-            } catch { failed += 1 }
+            }
+            // JPG 삭제 실패했으면 RAW 건너뛰고 이 사진은 deleted 카운트 미증가
+            guard jpgDeleteOK else { continue }
 
             // Delete RAW → 휴지통 (jpgURL과 같으면 스킵 — 이미 삭제됨)
             if let rawURL = photo.rawURL, rawURL != photo.jpgURL {
@@ -167,6 +218,11 @@ extension PhotoStore {
         }
 
         AppLogger.log(.export, "Deleted \(deleted) files (\(failed) failed) to Trash")
+
+        // v8.6.1 메모리 누수 수정: 삭제된 사진들의 캐시 일괄 무효화.
+        // (이전에는 photos[] 에서만 제거하고 각 캐시엔 NSImage 가 그대로 남아
+        //  35회 × 수십 MB → 60GB 누수 발생. MemGuard 가 감지했어도 일부만 해제)
+        PhotoStore.invalidateCachesForDeletedURLs(deletedURLs)
 
         // 삭제 효과음 (macOS 휴지통 비우기, 0.28초)
         // 주의: removePhotosFromList 안에서도 재생되므로 여기는 생략 — 이중 재생 방지
@@ -400,18 +456,23 @@ extension PhotoStore {
                     fileMoveRecords.append(FileMove(sourceURL: srcURL, destURL: destURL))
                     moved += 1
 
+                    // v8.6.1: XMP 사이드카 동반 이동 (Adobe/Lightroom 레이팅 메타 유실 방지).
+                    Self.moveXMPSidecarIfExists(from: srcURL, to: destURL)
+
                     // photos 배열에서 해당 파일 찾아서 ID 수집
                     if let photo = self.photos.first(where: {
                         $0.jpgURL.path == srcURL.path || $0.rawURL?.path == srcURL.path
                     }) {
-                        // JPG+RAW 쌍의 다른 파일도 이동
+                        // JPG+RAW 쌍의 다른 파일도 이동 (+ XMP)
                         if photo.jpgURL.path == srcURL.path, let rawURL = photo.rawURL, rawURL != photo.jpgURL {
                             let rawDest = destination.appendingPathComponent(rawURL.lastPathComponent)
                             try? fm.moveItem(at: rawURL, to: rawDest)
+                            Self.moveXMPSidecarIfExists(from: rawURL, to: rawDest)
                         } else if photo.rawURL?.path == srcURL.path {
                             let jpgDest = destination.appendingPathComponent(photo.jpgURL.lastPathComponent)
                             if !fm.fileExists(atPath: jpgDest.path) {
                                 try? fm.moveItem(at: photo.jpgURL, to: jpgDest)
+                                Self.moveXMPSidecarIfExists(from: photo.jpgURL, to: jpgDest)
                             }
                         }
                         movedIDs.insert(photo.id)
@@ -432,6 +493,10 @@ extension PhotoStore {
                 if !fileMoveRecords.isEmpty {
                     self.undoStack.append((action: "파일 이동", photoIDs: movedIDs, oldRatings: [:], oldSP: [:], oldGSelect: [:], fileMoves: fileMoveRecords, removedPhotos: []))
                 }
+                // v8.6.1 메모리 누수 수정: 이동된 사진들의 캐시 일괄 정리.
+                //   현재 폴더에서는 이동 후 해당 사진이 사라지므로 캐시를 유지할 이유 없음.
+                let movedURLs = fileMoveRecords.map { $0.sourceURL }
+                PhotoStore.invalidateCachesForDeletedURLs(movedURLs)
                 // 이동된 사진 목록에서 제거
                 if !movedIDs.isEmpty {
                     self.removePhotosFromList(ids: movedIDs)
@@ -511,7 +576,6 @@ extension PhotoStore {
             sortMode = .customOrder
         }
         invalidateFilterCache()
-        photosVersion += 1
         objectWillChange.send()
         fputs("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n", stderr)
     }
@@ -548,7 +612,6 @@ extension PhotoStore {
             sortMode = .customOrder
         }
         invalidateFilterCache()
-        photosVersion += 1
         // photosVersion @Published 변경으로 충분 — objectWillChange.send() 중복 호출 제거
         fputs("[REORDER MULTI] \(sourceIDs.count)장 → \(targetID.uuidString.prefix(8)) (before=\(insertBefore))\n", stderr)
     }
@@ -561,6 +624,10 @@ extension PhotoStore {
     }
 
     func batchRename(pattern: String, dateFormat: String, seqDigits: Int, seqStart: Int, preserveRatings: Bool = true) -> (success: Int, errors: [String]) {
+        // v8.6.1 데이터 무결성: batchRename 진입 전 debounce 중인 레이팅 저장 강제 플러시.
+        //   이전엔 400ms debounce 작업이 나중에 깨어나면 구 파일명 키로 rating 덮어써 두 버전 공존.
+        saveRatingsNow()
+
         let targets: [PhotoItem]
         if selectedPhotoIDs.count > 1 {
             targets = filteredPhotos.filter { selectedPhotoIDs.contains($0.id) && !$0.isFolder && !$0.isParentFolder }

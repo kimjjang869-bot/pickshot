@@ -35,18 +35,29 @@ final class DevelopPipeline {
         return CIContext(options: opts)
     }()
 
-    /// CIRAWFilter 캐시 — 같은 RAW 파일의 디코딩을 매번 반복하지 않음.
-    /// 사용자가 slider 를 드래그할 때마다 CIRAWFilter 생성하면 매번 RAW 디스크 파싱.
-    /// 같은 URL 이면 기존 필터의 exposure/temperature 만 변경하고 outputImage 만 재추출.
-    private static let rawFilterCache: NSCache<NSURL, CIRAWFilter> = {
-        let c = NSCache<NSURL, CIRAWFilter>()
-        c.countLimit = 6  // 최근 6개 RAW 파일 유지
-        return c
-    }()
+    /// v8.6.1: CIRAWFilter 는 thread-safe 하지 않음 (NSFastEnumerationMutation 크래시 확인됨).
+    /// 공유 캐시를 쓰면 슬라이더/프리뷰/export 가 동시에 property set → outputImage 읽기가
+    /// 겹치며 크래시. 매 호출마다 fresh 인스턴스 생성 (디스크 헤더 파싱은 OS 캐시 덕분에 저렴).
 
-    /// 사진 전환 시 이전 캐시 제거하는 편리 메서드.
+    /// v8.6.2: RAW demosaic 결과(CGImage) 캐시 — 슬라이더 드래그 시 CIRAWFilter 재초기화 회피.
+    /// 키: (url, scaleFactor, exposure, temperature, tint, wbAuto). 최근 1개만 유지.
+    /// crop/curve/contrast/saturation 변경 시엔 키가 같아 캐시 히트 → ~수백ms 절약.
+    /// exposure/WB 변경 시에만 캐시 miss → CIRAWFilter 재실행 (raw 품질 보존).
+    private struct RAWBaseCacheKey: Equatable {
+        let url: URL
+        let scaleFactor: Float
+        let exposure: Double
+        let temperature: Double
+        let tint: Double
+        let wbAuto: Bool
+    }
+    private static var rawBaseCache: (key: RAWBaseCacheKey, image: CGImage)?
+    private static let rawBaseCacheLock = NSLock()
+
     static func clearRAWCache() {
-        rawFilterCache.removeAllObjects()
+        rawBaseCacheLock.lock()
+        rawBaseCache = nil
+        rawBaseCacheLock.unlock()
     }
 
     private let context: CIContext
@@ -79,33 +90,61 @@ final class DevelopPipeline {
         let isRAW = isRAWFile(url: url)
 
         if isRAW {
-            // 1st try: CIRAWFilter (URL 기반 캐시 재사용)
-            let nsURL = url as NSURL
-            let cachedRaw = Self.rawFilterCache.object(forKey: nsURL)
-            let createdRaw = cachedRaw == nil ? CIRAWFilter(imageURL: url) : nil
-            if let raw = cachedRaw ?? createdRaw {
-                if cachedRaw == nil, let newRaw = createdRaw {
-                    Self.rawFilterCache.setObject(newRaw, forKey: nsURL)
-                    fputs("[DEV-PIPELINE] CIRAWFilter 신규 생성 + 캐시 (\(url.lastPathComponent))\n", stderr)
+            // v8.6.2: scaleFactor 계산 — CGImageSource props 로 0ms (extent 호출 금지)
+            var scaleFactor: Float = 1.0
+            if targetSize != .zero {
+                let native = DevelopPipeline.readRAWPixelSize(url: url) ?? CGSize(width: 6000, height: 4000)
+                let longSide = max(native.width, native.height)
+                let targetLong = max(targetSize.width, targetSize.height)
+                if longSide > 0 && targetLong > 0 && targetLong < longSide {
+                    scaleFactor = Float(min(1.0, Double(targetLong) / Double(longSide)))
                 }
-                // targetSize 가 있으면 RAW 디코딩 자체를 축소해서 빠르게 (풀해상도 디코딩 회피)
-                if targetSize != .zero {
-                    let native = raw.outputImage?.extent ?? CGRect(x: 0, y: 0, width: 6000, height: 4000)
-                    let longSide = max(native.width, native.height)
-                    let targetLong = max(targetSize.width, targetSize.height)
-                    if longSide > 0 && targetLong > 0 && targetLong < longSide {
-                        let sf = Float(min(1.0, Double(targetLong) / Double(longSide)))
-                        raw.scaleFactor = sf
-                    }
-                }
+            }
+
+            // v8.6.2: RAW 베이스 캐시 조회 — 크롭/커브/콘트라스트/채도 드래그 시 CIRAWFilter 스킵.
+            let key = RAWBaseCacheKey(
+                url: url, scaleFactor: scaleFactor,
+                exposure: settings.exposure,
+                temperature: settings.wbAuto ? 0 : settings.temperature,
+                tint: settings.wbAuto ? 0 : settings.tint,
+                wbAuto: settings.wbAuto
+            )
+            DevelopPipeline.rawBaseCacheLock.lock()
+            let cached = DevelopPipeline.rawBaseCache
+            DevelopPipeline.rawBaseCacheLock.unlock()
+            if let cached = cached, cached.key == key {
+                // 캐시 히트 — demosaic 결과 재사용. orient 은 캐시된 이미지에 이미 적용됨.
+                let ci = CIImage(cgImage: cached.image)
+                return LoadResult(image: ci, usedRAWPath: true)
+            }
+
+            // v8.6.1: 매 호출마다 fresh CIRAWFilter (thread-safe 확보).
+            if let raw = CIRAWFilter(imageURL: url) {
+                if scaleFactor < 1.0 { raw.scaleFactor = scaleFactor }
                 raw.exposure = Float(settings.exposure)
                 if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
                     let kelvin = 5500.0 + settings.temperature * 45.0
                     raw.neutralTemperature = Float(kelvin)
                     raw.neutralTint = Float(settings.tint * 1.5)
                 }
-                if let rawOut = raw.outputImage {
-                    // scaleFactor 로 이미 축소됐으니 fitScale 추가 필요 없음 (필요 시만)
+                if var rawOut = raw.outputImage {
+                    // orient 적용 (CIRAWFilter sensor raw → display orient)
+                    let sensorExtent = rawOut.extent
+                    if let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
+                       let orient = props[kCGImagePropertyOrientation as String] as? Int,
+                       orient > 1,
+                       let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orient)) {
+                        rawOut = rawOut.oriented(cgOri)
+                        fputs("[RAW-DIAG] \(url.lastPathComponent) sensor=\(Int(sensorExtent.width))x\(Int(sensorExtent.height)) orient=\(orient) → display=\(Int(rawOut.extent.width))x\(Int(rawOut.extent.height))\n", stderr)
+                    }
+                    // v8.6.2: demosaic 결과를 CGImage 로 baking 해서 캐싱 (non-RAW 필터 드래그 고속화)
+                    if let cg = DevelopPipeline.sharedContext.createCGImage(rawOut, from: rawOut.extent) {
+                        DevelopPipeline.rawBaseCacheLock.lock()
+                        DevelopPipeline.rawBaseCache = (key: key, image: cg)
+                        DevelopPipeline.rawBaseCacheLock.unlock()
+                        return LoadResult(image: CIImage(cgImage: cg), usedRAWPath: true)
+                    }
                     return LoadResult(image: rawOut, usedRAWPath: true)
                 } else {
                     fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter.outputImage nil → CIImage fallback (\(url.lastPathComponent))\n", stderr)
@@ -131,6 +170,22 @@ final class DevelopPipeline {
     /// 이미 로드된 CIImage 에 필터만 적용 (슬라이더 드래그 최적화용).
     func apply(to ciImage: CIImage, settings: DevelopSettings) -> CIImage {
         return applyFilters(to: ciImage, settings: settings)
+    }
+
+    /// v8.6.2: **빠른 드래그 프리뷰 용도** — 이미 화면에 있는 Stage 1/2 NSImage 를 기반으로
+    /// CI 필터만 적용 (RAW demosaic 스킵). ~20-50ms. 드래그 중 즉시 반응.
+    /// 단점: exposure/WB 는 JPG-level 적용 (RAW raw-level 대비 ±2EV 이상에서 품질 저하).
+    /// → 드래그 종료 후 300ms idle 에 CIRAWFilter 기반 고품질 render 로 교체 권장.
+    func renderFast(baseImage: NSImage, settings: DevelopSettings) -> NSImage? {
+        guard let cg = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+              ?? { guard let t = baseImage.tiffRepresentation,
+                         let b = NSBitmapImageRep(data: t) else { return nil }
+                   return b.cgImage }()
+        else { return nil }
+        let ci = CIImage(cgImage: cg)
+        // skipExposureAndManualWB = false → exposure/WB 를 CI 필터로 적용 (RAW 경로 아님)
+        let processed = applyFilters(to: ci, settings: settings, skipExposureAndManualWB: false)
+        return makeNSImage(from: processed)
     }
 
     // MARK: - Load
@@ -160,6 +215,17 @@ final class DevelopPipeline {
                 fputs("[DEV-PIPELINE] ❌ raw.outputImage 가 nil — \(url.lastPathComponent)\n", stderr)
                 return nil
             }
+            // v8.6.2 fix: CIRAWFilter.outputImage 는 sensor raw (orient 태그 미적용).
+            // Sony α9 III 처럼 orient=6/8 인 RAW 는 landscape 센서를 portrait 로 수동 회전 필요.
+            // CIImage.oriented(_:) 는 extent 도 함께 변환해서 이후 파이프라인과 일관.
+            if let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
+               let orient = props[kCGImagePropertyOrientation as String] as? Int,
+               orient > 1,
+               let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orient)) {
+                image = image.oriented(cgOri)
+                fputs("[DEV-PIPELINE] RAW orient=\(orient) 적용 (CIRAWFilter 후)\n", stderr)
+            }
             if targetSize != .zero {
                 image = fitScale(image, to: targetSize)
             }
@@ -180,6 +246,34 @@ final class DevelopPipeline {
         return ["nef", "cr2", "cr3", "arw", "raf", "dng", "orf", "rw2", "pef", "srf"].contains(ext)
     }
 
+    /// v8.6.2: CGImageSource 메타데이터(PixelWidth/PixelHeight) 로 RAW 센서 해상도 얻기.
+    /// `raw.outputImage?.extent` 는 풀 demosaic 을 유도해 수백ms 걸리지만 이건 0ms (파일 헤더 읽기).
+    /// 결과는 URL 단위로 메모리 캐싱 (동일 URL 반복 조회 시 부하 0).
+    private static let pixelSizeCacheLock = NSLock()
+    private static var pixelSizeCache: [URL: CGSize] = [:]
+    static func readRAWPixelSize(url: URL) -> CGSize? {
+        pixelSizeCacheLock.lock()
+        if let cached = pixelSizeCache[url] {
+            pixelSizeCacheLock.unlock()
+            return cached
+        }
+        pixelSizeCacheLock.unlock()
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
+              let w = props[kCGImagePropertyPixelWidth as String] as? Int,
+              let h = props[kCGImagePropertyPixelHeight as String] as? Int,
+              w > 0, h > 0 else { return nil }
+        let size = CGSize(width: w, height: h)
+        pixelSizeCacheLock.lock()
+        // 간단한 사이즈 한도 — 2000 URL 넘으면 절반 비우기
+        if pixelSizeCache.count > 2000 {
+            pixelSizeCache.removeAll(keepingCapacity: true)
+        }
+        pixelSizeCache[url] = size
+        pixelSizeCacheLock.unlock()
+        return size
+    }
+
     private func fitScale(_ image: CIImage, to targetSize: CGSize) -> CIImage {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return image }
@@ -192,6 +286,19 @@ final class DevelopPipeline {
 
     private func applyFilters(to input: CIImage, settings: DevelopSettings, skipExposureAndManualWB: Bool = false) -> CIImage {
         var image = input
+
+        // v8.7: RAW baseline 톤/채도 — CIRAWFilter 는 neutral 출력 (camera "Standard" JPG 보다 flat).
+        //   사용자가 원래 미리보기(embedded JPG) 와 색 차이를 크게 느끼는 원인.
+        //   skipExposureAndManualWB=true 는 RAW 경로. 기본값에서 soft baseline 만 적용.
+        //   (UserDefaults 로 토글 가능 — "rawBaselineBoost" false 면 끔)
+        if skipExposureAndManualWB && UserDefaults.standard.object(forKey: "rawBaselineBoost") as? Bool ?? true {
+            let baseline = CIFilter.colorControls()
+            baseline.inputImage = image
+            baseline.saturation = 1.12   // +12% — 카메라 기본 채도 근사
+            baseline.contrast = 1.06      // +6% — soft S-curve
+            baseline.brightness = 0
+            if let out = baseline.outputImage { image = out }
+        }
 
         // 1) JPG 용 WB (RAW 는 load 단계에서 이미 처리됨)
         if !skipExposureAndManualWB {
@@ -250,11 +357,17 @@ final class DevelopPipeline {
         }
 
         // 6) 크롭 (마지막)
+        //
+        // v8.6.1 좌표계 수정: NSCropView 는 `isFlipped = true` (top-left 원점) 로 draftRect 를
+        // 기록하지만 CIImage.extent 는 bottom-left 원점. 이전엔 변환 없이 그대로 곱해서
+        // Y축 반전된 크롭 (사용자가 상단 자르면 실제로는 하단이 잘림) 발생.
+        // 해결: rect.origin.y 를 (1 - rect.origin.y - rect.height) 로 뒤집어 매핑.
         if let rect = settings.cropRect {
             let extent = image.extent
+            let yBottomLeft = 1.0 - rect.origin.y - rect.height
             let cropRect = CGRect(
                 x: extent.origin.x + rect.origin.x * extent.width,
-                y: extent.origin.y + rect.origin.y * extent.height,
+                y: extent.origin.y + yBottomLeft * extent.height,
                 width: rect.width * extent.width,
                 height: rect.height * extent.height
             )
@@ -637,7 +750,7 @@ final class DevelopPipeline {
 
     /// 자동 대비 — 히스토그램 유효 범위가 좁으면 대비 올림, 넓으면 유지/감소.
     func computeAutoContrast(url: URL) -> Double? {
-        var settings = DevelopSettings()
+        let settings = DevelopSettings()
         guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
             return nil
         }

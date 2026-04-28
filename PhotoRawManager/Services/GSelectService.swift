@@ -92,11 +92,13 @@ class GSelectService: ObservableObject {
                     GoogleDriveService.createShareLink(fileId: folderId, accessToken: token) { [weak self] link, _ in
                         DispatchQueue.main.async { [weak self] in
                             self?.shareLink = link
-                            // Generate client web viewer link
-                            if let token = GoogleDriveService.savedAccessToken {
-                                let name = folderName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folderName
-                                self?.viewerLink = "https://kimjjang869-bot.github.io/pickshot-viewer/?folder=\(folderId)&token=\(token)&name=\(name)"
-                            }
+                            // v8.6.1 보안 수정: access_token 을 URL 에 포함하지 않음.
+                            // 이전엔 "?folder=X&token=TOKEN&name=Y" 로 뿌려 카카오톡/이메일 공유 시
+                            // TOKEN 이 브라우저 히스토리/프록시 로그에 남아 Drive 전체 유출 위험.
+                            // 현재는 public link + folder ID 만으로 공유 — viewer 측에서 공개 URL 로
+                            // manifest 읽음 (ClientSelectService 와 동일 방식).
+                            let name = folderName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folderName
+                            self?.viewerLink = "https://kimjjang869-bot.github.io/pickshot-viewer/?folder=\(folderId)&name=\(name)"
                         }
                     }
                 } else {

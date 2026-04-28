@@ -51,9 +51,11 @@ struct ExifService {
             cacheLock.unlock()
             return existing
         }
-        // 캐시 오버플로 방지
+        // v9.0: 캐시 오버플로 시 removeAll 대신 LRU 식 단일 항목 제거.
+        //   기존: removeAll → 다른 스레드가 막 저장한 결과까지 증발 → 불필요한 I/O 재반복.
         if exifCache.count >= maxCacheSize {
-            exifCache.removeAll(keepingCapacity: true)
+            // 임의의 한 항목 제거 (Dictionary 순서 비정렬이라 효과적 LRU 는 아니나 전체 wipe 보다 안전)
+            if let firstKey = exifCache.keys.first { exifCache.removeValue(forKey: firstKey) }
         }
         exifCache[url] = data
         cacheLock.unlock()

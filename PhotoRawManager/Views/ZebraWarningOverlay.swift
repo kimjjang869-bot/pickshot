@@ -17,7 +17,7 @@ struct ZebraWarningOverlay: View {
             }
         }
         .onAppear { generateOverlay() }
-        .onChange(of: image) { _ in generateOverlay() }
+        .onChange(of: image) { _, _ in generateOverlay() }
     }
 
     private func generateOverlay() {

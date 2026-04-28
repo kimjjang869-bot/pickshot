@@ -37,3 +37,8 @@ TESTER_KEYS.md
 
 # Claude Code local
 .claude/
+
+# CLIP model weights (too big for GitHub)
+PhotoRawManager/Models/MobileCLIPImage.mlpackage/
+PhotoRawManager/Models/MobileCLIPText.mlpackage/
+

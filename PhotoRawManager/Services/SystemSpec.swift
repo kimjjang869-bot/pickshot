@@ -6,6 +6,9 @@ import Metal
 // 기존에 6곳(HardwareAcceleration, PhotoPreviewView, ThumbnailGridView,
 // ImageAnalysisService, FileCopyService, PhotoStore+Collections)에 분산되어 있던
 // RAM/코어 기반 분기 로직을 단일 진입점으로 통합한다.
+//
+// PickShot은 벤치마크 앱이 아니라 셀렉 앱이다. 하드웨어를 끝까지 쓰기보다
+// UI 입력/스크롤/프리뷰 전환을 위해 항상 약 20% 여유를 남기는 보수적 기본값을 쓴다.
 
 /// 하드웨어 성능 티어 (M1 Pro 16GB 테스터 crystal 이슈 해결을 위해 standard tier 신설)
 enum PerformanceTier: String {
@@ -13,14 +16,6 @@ enum PerformanceTier: String {
     case standard  // 16GB (M1 Pro 16GB - crystal 타겟, 경계 스펙)
     case high      // 24~47GB (M2/M3 Pro 32GB)
     case extreme   // 48GB+ (M3 Max/Ultra, 포토칸 M3 Ultra 64GB+)
-}
-
-/// 사용자 프로필 (Settings에서 선택, auto면 SystemSpec 자동 tier 사용)
-enum UserPerformanceProfile: String {
-    case auto
-    case speed     // 한 단계 아래로 내림
-    case balanced  // auto와 동일
-    case quality   // 한 단계 위로 올림
 }
 
 enum GPUClass {
@@ -47,25 +42,8 @@ final class SystemSpec {
     let osVersion: String           // "macOS 14.5"
     let autoTier: PerformanceTier   // 하드웨어 기반 자동 tier
 
-    // MARK: - 사용자 프로필
-    var userProfile: UserPerformanceProfile {
-        get {
-            let raw = UserDefaults.standard.string(forKey: "userPerformanceProfile") ?? "auto"
-            return UserPerformanceProfile(rawValue: raw) ?? .auto
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "userPerformanceProfile")
-        }
-    }
-
-    /// 유저 프로필을 반영한 최종 tier
-    var effectiveTier: PerformanceTier {
-        switch userProfile {
-        case .auto, .balanced: return autoTier
-        case .speed: return stepDown(autoTier)
-        case .quality: return stepUp(autoTier)
-        }
-    }
+    /// 최종 tier — 항상 하드웨어 기반 autoTier 사용 (유저 프로필 picker 폐기됨).
+    var effectiveTier: PerformanceTier { autoTier }
 
     private init() {
         let procInfo = ProcessInfo.processInfo
@@ -103,24 +81,6 @@ final class SystemSpec {
             self.autoTier = .high
         } else {
             self.autoTier = .extreme  // 48GB+ (M3 Max/Ultra)
-        }
-    }
-
-    // MARK: - Tier 전환
-    private func stepDown(_ t: PerformanceTier) -> PerformanceTier {
-        switch t {
-        case .extreme: return .high
-        case .high: return .standard
-        case .standard: return .low
-        case .low: return .low
-        }
-    }
-    private func stepUp(_ t: PerformanceTier) -> PerformanceTier {
-        switch t {
-        case .low: return .standard
-        case .standard: return .high
-        case .high: return .extreme
-        case .extreme: return .extreme
         }
     }
 
@@ -190,102 +150,136 @@ final class SystemSpec {
     /// AggressiveImageCache(HardwareAcceleration.swift) 용량 (MB)
     func aggressiveCacheLimitMB() -> Int {
         switch effectiveTier {
-        case .low:      return 150
-        case .standard: return 200  // M1 Pro 16GB 타겟 (기존 300MB에서 더 축소)
-        case .high:     return 500
-        case .extreme:  return 1024
+        case .low:      return 120
+        case .standard: return 160
+        case .high:     return 400
+        case .extreme:  return 800
         }
     }
 
     /// hiResCache(PhotoPreviewView.swift) 개수
+    /// v8.8.2 re-tune: HiRes 한 장당 ~280MB (Sony ARW 70MP 디코드). 프리페치 공격성을
+    ///   너무 높이면 피크 메모리 25GB+ 찍음. 현재 + 이웃 소수만 유지.
     func hiResCacheCount() -> Int {
         switch effectiveTier {
-        case .low, .standard: return 2
-        case .high:           return 3
-        case .extreme:        return 5
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
-    /// hiResCache 총 비용(MB)
+    /// hiResCache 총 비용(MB).
     func hiResCacheCostMB() -> Int {
         switch effectiveTier {
-        case .low:      return 100
-        case .standard: return 150
-        case .high:     return 300
-        case .extreme:  return 500
+        case .low:      return 128
+        case .standard: return 256
+        case .high:     return 420
+        case .extreme:  return 640
+        }
+    }
+
+    /// HiRes 프리페치 이웃 반경 — 매우 작게 유지. 현재 사진 반응성이 우선이다.
+    func hiResPrefetchRadius() -> Int {
+        switch effectiveTier {
+        case .low:      return 0   // 프리페치 안 함
+        case .standard: return 0
+        case .high:     return 1
+        case .extreme:  return 1
         }
     }
 
     /// ThumbnailCache L1(ThumbnailGridView.swift) MB
     func thumbnailCacheMB() -> Int {
         switch effectiveTier {
-        case .low:      return 100
-        case .standard: return 150
-        case .high:     return 300
-        case .extreme:  return 500
+        case .low:      return 64
+        case .standard: return 96
+        case .high:     return 180
+        case .extreme:  return 320
+        }
+    }
+
+    /// PreviewImageCache RAM budget (MB). Stage1/Stage2 캐시는 재방문 즉시성만 담당하고,
+    /// HiRes/thumbnail 캐시와 겹치지 않도록 작게 유지한다.
+    func previewImageCacheMB() -> Int {
+        switch effectiveTier {
+        case .low:      return 96
+        case .standard: return 160
+        case .high:     return 280
+        case .extreme:  return 420
+        }
+    }
+
+    /// PreviewImageCache entry cap. 큰 RAW 프리뷰가 몇 장만 쌓여도 체감 메모리가 커져서 보수적으로 제한한다.
+    func previewImageCacheEntries() -> Int {
+        switch effectiveTier {
+        case .low:      return 3
+        case .standard: return 5
+        case .high:     return 7
+        case .extreme:  return 9
         }
     }
 
     /// ImageAnalysisService 동시성
     func imageAnalysisConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3  // crystal: 4 → 3 한 단계 더 조임
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// 로컬 SSD 썸네일 로드 동시성
     func ssdThumbnailConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// FileCopyService 동시성
     func fileCopyConcurrency() -> Int {
         switch effectiveTier {
-        case .low:      return 2
-        case .standard: return 3
-        case .high:     return 4
-        case .extreme:  return 6
+        case .low:      return 1
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
         }
     }
 
     /// 프리뷰 최대 해상도 (0 = 원본)
     func previewMaxPixel() -> Int {
         switch effectiveTier {
-        case .low:      return 3000
-        case .standard: return 0    // original (기존 >= 16GB 동일)
-        case .high:     return 0
-        case .extreme:  return 0
+        case .low:      return 2000
+        case .standard: return 2400
+        case .high:     return 3000
+        case .extreme:  return 3600
         }
     }
 
     /// 미리보기 Stage1 (빠른 첫 표시) 해상도
-    /// low 머신은 800px로 표시 즉응성 우선, high+는 1600px로 화질 우선
+    /// v8.9.6: 5K/Retina 화면에서 1200px 가 stretched 시 너무 흐려 보이던 문제 (사용자 보고).
+    ///   subsample 디코드 효과 유지하면서 스케일만 상향.
     func previewStage1MaxPixel() -> CGFloat {
         switch effectiveTier {
-        case .low:      return 800
+        case .low:      return 1000
         case .standard: return 1200
         case .high:     return 1600
-        case .extreme:  return 1600
+        case .extreme:  return 1800
         }
     }
 
     /// 미리보기 Stage2 (후속 고화질) 해상도. 0 = 원본
-    /// low: stage2도 1600px로 메모리 절감 (스파이크 ~40% 축소)
-    /// extreme: 원본 로드
+    /// v8.9.6: 5K Retina 에서 100% 줌 시도 시 부드러운 표시 위해 상향.
     func previewStage2MaxPixel() -> CGFloat {
         switch effectiveTier {
         case .low:      return 1600
         case .standard: return 2400
         case .high:     return 3200
-        case .extreme:  return 0    // 원본
+        case .extreme:  return 4000
         }
     }
 
@@ -315,16 +309,19 @@ final class SystemSpec {
             return false
         }
 
-        // 4) 용량 ≤256GB → SD/USB 메모리로 추정 → slow
+        // 4) 용량 ≤64GB → SD카드/USB stick 으로 확정 → slow
+        //   (이전 ≤256GB 기준은 외장 SSD 도 slow 처리 → stage2 무조건 skip → 미리보기 흐림 버그)
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
             let sizeGB = totalSize / (1024 * 1024 * 1024)
-            if sizeGB <= 256 { return true }
+            if sizeGB <= 64 { return true }
         }
 
-        // 5) 그 외 외장 — HDD 가능성 → slow 취급
-        return true
+        // 5) v8.9.6: 대용량 외장 (>64GB) — 2024+ 기준 대부분 SSD.
+        //   ThumbnailLoader.detectStorageType 의 "externalSSD 로 가정" 정책과 통일.
+        //   HDD 로 과도 추정하면 stage2 SKIP → 미리보기 1200px 만 표시 → 5K 화면에서 흐려짐.
+        return false
     }
 
     // MARK: - 디버깅/로그용 요약
@@ -337,7 +334,6 @@ final class SystemSpec {
         RAM: \(ramGB)GB
         OS: \(osVersion)
         Auto Tier: \(autoTier.rawValue)
-        User Profile: \(userProfile.rawValue)
         Effective Tier: \(effectiveTier.rawValue)
         ==================
         """

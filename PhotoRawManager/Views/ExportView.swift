@@ -9,14 +9,31 @@ struct ExportView: View {
     @State private var didApplyInitialTarget = false
     @State private var copyResult: CopyResult?
     @State private var isComplete = false
-    @State private var jpgFolderName: String = "JPG"
-    @State private var rawFolderName: String = "RAW"
-    @State private var exportJPG: Bool = true
-    @State private var exportRAW: Bool = true
-    @State private var singleFolder: Bool = false  // 한 폴더에 내보내기
-    // v8.6 — 비파괴 보정 실제 픽셀 적용
-    @State private var applyDevelopSettings: Bool = true
-    @State private var developJPEGQuality: Double = 0.92
+    // v8.9.4: 단순화 — 무엇을 내보낼지를 단일 enum 으로
+    @State private var contentChoice: ContentChoice = .all
+    @State private var folderLayout: FolderLayout = .separate
+    // 보정값 적용은 개발 완료 시점에 노출. 현재는 항상 false.
+    private let applyDevelopSettings: Bool = false
+    private let developJPEGQuality: Double = 0.92
+    // 폴더명은 항상 자동 (JPG / RAW). 사용자 입력 제거.
+    private let jpgFolderName: String = "JPG"
+    private let rawFolderName: String = "RAW"
+
+    enum ContentChoice: String, CaseIterable, Identifiable {
+        case all = "사진+RAW 모두"
+        case mediaOnly = "사진/영상만"
+        case rawOnly = "RAW만"
+        var id: String { rawValue }
+        var doJPG: Bool { self == .all || self == .mediaOnly }
+        var doRAW: Bool { self == .all || self == .rawOnly }
+    }
+    enum FolderLayout: String, CaseIterable, Identifiable {
+        case separate = "JPG/RAW 분리 폴더"
+        case singleSubfolder = "선택 폴더에 바로"
+        var id: String { rawValue }
+        // singleSubfolder = 사용자가 고른 그 폴더에 모든 파일 직행 (서브폴더 없음)
+        var isSingleFolder: Bool { self == .singleSubfolder }
+    }
 
     // 중복 처리 상태
     @State private var showDuplicateAlert = false
@@ -209,89 +226,53 @@ struct ExportView: View {
             }
             .cornerRadius(8)
 
-            // Folder name customization (only for folder export)
+            // v8.9.4: 폴더 내보내기 옵션 단순화
+            //   - "무엇" : 사진+RAW 모두 / 사진영상만 / RAW만  (단일 segmented)
+            //   - "어떻게" : JPG/RAW 분리 폴더 / 선택 폴더에 바로 (서브폴더 없음)
+            //   - 폴더명 입력란 제거 (자동 JPG/RAW 사용)
+            //   - 보정값 토글 — 개발 완료 시점에 다시 노출
             if exportTarget == .folder {
-                HStack(spacing: 16) {
-                    Toggle(isOn: $exportJPG) {
-                        Text("사진/영상 내보내기")
-                            .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 12) {
+                    // 무엇을 내보낼까?
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("무엇을 내보낼까요?")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        segmentedRow(
+                            options: ContentChoice.allCases,
+                            selection: $contentChoice,
+                            color: .green
+                        )
                     }
-                    .toggleStyle(.checkbox)
-
-                    Toggle(isOn: $exportRAW) {
-                        Text("RAW 내보내기")
-                            .font(.system(size: 12))
-                    }
-                    .toggleStyle(.checkbox)
-
-                    if exportJPG && exportRAW {
-                        Toggle(isOn: $singleFolder) {
-                            Text("한 폴더에 내보내기")
-                                .font(.system(size: 12))
-                        }
-                        .toggleStyle(.checkbox)
-                    }
-
-                    // v8.6 — 보정값 실제 적용 토글
-                    if exportJPG {
-                        Divider().padding(.vertical, 2)
-                        Toggle(isOn: $applyDevelopSettings) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "wand.and.stars")
-                                    .foregroundColor(Color(red: 1.0, green: 0.76, blue: 0.03))
-                                Text("보정값 적용해서 내보내기")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                        }
-                        .toggleStyle(.checkbox)
-                        .help("노출·WB·커브·크롭이 설정된 사진들은 JPEG 로 렌더링되어 저장됩니다. 원본은 건드리지 않음.")
-
-                        if applyDevelopSettings {
-                            HStack(spacing: 8) {
-                                Text("JPEG 품질")
-                                    .font(.caption)
+                    // 어떻게 저장할까?
+                    //   contentChoice 가 분리 가능한 케이스 (사진+RAW 모두) 일 때만 노출.
+                    //   단일 종류만 내보낼 땐 자동으로 "선택 폴더에 바로" 처리.
+                    if contentChoice == .all {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("어디에 저장할까요?")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            segmentedRow(
+                                options: FolderLayout.allCases,
+                                selection: $folderLayout,
+                                color: .blue
+                            )
+                            if folderLayout == .separate {
+                                Text("선택한 폴더 안에 JPG / RAW 두 개의 하위 폴더가 만들어집니다.")
+                                    .font(.system(size: 10))
                                     .foregroundColor(.secondary)
-                                    .frame(width: 65, alignment: .trailing)
-                                Slider(value: $developJPEGQuality, in: 0.5...1.0, step: 0.01)
-                                    .frame(width: 160)
-                                Text(String(format: "%.0f%%", developJPEGQuality * 100))
-                                    .font(.system(size: 11, design: .monospaced))
+                            } else {
+                                Text("선택한 폴더에 모든 파일이 바로 저장됩니다 (하위 폴더 없음).")
+                                    .font(.system(size: 10))
                                     .foregroundColor(.secondary)
-                                    .frame(width: 42, alignment: .leading)
-                            }
-                            .padding(.leading, 18)
-                        }
-                    }
-                }
-
-                if !singleFolder {
-                    HStack(spacing: 12) {
-                        if exportJPG {
-                            HStack(spacing: 4) {
-                                Text("사진/영상 폴더명")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 95, alignment: .trailing)
-                                TextField("JPG", text: $jpgFolderName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .frame(width: 120)
-                            }
-                        }
-                        if exportRAW {
-                            HStack(spacing: 4) {
-                                Text("RAW 폴더명")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 65, alignment: .trailing)
-                                TextField("RAW", text: $rawFolderName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .frame(width: 120)
                             }
                         }
                     }
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.gray.opacity(0.08))
+                .cornerRadius(8)
             }
 
             // Summary — 단일 루프로 통계 계산
@@ -563,6 +544,34 @@ struct ExportView: View {
         }
     }
 
+    // MARK: - Segmented row helper (v8.9.4)
+
+    @ViewBuilder
+    private func segmentedRow<T: Hashable & Identifiable & RawRepresentable>(
+        options: [T],
+        selection: Binding<T>,
+        color: Color
+    ) -> some View where T.RawValue == String {
+        HStack(spacing: 6) {
+            ForEach(options) { option in
+                let isOn = selection.wrappedValue == option
+                Button(action: { selection.wrappedValue = option }) {
+                    Text(option.rawValue)
+                        .font(.system(size: 12, weight: isOn ? .bold : .regular))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity)
+                        .background(isOn ? color : Color.gray.opacity(0.15))
+                        .foregroundColor(isOn ? .white : .primary)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     // MARK: - 폴더/Lightroom 내보내기
 
     private func startExport() {
@@ -579,12 +588,15 @@ struct ExportView: View {
         let photos = photosToExport
         let target = exportTarget
 
+        // v8.9.4: contentChoice/folderLayout → 기존 인자로 변환
+        let isSingleFolder = (contentChoice != .all) || folderLayout.isSingleFolder
+
         // 중복 검사
         let duplicates: [String]
         if target == .lightroom {
             duplicates = FileCopyService.findDuplicatesForLightroom(photos: photos, destinationURL: destURL)
         } else {
-            duplicates = FileCopyService.findDuplicates(photos: photos, destinationURL: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName, singleFolder: singleFolder)
+            duplicates = FileCopyService.findDuplicates(photos: photos, destinationURL: destURL, jpgFolderName: jpgFolderName, rawFolderName: rawFolderName, singleFolder: isSingleFolder)
         }
 
         if !duplicates.isEmpty {
@@ -623,11 +635,12 @@ struct ExportView: View {
         // 시트 닫기 — 사용자는 계속 작업 가능
         dismiss()
 
+        // v8.9.4: contentChoice/folderLayout 기반 — 단일 종류만 내보낼 땐 자동으로 single folder
         let jpgName = jpgFolderName
-        let doJPG = exportJPG
-        let doRAW = exportRAW
         let rawName = rawFolderName
-        let isSingleFolder = singleFolder
+        let doJPG = contentChoice.doJPG
+        let doRAW = contentChoice.doRAW
+        let isSingleFolder = (contentChoice != .all) || folderLayout.isSingleFolder
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result: CopyResult

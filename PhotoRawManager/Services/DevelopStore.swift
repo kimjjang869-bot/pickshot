@@ -20,7 +20,11 @@ final class DevelopStore: ObservableObject {
     private let udPrefix = "develop:"
     private let sidecarFilename = ".pickshot_develop.json"
 
-    // MARK: - Memory Cache
+    // MARK: - Memory Cache (v8.6.1: thread-safe via `memLock`)
+    //
+    // 이전에는 `queue` 는 선언만 되어 있고 실제 memory/sidecarDirty 접근이 메인/슬라이더
+    // 드래그/flush 백그라운드 세 군데에서 동시에 일어나며 dict realloc 중 크래시 가능성이
+    // 있었음. 슬라이더 드래그(메인)와 flush(150ms 후 background) 가 겹치는 조건.
 
     /// URL path → settings. 메모리 캐시 (hit 99% 기대).
     private var memory: [String: DevelopSettings] = [:]
@@ -30,6 +34,9 @@ final class DevelopStore: ObservableObject {
 
     /// 디바운스 타이머
     private var flushTask: DispatchWorkItem?
+
+    /// v8.6.1: memory / sidecarDirty 딕셔너리 보호용 락.
+    private let memLock = NSLock()
 
     private let queue = DispatchQueue(label: "com.pickshot.develop-store", qos: .userInitiated)
 
@@ -45,18 +52,20 @@ final class DevelopStore: ObservableObject {
     /// 특정 사진의 보정값 가져오기. 없으면 기본값.
     func get(for url: URL) -> DevelopSettings {
         let key = url.path
-        if let cached = memory[key] { return cached }
+        memLock.lock()
+        if let cached = memory[key] { memLock.unlock(); return cached }
+        memLock.unlock()
 
         // L1 — UserDefaults 시도
         if let data = UserDefaults.standard.data(forKey: udPrefix + key),
            let decoded = try? JSONDecoder().decode(DevelopSettings.self, from: data) {
-            memory[key] = decoded
+            memLock.lock(); memory[key] = decoded; memLock.unlock()
             return decoded
         }
 
         // L2 — 사이드카 시도
         if let settings = loadFromSidecar(for: url) {
-            memory[key] = settings
+            memLock.lock(); memory[key] = settings; memLock.unlock()
             // L1 에도 캐시
             if let data = try? JSONEncoder().encode(settings) {
                 UserDefaults.standard.set(data, forKey: udPrefix + key)
@@ -68,15 +77,26 @@ final class DevelopStore: ObservableObject {
         return DevelopSettings()
     }
 
+    /// v8.6.1: 삭제된 사진의 메모리/UserDefaults 엔트리 제거 (누수 방지).
+    func invalidateMemory(for url: URL) {
+        let key = url.path
+        memLock.lock(); memory.removeValue(forKey: key); memLock.unlock()
+        UserDefaults.standard.removeObject(forKey: udPrefix + key)
+    }
+
     /// 보정값 저장. 기본값이면 실제로는 삭제.
     func set(_ settings: DevelopSettings, for url: URL) {
         let key = url.path
+        memLock.lock()
         if settings.isDefault {
             memory.removeValue(forKey: key)
-            UserDefaults.standard.removeObject(forKey: udPrefix + key)
         } else {
             memory[key] = settings
-            // L1 즉시 저장 (빠름)
+        }
+        memLock.unlock()
+        if settings.isDefault {
+            UserDefaults.standard.removeObject(forKey: udPrefix + key)
+        } else {
             if let data = try? JSONEncoder().encode(settings) {
                 UserDefaults.standard.set(data, forKey: udPrefix + key)
             }
@@ -126,7 +146,9 @@ final class DevelopStore: ObservableObject {
     }
 
     private func markSidecarDirty(for url: URL) {
+        memLock.lock()
         sidecarDirty.insert(url.deletingLastPathComponent().path)
+        memLock.unlock()
     }
 
     private func scheduleFlush() {
@@ -138,8 +160,12 @@ final class DevelopStore: ObservableObject {
 
     /// Dirty 로 마크된 폴더들의 사이드카를 실제 디스크에 기록.
     private func flushSidecars() {
+        // v8.6.1: dirty set + memory 스냅샷을 lock 안에서 복사 → 바깥에서 I/O
+        memLock.lock()
         let folders = sidecarDirty
         sidecarDirty.removeAll()
+        let memorySnapshot = memory
+        memLock.unlock()
 
         for folderPath in folders {
             let folderURL = URL(fileURLWithPath: folderPath)
@@ -152,8 +178,8 @@ final class DevelopStore: ObservableObject {
                let existing = try? JSONDecoder().decode(SidecarContainer.self, from: data) {
                 container = existing
             }
-            // 메모리 캐시 덮어쓰기
-            for (path, settings) in memory {
+            // 메모리 스냅샷 덮어쓰기 (lock 밖이라 추가 write 대기 없음)
+            for (path, settings) in memorySnapshot {
                 let url = URL(fileURLWithPath: path)
                 guard url.deletingLastPathComponent().path == folderPath else { continue }
                 if settings.isDefault {

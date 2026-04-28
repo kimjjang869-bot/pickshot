@@ -48,6 +48,25 @@ enum SortMode: String, CaseIterable {
         case .customOrder: return "hand.draw"
         }
     }
+
+    /// v8.9.7+: 툴바 표시용 짧은 라벨 — 별점/검색 버튼과 폭 통일.
+    /// 메뉴 안에선 풀 라벨(rawValue) 사용.
+    var compactLabel: String {
+        switch self {
+        case .dateAsc: return "오래된순"
+        case .dateDesc: return "최신순"
+        case .nameAsc: return "이름↑"
+        case .nameDesc: return "이름↓"
+        case .ratingDesc: return "별점↑"
+        case .ratingAsc: return "별점↓"
+        case .spacePickFirst: return "셀렉 우선"
+        case .sizeDesc: return "크기↑"
+        case .sizeAsc: return "크기↓"
+        case .extensionSort: return "확장자"
+        case .cameraSort: return "카메라"
+        case .customOrder: return "수동"
+        }
+    }
 }
 
 enum QualityFilter: String, CaseIterable {
@@ -96,8 +115,69 @@ class PhotoStore: ObservableObject {
     @Published var photos: [PhotoItem] = [] {
         didSet {
             guard !_suppressDidSet else { return }
-            photosVersion += 1; invalidateFilterCache(); rebuildIndex()
+            invalidateFilterCache(); rebuildIndex()
             updateFolderSizeCache()
+            pruneStaleSelections()
+        }
+    }
+
+    /// v8.9: "ai:<쿼리>" prefix 로 검색 시 CLIP 텍스트 임베딩으로 매칭.
+    ///   결과는 VisualSearchService.matchedURLs 에 주입 (기존 필터 파이프라인 재활용).
+    ///   쿼리 비우거나 prefix 제거되면 해제.
+    private func triggerAITextSearchIfNeeded(for text: String) {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        let prefix = "ai:"
+        guard t.lowercased().hasPrefix(prefix) else {
+            // AI prefix 없음 — 기존 AI 검색이 active 면 해제
+            if visualSearchActive && VisualSearchService.shared.references.isEmpty && !VisualSearchService.shared.matchedURLs.isEmpty {
+                VisualSearchService.shared.matchedURLs = []
+                visualSearchActive = false
+            }
+            return
+        }
+        let query = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return }
+        guard TextEncoderService.shared.isAvailable else {
+            fputs("[SEM-TXT] TextEncoder 사용 불가\n", stderr)
+            return
+        }
+        // 백그라운드 실행
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let results = SemanticSearchService.shared.searchByText(query, k: 300, minScore: 0.22)
+            let urls = Set(results.map { $0.url })
+            DispatchQueue.main.async {
+                VisualSearchService.shared.matchedURLs = urls
+                self.visualSearchActive = !urls.isEmpty
+            }
+        }
+    }
+
+    /// v8.8.3: selectedPhotoIDs 에서 현재 photos 에 없는 유령 ID 제거.
+    ///   폴더 이동/재로드 후 UI에는 선택 하이라이트가 없는데 데이터엔 남아있어
+    ///   키 입력(rating/color) 이 보이지 않는 선택에 적용되는 버그 차단.
+    func pruneStaleSelections() {
+        let validIDs = Set(photos.map { $0.id })
+        let stale = selectedPhotoIDs.subtracting(validIDs)
+        if !stale.isEmpty {
+            selectedPhotoIDs.subtract(stale)
+        }
+        if let sid = selectedPhotoID, !validIDs.contains(sid) {
+            selectedPhotoID = nil
+        }
+    }
+
+    /// v8.8.3: 현재 filteredPhotos 에 보이지 않는 선택 ID 제거.
+    ///   별점/컬러 필터로 선택된 사진이 화면에서 가려지면 "보이지 않는 선택" 이 되어
+    ///   키 입력이 예측 불가능하게 작동하는 버그 차단.
+    func pruneHiddenSelections() {
+        let visibleIDs = Set(filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
+        let hidden = selectedPhotoIDs.subtracting(visibleIDs)
+        if !hidden.isEmpty {
+            selectedPhotoIDs.subtract(hidden)
+        }
+        if let sid = selectedPhotoID, !visibleIDs.contains(sid) {
+            selectedPhotoID = nil
         }
     }
 
@@ -105,17 +185,27 @@ class PhotoStore: ObservableObject {
     @Published var cachedFolderSizeText: String = ""
     @Published var selectedPhotoID: UUID? {
         didSet {
+            if let id = selectedPhotoID, !selectedPhotoIDs.contains(id) {
+                if selectedPhotoIDs.count <= 1 {
+                    selectedPhotoIDs = [id]
+                } else {
+                    selectedPhotoIDs.insert(id)
+                }
+            }
             // 키 꾹 누르기 중에는 prefetch 스킵 — 매 이동마다 60장 concurrent async 를 큐에 쌓으면
             // 키 놓았을 때 수천 개 작업이 한꺼번에 실행되며 10초+ 렉 발생
             // 키가 떨어진 순간에 마지막 한 번만 prefetch (디바운스 1초)
-            if isKeyRepeat {
+            if isFastNavigation {
                 // 연속 이동 중: 이전 예약만 취소하고 새로 예약하지 않음
                 prefetchWorkItem?.cancel()
+                selectionIdleWorkItem?.cancel()
             } else {
-                prefetchNearbyThumbnails()
+                if let id = selectedPhotoID {
+                    scheduleSelectionIdleWork(for: id)
+                } else {
+                    selectionIdleWorkItem?.cancel()
+                }
             }
-            // 지오코딩은 키 떼는 순간에만
-            if !isKeyRepeat, let id = selectedPhotoID { reverseGeocodeIfNeeded(for: id) }
         }
     }
     @Published var selectedPhotoIDs: Set<UUID> = []
@@ -124,11 +214,83 @@ class PhotoStore: ObservableObject {
     var scrollAnchor: UnitPoint = .bottom
     /// true when key is held down (OS key repeat), false for actual press
     var isKeyRepeat: Bool = false
+    /// true for very fast repeated taps. Treat like key-repeat for preview/EXIF scheduling.
+    var isNavigationBurst: Bool = false
+    var isFastNavigation: Bool { isKeyRepeat || isNavigationBurst }
+    static var lastNavigationMoveTime: CFAbsoluteTime = 0
+    static var navigationBurstWork: DispatchWorkItem?
     /// Cmd+X 로 잘라낸 사진 ID — 썸네일 흐리게 표시용 (paste 완료 시 clear)
     @Published var pendingCutPhotoIDs: Set<UUID> = []
+    /// v8.9: 연사 베스트 선별 다이얼로그 표시 토글
+    @Published var showBurstPickerDialog: Bool = false
+    /// v8.9: 내 취향 학습 다이얼로그 표시 토글
+    @Published var showPreferenceTrainingDialog: Bool = false
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
     var onQuickPreview: ((URL) -> Void)?
-    @Published var minimumRatingFilter: Int = 0 { didSet { invalidateFilterCache() } }
+    @Published var minimumRatingFilter: Int = 0 {
+        didSet {
+            guard !_suppressDidSet else { return }
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
+    /// v8.7: 별점 필터 — 개별 선택. 비어있으면 전체 표시. ratingFilters 있으면 minimumRatingFilter 무시.
+    @Published var ratingFilters: Set<Int> = [] {
+        didSet {
+            guard !_suppressDidSet else { return }
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
+
+    /// 재진입 방지 플래그 — didSet 체인에서 filteredPhotos 가 2~3번 재계산되는 것을 막는다.
+    private var _resettingFiltersIfEmpty = false
+
+    /// v8.8.2: 폴더 전환 시 현재 별점/컬러 필터에 해당하는 사진이 0장이면 "All" 로 자동 리셋.
+    ///   빈 결과 화면에서 사용자가 헤매는 상황 방지.
+    func resetFiltersIfEmpty() {
+        // didSet 체인에서 재진입 방지 (ratingFilters = [] → didSet → resetFiltersIfEmpty 재호출)
+        if _resettingFiltersIfEmpty { return }
+        _resettingFiltersIfEmpty = true
+        defer { _resettingFiltersIfEmpty = false }
+
+        // v8.8.3: filteredPhotos(= 현재 활성화된 모든 필터 적용 결과) 기준으로 판정.
+        //   별점 외 폴더/검색/색상 필터와 교차되어 0장이 되는 케이스까지 커버.
+        let visibleCount = filteredPhotos.lazy.filter { !$0.isFolder && !$0.isParentFolder }.count
+        guard visibleCount == 0 else { return }
+
+        if !ratingFilters.isEmpty {
+            let stars = ratingFilters.sorted().map { "★\($0)" }.joined(separator: " ")
+            fputs("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n", stderr)
+            ratingFilters = []
+            // v8.9 perf: didSet 체인에서 SwiftUI 가 토스트 트랜지션을 못 잡는 경우 방지 — 다음 runloop 으로.
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 \(stars) 사진이 없습니다 — 전체 보기로 전환")
+            }
+            return
+        }
+        if minimumRatingFilter > 0 {
+            let prev = minimumRatingFilter
+            fputs("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n", stderr)
+            minimumRatingFilter = 0
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 ★\(prev) 이상 사진이 없습니다 — 전체 보기로 전환")
+            }
+            return
+        }
+        if !colorLabelFilters.isEmpty {
+            fputs("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n", stderr)
+            colorLabelFilters = []
+            DispatchQueue.main.async { [weak self] in
+                self?.showToastMessage("이 폴더에 해당 컬러 라벨 사진이 없습니다 — 전체 보기로 전환")
+            }
+            return
+        }
+    }
+    /// v8.7: 선택한 사진만 보기 — 클라이언트 비교용
+    @Published var showOnlySelected: Bool = false { didSet { guard !_suppressDidSet else { return }; invalidateFilterCache() } }
     @Published var sortMode: SortMode = .dateDesc {
         didSet {
             invalidateFilterCache()  // 중복 캐시 클리어 제거 — invalidateFilterCache가 이미 처리
@@ -144,6 +306,34 @@ class PhotoStore: ObservableObject {
         didSet { UserDefaults.standard.set(Double(thumbnailSize), forKey: "savedThumbnailSize") }
     }
     @Published var previewResolution: Int = 0  // 0 = 원본, 1000/2000/3000/4000
+
+    /// v8.8.1: 적극적 캐시 프리로드 모드.
+    ///   true  → 폴더 진입 즉시 공격적 병렬 로딩 (CPU/디스크 집중, 시스템 부하 ↑)
+    ///   false → 기존 idle 기반 순차 로딩 (백그라운드에서 조용히)
+    @Published var aggressiveCache: Bool = UserDefaults.standard.bool(forKey: "aggressiveCachePreload") {
+        didSet {
+            UserDefaults.standard.set(aggressiveCache, forKey: "aggressiveCachePreload")
+            // 토글 시 즉시 sweep 재평가 (OFF→ON 이면 바로 시작, ON→OFF 면 일반 idle 대기)
+            CacheSweeper.shared.notifyActivity()
+        }
+    }
+    /// v8.9.4: Fast Culling Mode — 빠른 셀렉을 위해 무거운 작업 모두 OFF
+    ///   ON: AI 분석 자동 OFF, Stage2 미리보기 스킵, preload range 1/3 축소,
+    ///       임베디드 JPEG 강제 사용, hiResCache 작게 유지
+    @Published var fastCullingMode: Bool = UserDefaults.standard.bool(forKey: "fastCullingMode") {
+        didSet {
+            UserDefaults.standard.set(fastCullingMode, forKey: "fastCullingMode")
+            CacheSweeper.shared.notifyActivity()
+        }
+    }
+
+    // v8.9.4: 하위폴더 포함 열기 — generation 토큰 + 진행 중 플래그.
+    //   generation 은 새 recursive scan 시작마다 +1 → 옛 onBatch callback 폐기.
+    //   isRecursiveScanInProgress 는 sweep/preload/exif 작업 차단용.
+    var recursiveScanGeneration: UInt64 = 0
+    var recursiveScanUIFlushWork: DispatchWorkItem?
+    var recursiveScanLastUIFlush: CFAbsoluteTime = 0
+    @Published var isRecursiveScanInProgress: Bool = false
     @Published var qualityFilter: QualityFilter = .all { didSet { invalidateFilterCache() } }
     @Published var isAnalyzing = false
     @Published var analyzeProgress: Double = 0
@@ -221,6 +411,89 @@ class PhotoStore: ObservableObject {
     var thumbsGeneration: Int = 0
     var thumbsStartTime: CFAbsoluteTime = 0
     var isPreloadingThumbs: Bool { thumbsLoaded < thumbsTotal && thumbsTotal > 0 }
+    // v8.6.2: 캐시 생성 진행률 (CacheProgressGauge 표시용 — EXIF thumbsLoaded 와 별개)
+    @Published var previewsLoaded: Int = 0
+    @Published var thumbCacheCount: Int = 0
+    /// v8.8.2: 썸네일+미리보기 캐시 100% 완료 후 HiRes 업그레이드 패스 상태.
+    ///   - .none: 1차 캐시 안 끝났거나 아직 업그레이드 시작 안 함
+    ///   - .running: HiRes 재캐싱 진행 중
+    ///   - .complete: 전 프리뷰가 HiRes 크기로 업그레이드됨 → 네비게이션 시 stage2→3 flash 없음
+    enum CacheUpgradeState { case none, running, complete }
+    @Published var cacheUpgradeState: CacheUpgradeState = .none
+    @Published var cacheUpgradeDone: Int = 0
+    var previewsStartTime: CFAbsoluteTime = 0
+    var cacheProgressStartTime: CFAbsoluteTime = 0
+    var previewsElapsed: TimeInterval { previewsStartTime > 0 ? CFAbsoluteTimeGetCurrent() - previewsStartTime : 0 }
+    var cacheProgressElapsed: TimeInterval { cacheProgressStartTime > 0 ? CFAbsoluteTimeGetCurrent() - cacheProgressStartTime : 0 }
+    private var _previewLoadedURLs: Set<URL> = []
+    private var _thumbCacheInsertedURLs: Set<URL> = []
+    private let _cacheProgressLock = NSLock()
+    /// 미리보기가 처음 생성된 URL 을 기록해서 중복 카운트 방지. main thread 외에서 호출 안전.
+    /// v8.8.2 fix:
+    ///   1) 카운터를 Set.count 와 직접 동기화 (이전엔 `+= 1` 방식이라 555/183 같은 오버플로우 발생).
+    ///   2) 현재 폴더 외 URL 은 무시 (이전 폴더에서 in-flight 으로 흘러 들어온 sweep 콜백 차단).
+    ///      — 특히 적극 캐시 모드에서 폴더 전환 중 오버카운트 원인이던 문제 해결.
+    func notePreviewLoaded(url: URL) {
+        guard let folder = folderURL else { return }
+        guard url.path.hasPrefix(folder.path) else { return }
+        _cacheProgressLock.lock()
+        let isNew = _previewLoadedURLs.insert(url).inserted
+        let count = _previewLoadedURLs.count
+        _cacheProgressLock.unlock()
+        guard isNew else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.previewsLoaded = count
+            self.checkCacheCompleteAndUpgrade()
+        }
+    }
+
+    /// v8.8.2: 1차 캐시 (Stage 2) 100% → HiRes 업그레이드 패스 시작.
+    ///   썸네일 + 미리보기 모두 완료됐을 때만 발동. 폴더 전환 시 자동 리셋.
+    private func checkCacheCompleteAndUpgrade() {
+        let total = photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+        guard total > 0,
+              thumbCacheCount >= total,
+              previewsLoaded >= total,
+              cacheUpgradeState == .none else { return }
+        // v8.8.2: 완료 상태만 표시, 실제 HiRes 업그레이드 패스는 미구현 (성능 리스크로 보류).
+        cacheUpgradeState = .complete
+        cacheUpgradeDone = total
+        fputs("[CACHE-COMPLETE] all \(total) previews cached\n", stderr)
+    }
+
+    /// 업그레이드 패스 진행 1건 완료 알림.
+    func noteCacheUpgradeProgress() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.cacheUpgradeDone += 1
+            let total = self.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+            if self.cacheUpgradeDone >= total {
+                self.cacheUpgradeState = .complete
+                fputs("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n", stderr)
+            }
+        }
+    }
+    /// v8.6.2: ThumbnailCache 인입 알림 처리 — 현재 폴더의 사진만 카운트.
+    func noteThumbCacheInserted(url: URL) {
+        guard let folder = folderURL else { return }
+        // 현재 폴더 직속 파일만 (재귀 폴더 경우에는 folder.path 의 하위면 OK).
+        guard url.path.hasPrefix(folder.path) else { return }
+        _cacheProgressLock.lock()
+        let isNew = _thumbCacheInsertedURLs.insert(url).inserted
+        let count = _thumbCacheInsertedURLs.count
+        _cacheProgressLock.unlock()
+        guard isNew else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.thumbCacheCount = count
+        }
+    }
+    func clearPreviewTracking() {
+        _cacheProgressLock.lock()
+        _previewLoadedURLs.removeAll()
+        _thumbCacheInsertedURLs.removeAll()
+        _cacheProgressLock.unlock()
+    }
     var thumbsETA: String {
         guard thumbsLoaded > 0, thumbsTotal > thumbsLoaded else { return "" }
         let elapsed = CFAbsoluteTimeGetCurrent() - thumbsStartTime
@@ -284,7 +557,14 @@ class PhotoStore: ObservableObject {
     @Published var showCompare = false
     @Published var showDualViewer = false
     @Published var showSlideshow = false
-    @Published var colorLabelFilters: Set<ColorLabel> = [] { didSet { invalidateFilterCache() } }
+    @Published var colorLabelFilters: Set<ColorLabel> = [] {
+        didSet {
+            guard !_suppressDidSet else { return }
+            invalidateFilterCache()
+            resetFiltersIfEmpty()
+            pruneHiddenSelections()
+        }
+    }
     @Published var slideshowInterval: Double = 3.0
     @Published var isFolderWatchingEnabled: Bool = true
     @Published var showMetadataOverlay: Bool = false
@@ -316,6 +596,33 @@ class PhotoStore: ObservableObject {
     @Published var faceGroupNames: [Int: String] = [:]  // 그룹ID → 인물 이름
     @Published var faceThumbnails: [Int: NSImage] = [:]
     @Published var faceGroupFilter: Int? = nil { didSet { invalidateFilterCache() } }
+    /// v8.6.3 (v8.7 프리뷰): 다중 인물 선택 — OR 조합 ("신랑 or 신부" 같은 필터)
+    @Published var faceGroupFilters: Set<Int> = [] { didSet { invalidateFilterCache() } }
+    /// v8.7: 파일명 번호 범위 필터 — 파일명에서 마지막 숫자 추출 후 [min, max] 포함 검사
+    /// 예: DSC01234.ARW → 1234. (1000, 1500) 설정 시 1000~1500 사이만 통과.
+    @Published var rangeFilterMin: Int? = nil { didSet { invalidateFilterCache() } }
+    @Published var rangeFilterMax: Int? = nil { didSet { invalidateFilterCache() } }
+
+    /// v8.7: 참조 기반 시각 검색 활성화 여부 — VisualSearchService.matchedURLs 로 필터
+    @Published var visualSearchActive: Bool = false { didSet { invalidateFilterCache() } }
+    /// v8.7: 시각 검색 크롭 선택 Sheet 표시
+    @Published var showVisualSearchCrop: Bool = false
+    @Published var visualSearchCropURL: URL? = nil
+    @Published var visualSearchCropMode: VisualSearchMode = .face
+    /// 같은 사람 추가 샷 — 미리 세팅된 label (VisualSearchCropView 에서 readonly 표시)
+    @Published var visualSearchPresetLabel: String? = nil
+
+    /// 파일명에서 마지막 숫자 블록 추출 (예: "DSC01234.ARW" → 1234, "IMG_9876-edit.jpg" → 9876)
+    static func extractFileNumber(from url: URL) -> Int? {
+        let base = url.deletingPathExtension().lastPathComponent
+        // 뒤에서부터 연속된 숫자 블록 찾기
+        var digits = ""
+        for ch in base.reversed() {
+            if ch.isNumber { digits.insert(ch, at: digits.startIndex) }
+            else if !digits.isEmpty { break }
+        }
+        return Int(digits)
+    }
     @Published var isGroupingFaces: Bool = false
     @Published var faceGroupProgress: Double = 0
     @Published var faceGroupStatusMessage: String = ""
@@ -346,6 +653,10 @@ class PhotoStore: ObservableObject {
     @Published var showFolderBrowser: Bool = true
     /// 하위 폴더 포함 모드 활성화 여부
     @Published var isRecursiveMode: Bool = false
+    /// v8.9.7+: 재귀 모드에 포함된 하위 폴더 경로 set — 폴더 트리에서 노란 아이콘 표시용.
+    @Published var recursiveScannedFolders: Set<String> = []
+    /// 재귀 모드 루트 폴더 경로 (이것 자체도 노란 표시).
+    @Published var recursiveRootPath: String? = nil
     @Published var showFileTypeBadge: Bool = UserDefaults.standard.object(forKey: "showFileTypeBadge") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showFileTypeBadge, forKey: "showFileTypeBadge") }
     }
@@ -437,9 +748,44 @@ class PhotoStore: ObservableObject {
     let folderWatcher = FolderWatcherService()
     var folderReloadWork: DispatchWorkItem?
 
+    private func migrateLegacySelectionDefaultsIfNeeded() {
+        let legacySuiteNames = [
+            "com.pickshot.PhotoRawManager",
+            "PhotoRawManager"
+        ]
+
+        func dictionaryIsMissingOrEmpty(_ key: String) -> Bool {
+            guard let dict = defaults.dictionary(forKey: key) else { return true }
+            return dict.isEmpty
+        }
+
+        let dictKeys = [
+            ratingsKey,
+            "folderSpacePicks",
+            "folderColorLabels"
+        ]
+
+        var migratedKeys: [String] = []
+        for suiteName in legacySuiteNames {
+            guard let legacy = UserDefaults(suiteName: suiteName) else { continue }
+            for key in dictKeys where dictionaryIsMissingOrEmpty(key) {
+                guard let legacyDict = legacy.dictionary(forKey: key),
+                      !legacyDict.isEmpty else { continue }
+                defaults.set(legacyDict, forKey: key)
+                migratedKeys.append("\(suiteName):\(key)")
+            }
+        }
+
+        if !migratedKeys.isEmpty {
+            defaults.synchronize()
+            AppLogger.log(.general, "Migrated legacy selection defaults: \(migratedKeys.joined(separator: ", "))")
+        }
+    }
+
     init() {
         // 첫 실행 시 시스템 사양 기반 자동 최적화
         autoOptimizeOnFirstLaunch()
+        migrateLegacySelectionDefaultsIfNeeded()
 
         // Restore layout mode
         if let savedLayout = defaults.string(forKey: layoutModeKey),
@@ -453,14 +799,50 @@ class PhotoStore: ObservableObject {
         }
         setupFolderWatcher()
 
+        // v8.6.2: ThumbnailCache 인입 알림 구독 (CacheProgressGauge)
+        NotificationCenter.default.addObserver(
+            forName: .thumbnailCacheInserted, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let url = note.object as? URL else { return }
+            self?.noteThumbCacheInserted(url: url)
+        }
+
+        // v8.9.7+: 설정에서 셀렉 백업 가져오기 → 현재 폴더 사진에 적용 (파일명 매치).
+        NotificationCenter.default.addObserver(
+            forName: .init("ApplyImportedSelection"), object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let info = note.userInfo,
+                  let ratings = info["ratings"] as? [String: Int],
+                  let spPicks = info["spPicks"] as? [String: Bool],
+                  let colors = info["colorLabels"] as? [String: String]
+            else { return }
+            var applied = (rating: 0, sp: 0, color: 0)
+            for i in 0..<self.photos.count {
+                let name = self.photos[i].fileName
+                if let r = ratings[name] { self.photos[i].rating = r; applied.rating += 1 }
+                if spPicks[name] == true { self.photos[i].isSpacePicked = true; applied.sp += 1 }
+                if let c = colors[name], let cl = ColorLabel(rawValue: c) {
+                    self.photos[i].colorLabel = cl
+                    applied.color += 1
+                }
+            }
+            self.invalidateFilterCache()
+            self.saveRatings()
+            fputs("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n", stderr)
+        }
+
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제
         MemoryGuardService.shared.start()
 
-        // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화
+        // 검색 debounce: 타이핑 멈춘 후 300ms에 필터 캐시 무효화.
+        //   v8.9: "ai:<쿼리>" prefix 로 시작하면 CLIP 텍스트 검색 실행.
         searchDebounce = $searchText
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.invalidateFilterCache()
+            .debounce(for: .milliseconds(350), scheduler: DispatchQueue.main)
+            .sink { [weak self] text in
+                guard let self = self else { return }
+                self.invalidateFilterCache()
+                self.triggerAITextSearchIfNeeded(for: text)
             }
 
         // 메모리카드 자동 백업 모니터링
@@ -472,6 +854,10 @@ class PhotoStore: ObservableObject {
         NotificationCenter.default.addObserver(forName: .init("SettingsChanged"), object: nil, queue: .main) { [weak self] _ in
             self?.applySettingsFromDefaults()
         }
+        // v8.6.2 fix: launch 시에도 UserDefaults 값을 라이브 프로퍼티에 sync.
+        //   (이전엔 SettingsChanged notification 때만 호출되어 previewResolution 이 0 (기본값) 으로
+        //    남아있었고, CacheSweeper 는 1000 으로 caching → cacheKey 불일치로 모든 클릭이 cache MISS)
+        applySettingsFromDefaults()
 
         // 마지막 폴더 자동 복원 (뷰어 모드 즉시 진입)
         // Try security-scoped bookmark first, then fall back to path string
@@ -503,6 +889,7 @@ class PhotoStore: ObservableObject {
     // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
 
     var prefetchWorkItem: DispatchWorkItem?
+    var selectionIdleWorkItem: DispatchWorkItem?
 
     // Fast O(1) lookup instead of O(n) linear search
     var _photoIndex: [UUID: Int] = [:]
@@ -517,7 +904,14 @@ class PhotoStore: ObservableObject {
     }
 
     var multiSelectedPhotos: [PhotoItem] {
-        selectedPhotoIDs.compactMap { id in
+        // v8.8.2 fix: 현재 필터에 걸려 썸네일 목록에 안 보이는 사진은 multi-preview 에서도 제외.
+        //   예: ★5 필터 걸렸는데 ★3 사진이 선택된 상태 → 썸네일은 빈 목록 → 미리보기도 빈 목록.
+        let visibleIDs: Set<UUID> = {
+            let filtered = filteredPhotos
+            return Set(filtered.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
+        }()
+        return selectedPhotoIDs.compactMap { id in
+            guard visibleIDs.contains(id) else { return nil }
             if let idx = _photoIndex[id], idx < photos.count, photos[idx].id == id {
                 return photos[idx]
             }
@@ -542,6 +936,10 @@ class PhotoStore: ObservableObject {
     let filterLock = NSLock()
     var _cachedFiltered: [PhotoItem]?
     var _cacheKey: String = ""
+    /// v8.9 perf: status bar 렌더 때마다 O(n) 순회를 피하기 위한 파생 캐시.
+    var _cachedPhotoCount: Int = 0
+    var _cachedSpacePickCount: Int = 0
+    var _derivedCountsKey: String = ""
 
     func invalidateCache() {
         filterLock.lock()
@@ -551,14 +949,29 @@ class PhotoStore: ObservableObject {
         photosVersion += 1
     }
 
-    /// 사진 수 (폴더 제외) — O(1) 캐시 기반, 매 렌더마다 filter 방지
+    /// 사진 수 (폴더 제외) — v8.9 진짜 O(1): filterCache 키 변경 시 한 번만 재계산.
     var photoCount: Int {
-        filteredPhotos.lazy.filter { !$0.isFolder && !$0.isParentFolder }.count
+        refreshDerivedCountsIfNeeded()
+        return _cachedPhotoCount
     }
 
-    /// 스페이스 셀렉 수 — O(1) 캐시 기반
+    /// 스페이스 셀렉 수 — v8.9 진짜 O(1).
     var spacePickCount: Int {
-        photos.lazy.filter { $0.isSpacePicked }.count
+        refreshDerivedCountsIfNeeded()
+        return _cachedSpacePickCount
+    }
+
+    private func refreshDerivedCountsIfNeeded() {
+        let key = "\(photosVersion)"
+        if _derivedCountsKey == key { return }
+        var pc = 0, sp = 0
+        for p in photos {
+            if !p.isFolder && !p.isParentFolder { pc += 1 }
+            if p.isSpacePicked { sp += 1 }
+        }
+        _cachedPhotoCount = pc
+        _cachedSpacePickCount = sp
+        _derivedCountsKey = key
     }
 
     var filteredPhotos: [PhotoItem] {
@@ -572,6 +985,9 @@ class PhotoStore: ObservableObject {
 
         // Capture filter values once to avoid repeated property access
         let minRating = minimumRatingFilter
+        let rFilters = ratingFilters  // v8.7 개별 별점 필터
+        let onlySelected = showOnlySelected
+        let selectedIDsSnapshot = selectedPhotoIDs
         let colorFilters = colorLabelFilters
         let qFilter = qualityFilter
         let sceneTag = sceneTagFilter
@@ -611,7 +1027,14 @@ class PhotoStore: ObservableObject {
             }
 
             // Rating filter
-            if minRating > 0 && photo.rating < minRating { continue }
+            // v8.7: 선택한 사진만 보기 (클라이언트 비교용) — parentFolder 는 예외적으로 항상 포함
+            if onlySelected && !photo.isParentFolder {
+                if !selectedIDsSnapshot.contains(photo.id) { continue }
+            }
+            // v8.7: 개별 별점 필터 (Set) 우선, 없으면 기존 최소값 방식
+            if !rFilters.isEmpty {
+                if !rFilters.contains(photo.rating) { continue }
+            } else if minRating > 0 && photo.rating < minRating { continue }
             // Color label filter (다중 선택 지원)
             if !colorFilters.isEmpty && !colorFilters.contains(photo.colorLabel) { continue }
             // Quality filter
@@ -636,7 +1059,26 @@ class PhotoStore: ObservableObject {
             // Keyword filter
             if let kw = kwFilter, !photo.keywords.contains(kw) { continue }
             // Face group filter
+            // 단일 인물 필터 (기존) — 하위호환
             if let fg = fgID, photo.faceGroupID != fg { continue }
+            // 다중 인물 필터 (OR) — v8.7: faceGroupFilters 가 있으면 포함된 그룹만 통과
+            if !faceGroupFilters.isEmpty {
+                if let gid = photo.faceGroupID, faceGroupFilters.contains(gid) {
+                    // ok
+                } else {
+                    continue
+                }
+            }
+            // v8.7: 파일명 번호 범위 필터
+            if rangeFilterMin != nil || rangeFilterMax != nil {
+                guard let num = PhotoStore.extractFileNumber(from: photo.jpgURL) else { continue }
+                if let lo = rangeFilterMin, num < lo { continue }
+                if let hi = rangeFilterMax, num > hi { continue }
+            }
+            // v8.7: 시각 검색 필터 (활성 시 VisualSearchService.matchedURLs 에 포함된 것만)
+            if visualSearchActive {
+                if !VisualSearchService.shared.matchedURLs.contains(photo.jpgURL) { continue }
+            }
             // AI category filter
             if let level = aiUsabilityLevel, photo.aiUsability != level { continue }
             if let cat = aiCatValue, photo.aiCategory != cat { continue }
@@ -657,6 +1099,9 @@ class PhotoStore: ObservableObject {
         return final
     }
 
+    /// v8.9 perf: 필터 캐시 무효화 + photosVersion 단일 발화.
+    /// 기존 `invalidateFilterCache(); photosVersion += 1` 이중 호출 40+ 곳을 통합하여
+    /// 액션당 SwiftUI 렌더 트리거가 2회 발생하는 것을 막는다.
     func invalidateFilterCache() {
         filterLock.lock()
         _cachedFiltered = nil
@@ -664,6 +1109,18 @@ class PhotoStore: ObservableObject {
         _filteredIndex.removeAll()
         _filteredIndexVersion = ""
         filterLock.unlock()
+        photosVersion += 1
+    }
+
+    /// v8.9 perf: 여러 필터를 한 번에 변경 — invalidateFilterCache + resetFiltersIfEmpty + pruneHiddenSelections 1회로 묶음.
+    /// "All" 버튼 등 일괄 초기화 시 4~5번 재계산되던 것을 1회로.
+    func batchUpdateFilters(_ updates: () -> Void) {
+        _suppressDidSet = true
+        updates()
+        _suppressDidSet = false
+        invalidateFilterCache()
+        resetFiltersIfEmpty()
+        pruneHiddenSelections()
     }
 
     private func sortPhotos(_ list: [PhotoItem]) -> [PhotoItem] {
@@ -953,13 +1410,13 @@ class PhotoStore: ObservableObject {
     /// Returns a Korean scene tag + IPTC keywords matching PickShot's tag vocabulary.
     private static func classifySceneTag(cgImage: CGImage) -> SceneClassResult? {
         let sceneReq = VNClassifyImageRequest()
-        sceneReq.usesCPUOnly = false  // enable ANE
+        // v8.6.3: usesCPUOnly deprecated in macOS 14 — GPU/ANE 는 기본 동작
 
         let faceReq = VNDetectFaceRectanglesRequest()
         if #available(macOS 13.0, *) {
             faceReq.revision = VNDetectFaceRectanglesRequestRevision3
         }
-        faceReq.usesCPUOnly = false
+        // v8.6.3: usesCPUOnly deprecated — GPU 기본 동작
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {

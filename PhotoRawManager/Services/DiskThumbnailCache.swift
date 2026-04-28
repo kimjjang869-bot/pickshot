@@ -8,7 +8,13 @@ class DiskThumbnailCache {
 
     private let cacheDir: URL
     private let lock = NSLock()
-    private let maxCacheBytes: Int64 = 2_000_000_000 // 2GB
+    /// v8.6.2: 하드 2GB 고정 → UserDefaults 기반 동적 cap. 0 = 무제한 (macOS isPurgeable 로 자동 관리).
+    ///   Apple 공식 권장 방식 — `~/Library/Caches` 하위 + purgeable 플래그 = 디스크 부족 시 시스템이
+    ///   오래된 것부터 조용히 삭제. 앱 관여 불필요.
+    private var maxCacheBytes: Int64 {
+        let gb = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
+        return gb > 0 ? Int64(gb * 1_000_000_000) : 0  // 0 = 무제한
+    }
     private let jpegQuality: CGFloat = 0.82
 
     /// 점진적 사이즈 추적 (매번 디렉토리 전체 스캔 방지)
@@ -52,38 +58,65 @@ class DiskThumbnailCache {
         accessTime[key] = accessCounter
         lock.unlock()
 
+        // v8.6.1: NSImage(contentsOf:) 는 I/O — lock 밖에서 실행.
         guard let image = NSImage(contentsOf: filePath) else {
-            // Corrupt cache file — remove it
-            lock.lock()
+            // Corrupt cache file — remove it (I/O, lock 불필요)
             try? FileManager.default.removeItem(at: filePath)
-            lock.unlock()
             return nil
         }
         return image
     }
 
     /// Saves thumbnail to disk cache as JPEG
+    /// v8.6.1: I/O (jpeg.write) 를 lock 밖으로 이동 — 이전엔 수십 MB write 가 lock 점유하면
+    /// 모든 get 이 직렬화되어 스크롤 중 스톨 발생.
     func set(url: URL, modDate: Date, image: NSImage) {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
-        guard let jpegData = jpegData(from: image) else { return }
-
-        let dataSize = Int64(jpegData.count)
-        lock.lock()
-        let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
-        // 쓰기 성공 시에만 사이즈 추적
-        if writeSuccess, _trackedSize >= 0 { _trackedSize += dataSize }
-        // 인덱스 업데이트
-        if writeSuccess {
-            let pathHash = pathOnlyKey(url: url)
-            fileIndex[pathHash] = filePath
+        // v8.9.7+: 더 작은 이미지로 큰 이미지 덮어쓰기 차단 (픽셀 기준, NSImage.size point 단위 회피).
+        let newMax: Int = {
+            if let rep = image.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
+            return max(Int(image.size.width), Int(image.size.height))
+        }()
+        if let existing = getByPath(url: url) {
+            let existingMax: Int = {
+                if let rep = existing.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
+                return max(Int(existing.size.width), Int(existing.size.height))
+            }()
+            if existingMax > newMax {
+                fputs("[DiskThumbCache] SKIP write — existing \(existingMax)px > new \(newMax)px\n", stderr)
+                return
+            }
         }
-        let needsEviction = writeSuccess && _trackedSize > maxCacheBytes && !_evictionInProgress
+
+        guard let jpegData = jpegData(from: image) else { return }
+        let dataSize = Int64(jpegData.count)
+
+        // I/O 는 lock 밖 — atomic write 자체가 OS 레벨 동기화 보장
+        let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
+        guard writeSuccess else { return }
+        // v8.6.2: 파일에 purgeable 플래그 설정 → macOS 가 디스크 부족 시 자동 정리 (공식 권장 방식).
+        // 앱은 그대로 파일을 사용 가능, 시스템이 조용히 삭제 → 다음 접근 시 cache miss → 재생성.
+        var mutableURL = filePath
+        var rv = URLResourceValues()
+        rv.isExcludedFromBackup = true  // iCloud/TimeMachine 백업 대상 제외
+        try? mutableURL.setResourceValues(rv)
+        // NSURLIsPurgeableKey 는 Foundation URLResourceKey 에 isPurgeable 로 존재하지 않아
+        // setResourceValue 로 직접 세팅.
+        _ = try? (mutableURL as NSURL).setResourceValue(NSNumber(value: true), forKey: .isPurgeableKey)
+
+        // state 업데이트만 lock 안
+        lock.lock()
+        if _trackedSize >= 0 { _trackedSize += dataSize }
+        let pathHash = pathOnlyKey(url: url)
+        fileIndex[pathHash] = filePath
+        // v8.6.2: maxCacheBytes == 0 이면 무제한 (macOS 가 isPurgeable 로 자동 관리 — Apple 공식 방식)
+        let cap = maxCacheBytes
+        let needsEviction = cap > 0 && _trackedSize > cap && !_evictionInProgress
         if needsEviction { _evictionInProgress = true }
         lock.unlock()
 
-        // Evict if over size limit (async, 중복 실행 방지)
         if needsEviction {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.evictIfNeeded()
@@ -92,11 +125,21 @@ class DiskThumbnailCache {
     }
 
     /// Delete entire cache directory
+    /// v9.0: lock 분리 — I/O (외장 NAS 수백 ms) 를 lock 밖에서 수행해 다른 get()/set() 직렬화 방지.
     func clearAll() {
         lock.lock()
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        accessTime.removeAll()
+        fileIndex.removeAll()
+        fileIndexBuilt = false
+        _trackedSize = 0
+        let dir = cacheDir
         lock.unlock()
+
+        let fm = FileManager.default
+        if (try? fm.removeItem(at: dir)) == nil {
+            fputs("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n", stderr)
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
     /// Fast NAS lookup: find any cached thumbnail for this file path (ignores modDate).
@@ -132,6 +175,20 @@ class DiskThumbnailCache {
         lock.unlock()
     }
 
+    /// v8.6.1: 사진 삭제 시 해당 디스크 캐시 파일 제거 (메모리/디스크 누수 방지).
+    /// pathOnlyKey 로 인덱스 찾아 실제 파일 삭제 + 인덱스 엔트리 제거.
+    func invalidate(url: URL) {
+        let pathHash = pathOnlyKey(url: url)
+        lock.lock()
+        if let cached = fileIndex[pathHash] {
+            fileIndex.removeValue(forKey: pathHash)
+            lock.unlock()
+            try? FileManager.default.removeItem(at: cached)
+        } else {
+            lock.unlock()
+        }
+    }
+
     func getByPath(url: URL) -> NSImage? {
         let pathHash = pathOnlyKey(url: url)
 
@@ -142,6 +199,16 @@ class DiskThumbnailCache {
 
         guard let fileURL = cachedURL else { return nil }
         return NSImage(contentsOf: fileURL)
+    }
+
+    /// v8.6.2: CacheSweeper 가 "이미 디스크 캐시에 있는지" 빠르게 확인 (디코드 없이).
+    func hasThumb(for url: URL) -> Bool {
+        let pathHash = pathOnlyKey(url: url)
+        lock.lock()
+        buildFileIndex()
+        let has = fileIndex[pathHash] != nil
+        lock.unlock()
+        return has
     }
 
     // MARK: - Private
@@ -192,19 +259,25 @@ class DiskThumbnailCache {
 
     /// LRU eviction: remove oldest files until under maxCacheBytes
     /// 메모리 기반 accessTime을 참조하여 최근 사용 파일은 보존
+    /// v9.0: lock 점유 시간 최소화 — accessTime snapshot 만 lock 안에서, I/O 는 lock 밖.
+    ///   이전엔 lock 점유한 채 enumerator + removeItem N회 → 수천장 폴더에서 수백 ms freeze.
     private func evictIfNeeded() {
+        // 1) lock 안에서 accessTime snapshot + maxCacheBytes 만 읽기
         lock.lock()
-        defer {
-            _evictionInProgress = false
-            lock.unlock()
-        }
+        let accessSnapshot = accessTime
+        let maxBytes = maxCacheBytes
+        lock.unlock()
 
+        // 2) lock 밖에서 디렉토리 스캔 (수십~수백 ms 소요)
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: cacheDir,
             includingPropertiesForKeys: [.fileSizeKey],
             options: [.skipsHiddenFiles]
-        ) else { return }
+        ) else {
+            lock.lock(); _evictionInProgress = false; lock.unlock()
+            return
+        }
 
         struct CacheEntry {
             let url: URL
@@ -219,26 +292,39 @@ class DiskThumbnailCache {
         for case let fileURL as URL in enumerator {
             let size = Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             let name = (fileURL.lastPathComponent as NSString).deletingPathExtension
-            let lastAccess = accessTime[name] ?? 0
+            let lastAccess = accessSnapshot[name] ?? 0
             entries.append(CacheEntry(url: fileURL, size: size, key: name, lastAccess: lastAccess))
             totalSize += size
         }
 
-        guard totalSize > maxCacheBytes else { return }
+        guard totalSize > maxBytes else {
+            lock.lock(); _evictionInProgress = false; _trackedSize = totalSize; lock.unlock()
+            return
+        }
 
         // 메모리 LRU 카운터 오름차순 (0=미접근이 가장 먼저 삭제)
         entries.sort { $0.lastAccess < $1.lastAccess }
 
+        // 3) lock 밖에서 removeItem 수행 — 삭제된 키 목록만 모아둠
         var evicted: Int64 = 0
+        var removedKeys: [String] = []
         for entry in entries {
-            guard totalSize > maxCacheBytes else { break }
+            guard totalSize > maxBytes else { break }
             try? fm.removeItem(at: entry.url)
             totalSize -= entry.size
             evicted += entry.size
-            accessTime.removeValue(forKey: entry.key)
+            removedKeys.append(entry.key)
+        }
+
+        // 4) lock 안에서 상태만 업데이트
+        lock.lock()
+        for key in removedKeys {
+            accessTime.removeValue(forKey: key)
         }
         if evicted > 0 {
             _trackedSize = totalSize
         }
+        _evictionInProgress = false
+        lock.unlock()
     }
 }

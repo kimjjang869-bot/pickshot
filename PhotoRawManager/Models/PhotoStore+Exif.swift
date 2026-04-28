@@ -6,19 +6,57 @@ import CoreLocation
 extension PhotoStore {
     // MARK: - 주변 썸네일 프리로딩 (키보드 이동 시 빈 썸네일 방지)
 
-    func prefetchNearbyThumbnails() {
-        // 디바운스 짧게 (10ms) — 빠른 연타 시 마지막 한 번만, 단일 이동은 즉시
+    func scheduleSelectionIdleWork(for photoID: UUID, delay: TimeInterval = 0.55) {
+        selectionIdleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self,
+                  !self.isFastNavigation,
+                  self.selectedPhotoID == photoID else { return }
+
+            NotificationCenter.default.post(name: .pickShotSelectionSettled, object: photoID)
+            self.scheduleNavigationIdlePrefetch(delay: 0.0)
+            self.reverseGeocodeIfNeeded(for: photoID)
+        }
+        selectionIdleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func scheduleNavigationIdlePrefetch(delay: TimeInterval = 0.45) {
         prefetchWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, let id = self.selectedPhotoID else { return }
+            guard let self = self, !self.isFastNavigation else { return }
+            self.prefetchNearbyThumbnails()
+        }
+        prefetchWorkItem = work
+        let effectiveDelay = isRecursiveMode ? max(delay, 0.25) : delay
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + effectiveDelay, execute: work)
+    }
+
+    func prefetchNearbyThumbnails() {
+        // FRV식: 방향키/클릭 반응이 먼저다. 주변 썸네일은 사용자가 잠깐 멈춘 뒤 보수적으로 채운다.
+        prefetchWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, let id = self.selectedPhotoID, !self.isFastNavigation else { return }
             let list = self.filteredPhotos
             self.ensureFilteredIndex()
             guard let idx = self._filteredIndex[id] else { return }
 
-            // ±30장 (총 60장) 임베디드 JPEG 직접 추출 → ThumbnailCache 적재
+            // 주변 임베디드 JPEG 추출 → ThumbnailCache 적재.
+            // 하드웨어 끝까지 쓰지 않고 약 20% 여유를 남기도록 tier별 범위/동시성을 제한한다.
             // ThumbnailLoader 우회: 내부 lock/queue 경합 회피 + 풀 디코드 방지
-            let start = max(0, idx - 30)
-            let end = min(list.count - 1, idx + 30)
+            let radius: Int = {
+                if self.isRecursiveMode {
+                    return ThumbnailLoader.shared.isSlowDisk ? 2 : 3
+                }
+                switch SystemSpec.shared.effectiveTier {
+                case .low: return 6
+                case .standard: return 8
+                case .high: return 10
+                case .extreme: return 12
+                }
+            }()
+            let start = max(0, idx - radius)
+            let end = min(list.count - 1, idx + radius)
             guard start <= end else { return }
 
             var toLoad: [URL] = []
@@ -30,26 +68,36 @@ extension PhotoStore {
                 }
             }
 
-            // 8-way concurrent 추출
-            let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .userInitiated, attributes: .concurrent)
-            for url in toLoad.prefix(60) {
+            // 제한된 병렬 추출 — v8.8.0: ThumbnailLoader 경유로 변경.
+            //   직접 CGImageSourceCreateThumbnailAtIndex 호출 시 NEF 등 RAW 의 EXIF orientation
+            //   이 적용 안 돼서 세로 사진이 가로로 캐시되는 버그 발생. generateThumbnailSync 는
+            //   내부에서 extractThumbnailFast 를 통해 orientation 을 정확히 처리.
+            let concurrency = self.isRecursiveMode ? 1 : max(1, min(2, SystemSpec.shared.ssdThumbnailConcurrency()))
+            let semaphore = DispatchSemaphore(value: concurrency)
+            let concurrentQueue = DispatchQueue(label: "thumb.nearby.prefetch", qos: .utility, attributes: .concurrent)
+            let limit = self.isRecursiveMode ? min(4, radius * 2) : radius * 2
+            for url in toLoad.prefix(limit) {
                 concurrentQueue.async {
+                    semaphore.wait()
+                    defer { semaphore.signal() }
                     autoreleasepool {
                         if ThumbnailCache.shared.get(url) != nil { return }
-                        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                              let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                                kCGImageSourceThumbnailMaxPixelSize: 400,
-                                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                                kCGImageSourceCreateThumbnailWithTransform: true
-                              ] as CFDictionary) else { return }
-                        let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                        ThumbnailCache.shared.set(url, image: img)
+                        if let img = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                            ThumbnailCache.shared.set(url, image: img)
+                        } else {
+                            // generateThumbnailSync 는 이미 캐시에 있으면 nil 리턴 — 그 경우 직접 get
+                            if ThumbnailCache.shared.get(url) == nil,
+                               let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+                                ThumbnailCache.shared.set(url, image: disk)
+                            }
+                        }
                     }
                 }
             }
         }
         prefetchWorkItem = work
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.01, execute: work)
+        let delay: TimeInterval = isRecursiveMode ? 0.18 : 0.05
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Lazy-load RAW EXIF when a photo is selected (not at folder load time)
@@ -91,7 +139,6 @@ extension PhotoStore {
             // 배치 완료 → UI 업데이트 (Table 갱신을 위해 photosVersion 증가)
             DispatchQueue.main.async { [weak self] in
                 self?.invalidateFilterCache()
-                self?.photosVersion += 1
                 // @Published가 자동 알림 → objectWillChange 중복 제거
             }
         }
@@ -163,7 +210,6 @@ extension PhotoStore {
                 self.exifBatchWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     self?.invalidateFilterCache()
-                    self?.photosVersion += 1
                 }
                 self.exifBatchWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
@@ -173,6 +219,7 @@ extension PhotoStore {
 
     /// 목록뷰 전환 시 전체 EXIF 배치 로딩
     func triggerListExifLoad() {
+        guard !isRecursiveMode else { return }
         let needExif = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }.count
         fputs("[EXIF] triggerListExifLoad: need=\(needExif), version=\(photosVersion), last=\(lastExifLoadVersion)\n", stderr)
         guard lastExifLoadVersion != photosVersion else { return }
@@ -182,6 +229,11 @@ extension PhotoStore {
     }
 
     func preloadAllThumbnails() {
+        guard !isRecursiveMode else {
+            thumbsTotal = photos.count
+            thumbsLoaded = thumbsTotal
+            return
+        }
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
         thumbsTotal = list.count
         thumbsLoaded = thumbsTotal
@@ -202,9 +254,15 @@ extension PhotoStore {
         // 외장 HDD 는 NCQ 활용으로 100장 유지
         let isNetwork = ThumbnailLoader.shared.isNetworkMode
         let radius: Int
-        if isNetwork { radius = 30 }       // NAS: 현재 화면 주변만 prewarm
-        else if isSlow { radius = 100 }    // 외장 HDD
-        else { radius = 40 }               // SSD
+        if fastCullingMode || isRecursiveScanInProgress {
+            // 빠른 셀렉/대량 재귀 스캔 직후에는 보이는 주변만 얇게 채운다.
+            // 전체 성능을 다 쓰지 않고 입력/스크롤 여유를 남기는 보수적 기본값.
+            if isNetwork { radius = 10 }
+            else if isSlow { radius = 24 }
+            else { radius = 18 }
+        } else if isNetwork { radius = 30 }       // NAS: 현재 화면 주변만 prewarm
+        else if isSlow { radius = 100 }           // 외장 HDD
+        else { radius = 40 }                      // SSD
         let start = max(0, currentIdx - radius)
         let end = min(list.count, currentIdx + radius)
         guard start < end else { return }
@@ -215,7 +273,9 @@ extension PhotoStore {
         // HDD: prewarming concurrency 2로 제한 — visible 로딩(ThumbnailLoader 6-way)과 디스크 경합 최소화
         // (HDD에서 동시 8+ way seek은 NCQ 한계 초과 → 모두 느려짐)
         // SSD: tier 기반 (low=2, standard=3, high=4)
-        let concurrency = isSlow ? 2 : SystemSpec.shared.ssdThumbnailConcurrency()
+        let concurrency = (fastCullingMode || isRecursiveScanInProgress)
+            ? 1
+            : (isSlow ? 2 : SystemSpec.shared.ssdThumbnailConcurrency())
         let sem = DispatchSemaphore(value: concurrency)
         let concurrentQueue = DispatchQueue(label: "preview.thumb.prewarm", qos: .utility, attributes: .concurrent)
         for url in urls {
@@ -227,20 +287,17 @@ extension PhotoStore {
                 autoreleasepool {
                     guard self?.idlePrefetchGeneration == gen else { return }
                     if ThumbnailCache.shared.get(url) != nil { return }  // 이미 캐시됨
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                            kCGImageSourceThumbnailMaxPixelSize: 400,
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true
-                          ] as CFDictionary) else { return }
-                    let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                    ThumbnailCache.shared.set(url, image: img)
+                    // v8.8.0: ThumbnailLoader 경유 (NEF 등 RAW orientation 처리 보장)
+                    if let img = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                        ThumbnailCache.shared.set(url, image: img)
+                    }
                 }
             }
         }
     }
 
     func startIdlePreviewPrefetch() {
+        guard !fastCullingMode, !isRecursiveScanInProgress, !isRecursiveMode else { return }
         idlePrefetchGeneration += 1
         let gen = idlePrefetchGeneration
         let list = photos.filter { !$0.isFolder && !$0.isParentFolder }
@@ -284,7 +341,7 @@ extension PhotoStore {
                         guard self?.idlePrefetchGeneration == gen else { return }
                         let photo = list[sorted[i]]
                         let url = photo.jpgURL
-                        let cacheKey = url.appendingPathExtension("orig")
+                        let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: 0, sourceURL: url)
 
                         // 이미 캐시에 있으면 스킵
                         if PreviewImageCache.shared.get(cacheKey) != nil { return }
@@ -383,15 +440,10 @@ extension PhotoStore {
             if ThumbnailCache.shared.get(url) != nil { continue }
             let op = BlockOperation {
                 autoreleasepool {
-                    let opts: [NSString: Any] = [
-                        kCGImageSourceThumbnailMaxPixelSize: 1200,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                    ]
-                    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
-                    let ns = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-                    ThumbnailCache.shared.set(url, image: ns)
+                    // v8.8.0: ThumbnailLoader 경유 (NEF 등 RAW orientation 처리 보장)
+                    if let ns = ThumbnailLoader.shared.generateThumbnailSync(url: url) {
+                        ThumbnailCache.shared.set(url, image: ns)
+                    }
                 }
             }
             Self.thumbPrefetchQueue.addOperation(op)

@@ -2,6 +2,35 @@ import Foundation
 import AppKit
 import Darwin
 
+// MARK: - 잠자기 방지 (긴 복사/백업 작업 보호)
+// 백업이나 대량 export 도중 잠자기 진입 시 디스크 I/O 가 멎어 복사가 멈추던 문제 방지.
+// ProcessInfo.beginActivity 가 Apple-권장 방식 — endActivity 까지 시스템 슬립 차단.
+final class SleepPreventer {
+    private var token: NSObjectProtocol?
+    private let reason: String
+
+    init(reason: String) { self.reason = reason }
+
+    func begin() {
+        guard token == nil else { return }
+        token = ProcessInfo.processInfo.beginActivity(
+            options: [.idleSystemSleepDisabled, .userInitiated],
+            reason: reason
+        )
+        fputs("[SLEEP-GUARD] begin: \(reason)\n", stderr)
+    }
+
+    func end() {
+        if let t = token {
+            ProcessInfo.processInfo.endActivity(t)
+            token = nil
+            fputs("[SLEEP-GUARD] end: \(reason)\n", stderr)
+        }
+    }
+
+    deinit { end() }
+}
+
 // MARK: - 개별 백업 세션 (카드 1장 = 세션 1개)
 
 class BackupSession: ObservableObject, Identifiable {
@@ -215,6 +244,11 @@ class MemoryCardBackupService: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+            // 잠자기 차단 — 백업 도중 시스템 슬립 진입 시 SD 카드 I/O 가 멎어 복사가 멈추던 문제 방지
+            let sleepGuard = SleepPreventer(reason: "PickShot 메모리카드 백업: \(sourceVolume.lastPathComponent)")
+            sleepGuard.begin()
+            defer { sleepGuard.end() }
+
             let fm = FileManager.default
             let backupStartTime = CFAbsoluteTimeGetCurrent()
             var failedFiles: [FailedFile] = []
@@ -359,9 +393,9 @@ class MemoryCardBackupService: ObservableObject {
         }
         defer { close(dstFd) }
 
-        fcntl(srcFd, F_NOCACHE, 1)
-        fcntl(dstFd, F_NOCACHE, 1)
-        fcntl(srcFd, F_RDAHEAD, 1)
+        _ = fcntl(srcFd, F_NOCACHE, 1)
+        _ = fcntl(dstFd, F_NOCACHE, 1)
+        _ = fcntl(srcFd, F_RDAHEAD, 1)
 
         let bufferSize = 16 * 1024 * 1024
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)

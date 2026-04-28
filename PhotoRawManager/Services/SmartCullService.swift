@@ -135,7 +135,7 @@ class SmartCullService: ObservableObject {
 
             // Step 1: FeaturePrint 추출
             self.updateStatus("특징 벡터 추출 중... (0/\(photoList.count))")
-            var vectors = self.extractFeatureVectors(photos: photoList)
+            let vectors = self.extractFeatureVectors(photos: photoList)
             guard !self.cancelled else { self.finish(); return }
 
             // Step 2: 시간 기반 그룹 분리 (장르별 간격)
@@ -180,7 +180,7 @@ class SmartCullService: ObservableObject {
                         let subVectors = groupVectors.filter { cluster.photoIDs.contains($0.photoID) }
                         let tighterThreshold = autoThreshold * 0.6  // 40% 더 엄격
                         fputs("[CULL] 메가 클러스터 재분할: \(cluster.photoIDs.count)장 → threshold \(String(format: "%.4f", tighterThreshold))\n", stderr)
-                        var subClusters = self.clusterBySimilarity(vectors: subVectors, threshold: tighterThreshold)
+                        let subClusters = self.clusterBySimilarity(vectors: subVectors, threshold: tighterThreshold)
                         // 여전히 큰 경우 한번 더 분할
                         var splitAgain: [PhotoCluster] = []
                         for sc in subClusters {

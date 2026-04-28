@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreImage
+import UniformTypeIdentifiers
 
 // MARK: - CropView
 
@@ -532,9 +533,9 @@ struct CropView: View {
             counter += 1
         }
 
-        // JPEG로 저장 (원본 확장자에 맞게)
-        let uti: CFString = ["png"].contains(ext) ? kUTTypePNG : kUTTypeJPEG
-        guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, uti, 1, nil) else { return }
+        // JPEG로 저장 (원본 확장자에 맞게). v8.6.3: UTType 으로 교체 (kUTTypePNG 등 deprecated)
+        let uti: UTType = (ext == "png") ? .png : .jpeg
+        guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, uti.identifier as CFString, 1, nil) else { return }
         let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.95]
         CGImageDestinationAddImage(dest, cgImage, options as CFDictionary)
 

@@ -98,7 +98,7 @@ struct ClientView: View {
                     ForEach(store.filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }) { photo in
                         let isSelected = store.selectedPhotoID == photo.id
                         VStack(spacing: 2) {
-                            AsyncThumbnailView(url: photo.jpgURL)
+                            AsyncThumbnailView(url: photo.displayURL)
                                 .frame(width: size, height: size * 0.75)
                                 .clipped()
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -140,7 +140,7 @@ struct ClientView: View {
                 }
                 .padding(6)
             }
-            .onChange(of: store.selectedPhotoID) { newID in
+            .onChange(of: store.selectedPhotoID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         proxy.scrollTo(id, anchor: nil)
@@ -227,7 +227,7 @@ struct ClientView: View {
                 }
                 .padding(8)
             }
-            .onChange(of: store.selectedPhotoID) { newID in
+            .onChange(of: store.selectedPhotoID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         proxy.scrollTo(id, anchor: nil)
@@ -242,7 +242,7 @@ struct ClientView: View {
 
         return HStack(spacing: 8) {
             // Thumbnail
-            AsyncThumbnailView(url: photo.jpgURL)
+            AsyncThumbnailView(url: photo.displayURL)
                 .frame(width: 60, height: 40)
                 .cornerRadius(4)
                 .clipped()

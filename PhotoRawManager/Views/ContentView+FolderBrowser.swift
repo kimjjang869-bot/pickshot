@@ -69,6 +69,21 @@ struct FolderBrowserView: View {
     @State private var recentFolders: [URL] = []
     @State private var folderViewMode: FolderViewMode = .tree
     @State private var favoritesHeight: CGFloat = 550
+    // v8.9.4: 우측 사이드바 하단 탭 (즐겨찾기 / 메타데이터 / 메타데이터 편집)
+    @State private var sidebarTab: SidebarTab = .favorites
+    enum SidebarTab: String, CaseIterable, Identifiable {
+        case favorites = "즐겨찾기"
+        case metadata = "메타데이터"
+        case editor = "편집"
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .favorites: return "star.fill"
+            case .metadata: return "info.circle"
+            case .editor: return "pencil.circle"
+            }
+        }
+    }
     @State private var currentIconFolder: URL?
     @State private var iconFolderContents: [FolderItem] = []
     @State private var refreshWork: DispatchWorkItem?
@@ -115,7 +130,7 @@ struct FolderBrowserView: View {
             }
             volumeObservers = [mountObs, unmountObs]
         }
-        .onChange(of: store.folderURL) { newURL in
+        .onChange(of: store.folderURL) { _, newURL in
             guard let url = newURL else { return }
             expandTreeToPath(url)
         }
@@ -245,7 +260,7 @@ struct FolderBrowserView: View {
 
     /// Auto-expand tree to show the currently loaded folder (async to avoid blocking main thread)
     private func expandTreeToPath(_ targetURL: URL) {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = URL(fileURLWithPath: "/Users/\(NSUserName())")
         let desktopURL = home.appendingPathComponent("Desktop")
 
         // Build path components from Desktop to target
@@ -397,7 +412,7 @@ struct FolderBrowserView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                 }
-                .onChange(of: store.folderURL) { newURL in
+                .onChange(of: store.folderURL) { _, newURL in
                     guard let url = newURL else { return }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         withAnimation(.easeInOut(duration: 0.15)) {
@@ -422,26 +437,52 @@ struct FolderBrowserView: View {
                     favoritesHeight = max(80, min(300, favoritesHeight - value.translation.height))
                 })
 
-            // Favorites (always visible at bottom)
+            // v8.9.4: 즐겨찾기 영역을 탭 컨테이너로 변환 (즐겨찾기 / 정보 / 편집)
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader(icon: "star.fill", title: "즐겨찾기", color: .yellow)
+                // 탭 picker
+                Picker("", selection: $sidebarTab) {
+                    ForEach(SidebarTab.allCases) { tab in
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
 
-                if favorites.isEmpty {
-                    Text("폴더를 우클릭하여 추가")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 16)
-                        .padding(.vertical, 4)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(favorites, id: \.path) { url in
-                                HStack(spacing: 6) {
-                                    AsyncFolderThumbnail(url: url)
-                                        .frame(width: 40, height: 30)
-                                        .cornerRadius(3)
+                Group {
+                    switch sidebarTab {
+                    case .favorites: favoritesContent
+                    case .metadata: metadataContent
+                    case .editor: metadataEditorContent
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .frame(height: favoritesHeight)
+        }
+    }
 
-                                    Text(store.favoriteNickname(for: url))
+    // MARK: - Sidebar Tab Contents (v8.9.4)
+
+    private var favoritesContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if favorites.isEmpty {
+                Text("폴더를 우클릭하여 추가")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 16)
+                    .padding(.vertical, 4)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(favorites, id: \.path) { url in
+                            HStack(spacing: 6) {
+                                AsyncFolderThumbnail(url: url)
+                                    .frame(width: 40, height: 30)
+                                    .cornerRadius(3)
+
+                                Text(store.favoriteNickname(for: url))
                                         .font(.system(size: 12, weight: .medium))
                                         .lineLimit(1)
                                         .truncationMode(.tail)
@@ -482,7 +523,35 @@ struct FolderBrowserView: View {
                     }
                 }
             }
-            .frame(height: favoritesHeight)
+        }
+
+    @ViewBuilder
+    private var metadataContent: some View {
+        if let p = store.selectedPhoto {
+            SidebarMetadataView(photo: p)
+        } else {
+            VStack {
+                Spacer()
+                Image(systemName: "photo").font(.system(size: 24)).foregroundColor(.secondary)
+                Text("사진을 선택하세요").font(.system(size: 11)).foregroundColor(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var metadataEditorContent: some View {
+        if let p = store.selectedPhoto {
+            SidebarMetadataEditor(photo: p)
+        } else {
+            VStack {
+                Spacer()
+                Image(systemName: "pencil.slash").font(.system(size: 24)).foregroundColor(.secondary)
+                Text("사진을 선택하세요").font(.system(size: 11)).foregroundColor(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -813,13 +882,13 @@ struct FolderBrowserView: View {
                 let columns = [GridItem(.flexible()), GridItem(.flexible())]
                 LazyVGrid(columns: columns, spacing: 8) {
                     iconQuickItem(name: "Desktop", icon: "desktopcomputer", color: .blue,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Desktop"))
                     iconQuickItem(name: "Documents", icon: "doc.fill", color: .blue,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Documents"))
                     iconQuickItem(name: "Downloads", icon: "arrow.down.circle.fill", color: .green,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Downloads"))
                     iconQuickItem(name: "Pictures", icon: "photo.fill", color: .orange,
-                                  url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures"))
+                                  url: URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Pictures"))
                 }
                 .padding(.horizontal, 6)
 
@@ -865,7 +934,7 @@ struct FolderBrowserView: View {
                             VStack(spacing: 4) {
                                 Image(systemName: "folder.fill")
                                     .font(.system(size: 28))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(store.recursiveScannedFolders.contains(item.url.path) ? .yellow : .blue)
                                 Text(item.name)
                                     .font(.system(size: 10))
                                     .lineLimit(2)
@@ -954,7 +1023,11 @@ struct FolderBrowserView: View {
 
     /// Build root folder items (can be called off the main thread)
     private func buildRootItems() -> [FolderItem] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        // v8.8.0: Sandbox 컨테이너 가 아닌 실제 사용자 home 경로 사용.
+        //   FileManager.homeDirectoryForCurrentUser 는 sandbox 에서 컨테이너 를 반환 → 그 안의
+        //   Desktop 심볼릭 링크가 실제 경로로 이어지지만 엔타이틀먼트 가 컨테이너 경로 기준으로
+        //   적용 안 돼 read-write 가 거부 됨. 실제 /Users/<name> 경로 로 접근 해야 정상 동작.
+        let home = URL(fileURLWithPath: "/Users/\(NSUserName())")
         var items: [FolderItem] = []
 
         let desktopURL = home.appendingPathComponent("Desktop")
@@ -1111,13 +1184,10 @@ struct FolderRowView: View {
                     // 트리 펼치기
                     if item.hasSubfolders && !item.isExpanded { toggleExpand() }
 
-                    // 폴더 로딩 (트리 펼치기와 분리하여 약간의 딜레이)
+                    // v8.9 perf: 0.1s 딜레이 제거 — toggleExpand 와 loadFolder 는 모두 main async 라 충돌 없음.
                     if !isSystem {
                         store.startupMode = .viewer
-                        let targetURL = item.url
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            store.loadFolder(targetURL, restoreRatings: true)
-                        }
+                        store.loadFolder(item.url, restoreRatings: true)
                     }
                 }
 
@@ -1301,6 +1371,10 @@ struct FolderRowView: View {
     }
 
     private var folderColor: Color {
+        // v8.9.7+: 재귀 모드에 포함된 폴더는 노란 아이콘
+        if store.recursiveScannedFolders.contains(item.url.path) {
+            return .yellow
+        }
         if item.url.path.hasPrefix("/Volumes") && level == 0 {
             return .green
         }
@@ -1563,5 +1637,316 @@ struct FolderDropDelegate: DropDelegate {
             )
         }
         return true
+    }
+}
+//
+//  SidebarMetadataPanels.swift
+//  PhotoRawManager
+//
+//  v8.9.4: 사이드바 메타데이터/편집 탭용 narrow 레이아웃 패널.
+//  ExifInfoView 는 가로 한 줄 디자인이라 좁은 폭에서 글자 단위로 깨짐 → 세로 row 형식으로 재구성.
+//
+
+import SwiftUI
+
+// MARK: - 메타데이터 정보 패널 (읽기 전용, narrow)
+
+struct SidebarMetadataView: View {
+    let photo: PhotoItem
+    @State private var exif: ExifData?
+    @State private var rawExif: ExifData?
+    @State private var iptc: XMPService.IPTCMetadata?
+
+    private var displayExif: ExifData? { rawExif ?? exif }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                // 파일명 (truncated middle)
+                Text(photo.fileNameWithExtension)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider()
+
+                // 카메라 / 렌즈
+                if let cam = displayExif?.cameraModel {
+                    rowKV("카메라", cam)
+                }
+                if let lens = displayExif?.lensModel {
+                    rowKV("렌즈", lens)
+                }
+
+                // 촬영 설정
+                if let e = displayExif {
+                    if e.iso != nil || e.shutterSpeed != nil || e.aperture != nil || e.focalLength != nil {
+                        Divider()
+                    }
+                    if let iso = e.iso { rowKV("ISO", "\(iso)") }
+                    if let shutter = e.shutterSpeed { rowKV("셔터", shutter) }
+                    if let aperture = e.aperture { rowKV("조리개", String(format: "f/%.1f", aperture)) }
+                    if let focal = e.focalLength { rowKV("초점거리", String(format: "%.0fmm", focal)) }
+                }
+
+                // 일시
+                if let date = displayExif?.dateTaken {
+                    Divider()
+                    rowKV("촬영일시", formatDate(date))
+                }
+
+                // 파일 정보
+                Divider()
+                let ext = photo.jpgURL.pathExtension.uppercased()
+                rowKV("파일", ext)
+                if photo.jpgFileSize > 0 {
+                    rowKV("크기", byteString(photo.jpgFileSize))
+                }
+                if photo.hasRAW, photo.rawFileSize > 0 {
+                    rowKV("RAW", byteString(photo.rawFileSize))
+                }
+                if let dims = exifDimensions {
+                    rowKV("픽셀", dims)
+                }
+
+                // 평점/라벨
+                if photo.rating > 0 || photo.colorLabel != .none {
+                    Divider()
+                    if photo.rating > 0 {
+                        rowKV("별점", String(repeating: "★", count: photo.rating))
+                    }
+                    if photo.colorLabel != .none {
+                        rowKV("라벨", photo.colorLabel.rawValue)
+                    }
+                }
+
+                // IPTC (있을 때만)
+                if let m = iptc, !m.title.isEmpty || !m.description.isEmpty || !m.keywords.isEmpty {
+                    Divider()
+                    if !m.title.isEmpty { rowKV("제목", m.title) }
+                    if !m.description.isEmpty { rowKV("설명", m.description, multiline: true) }
+                    if !m.keywords.isEmpty { rowKV("키워드", m.keywords.joined(separator: ", "), multiline: true) }
+                    if !m.creator.isEmpty { rowKV("작가", m.creator) }
+                    if !m.copyright.isEmpty { rowKV("저작권", m.copyright) }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+        }
+        .onAppear { loadAll() }
+        .onChange(of: photo.id) { _, _ in loadAll() }
+    }
+
+    private func rowKV(_ key: String, _ value: String, multiline: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(key)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 56, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.primary)
+                .lineLimit(multiline ? nil : 1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var exifDimensions: String? {
+        if let w = displayExif?.imageWidth, let h = displayExif?.imageHeight {
+            return "\(w) × \(h)"
+        }
+        return nil
+    }
+
+    private func formatDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy.MM.dd HH:mm:ss"
+        return f.string(from: d)
+    }
+
+    private func byteString(_ size: Int64) -> String {
+        let bcf = ByteCountFormatter()
+        bcf.allowedUnits = [.useMB, .useGB]
+        bcf.countStyle = .file
+        return bcf.string(fromByteCount: size)
+    }
+
+    private func loadAll() {
+        let url = photo.jpgURL
+        let rawURL = photo.hasRAW ? photo.rawURL : nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let e = ExifService.extractExif(from: url)
+            var re: ExifData? = nil
+            if let r = rawURL {
+                re = ExifService.extractExif(from: r)
+            }
+            let m = XMPService.readIPTCMetadata(from: url)
+            DispatchQueue.main.async {
+                self.exif = e
+                self.rawExif = re
+                self.iptc = m
+            }
+        }
+    }
+}
+
+// MARK: - 인라인 메타데이터 편집기 (사이드바용)
+
+struct SidebarMetadataEditor: View {
+    let photo: PhotoItem
+    @State private var title: String = ""
+    @State private var description: String = ""
+    @State private var keywords: String = ""
+    @State private var creator: String = ""
+    @State private var copyright: String = ""
+    @State private var loaded: Bool = false
+    @State private var isSaving: Bool = false
+    @State private var savedAt: Date? = nil
+    @State private var errorMsg: String? = nil
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(photo.fileNameWithExtension)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.secondary)
+
+                fieldGroup("제목") {
+                    TextField("사진 제목", text: $title)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                }
+
+                fieldGroup("설명") {
+                    TextEditor(text: $description)
+                        .font(.system(size: 11))
+                        .frame(minHeight: 50, maxHeight: 80)
+                        .padding(2)
+                        .background(Color.gray.opacity(0.08))
+                        .cornerRadius(4)
+                }
+
+                fieldGroup("키워드 (쉼표 구분)") {
+                    TextField("결혼식, 야외, 인물", text: $keywords)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                }
+
+                fieldGroup("작가") {
+                    TextField("작가 이름", text: $creator)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                }
+
+                fieldGroup("저작권") {
+                    TextField("© 2026 작가 이름", text: $copyright)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                }
+
+                HStack(spacing: 6) {
+                    Button(action: save) {
+                        if isSaving {
+                            ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+                        } else {
+                            Label("저장", systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
+
+                    Button(action: { loadFromFile() }) {
+                        Label("되돌리기", systemImage: "arrow.uturn.backward")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isSaving)
+                    Spacer()
+                }
+
+                if let savedAt = savedAt {
+                    Text("저장됨 \(formatTime(savedAt))")
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
+                }
+                if let errorMsg = errorMsg {
+                    Text(errorMsg)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+        }
+        .onAppear { loadFromFile() }
+        .onChange(of: photo.id) { _, _ in loadFromFile() }
+    }
+
+    @ViewBuilder
+    private func fieldGroup<C: View>(_ label: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            content()
+        }
+    }
+
+    private func loadFromFile() {
+        let url = photo.jpgURL
+        DispatchQueue.global(qos: .userInitiated).async {
+            let m = XMPService.readIPTCMetadata(from: url) ?? XMPService.IPTCMetadata()
+            DispatchQueue.main.async {
+                self.title = m.title
+                self.description = m.description
+                self.keywords = m.keywords.joined(separator: ", ")
+                self.creator = m.creator
+                self.copyright = m.copyright
+                self.loaded = true
+                self.errorMsg = nil
+            }
+        }
+    }
+
+    private func save() {
+        let url = photo.jpgURL
+        var m = XMPService.IPTCMetadata()
+        m.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        m.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        m.keywords = keywords
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        m.creator = creator.trimmingCharacters(in: .whitespacesAndNewlines)
+        m.copyright = copyright.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        isSaving = true
+        errorMsg = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = XMPService.writeIPTCMetadata(url: url, metadata: m)
+            DispatchQueue.main.async {
+                isSaving = false
+                if ok {
+                    savedAt = Date()
+                } else {
+                    errorMsg = "저장 실패"
+                }
+            }
+        }
+    }
+
+    private func formatTime(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: d)
     }
 }

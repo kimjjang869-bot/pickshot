@@ -75,7 +75,7 @@ struct StartupView: View {
                     Button(action: {
                         store.startupMode = .viewer
                         store.shouldOpenFolderBrowser = true
-                        let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+                        let desktop = URL(fileURLWithPath: "/Users/\(NSUserName())").appendingPathComponent("Desktop")
                         // Try security-scoped bookmark first (App Sandbox)
                         if let bookmarkedURL = SandboxBookmarkService.resolveBookmark(key: "lastFolder") {
                             store.loadFolder(bookmarkedURL, restoreRatings: true)
@@ -320,6 +320,20 @@ struct BreadcrumbPathView: View {
             }
         }
         .help(url.path)
+        .contextMenu {
+            Button(action: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path, forType: .string)
+                store.showToastMessage("📋 경로 복사됨: \(url.lastPathComponent)")
+            }) {
+                Label("경로 복사", systemImage: "doc.on.clipboard")
+            }
+            Button(action: {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }) {
+                Label("Finder에서 열기", systemImage: "folder")
+            }
+        }
     }
 
     private var pathComponents: [String] {

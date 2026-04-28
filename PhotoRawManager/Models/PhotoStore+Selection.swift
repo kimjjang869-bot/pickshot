@@ -48,12 +48,9 @@ extension PhotoStore {
         // 폴더/상위폴더는 선택 불가
         if let idx = _photoIndex[id], idx < photos.count {
             let photo = photos[idx]
-            AppLogger.log(.selection, "selectPhoto: \(photo.fileName)\(cmdKey ? " +Cmd" : "")\(shiftKey ? " +Shift" : "")")
             // 무결성 검증: id 불일치 감지
             if photo.id != id {
                 fputs("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n", stderr)
-            } else {
-                fputs("[SELECT] click: id=\(id.uuidString.prefix(8)) → \(photo.fileName)\n", stderr)
             }
         } else {
             fputs("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n", stderr)
@@ -82,12 +79,13 @@ extension PhotoStore {
             let rangeEnd = max(anchor, toIndex)
 
             // Replace selection with exact range (shrinks if clicking back)
+            //   v8.9.7+: 폴더도 shift-range 선택 가능. parentFolder (..) 만 제외.
             let safeEnd = min(rangeEnd, list.count - 1)
             guard safeEnd >= rangeStart else { return }
             var newSelection = Set<UUID>()
             for i in rangeStart...safeEnd {
                 let item = list[i]
-                if !item.isFolder && !item.isParentFolder {
+                if !item.isParentFolder {
                     newSelection.insert(item.id)
                 }
             }
@@ -114,8 +112,8 @@ extension PhotoStore {
     }
 
     func selectAll() {
-        // 폴더/상위폴더 제외 — 사진만 선택
-        let ids = Set(filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
+        // v8.9.7+: 폴더도 select-all 포함. parentFolder (..) 만 제외.
+        let ids = Set(filteredPhotos.filter { !$0.isParentFolder }.map { $0.id })
         selectedPhotoIDs = ids
     }
 
@@ -133,7 +131,61 @@ extension PhotoStore {
     }
 
     func moveSelection(by offset: Int, shiftKey: Bool = false, cmdKey: Bool = false) {
+        // v8.9.4: 방향키 burst 동안 ThumbnailLoader 양보 (concurrency 다운) → 250ms 후 자동 복구
+        let t0 = CFAbsoluteTimeGetCurrent()
+        markNavigationBurstIfNeeded()
+        let t1 = CFAbsoluteTimeGetCurrent()
+        ThumbnailLoader.shared.throttle()
+        PhotoStore.scheduleUnthrottle()
+        let t2 = CFAbsoluteTimeGetCurrent()
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
+        let t3 = CFAbsoluteTimeGetCurrent()
+        let totalMs = (t3 - t0) * 1000
+        if totalMs > 5 {
+            fputs("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n", stderr)
+        }
+    }
+
+    /// 빠른 연타는 NSEvent.isARepeat 이 false 여도 사용감은 key-repeat 과 같다.
+    /// 이 짧은 burst 동안 Stage2/HiRes/EXIF 작업을 미뤄 마지막 사진만 따라오게 한다.
+    private func markNavigationBurstIfNeeded() {
+        let now = CFAbsoluteTimeGetCurrent()
+        let rapidTap = now - Self.lastNavigationMoveTime < 0.10
+        Self.lastNavigationMoveTime = now
+
+        if rapidTap || isKeyRepeat {
+            isNavigationBurst = true
+            Self.navigationBurstWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.isNavigationBurst = false
+                if let id = self.selectedPhotoID {
+                    self.scheduleSelectionIdleWork(for: id, delay: 0.05)
+                }
+                Self.scheduleNavigationIdleCleanup()
+            }
+            Self.navigationBurstWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+        }
+    }
+
+    private static var navigationIdleCleanupWork: DispatchWorkItem?
+    static func scheduleNavigationIdleCleanup() {
+        navigationIdleCleanupWork?.cancel()
+        let work = DispatchWorkItem {
+            PreviewImageCache.shared.trimOldest(ratio: 0.6)
+        }
+        navigationIdleCleanupWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
+    /// burst 끝나면(250ms idle) 자동 unthrottle. 연속 호출 시 마지막 1회만 실행.
+    private static var unthrottleWork: DispatchWorkItem?
+    static func scheduleUnthrottle() {
+        unthrottleWork?.cancel()
+        let w = DispatchWorkItem { ThumbnailLoader.shared.unthrottle() }
+        unthrottleWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
     }
 
     func executeMoveSelection(by offset: Int, shiftKey: Bool, cmdKey: Bool) {
@@ -142,67 +194,51 @@ extension PhotoStore {
 
         ensureFilteredIndex()
 
-        guard let currentID = selectedPhotoID else { return }
-        guard let currentIndex = _filteredIndex[currentID] else {
-            let firstID = list[0].id
-            selectedPhotoIDs = [firstID]
-            selectedPhotoID = firstID
-            return
-        }
-
-        let newIndex = currentIndex + offset
-        guard newIndex >= 0 && newIndex < list.count else { return }
-
-        let newID = list[newIndex].id
+        guard let result = NavigationCore.move(.init(
+            photos: list,
+            filteredIndex: _filteredIndex,
+            currentID: selectedPhotoID,
+            currentSelection: selectedPhotoIDs,
+            shiftAnchorIndex: shiftAnchorIndex,
+            offset: offset,
+            shiftKey: shiftKey,
+            cmdKey: cmdKey
+        )) else { return }
 
         scrollAnchor = offset > 0 ? .bottom : .top
-
-        if shiftKey {
-            // Shift: range select from anchor to new position
-            if shiftAnchorIndex == nil {
-                shiftAnchorIndex = currentIndex
-            }
-            guard let anchor = shiftAnchorIndex else { return }
-            let rangeStart = min(anchor, newIndex)
-            let rangeEnd = max(anchor, newIndex)
-            var newSelection = Set<UUID>()
-            for i in rangeStart...rangeEnd {
-                newSelection.insert(list[i].id)
-            }
-            selectedPhotoIDs = newSelection
-        } else if cmdKey {
-            // Cmd: toggle individual selection, keep existing
-            if selectedPhotoIDs.contains(newID) {
-                // Already selected - just move focus
-            } else {
-                selectedPhotoIDs.insert(newID)
-            }
-            shiftAnchorIndex = nil
-        } else {
-            // Normal: single select
-            selectedPhotoIDs = [newID]
-            shiftAnchorIndex = nil
-        }
+        selectedPhotoIDs = result.selection
+        shiftAnchorIndex = result.shiftAnchorIndex
 
         // 성능 측정 시작 — scrollTrigger/selectedPhotoID 변경 직전에 측정 시작
         // (SwiftUI body 재계산 + onChange 호출이 모두 동기 구간에 포함되도록)
-        let dirSymbol = offset == 1 ? "→" : offset == -1 ? "←" : (offset > 0 ? "↓" : "↑")
-        let capturedIndex = newIndex
-        let measuring = Thread.isMainThread
+        let measuring: Bool = {
+            #if DEBUG
+            guard Thread.isMainThread else { return false }
+            return MainActor.assumeIsolated {
+                NavigationPerformanceMonitor.shared.isEnabled
+            }
+            #else
+            return false
+            #endif
+        }()
         if measuring {
             MainActor.assumeIsolated {
-                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: capturedIndex, direction: dirSymbol)
+                NavigationPerformanceMonitor.shared.notifyMoveStart(photoIndex: result.targetIndex, direction: result.directionSymbol)
             }
         }
 
-        selectedPhotoID = newID
+        #if DEBUG
+        let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
+        let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
+        fputs("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n", stderr)
+        #endif
+        selectedPhotoID = result.focusedID
+        // v8.9.7+: 진짜 병목은 TouchBarProvider 의 매-nav RAW 디코드였음. scrollTrigger 증가는
+        //   NSCollectionView 자동 스크롤에 필수 — burst 중에도 유지.
         scrollTrigger &+= 1
 
-        // 빠른 탐색: 썸네일 즉시 표시 (SwiftUI onChange 병합 우회)
-        let photo = list[newIndex]
-        if !photo.isFolder && !photo.isParentFolder {
-            onQuickPreview?(photo.jpgURL)
-        }
+        // v8.9.7+: 빠른 프리뷰도 selectedPhotoID onChange 단일 경로에서 처리한다.
+        // 별도 콜백 우회 표시를 허용하면 키를 놓는 순간 늦게 도착한 프레임이 현재 선택을 덮을 수 있다.
 
         // 측정 종료 — 동기 구간 끝난 직후
         if measuring {
@@ -215,20 +251,14 @@ extension PhotoStore {
     func selectRight(shift: Bool = false, cmd: Bool = false) { moveSelection(by: 1, shiftKey: shift, cmdKey: cmd) }
     func selectLeft(shift: Bool = false, cmd: Bool = false) { moveSelection(by: -1, shiftKey: shift, cmdKey: cmd) }
     func selectDown(shift: Bool = false, cmd: Bool = false) {
-        fputs("[NAV] down cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
         // 마지막 행에서 아래로 갈 곳이 없으면 가장 마지막 파일로 점프
         ensureFilteredIndex()
         let list = filteredPhotos
         if !list.isEmpty,
            let currentID = selectedPhotoID,
            let currentIdx = _filteredIndex[currentID] {
-            let targetIdx = currentIdx + columnsPerRow
-            if targetIdx >= list.count {
-                // 아래 행이 없음 → 마지막 파일로 이동
-                let lastIdx = list.count - 1
-                if lastIdx > currentIdx {
-                    moveSelection(by: lastIdx - currentIdx, shiftKey: shift, cmdKey: cmd)
-                }
+            if let offset = NavigationCore.downOffset(currentIndex: currentIdx, count: list.count, columns: columnsPerRow) {
+                moveSelection(by: offset, shiftKey: shift, cmdKey: cmd)
                 return
             }
         }
@@ -236,7 +266,6 @@ extension PhotoStore {
         moveSelection(by: columnsPerRow, shiftKey: shift, cmdKey: cmd)
     }
     func selectUp(shift: Bool = false, cmd: Bool = false) {
-        fputs("[NAV] up cols=\(columnsPerRow) actual=\(actualColumnsPerRow)\n", stderr)
         moveSelection(by: -columnsPerRow, shiftKey: shift, cmdKey: cmd)
     }
 }

@@ -67,18 +67,29 @@ class TouchBarProvider: NSObject, NSTouchBarDelegate {
         imageView.imageScaling = .scaleProportionallyUpOrDown
 
         if let photo = store?.selectedPhoto {
-            // TouchBar용 소형 썸네일만 로딩 (풀사이즈 방지)
-            let image: NSImage? = {
-                guard let source = CGImageSourceCreateWithURL(photo.jpgURL as CFURL, nil) else { return nil }
-                let opts: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 100,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                ]
-                guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return nil }
-                return NSImage(cgImage: thumb, size: NSSize(width: thumb.width, height: thumb.height))
-            }()
-            imageView.image = image
+            // v8.9.7: 매 nav 마다 main thread 에서 RAW 풀 디코드 (CreateThumbnailFromImageAlways) →
+            //   200ms 점유 → NAV interval 이 240ms 로 떨어지던 진짜 원인. sample 78% 발생.
+            //   1) ThumbnailCache 캐시 hit 면 즉시 사용 (0ms). 그리드/프리뷰가 이미 채워둠.
+            //   2) miss 면 placeholder + background 디코드 (RAW 디코드 금지, embedded preview 만).
+            if let cached = ThumbnailCache.shared.get(photo.jpgURL) {
+                imageView.image = cached
+            } else {
+                imageView.image = NSImage(systemSymbolName: "photo", accessibilityDescription: "Loading")
+                let url = photo.jpgURL
+                DispatchQueue.global(qos: .utility).async { [weak imageView] in
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                          let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                              kCGImageSourceCreateThumbnailFromImageIfAbsent: false,  // RAW 디코드 금지 — embedded JPEG preview 만
+                              kCGImageSourceThumbnailMaxPixelSize: 100,
+                              kCGImageSourceCreateThumbnailWithTransform: true
+                          ] as CFDictionary)
+                    else { return }
+                    let img = NSImage(cgImage: thumb, size: NSSize(width: thumb.width, height: thumb.height))
+                    DispatchQueue.main.async {
+                        imageView?.image = img
+                    }
+                }
+            }
             imageView.toolTip = photo.fileName
         } else {
             imageView.image = NSImage(systemSymbolName: "photo", accessibilityDescription: "No photo")

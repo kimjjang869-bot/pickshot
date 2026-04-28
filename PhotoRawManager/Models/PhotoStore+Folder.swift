@@ -153,6 +153,7 @@ extension PhotoStore {
         }
 
         AppLogger.log(.folder, "loadFolder: \(url.lastPathComponent) path=\(url.path)")
+        CacheSweeper.shared.recursiveModeActive = false
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         // 이전 폴더의 pending save를 먼저 플러시 (폴더 바뀌기 전 현재 폴더 경로로 저장)
@@ -161,10 +162,21 @@ extension PhotoStore {
         // 이전 폴더 로딩/프리페치 취소 + 미리보기 캐시 비움
         ThumbnailLoader.shared.cancelAll()
         PreviewImageCache.shared.clearCache()
+        // v8.9.7+: 폴더 변경 시 즉시 InitialPreviewGenerator 취소.
+        //   다른 폴더 가서 진행 중이면 작업 중단. 다시 돌아오면 DiskThumbnailCache 체크로 자동 재개.
+        InitialPreviewGenerator.shared.cancel()
+        // v8.9.7+: 재귀 모드 set 도 초기화 (폴더 트리 노란 표시 해제).
+        recursiveRootPath = nil
+        recursiveScannedFolders = []
         idlePrefetchGeneration += 1  // 이전 프리페치 취소
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
+        previewsLoaded = 0
+        thumbCacheCount = 0
+        previewsStartTime = CFAbsoluteTimeGetCurrent()
+        cacheProgressStartTime = CFAbsoluteTimeGetCurrent()
+        clearPreviewTracking()
 
         folderURL = url
         isRecursiveMode = false  // 일반 폴더 열기 시 재귀 모드 해제
@@ -243,30 +255,38 @@ extension PhotoStore {
                 self?.photos = sorted
                 if restoreRatings { self?.applySavedRatings() }
 
+                // v8.8.2: 별점/컬러 필터 자동 리셋
+                //   새 폴더에 현재 선택된 별점/컬러 필터에 해당하는 사진이 0장이면 All 로 리셋.
+                //   이유: 빈 결과 화면에서 사용자가 "왜 안 보이지" 헤매는 상황 방지.
+                if let self = self {
+                    self.resetFiltersIfEmpty()
+                }
+
                 // Select first non-folder photo on NEXT run loop
                 DispatchQueue.main.async {
                     guard self?.folderURL == url else { return }
 
-                    // 기존 파일명을 새 목록에서 찾아 선택 유지
-                    // (PhotoItem.id는 UUID()로 매번 새로 생성되므로 파일명으로 매칭)
-                    var preserved = false
-                    if let name = prevFileName,
-                       let match = sorted.first(where: { $0.fileName == name && !$0.isFolder && !$0.isParentFolder }) {
-                        self?.selectedPhotoID = match.id
-                        self?.selectedPhotoIDs = [match.id]
-                        self?.scrollTrigger += 1
-                        preserved = true
-                    }
-
-                    if !preserved {
-                        // 선택 없거나 사라졌을 때만 첫 사진 선택
-                        let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                            ?? sorted.first
-                        if let fp = firstPhoto {
-                            self?.selectedPhotoID = fp.id
-                            self?.selectedPhotoIDs = [fp.id]
-                            self?.scrollTrigger += 1
+                    // v8.9 perf: 파일명 매칭을 O(n) sorted.first 대신 단일 패스 + dict 룩업으로 고속화.
+                    //   큰 폴더(5000장+) 에서 prevFileName 없거나 못 찾을 때 firstPhoto 추가 스캔 비용 제거.
+                    var matchedPhoto: PhotoItem? = nil
+                    var firstPhoto: PhotoItem? = nil
+                    var firstAny: PhotoItem? = nil
+                    for p in sorted {
+                        if firstAny == nil { firstAny = p }
+                        if !p.isFolder && !p.isParentFolder {
+                            if firstPhoto == nil { firstPhoto = p }
+                            if let name = prevFileName, p.fileName == name {
+                                matchedPhoto = p
+                                break  // 매칭 찾으면 즉시 종료
+                            }
+                            if prevFileName == nil { break }  // 매칭 필요없으면 first 발견 즉시 종료
                         }
+                    }
+                    let pick = matchedPhoto ?? firstPhoto ?? firstAny
+                    if let fp = pick {
+                        self?.selectedPhotoID = fp.id
+                        self?.selectedPhotoIDs = [fp.id]
+                        self?.scrollTrigger += 1
                     }
                     // 열 수는 ContentView.updateGridColumns(leftW)에서 계산
                 }
@@ -278,15 +298,37 @@ extension PhotoStore {
                 // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
                 let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
                 DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
+                    guard self?.folderURL == url, self?.isRecursiveMode == false else { return }
                     self?.preloadAllThumbnails()
+                }
+                // v8.9.7+: Lightroom 식 초기 미리보기 사전 생성 (옵트인). burst 100% cache hit 목표.
+                //   대용량 폴더 (>10000) 또는 재귀 모드는 스파이크 위험 → SKIP.
+                let autoInit = UserDefaults.standard.bool(forKey: "autoInitialPreview")
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay + 0.5) { [weak self] in
+                    guard let self,
+                          self.folderURL == url,
+                          autoInit,
+                          !self.isRecursiveMode,
+                          self.photos.count <= 10000
+                    else { return }
+                    let urls = self.photos.compactMap { p -> URL? in
+                        (p.isFolder || p.isParentFolder) ? nil : p.jpgURL
+                    }
+                    InitialPreviewGenerator.shared.start(urls: urls)
                 }
                 // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard self?.folderURL == url,
+                          self?.fastCullingMode == false,
+                          self?.isRecursiveMode == false else { return }
                     let count = self?.viewMode == .list ? 200 : 50
                     self?.batchLoadExif(count: count)
                 }
                 // 아이들 시 고화질 미리보기 프리캐싱 (3초 후 시작)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    guard self?.folderURL == url,
+                          self?.fastCullingMode == false,
+                          self?.isRecursiveMode == false else { return }
                     self?.startIdlePreviewPrefetch()
                 }
             }
@@ -304,82 +346,196 @@ extension PhotoStore {
         AppLogger.log(.folder, "loadPhotosRecursive: \(url.lastPathComponent) path=\(url.path)")
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        // 이전 썸네일 로딩 취소
-        ThumbnailLoader.shared.cancelAll()
+        // v8.9.4: scan generation +1 → 옛 onBatch callback 모두 폐기
+        recursiveScanGeneration &+= 1
+        let myGen = recursiveScanGeneration
+        recursiveScanUIFlushWork?.cancel()
+        recursiveScanUIFlushWork = nil
+        recursiveScanLastUIFlush = 0
+        isRecursiveScanInProgress = true
+        CacheSweeper.shared.recursiveModeActive = true
+
+        // v8.9.4: 모든 진행 중 캐싱/프리패치 작업 강제 중단
+        ThumbnailLoader.shared.cancelPending()
+        ThumbnailLoader.shared.bumpGeneration()
+        ThumbnailLoader.shared.setActiveURLs([])
+        PreviewImageCache.shared.clearCache()
+        CacheSweeper.shared.cancel()
+        // v8.9.7+: 재귀 모드 진입 시 InitialPreviewGenerator 즉시 취소.
+        InitialPreviewGenerator.shared.cancel()
         thumbsGeneration += 1
         thumbsLoaded = 0
         thumbsTotal = 0
+        previewsLoaded = 0
+        thumbCacheCount = 0
+        previewsStartTime = CFAbsoluteTimeGetCurrent()
+        cacheProgressStartTime = CFAbsoluteTimeGetCurrent()
+        clearPreviewTracking()
 
         folderURL = url
         isRecursiveMode = true
+        // v8.9.7+: 재귀 루트 + 하위 폴더 경로 set 초기화 (폴더 트리 노란 표시용).
+        recursiveRootPath = url.path
+        recursiveScannedFolders = [url.path]
 
-        // 폴더 정보 저장 (논블로킹)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.saveLastFolder()
             self?.addRecentFolder(url)
         }
         addToFolderHistory(url)
 
-        // NAS/네트워크 볼륨 최적화
+        // v8.9.4: slow disk 를 scan 시작 직전에 정확히 재계산 (stale currentFolderIsSlowDisk 의존 제거)
         ThumbnailLoader.shared.optimizeForPath(url.path)
+        let isSlowDisk = ThumbnailLoader.shared.isSlowDisk
+        self.currentFolderIsSlowDisk = isSlowDisk
 
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
             self?.loadingStatus = "하위 폴더 스캔 중..."
         }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            // recursive: true 로 모든 하위 폴더 스캔
-            var items = FileMatchingService.scanAndMatch(folderURL: url, recursive: true)
-
-            // 재귀 모드에서는 폴더 아이템 제거 (하위 폴더 내용이 이미 포함됨)
-            items.removeAll { $0.isFolder }
-
-            // 상위 폴더 네비게이션 추가
+        // 상위폴더 네비게이션 아이템 즉시 투입
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else { return }
             let parent = url.deletingLastPathComponent()
             let home = FileManager.default.homeDirectoryForCurrentUser
             let desktop = home.appendingPathComponent("Desktop")
             let isAtTopLevel = url.path == desktop.path || url.path == home.path || url.path == "/" || parent.path == "/"
+            var initialItems: [PhotoItem] = []
             if !isAtTopLevel && parent.path != url.path {
                 var parentItem = PhotoItem(jpgURL: parent)
                 parentItem.isFolder = true
                 parentItem.isParentFolder = true
-                items.insert(parentItem, at: 0)
+                initialItems.append(parentItem)
             }
+            self.photos = initialItems
+        }
 
-            let photoCount = items.filter { !$0.isFolder && !$0.isParentFolder }.count
-            let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
-            AppLogger.log(.folder, "Recursive scan: \(photoCount) photos from all subfolders in \(String(format: "%.1f", phase1Elapsed))ms")
+        var firstSelectionMade = false
 
-            // 정렬은 filteredPhotos에서 sortMode에 따라 자동 적용
-            let sorted = items
+        fputs("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n", stderr)
+        FileMatchingService.scanAndMatchStreaming(
+            folderURL: url,
+            recursive: true,
+            isSlowDisk: isSlowDisk,
+            isCancelled: { [weak self] in
+                // 폴더 변경되거나 generation 바뀌면 옛 batch 폐기
+                guard let self = self else {
+                    fputs("[REC] cancel: self released\n", stderr)
+                    return true
+                }
+                if self.folderURL != url {
+                    fputs("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n", stderr)
+                    return true
+                }
+                if self.recursiveScanGeneration != myGen {
+                    fputs("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n", stderr)
+                    return true
+                }
+                return false
+            },
+            onBatch: { [weak self] batch in
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
+                    fputs("[REC] batch dropped (gen/url mismatch)\n", stderr)
+                    return
+                }
+                fputs("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n", stderr)
+                self.appendRecursiveScanBatch(batch, forceFlush: !firstSelectionMade)
+                // 첫 배치 직후 첫 사진 자동 선택 (1회만)
+                if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
+                    firstSelectionMade = true
+                    self.selectedPhotoID = first.id
+                    self.selectedPhotoIDs = [first.id]
+                    self.scrollTrigger += 1
+                }
+            },
+            onComplete: { [weak self] photoCount in
+                fputs("[REC] onComplete photoCount=\(photoCount)\n", stderr)
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
+                    fputs("[REC] onComplete dropped (gen/url mismatch)\n", stderr)
+                    return
+                }
+                let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+                AppLogger.log(.folder, "Recursive scan (streaming): \(photoCount) photos in \(String(format: "%.1f", phase1Elapsed))ms")
 
-            DispatchQueue.main.async {
-                guard self?.folderURL == url else { return }
-                self?.photos = sorted
-                self?.isLoading = false
-                self?.loadingStatus = ""
-                self?.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
+                self.flushRecursiveScanUI(final: true)
+                CacheSweeper.shared.cancel()
+                self.isLoading = false
+                self.loadingStatus = ""
+                self.isRecursiveScanInProgress = false   // ← prewarming/sweep 해금
+                self.showToastMessage("하위 폴더 포함 \(photoCount)장 로드됨")
 
-                // 첫 번째 사진 선택
-                DispatchQueue.main.async {
-                    guard self?.folderURL == url else { return }
-                    let firstPhoto = sorted.first(where: { !$0.isParentFolder && !$0.isFolder })
-                        ?? sorted.first
-                    if let fp = firstPhoto {
-                        self?.selectedPhotoID = fp.id
-                        self?.selectedPhotoIDs = [fp.id]
-                        self?.scrollTrigger += 1
+                // v8.9.4: prewarming 은 scan 끝나고 + 사용자 idle 일 때만.
+                //   slow disk 는 더 오래 양보. 적극 모드면 짧게.
+                let prewarmDelay: TimeInterval = isSlowDisk ? 3.0 : 2.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) { [weak self] in
+                    guard let self = self,
+                          self.folderURL == url,
+                          self.recursiveScanGeneration == myGen,
+                          !self.isRecursiveScanInProgress else { return }
+                    // CacheSweeper 가 viewport-aware sweep 담당. 전체 prewarm 은 적극 모드에서만.
+                    if self.aggressiveCache {
+                        self.preloadAllThumbnails()
                     }
                 }
-                // 썸네일 prewarming: SSD 1.5초 / HDD-SD 0.5초 (HDD는 천천히 채워지므로 빨리 시작)
-                // HDD: visible 로딩이 거의 끝난 후(2초)에 시작 — 디스크 경합 회피가 visible 표시 속도에 가장 큰 영향
-                // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
-                let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
-                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
-                    self?.preloadAllThumbnails()
-                }
             }
+        )
+    }
+
+    private func appendRecursiveScanBatch(_ batch: [PhotoItem], forceFlush: Bool) {
+        isRecursiveMode = true
+        CacheSweeper.shared.recursiveModeActive = true
+        _suppressDidSet = true
+        photos.append(contentsOf: batch)
+        _suppressDidSet = false
+        // v8.9.7+: 배치 내 사진들이 속한 부모 폴더 경로를 set 에 추가 — 폴더 트리 노란 표시.
+        var newDirs: Set<String> = []
+        for p in batch {
+            let dir = p.jpgURL.deletingLastPathComponent().path
+            if !recursiveScannedFolders.contains(dir) {
+                newDirs.insert(dir)
+            }
+        }
+        if !newDirs.isEmpty {
+            recursiveScannedFolders.formUnion(newDirs)
+        }
+        scheduleRecursiveScanUIFlush(force: forceFlush)
+    }
+
+    private func scheduleRecursiveScanUIFlush(force: Bool) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let minInterval: CFAbsoluteTime = currentFolderIsSlowDisk ? 1.0 : 0.7
+        if force || recursiveScanLastUIFlush == 0 || (now - recursiveScanLastUIFlush) >= minInterval {
+            flushRecursiveScanUI(final: false)
+            return
+        }
+
+        recursiveScanUIFlushWork?.cancel()
+        let delay = max(0.05, minInterval - (now - recursiveScanLastUIFlush))
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushRecursiveScanUI(final: false)
+        }
+        recursiveScanUIFlushWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func flushRecursiveScanUI(final: Bool) {
+        recursiveScanUIFlushWork?.cancel()
+        recursiveScanUIFlushWork = nil
+        recursiveScanLastUIFlush = CFAbsoluteTimeGetCurrent()
+        if isRecursiveScanInProgress || final {
+            isRecursiveMode = true
+            CacheSweeper.shared.recursiveModeActive = true
+        }
+
+        // 하위폴더 포함에서는 batch 수가 많아 photos.didSet 전체 작업을 매번 돌리면
+        // 3~4만 장 기준 정렬/필터/폴더용량 계산이 UI를 누른다. 스캔 중에는
+        // 목록 갱신만 주기적으로 발행하고, 비싼 정리는 완료 시 한 번만 수행한다.
+        invalidateFilterCache()
+        rebuildIndex()
+        if final {
+            updateFolderSizeCache()
+            pruneStaleSelections()
         }
     }
 
@@ -437,7 +593,7 @@ extension PhotoStore {
                 }
                 defer { try? extractStream.close() }
 
-                try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
+                _ = try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
             } else {
                 fputs("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n", stderr)
                 try? FileManager.default.removeItem(at: tempDir)

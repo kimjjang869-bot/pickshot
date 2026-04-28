@@ -38,10 +38,20 @@ struct FileCopyService {
 
         var duplicates: [String] = []
         for photo in photos {
+            // v8.6.1: develop 보정이 적용된 RAW-only 사진은 `<basename>.jpg` 로 저장되므로
+            // 중복 검사에 원본 RAW 이름만이 아니라 변환된 JPG 이름도 포함해야 함 (무음 overwrite 방지).
+            let hasDevelop = !DevelopStore.shared.get(for: photo.jpgURL).isDefault
             if !photo.isRawOnly {
                 let jpgDest = jpgFolder.appendingPathComponent(photo.jpgURL.lastPathComponent)
                 if fm.fileExists(atPath: jpgDest.path) {
                     duplicates.append(photo.jpgURL.lastPathComponent)
+                }
+            } else if hasDevelop, let rawURL = photo.rawURL {
+                // RAW-only + 보정 적용 → basename.jpg 로 출력됨
+                let outName = rawURL.deletingPathExtension().lastPathComponent + ".jpg"
+                let jpgDest = jpgFolder.appendingPathComponent(outName)
+                if fm.fileExists(atPath: jpgDest.path) {
+                    duplicates.append(outName)
                 }
             }
             if let rawURL = photo.rawURL {
@@ -121,8 +131,8 @@ struct FileCopyService {
         defer { close(dstFD) }
 
         // F_NOCACHE: 커널 캐시 bypass (대용량 파일 복사 시 메모리 절약 + 속도 향상)
-        fcntl(srcFD, F_NOCACHE, 1)
-        fcntl(dstFD, F_NOCACHE, 1)
+        _ = fcntl(srcFD, F_NOCACHE, 1)
+        _ = fcntl(dstFD, F_NOCACHE, 1)
 
         // 8MB 버퍼로 복사
         let bufferSize = 8 * 1024 * 1024  // 8MB
@@ -158,6 +168,11 @@ struct FileCopyService {
         developJPEGQuality: CGFloat = 0.92,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
+        // 잠자기 차단 — 대량 export 도중 시스템 슬립으로 복사가 멈추던 문제 방지
+        let sleepGuard = SleepPreventer(reason: "PickShot 셀렉 내보내기 (\(photos.count)장)")
+        sleepGuard.begin()
+        defer { sleepGuard.end() }
+
         let fileManager = FileManager.default
         var result = CopyResult()
 
@@ -375,6 +390,11 @@ struct FileCopyService {
         duplicateHandling: DuplicateHandling = .overwrite,
         progress: @escaping (Int, Int) -> Void
     ) -> CopyResult {
+        // 잠자기 차단 — Lightroom export 도중 시스템 슬립 방지
+        let sleepGuard = SleepPreventer(reason: "PickShot Lightroom 내보내기 (\(photos.count)장)")
+        sleepGuard.begin()
+        defer { sleepGuard.end() }
+
         let fileManager = FileManager.default
         var result = CopyResult()
 
@@ -450,7 +470,7 @@ struct FileCopyService {
             let xmpFileName = sourceURL.deletingPathExtension().lastPathComponent + ".xmp"
             let xmpDest = destinationURL.appendingPathComponent(xmpFileName)
             do {
-                let xmpContent = generateXMP(rating: photo.rating, isSpacePicked: photo.isSpacePicked, fileName: sourceURL.lastPathComponent)
+                let xmpContent = generateXMP(rating: photo.rating, isSpacePicked: photo.isSpacePicked, colorLabel: photo.colorLabel, fileName: sourceURL.lastPathComponent)
                 try xmpContent.write(to: xmpDest, atomically: true, encoding: .utf8)
                 result.copiedXMP += 1
             } catch {
@@ -466,20 +486,30 @@ struct FileCopyService {
 
     // MARK: - XMP Sidecar Generation
 
-    private static func generateXMP(rating: Int, isSpacePicked: Bool = false, fileName: String) -> String {
+    private static func generateXMP(rating: Int, isSpacePicked: Bool = false,
+                                    colorLabel: ColorLabel = .none, fileName: String) -> String {
         let ratingValue = max(0, min(5, rating))
-        // Space Pick → Red label for Lightroom filtering; otherwise use rating-based label
+        // v8.6.1: colorLabel 우선 (사용자가 직접 지정한 컬러라벨).
+        // 없으면 SP → Red, 그 외 rating 기반 Lightroom 표준 라벨 사용.
+        //   (이전엔 colorLabel 파라미터 자체가 없어 Lightroom export 시 사용자 colorLabel 증발)
         let label: String
-        if isSpacePicked {
-            label = "Red"
-        } else {
-            switch ratingValue {
-            case 5: label = "Winner"
-            case 4: label = "Winner"
-            case 3: label = "Approved"
-            case 2: label = "Review"
-            case 1: label = "To Do"
-            default: label = ""
+        switch colorLabel {
+        case .red:    label = "Red"
+        case .yellow: label = "Yellow"
+        case .green:  label = "Green"
+        case .blue:   label = "Blue"
+        case .purple: label = "Purple"
+        case .none:
+            if isSpacePicked {
+                label = "Red"
+            } else {
+                switch ratingValue {
+                case 5, 4: label = "Winner"
+                case 3:    label = "Approved"
+                case 2:    label = "Review"
+                case 1:    label = "To Do"
+                default:   label = ""
+                }
             }
         }
 

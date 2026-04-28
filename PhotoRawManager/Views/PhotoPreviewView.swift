@@ -6,11 +6,17 @@ extension Notification.Name {
     static let zoomIn = Notification.Name("zoomIn")
     static let zoomOut = Notification.Name("zoomOut")
     static let toggleHistogram = Notification.Name("toggleHistogram")
+    /// v8.7: Shift+H 클리핑 오버레이 토글 (과노출/저노출)
+    static let toggleClippingOverlay = Notification.Name("toggleClippingOverlay")
     /// 영상 IN/OUT 마커가 바뀌었을 때 발송됨. object 는 영상 URL.
     /// 썸네일 그리드 / 클라이언트 전달 UI 가 수신하여 갱신.
     static let videoMarkersChanged = Notification.Name("videoMarkersChanged")
     /// v8.5 — C 키로 인라인 크롭 모드 토글
     static let toggleCropMode = Notification.Name("toggleCropMode")
+    /// v8.7 — 시각 검색 크롭 창 열기
+    static let pickShotOpenVisualSearchCrop = Notification.Name("pickShotOpenVisualSearchCrop")
+    /// 선택 이동이 멈춘 뒤 마지막 사진을 확정 고화질로 올리기 위한 내부 신호.
+    static let pickShotSelectionSettled = Notification.Name("pickShotSelectionSettled")
 }
 
 /// 실제로 프리뷰에 렌더된 이미지의 frame(aspect-fit 후 결과) 을 전달하는 PreferenceKey.
@@ -67,8 +73,52 @@ class PreviewImageCache {
     private var accessCounter: Int = 0
     private var entrySizes: [URL: Int] = [:]  // 항목별 바이트 크기 추적
     private var currentBytes: Int = 0
-    private let maxBytes: Int = 500 * 1024 * 1024  // 500MB 상한
+    /// v8.9.4: FRV 식 부활 — RAM tier 기반 자동 산정 + 500ms 룰.
+    ///   메모리 압력 시에는 자동으로 0으로 떨어져 cleared.
+    private var maxBytes: Int = {
+        SystemSpec.shared.previewImageCacheMB() * 1024 * 1024
+    }()
+    /// v8.9.4 FRV 식 룰: decode 가 이 시간 이상 걸린 항목만 캐시에 진입.
+    ///   빠른 JPEG (수십 ms) 는 매번 재디코드해도 충분히 빠르므로 캐시 차지 안 함.
+    private static let cacheThresholdMs: Double = 500
     private let lock = NSLock()
+
+    /// v8.9 perf: 캐시 비활성화 상태 (maxBytes == 0) 여부. CacheSweeper 가 preview sweep 경로를 스킵할 때 사용.
+    var isDisabled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return maxBytes == 0
+    }
+
+    /// v8.9.4: FRV 식 "decode 가 느렸을 때만 캐시" 진입점.
+    ///   빠른 디코드는 캐시 안 함 → 메모리 안정.
+    /// - force: 슬로우 디스크처럼 stage1 이 최종 이미지인 케이스에서 무조건 캐시.
+    ///   재방문 시 디코드 반복 회피 (왔다갔다 키 네비게이션 즉시).
+    func setIfSlow(_ key: URL, image: NSImage, decodeMs: Double, force: Bool = false) {
+        if !force {
+            guard decodeMs >= Self.cacheThresholdMs else { return }
+        }
+        set(key, image: image)
+    }
+
+    /// v8.9: 미리보기 캐시 비활성화 상태에서는 no-op.
+    func reduceCacheLimit() {
+        lock.lock()
+        cache.removeAll()
+        accessTime.removeAll()
+        entrySizes.removeAll()
+        currentBytes = 0
+        maxBytes = max(SystemSpec.shared.previewImageCacheMB() / 2, 64) * 1024 * 1024
+        maxEntries = max(SystemSpec.shared.previewImageCacheEntries() / 2, 2)
+        lock.unlock()
+    }
+
+    /// 원래 상한으로 복원.
+    func restoreCacheLimit() {
+        lock.lock()
+        maxBytes = SystemSpec.shared.previewImageCacheMB() * 1024 * 1024
+        maxEntries = SystemSpec.shared.previewImageCacheEntries()
+        lock.unlock()
+    }
     private var maxEntries: Int
     private var memoryPressureSource: DispatchSourceMemoryPressure?
     private let diskCacheDir: URL
@@ -80,18 +130,9 @@ class PreviewImageCache {
         // UserDefaults에 저장된 값 우선, 없으면 RAM 기반 자동 설정
         let savedEntries = Int(UserDefaults.standard.double(forKey: "previewCacheSize"))
         if savedEntries > 0 {
-            maxEntries = savedEntries
+            maxEntries = min(savedEntries, SystemSpec.shared.previewImageCacheEntries())
         } else {
-            let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
-            if ramGB >= 64 {
-                maxEntries = 20
-            } else if ramGB >= 32 {
-                maxEntries = 15
-            } else if ramGB >= 16 {
-                maxEntries = 10
-            } else {
-                maxEntries = 5
-            }
+            maxEntries = SystemSpec.shared.previewImageCacheEntries()
         }
 
         // Setup disk cache directory
@@ -99,9 +140,10 @@ class PreviewImageCache {
         try? FileManager.default.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
 
         // Listen for memory pressure → auto-clear cache
+        // v9.0: [self] strong → [weak self] (singleton 이라 누수는 아니지만 패턴 통일).
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [self] in
-            self.clearCache()
+        source.setEventHandler { [weak self] in
+            self?.clearCache()
         }
         source.resume()
         memoryPressureSource = source
@@ -119,6 +161,14 @@ class PreviewImageCache {
             h = h &* 33 &+ UInt64(c)
         }
         return diskCacheDir.appendingPathComponent("\(hash).jpg")
+    }
+
+    /// v8.6.2: CacheSweeper 가 "이미 메모리 캐시에 있는지" 빠르게 확인 (RAM only).
+    func hasCached(for url: URL) -> Bool {
+        lock.lock()
+        let has = cache[url] != nil
+        lock.unlock()
+        return has
     }
 
     func get(_ url: URL) -> NSImage? {
@@ -142,6 +192,17 @@ class PreviewImageCache {
             return decoded
         }
         return nil
+    }
+
+    /// RAM-only lookup for keyboard repeat paths.
+    /// Avoids synchronous disk-cache reads on the main thread while the user is navigating.
+    func getMemoryOnly(_ url: URL) -> NSImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let img = cache[url] else { return nil }
+        accessCounter += 1
+        accessTime[url] = accessCounter
+        return img
     }
 
     /// 이미지 예상 메모리 크기 (바이트)
@@ -186,6 +247,9 @@ class PreviewImageCache {
     }
 
     func set(_ url: URL, image: NSImage) {
+        // v8.9: 미리보기 캐시 비활성화 — maxBytes=0 또는 maxEntries<=0 이면 즉시 반환.
+        //   이렇게 하지 않으면 매 set() 에서 기존 항목 전부 evict → 디스크 I/O 버스트.
+        guard maxBytes > 0, maxEntries > 0 else { return }
         lock.lock()
         let imageBytes = estimateBytes(image)
 
@@ -193,7 +257,7 @@ class PreviewImageCache {
         if cache.count >= maxEntries {
             evictOldest(count: maxEntries / 3)
         }
-        // 바이트 상한 체크 (500MB)
+        // 바이트 상한 체크
         while currentBytes + imageBytes > maxBytes && !cache.isEmpty {
             evictOldest(count: 1)
         }
@@ -238,6 +302,26 @@ class PreviewImageCache {
         accessTime.removeAll()
         entrySizes.removeAll()
         currentBytes = 0
+        let dir = diskCacheDir
+        lock.unlock()
+        // v9.0: 메모리 압박 시 디스크 캐시도 함께 비움. 이전엔 RAM 만 비우고 disk 가
+        //   살아있어 get() → diskHit → set() 으로 RAM 다시 채워져 압박 해소 실패.
+        diskEvictQueue.async {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
+    /// v8.6.3: 선제 trim — 가장 오래 안 쓰인 비율만큼만 제거 (MemoryGuard Layer 2)
+    func trimOldest(ratio: Double) {
+        let r = max(0.05, min(0.95, ratio))
+        lock.lock()
+        let total = cache.count
+        let evictCount = Int(Double(total) * r)
+        if evictCount > 0 {
+            // 디스크 이관 포함한 evictOldest 사용
+            evictOldest(count: evictCount)
+        }
         lock.unlock()
     }
 
@@ -271,7 +355,7 @@ class PreviewImageCache {
             if FileMatchingService.rawExtensions.contains(ext) { continue }
 
             let maxPx: CGFloat = resolution > 0 ? CGFloat(resolution) : screenPx
-            let key = url.appendingPathExtension("r\(Int(maxPx))")
+            let key = PreviewLoadingPolicy.cacheKey(for: url, resolution: Int(maxPx), sourceURL: url)
             if has(key) { continue }
             Self.prefetchQueue.addOperation { [self] in
                 autoreleasepool {
@@ -283,12 +367,13 @@ class PreviewImageCache {
         }
     }
 
-    /// Optimal preview size based on screen resolution
+    /// v8.8.2: Stage 2 타겟 — HiRes 가 항상 초과하도록 제한.
+    ///   Retina 5K (5120x2880) 에서 Stage 2 = 2800px, HiRes = 4000+px → HiRes 업그레이드 가시적.
     static func optimalPreviewSize() -> CGFloat {
         let scale = NSScreen.main?.backingScaleFactor ?? 2.0
         let screenW = (NSScreen.main?.frame.width ?? 1440) * scale
-        // Use full retina resolution for sharp previews
-        return min(screenW * 0.7, 4000)
+        // Stage 2: 표시에 충분한 수준만. HiRes 가 명확히 초과할 수 있도록 55% 로 제한.
+        return min(screenW * 0.55, 3000)
     }
 
     /// Load image with optimized CGImageSource options (no system cache = less memory)
@@ -304,16 +389,20 @@ class PreviewImageCache {
         }
     }
 
-    static func loadOptimized(url: URL, maxPixel: CGFloat) -> NSImage? {
+    static func loadOptimized(url: URL, maxPixel: CGFloat, trace: LoadTrace? = nil) -> NSImage? {
         // 전체 로드 경로를 autoreleasepool 로 감싸서 CGImageSource + 중간 NSImage/CGImage
         // 임시 객체를 즉시 해제. key repeat 꾹 누르기 시 autorelease pool 이 main loop 블록되면
         // 못 비워지는 문제 방지.
-        return autoreleasepool { () -> NSImage? in
-            _loadOptimizedImpl(url: url, maxPixel: maxPixel)
+        let base = autoreleasepool { () -> NSImage? in
+            _loadOptimizedImpl(url: url, maxPixel: maxPixel, trace: trace)
         }
+        guard let img = base else { return nil }
+        // v8.6.2: 사용자 override 회전 (RAW 사이드카 + 앱내부) 적용
+        let deg = PhotoStore.rotationOverrideCW(for: url)
+        return deg == 0 ? img : RotationService.rotateImage(img, degreesCW: deg)
     }
 
-    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat) -> NSImage? {
+    private static func _loadOptimizedImpl(url: URL, maxPixel: CGFloat, trace: LoadTrace? = nil) -> NSImage? {
         let sourceOptions: [NSString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
 
@@ -322,6 +411,12 @@ class PreviewImageCache {
         let origW = (props?[kCGImagePropertyPixelWidth as String] as? Int) ?? 0
         let origH = (props?[kCGImagePropertyPixelHeight as String] as? Int) ?? 0
         let origMax = max(origW, origH)
+        if let t = trace {
+            t.origPx = origMax
+            if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+                t.fileSizeBytes = Int64(size)
+            }
+        }
 
         let ext = url.pathExtension.lowercased()
         let isJPG = ["jpg", "jpeg"].contains(ext)
@@ -332,6 +427,7 @@ class PreviewImageCache {
 
         // JPG: load at original size if smaller than maxPixel
         if isJPG && origMax > 0 && origMax <= Int(maxPixel) {
+            trace?.strategy = "fullImage"
             return NSImage(contentsOf: url)
         }
 
@@ -342,6 +438,7 @@ class PreviewImageCache {
         if isRAW && canDecode && useCIRAW {
             if #available(macOS 12.0, *) {
                 if let rawImage = loadRAWWithCIFilter(url: url, maxPixel: effectiveMaxPx) {
+                    trace?.strategy = "ciraw"
                     return rawImage
                 }
             }
@@ -358,17 +455,20 @@ class PreviewImageCache {
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                 kCGImageSourceCreateThumbnailWithTransform: !useManualOrientation,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
+            // v8.9.4: 임베디드 thumb 조건 완화 — 절대 600px+ 또는 maxPixel*0.3 둘 중 하나 충족.
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, embedOnly as CFDictionary) {
-                if cgImage.width >= Int(maxPixel * 0.3) || cgImage.height >= Int(maxPixel * 0.3) {
+                let dimMin = min(cgImage.width, cgImage.height)
+                if dimMin >= 600 || dimMin >= Int(maxPixel * 0.3) {
                     var img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                     if useManualOrientation {
                         img = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
                     } else {
                         img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                     }
+                    trace?.strategy = "embedded"
                     return img
                 }
             }
@@ -381,16 +481,18 @@ class PreviewImageCache {
             else if origMax > targetPx * 4 { subsample = 4 }
             else if origMax > targetPx * 2 { subsample = 2 }
 
+            // v8.9.4 fix: IfAbsent → Always 로 변경.
+            //   IfAbsent 는 임베디드 썸네일이 있으면 크기 무시하고 그걸 반환 (Strategy 1 에서 거부된 작은 썸이라도).
+            //   그 결과 stage1 이 800px 요청 → 160px EXIF 썸을 받아 화면이 흐릿하게 표시되던 버그.
+            //   FromImageAlways 로 메인 이미지를 강제 디코드 (subsample 적용 시 빠름).
             var genOpts: [NSString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: !useManualOrientation,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if canSubsample && subsample > 1 {
-                // JPG/TIFF: SubsampleFactor 2/4/8로 디코드 시간 4~64배 단축
-                // (TIFF 100MB → 1.5초+ 풀 디코드가 ~0.2초로 줄어듦)
                 genOpts[kCGImageSourceSubsampleFactor as NSString] = subsample
             }
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
@@ -400,6 +502,8 @@ class PreviewImageCache {
                 } else {
                     img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
                 }
+                trace?.strategy = "subsample"
+                trace?.subsample = subsample
                 return img
             }
         }
@@ -418,16 +522,20 @@ class PreviewImageCache {
 
         for i in 0..<scanLimit {
             if data[i] == ffd8[0] && data[i + 1] == ffd8[1] {
-                let end = min(i + 5_000_000, data.count)  // Allow up to 5MB per JPEG
-                let subData = data.subdata(in: i..<end)
-                if let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
-                   CGImageSourceGetCount(imgSource) > 0 {
-                    // 썸네일 스트립 제외 (비정상 비율 4:1 초과)
+                // v8.6.1: FFD8 스캔 per-iteration autoreleasepool — 큰 RAW 에서 subdata/CGImage
+                // 임시 생성물이 누적되어 수백 MB 메모리 피크 나던 문제 수정.
+                autoreleasepool {
+                    guard let jpegRange = Self.completeJPEGRange(in: data, from: i, maxLength: 5_000_000),
+                          jpegRange.count > 4_096 else { return }
+                    let subData = data.subdata(in: jpegRange)
+                    guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                          CGImageSourceGetCount(imgSource) > 0 else { return }
+
                     let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
                     let pw = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
                     let ph = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
                     let ar = pw > ph ? Double(pw) / max(Double(ph), 1) : Double(ph) / max(Double(pw), 1)
-                    if ar > 4.0 { continue }
+                    if ar > 4.0 { return }
 
                     let opts: [NSString: Any] = [
                         kCGImageSourceThumbnailMaxPixelSize: maxPixel,
@@ -444,12 +552,36 @@ class PreviewImageCache {
                 }
             }
         }
-        // FFD8 subData 로 추출한 embedded JPEG 은 RAW 컨테이너의 TIFF orientation 태그가
-        // 소실됨. 원본 RAW 의 기대 aspect 와 비교해서 불일치 시 수동 회전.
+        // PR fix: FFD8 subData 추출 embedded JPEG 의 orient 가 소실되거나
+        //   Nikon Z8/Z9 NEF 처럼 임베디드 JPEG 에 orient 태그 없는 케이스 모두 대응.
+        //   1) 원본 RAW aspect 비교로 회전 보정 (PR 기존 로직)
+        //   2) 그래도 부족하면 부모 RAW 의 TIFF orientation 태그 적용 (main 추가 로직)
         if let img = bestImage {
-            bestImage = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+            var corrected = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+            if let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                corrected = PhotoPreviewView.correctThumbnailOrientationIfNeeded(corrected, source: parentSource)
+            }
+            bestImage = corrected
+            trace?.strategy = "rawFallback"
         }
         return bestImage
+    }
+
+    private static func completeJPEGRange(in data: Data, from offset: Int, maxLength: Int) -> Range<Int>? {
+        guard offset >= 0, offset + 3 < data.count,
+              data[offset] == 0xFF, data[offset + 1] == 0xD8 else { return nil }
+
+        let endLimit = min(offset + maxLength, data.count)
+        guard endLimit - offset > 4 else { return nil }
+
+        var cursor = offset + 2
+        while cursor + 1 < endLimit {
+            if data[cursor] == 0xFF, data[cursor + 1] == 0xD9 {
+                return offset..<(cursor + 2)
+            }
+            cursor += 1
+        }
+        return nil
     }
 
     /// Load RAW file using CIRAWFilter for accurate color management (macOS 12+)
@@ -525,6 +657,21 @@ final class PreviewViewState: ObservableObject {
 // MARK: - PhotoPreviewView
 
 struct PhotoPreviewView: View {
+    private struct PreviewFrame {
+        enum Quality {
+            case thumbnail
+            case embedded
+            case hiRes
+            case edited
+        }
+
+        let image: NSImage
+        let photoID: UUID
+        let sourceURL: URL
+        let generation: UInt64
+        let quality: Quality
+    }
+
     let photo: PhotoItem
     /// 듀얼 뷰어 등에서 별점/라벨/회전 버튼 등 하단 chrome 을 숨길 때 사용.
     var hideChrome: Bool = false
@@ -532,22 +679,40 @@ struct PhotoPreviewView: View {
     @StateObject private var viewState = PreviewViewState()
 
     @State private var image: NSImage?          // Currently displayed image (low-res or hi-res)
+    @State private var imageSourceURL: URL?      // v8.9.7+: image 의 출처 URL — 렌더 시 selected 와 매치 검증
+    @State private var imagePhotoID: UUID?       // v8.9.8: image 가 어느 photo 의 것인지 강제 추적
+    @State private var previewFrame: PreviewFrame?
+    @State private var previewGeneration: UInt64 = 0
+    @State private var lastHiResDisplayMs: Int?
     @State private var lowResImage: NSImage?     // Fast preview (1200px) — used at fit zoom
     @State private var hiResImage: NSImage?      // Full resolution — loaded on zoom in
+    @State private var navStartTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()  // v8.8.2: 네비→HiRes 지연 측정
     @State private var isHiResLoaded = false      // Whether hi-res is currently active
     @State private var hiResLoadWork: DispatchWorkItem?
+    /// v8.9.7: 같은 URL 에 hi-res 디코드가 이미 in-flight 면 두 번째 호출 무시 (settled 신호 + key-repeat 종료가
+    /// 같은 사진을 동시에 트리거해서 12000px 디코드를 두 번 돌리던 케이스 차단).
+    @State private var hiResInflightURL: URL?
     @State private var showCorrectionPanel = false
     @State private var showUprightGuide = false
     @State private var correctionResult: CorrectionResult?
     @State private var isOriginal = true
     @State private var isCorrecting = false
     @State private var pendingPhotoID: UUID? = nil
+    @State private var previewLoadToken = UUID()
     @State private var showHistogram: Bool = false
+    /// v8.7: Shift+H 클리핑 오버레이 (과노출/저노출 Metal 마스크)
+    @State private var showClippingOverlay: Bool = false
+    @State private var clippingMaskImage: NSImage? = nil
+    @State private var lastClippingComputeTime: Date = .distantPast
     @State private var showZebraWarning: Bool = false
     @State private var showFocusPeaking: Bool = false
     @State private var hexInput: String = "333333"
     @State private var rotationAngle: Double = 0  // 0, 90, 180, 270
     @State private var rotatedImage: NSImage?  // Actual rotated pixel data
+    /// v8.6.2: Stage 1 로드 성공 시 기준 aspect 기록. 후속 로드(Stage2/HiRes/developed)가 이 aspect
+    /// 와 다르면 EXIF orient 으로 강제 회전해서 "처음엔 세로, 나중에 가로로 뒤집힘" 버그 차단.
+    @State private var firstLoadIsPortrait: Bool? = nil
+    @State private var firstLoadPhotoID: UUID? = nil
 
     // MARK: - Non-Destructive Develop (v8.5)
     /// DevelopSettings 적용된 이미지. isDefault (보정 없음) 이면 nil.
@@ -572,16 +737,12 @@ struct PhotoPreviewView: View {
     @State private var hiResWorkItem: DispatchWorkItem? = nil
     @State private var imageLoadWork: DispatchWorkItem? = nil
     @State private var preloadWork: DispatchWorkItem? = nil
+    @State private var lastPrefetchScheduled: Date = .distantPast
+    @State private var selectionSettledObserver: NSObjectProtocol?
     @State private var showCropView = false
     @State private var showColorPicker = false
     @State private var customBgColor = Color(nsColor: .controlBackgroundColor)
 
-    private static let imageLoadQueue: OperationQueue = {
-        let q = OperationQueue()
-        q.maxConcurrentOperationCount = 1
-        q.qualityOfService = .userInitiated
-        return q
-    }()
     private var isFitMode: Bool { viewState.zoomPreset == .fit }
 
     // 미리보기 테두리: 컬러라벨 > 별점 > SP > 없음
@@ -608,6 +769,107 @@ struct PhotoPreviewView: View {
         return 0
     }
 
+    /// 선택 직후부터 실제 프리뷰 소스의 표시 크기를 고정해야 썸네일 -> 고화질
+    /// 단계 전환에서 프리뷰 박스가 흔들리지 않는다.
+    /// RAW+JPG 페어는 카메라 색감을 유지하기 위해 JPG를 기본 소스로 쓴다.
+    private func stablePreviewSize(for photo: PhotoItem) -> CGSize? {
+        let sourceURL = PreviewLoadingPolicy.stableSizeURL(for: photo)
+        if sourceURL != photo.jpgURL,
+           let sourceSize = Self.readImageDimensions(url: sourceURL) {
+            return sourceSize
+        }
+        if let w = photo.exifData?.imageWidth, let h = photo.exifData?.imageHeight, w > 0, h > 0 {
+            return CGSize(width: w, height: h)
+        }
+        return Self.readImageDimensions(url: photo.jpgURL)
+    }
+
+    private func usesRAWPreviewSource(_ photo: PhotoItem) -> Bool {
+        PreviewLoadingPolicy.usesRAWPreviewSource(photo)
+    }
+
+    /// v8.9.8+: 미리보기 렌더링의 단일 출처.
+    /// 선택 ID와 generation이 맞는 PreviewFrame만 화면에 올린다.
+    private func renderableFrame(for photo: PhotoItem) -> PreviewFrame? {
+        let activeID = store.selectedPhotoID ?? photo.id
+        if let frame = previewFrame, frame.photoID == activeID {
+            return frame
+        }
+        return nil
+    }
+
+    private func renderableImage(for photo: PhotoItem) -> NSImage? {
+        if let frame = renderableFrame(for: photo) { return frame.image }
+        guard let img = image else { return nil }
+        let activeID = store.selectedPhotoID ?? photo.id
+        if let imagePhotoID {
+            return imagePhotoID == activeID ? img : nil
+        }
+        if let imageSourceURL {
+            guard let selected = store.selectedPhoto else { return nil }
+            if imageSourceURL == selected.jpgURL || imageSourceURL == selected.rawURL {
+                return img
+            }
+            return nil
+        }
+        return nil
+    }
+
+    #if DEBUG
+    /// v8.9.7+: 통합 HUD (UnifiedDebugHUD) 로 정보 publish. 자체 overlay 안 그림.
+    private func publishDebugHUD(frame: PreviewFrame) {
+        let selected = store.selectedPhoto
+        let selectedName = selected?.fileName ?? "nil"
+        let sourceName = frame.sourceURL.lastPathComponent
+        let matchesID = store.selectedPhotoID == frame.photoID
+        let matchesSource = selected.map {
+            frame.sourceURL == $0.jpgURL ||
+            frame.sourceURL == $0.rawURL ||
+            frame.sourceURL == PreviewLoadingPolicy.hiResURL(for: $0)
+        } ?? false
+        let ok = matchesID && matchesSource
+
+        // v8.9.7+: 현재 표시 중인 image 의 픽셀 사이즈 + Stage 분류.
+        let pixelSize: (w: Int, h: Int)? = {
+            guard let img = frame.image as NSImage? else { return nil }
+            if let rep = img.representations.first {
+                return (rep.pixelsWide, rep.pixelsHigh)
+            }
+            return (Int(img.size.width), Int(img.size.height))
+        }()
+        // v8.9.7+: stage 라벨은 frame.quality (실제 로딩 파이프라인 단계)에 기반.
+        //   픽셀 사이즈는 같은 stage 안에서도 다양 (예: embedded RAW-S1 1600 vs RAW-S2 4096 둘 다 .embedded)
+        //   이걸 사이즈로 분류하면 같은 stage 가 다른 라벨로 보여 혼란.
+        let stage: String = {
+            switch frame.quality {
+            case .thumbnail: return "Stage 1 (thumbnail)"
+            case .embedded:  return "Stage 2 (embedded)"
+            case .hiRes:     return "Stage 3 (hi-res)"
+            case .edited:    return "Edited"
+            }
+        }()
+        let stageColor: Color = {
+            switch frame.quality {
+            case .thumbnail: return .orange
+            case .embedded:  return .cyan
+            case .hiRes:     return .green
+            case .edited:    return .purple
+            }
+        }()
+        // 통합 HUD 에 publish (UnifiedDebugHUD 가 표시).
+        let hud = DebugHUDState.shared
+        DispatchQueue.main.async {
+            hud.previewSize = pixelSize
+            hud.previewStage = stage
+            hud.stageColor = stageColor
+            hud.selectedFile = selectedName
+            hud.sourceFile = sourceName
+            hud.ok = ok
+            hud.lastHiResMs = lastHiResDisplayMs
+        }
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
             // Image area
@@ -619,9 +881,16 @@ struct PhotoPreviewView: View {
                 if photo.isVideoFile {
                     VideoPlayerView(url: photo.jpgURL)
                         .frame(width: vSize.width, height: vSize.height)
-                } else if let image = image {
-                    let imgW: CGFloat = image.size.width
-                    let imgH: CGFloat = image.size.height
+                } else if let frame = renderableFrame(for: photo) {
+                    let image = frame.image
+                    let activePreviewPhotoID = store.selectedPhotoID ?? photo.id
+                    // v8.9.4 fix: image.size 는 orientation 이 이미 적용된 실제 표시 dim → ground truth.
+                    let resolved: CGSize = (image.size.width > 0 && image.size.height > 0)
+                        ? image.size
+                        : (viewState.stableImageSize ?? CGSize(width: 1, height: 1))
+                    let imgW: CGFloat = resolved.width
+                    let imgH: CGFloat = resolved.height
+                    let stableAspect = imgH > 0 ? imgW / imgH : nil
                     let imgSize = CGSize(width: imgW, height: imgH)
                     let fitScale = min(vSize.width / imgW, vSize.height / imgH)
                     let activeScale = isFitMode ? 1.0 : viewState.customScale
@@ -636,13 +905,33 @@ struct PhotoPreviewView: View {
                     ZStack {
                         // view frame = vSize/scaledSize 고정, 이미지는 내부 aspect fit.
                         // 크롭 모드 중엔 cropModeLayer 가 이 이미지를 대체하므로 투명 처리.
-                        Image(nsImage: developedImage ?? rotatedImage ?? image)
+                        // v8.9.7+: developedImage / rotatedImage 의 photo.id 검증 가드만 유지.
+                        //   imageSourceURL 가드는 검정 깜빡임 유발 → 제거. image 는 그냥 사용.
+                        Image(nsImage: {
+                            if let dev = developedImage, developedForPhotoID == activePreviewPhotoID { return dev }
+                            if let rot = rotatedImage, rotationAngle != 0, imagePhotoID == activePreviewPhotoID { return rot }
+                            return image ?? NSImage()
+                        }())
                             .resizable()
                             .interpolation(.medium)
-                            .aspectRatio(contentMode: .fit)
+                            .aspectRatio(stableAspect, contentMode: .fit)
                             .frame(width: isFitMode ? vSize.width : scaledW,
                                    height: isFitMode ? vSize.height : scaledH)
                             .opacity(isCroppingMode ? 0 : 1)
+                            .overlay(
+                                // v8.7: Shift+H 클리핑 오버레이 — Metal 마스크 이미지를 같은 frame 에 덮음
+                                Group {
+                                    if showClippingOverlay, let mask = clippingMaskImage {
+                                        Image(nsImage: mask)
+                                            .resizable()
+                                            .interpolation(.none)
+                                            .aspectRatio(stableAspect, contentMode: .fit)
+                                            .frame(width: isFitMode ? vSize.width : scaledW,
+                                                   height: isFitMode ? vSize.height : scaledH)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                            )
                             .offset(
                                 x: isZoomed ? clampedOffset.x : 0,
                                 y: isZoomed ? clampedOffset.y : 0
@@ -694,7 +983,7 @@ struct PhotoPreviewView: View {
                                     viewState.dragStart = viewState.panOffset
                                     viewState.magnifyBaseScale = targetScale
                                     syncSlider()
-                                    loadHiResForZoom()  // Load full resolution
+                                    loadHiResForZoom(forceDeepScan: true)  // Load full resolution
                                 } else {
                                     // Reset to fit → switch back to low-res
                                     viewState.zoomPreset = .fit
@@ -773,7 +1062,12 @@ struct PhotoPreviewView: View {
                                 Spacer()
                                 VStack(spacing: 4) {
                                     if showHistogram {
-                                        HistogramOverlay(photo: photo)
+                                        // v8.7: 슬라이더 조정 시 실시간 반영 — developedImage 주입
+                                        // v8.9.7+: developedImage stale 가드 (photo.id 검증)
+                                        HistogramOverlay(
+                                            photo: photo,
+                                            liveImage: ((developedImage != nil && developedForPhotoID == photo.id) ? developedImage : nil) ?? (rotationAngle != 0 ? rotatedImage : nil) ?? image
+                                        )
                                     }
                                 }
                                 .padding(8)
@@ -854,15 +1148,25 @@ struct PhotoPreviewView: View {
                     )
                     .overlay(alignment: .bottom) {
                         // v8.5 — 비파괴 보정 플로팅 필 (크롭 모드 중 / 듀얼뷰어 chrome 숨김 시 비표시)
+                        // v8.6.3: Debug 에서만 활성화 (보정 기능 완성 전 Release 숨김)
+                        #if DEBUG
                         if !photo.isFolder && !photo.isParentFolder && !photo.isVideoFile && !isCroppingMode && !hideChrome {
                             FloatingAdjustmentPill(photoURL: photo.jpgURL)
                                 .padding(.bottom, 16)
                                 .allowsHitTesting(true)
                         }
+                        #endif
                     }
                     .overlay {
                         cropOverlayIfNeeded(vSize: vSize, image: image)
                     }
+                    #if DEBUG
+                    // v8.9.7+: 통합 HUD 로 정보만 publish — overlay 자체는 그리지 않음.
+                    //   UnifiedDebugHUD 가 ContentView 에서 한 번에 표시.
+                    .onAppear { publishDebugHUD(frame: frame) }
+                    .onChange(of: frame.photoID) { _, _ in publishDebugHUD(frame: frame) }
+                    .onChange(of: frame.generation) { _, _ in publishDebugHUD(frame: frame) }
+                    #endif
                     .overlay(alignment: .top) {
                         // v8.5 — 보정 토스트 (보정값 복사됨 등)
                         if let msg = adjustmentToast {
@@ -894,7 +1198,7 @@ struct PhotoPreviewView: View {
                 .onAppear {
                     viewState.viewSize = vSize
                 }
-                .onChange(of: vSize) { newSize in
+                .onChange(of: vSize) { _, newSize in
                     viewState.viewSize = newSize
                 }
             }
@@ -937,30 +1241,13 @@ struct PhotoPreviewView: View {
 
                 Divider().frame(height: 20).opacity(0.2)
 
-                // Rotation buttons
-                Button(action: { applyRotation(degrees: -90) }) {
-                    Image(systemName: "rotate.left")
-                        .font(.system(size: AppTheme.iconSmall))
+                // v8.6.2: 회전 버튼 — 일괄 회전 파이프라인 사용 + 클릭 시 아이콘 회전 애니메이션
+                RotateToolbarButton(systemImage: "arrow.counterclockwise", clockwise: false) {
+                    store.batchRotate(ids: [photo.id], degreesCW: 270)
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .contentShape(Rectangle())
-                .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("왼쪽 90° 회전")
-
-                Button(action: { applyRotation(degrees: 90) }) {
-                    Image(systemName: "rotate.right")
-                        .font(.system(size: AppTheme.iconSmall))
+                RotateToolbarButton(systemImage: "arrow.clockwise", clockwise: true) {
+                    store.batchRotate(ids: [photo.id], degreesCW: 90)
                 }
-                .buttonStyle(.plain)
-                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
-                .contentShape(Rectangle())
-                .foregroundColor(rotatedImage != nil ? .white : .secondary)
-                .background(rotatedImage != nil ? Color.blue : AppTheme.toolbarButtonBg)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("오른쪽 90° 회전")
 
                 Divider().frame(height: 20).opacity(0.2)
 
@@ -979,13 +1266,13 @@ struct PhotoPreviewView: View {
         .sheet(isPresented: $showUprightGuide) {
             UprightGuideView(photo: photo) { correctedImage in
                 correctionResult = CorrectionResult(correctedImage: correctedImage, applied: ["가이드 원근 보정"])
-                image = correctedImage
+                _ = setImageGuarded(correctedImage, source: "UprightGuide.corrected", sourceURL: photo.jpgURL)
                 isOriginal = false
             }
         }
         .sheet(isPresented: $showCropView) {
             CropView(photo: photo) { croppedImage in
-                self.image = croppedImage
+                _ = self.setImageGuarded(croppedImage, source: "CropView.cropped", sourceURL: photo.jpgURL)
             }
         }
         .popover(isPresented: $showColorPicker, arrowEdge: .leading) {
@@ -1053,7 +1340,7 @@ struct PhotoPreviewView: View {
                     onApply: { result in
                         correctionResult = result
                         if let img = result.correctedImage {
-                            image = img
+                            _ = setImageGuarded(img, source: "CorrectionOptions.corrected", sourceURL: photo.jpgURL)
                             isOriginal = false
                         }
                         showCorrectionPanel = false
@@ -1063,21 +1350,30 @@ struct PhotoPreviewView: View {
             }
         }
         .onAppear {
-            pendingPhotoID = photo.id
-            viewState.stableImageSize = Self.readImageDimensions(url: photo.jpgURL)
+            installSelectionSettledObserver()
+            _ = beginPreviewGeneration(for: photo.id, reason: "appear")
+            viewState.stableImageSize = stablePreviewSize(for: photo)
             loadImageDirect(for: photo.jpgURL, id: photo.id)
             viewState.magnifyBaseScale = viewState.customScale
 
-            // 빠른 탐색 콜백: 캐시 히트 시에만 즉시 표시.
-            // 캐시 miss 시 동기 썸네일 추출은 main thread 에 5~15ms 비용 + NSImage 인스턴스 누적 →
-            // key repeat 꾹 누르기 시 이동당 interval 90ms → 200ms+ 로 저하. 미스면 비동기 경로에 맡김.
-            store.onQuickPreview = { [self] url in
-                guard url == store.selectedPhoto?.jpgURL else { return }
-                if let thumb = ThumbnailCache.shared.get(url) {
-                    self.image = thumb
-                }
-                // cache miss: 비워두고 onChange(selectedPhotoID) 의 비동기 로드 대기
+            // v8.6.2 fix: 첫 마운트 시 (앱 진입 직후) 는 selectedPhotoID 가 이미 설정돼 있어
+            //   .onChange 가 fire 안 됨 → HiRes 예약이 누락됐던 버그. 여기서 동일 스케줄링 추가.
+            let firstID = photo.id
+            let firstURL = PreviewLoadingPolicy.hiResURL(for: photo)
+            let firstWork = DispatchWorkItem {
+                guard self.pendingPhotoID == firstID else { return }
+                self.loadHiResForZoom()
             }
+            hiResWorkItem = firstWork
+            let alreadyCached: Bool = {
+                return Self.hiResCache.object(forKey: firstURL as NSURL) != nil
+            }()
+            let delay: TimeInterval = alreadyCached ? 0.0 : 0.05  // v8.9.7+: 0.15→0.05 단축
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: firstWork)
+
+            // v8.9.7+: quick preview 우회 경로는 비활성화.
+            // 선택 변경은 selectedPhotoID onChange 한 경로에서만 처리해야 선택 썸네일과 프리뷰가 갈라지지 않는다.
+            store.onQuickPreview = nil
 
             // Scroll wheel zoom monitor (only when mouse is over preview)
             if let existing = viewState.scrollMonitor {
@@ -1094,6 +1390,17 @@ struct PhotoPreviewView: View {
                 if event.type == .otherMouseDown && event.buttonNumber == 2 {
                     guard self.viewState.isMouseOverPreview else { return event }
                     self.setZoom(.fit)
+                    return nil
+                }
+
+                // v8.7: 마우스 뒤로가기(3) / 앞으로가기(4) → 폴더 히스토리 네비게이션
+                //   마우스가 프리뷰 위에 없어도 창 어디서든 작동. 탐색한 경로 역순/순방향.
+                if event.type == .otherMouseDown && event.buttonNumber == 3 {
+                    self.store.navigateBack()
+                    return nil
+                }
+                if event.type == .otherMouseDown && event.buttonNumber == 4 {
+                    self.store.navigateForward()
                     return nil
                 }
 
@@ -1138,37 +1445,93 @@ struct PhotoPreviewView: View {
                 viewState.scrollMonitor = nil
             }
             store.onQuickPreview = nil
+            removeSelectionSettledObserver()
         }
-        .onChange(of: store.selectedPhotoID) { newID in
+        .onChange(of: store.selectedPhotoID) { _, newID in
+            let _t0 = CFAbsoluteTimeGetCurrent()
+            defer {
+                let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
+                if ms > 1 { fputs("[PV-ONCHANGE] \(String(format: "%.0f", ms))ms\n", stderr) }
+            }
             guard let newID = newID else { return }
-            pendingPhotoID = newID
-            hiResWorkItem?.cancel()
-            preloadWork?.cancel()
+            // v8.9.7+: SwiftUI 가 중간 transient 값으로 onChange 를 늦게 firing → stale newID drop.
+            //   IMPORTANT: pendingPhotoID 는 항상 현재 store.selectedPhotoID 로 동기화 — drop 시에도 갱신.
+            //   안 그러면 비동기 hi-res 콜백의 pendingPhotoID == photoID 가드가 옛값에서 false-positive.
+            guard newID == store.selectedPhotoID else {
+                if let current = store.selectedPhotoID {
+                    pendingPhotoID = current
+                }
+                fputs("[ONCHANGE-STALE] dropped newID=\(newID.uuidString.prefix(8)) → pendingPhotoID synced to \(store.selectedPhotoID?.uuidString.prefix(8) ?? "nil")\n", stderr)
+                return
+            }
+            let currentGeneration = beginPreviewGeneration(for: newID, reason: "selection")
+            // v8.9.7+: burst 중엔 7개 @State 동시 업데이트가 SwiftUI body 7번 invalidate → 240ms re-render.
+            //   isFastNavigation 이면 image swap 도 안 하므로 reset 불필요. 여기서 @State 업데이트 SKIP.
+            //   key-up 후 단일 nav 경로에서 한 번에 reset.
+            let _isFastNav = store.isFastNavigation
+            if !_isFastNav {
+                previewLoadToken = UUID()
+                PreviewDecodeScheduler.shared.cancel()
+                navStartTime = CFAbsoluteTimeGetCurrent()
+                hiResWorkItem?.cancel()
+                preloadWork?.cancel()
 
-            correctionResult = nil
-            isOriginal = true
-            rotationAngle = 0
-            rotatedImage = nil
-            hiResImage = nil
-            lowResImage = nil  // Release previous hi-res memory
-            image = nil        // Release previous image immediately (메모리 스파이크 방지)
+                correctionResult = nil
+                isOriginal = true
+                rotationAngle = 0
+                rotatedImage = nil
+                hiResImage = nil
+                lowResImage = nil
+            } else {
+                // burst 중에도 in-flight cancel 은 필수 (이전 nav 의 디코드 중단)
+                hiResWorkItem?.cancel()
+                preloadWork?.cancel()
+                // 빠른 이동 중에도 사진 전환 시 hiResImage 는 반드시 비운다.
+                // 남겨두면 키를 놓은 뒤 loadHiResForZoom.sessionHiRes 경로가 이전 사진 이미지를
+                // 현재 URL/ID로 커밋해 HUD는 OK인데 화면은 이전 사진인 상태를 만들 수 있다.
+                hiResImage = nil
+                // v8.9.7+: burst 중 developedImage / rotatedImage 도 리셋 — 이전 사진의 보정 결과가 남아
+                //   `Image(nsImage: developedImage ?? rotatedImage ?? image)` 우선순위로 잘못 표시되던 버그.
+                //   사용자: 10초+ burst 후 미리보기가 이전 사진으로 보임 (KH105409 선택 vs 빨간옷 가수 표시).
+                if developedImage != nil { developedImage = nil; developedForPhotoID = nil }
+                if rotatedImage != nil { rotatedImage = nil }
+                if correctionResult != nil { correctionResult = nil }
+            }
+            // v8.6.2: 빠른 행이동 시 blank 방지 — image 를 nil 로 즉시 리셋하지 않음.
+            //   아래 cache lookup 이 성공하면 교체. 실패해도 async 로드 후 교체.
+            //   (이전 사진이 잠깐 보이는 게 빈 화면보다 낫다)
+            let isFastNavigation = _isFastNav
+            if !isFastNavigation {
+                // v8.9 perf: image = nil 대신 캐시된 썸네일을 즉시 placeholder 로 표시.
+                //   클릭 후 LowRes(~400ms)+HiRes(~1100ms) 대기 동안 빈 화면을 안 보이게 해서
+                //   "버튼이 한번에 안 눌림" 체감을 제거. 캐시 miss 시에만 nil.
+                if let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder,
+                   !usesRAWPreviewSource(sel),
+                   let thumb = ThumbnailCache.shared.get(sel.jpgURL) {
+                    _ = setImageGuarded(thumb, source: "selection.placeholder.thumb", sourceURL: sel.jpgURL)
+                } else if store.selectedPhoto.map({ !usesRAWPreviewSource($0) }) ?? true {
+                    clearImageState(source: "selection.cacheMiss")   // 메모리 스파이크 방지
+                }
+            }
             isHiResLoaded = false
+            firstLoadIsPortrait = nil  // v8.6.2: 사진 바뀌면 aspect 기준 리셋
+            firstLoadPhotoID = nil
             hiResLoadWork?.cancel()
+            hiResInflightURL = nil  // v8.9.7: 사진 전환 시 dedupe guard 해제
             // v8.5 — 비파괴 보정 프리뷰 초기화
             developRenderTask?.cancel()
             developedImage = nil
             developedForPhotoID = nil
 
-            // 사진 전환 즉시 hi-res 캐시 사전 purge (memory pressure 대기 X)
-            // 현재 선택된 사진을 제외한 나머지는 모두 해제해서 피크 메모리 스파이크 방지
-            let currentHiResURL: NSURL? = {
-                guard let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder else { return nil }
-                let jpgExt = sel.jpgURL.pathExtension.lowercased()
-                let hasRealJPG = !FileMatchingService.rawExtensions.contains(jpgExt)
-                let hiResURL = hasRealJPG ? sel.jpgURL : (sel.rawURL ?? sel.jpgURL)
-                return hiResURL as NSURL
-            }()
-            Self.purgeHiResCacheExcept(currentURL: currentHiResURL)
+            // 빠른 키 이동 중에는 hi-res 캐시를 매번 비우지 않는다.
+            // M1 Max 로그에서 selection마다 purge + 재디코드가 반복되며 CPU 200~330%까지 튀는 병목 확인.
+            if PreviewLoadingPolicy.shouldPurgeHiResOnSelection(isKeyRepeat: isFastNavigation) {
+                let currentHiResURL: NSURL? = {
+                    guard let sel = store.selectedPhoto, !sel.isFolder, !sel.isParentFolder else { return nil }
+                    return PreviewLoadingPolicy.hiResURL(for: sel) as NSURL
+                }()
+                Self.purgeHiResCacheExcept(currentURL: currentHiResURL)
+            }
             viewState.loupeActive = false
             viewState.loupePosition = nil
             viewState.loupeImage = nil
@@ -1177,13 +1540,13 @@ struct PhotoPreviewView: View {
 
             guard let selected = store.selectedPhoto else { return }
             guard !selected.isFolder && !selected.isParentFolder else {
-                self.image = nil
+                self.clearImageState(source: "selection.folder")
                 return
             }
             // 비디오 파일: VideoPlayerView가 별도 렌더링 → image state clear해서 이전 이미지 잔상 방지
             // CGImageSource로 MP4 열면 잘못된 프레임이 추출될 수 있음 → 임베디드 썸네일 추출도 스킵
             if selected.isVideoFile {
-                self.image = nil
+                self.clearImageState(source: "selection.video")
                 self.lowResImage = nil
                 self.rotatedImage = nil
                 imageLoadWork?.cancel()
@@ -1193,87 +1556,254 @@ struct PhotoPreviewView: View {
             }
             let url = selected.jpgURL
 
+            // v8.6.2: stableImageSize 를 가장 먼저 업데이트 — 이미지 표시 전에 layout aspect 고정
+            // RAW+JPG 페어는 RAW 표시 크기를 기준으로 잡아 JPG placeholder 와 RAW preview 전환 깜빡임을 줄인다.
+            viewState.stableImageSize = stablePreviewSize(for: selected)
+
             // Fast path: cache hit → show immediately
             let res = store.previewResolution
-            let cacheKey = res > 0 ? url.appendingPathExtension("r\(res)") : url.appendingPathExtension("orig")
-            if let cached = PreviewImageCache.shared.get(cacheKey) {
-                image = cached
-                lowResImage = cached
+            let sourceURL = PreviewLoadingPolicy.previewSourceURL(for: selected)
+            let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: res, sourceURL: sourceURL)
+            let previewCacheHit: Bool
+            let cachedPreview = isFastNavigation
+                ? PreviewImageCache.shared.getMemoryOnly(cacheKey)
+                : PreviewImageCache.shared.get(cacheKey)
+            if let cached = cachedPreview {
+                if setImageGuarded(cached, source: "selection.previewCache", sourceURL: url) {
+                    lowResImage = cached
+                }
+                previewCacheHit = true
                 // 캐시 히트 → 아래 debounce 로직으로 계속 진행 (멈추면 고화질 보장)
+            } else {
+                previewCacheHit = false
             }
 
-            // Show thumbnail instantly while full image loads
-            // JPG/RAW 모두 임베디드 썸네일 동기 추출 (~1-15ms, 풀 디코드 없음 → RAW도 빠름)
-            // CreateThumbnailFromImageIfAbsent: false → 임베디드 JPEG만 사용, 없으면 nil
-            // (slow disk라도 이 단계는 동기 유지 — 실측상 거의 항상 빠르고, background로 돌리면 표시 체감이 오히려 늦어짐)
-            if let thumb = ThumbnailCache.shared.get(url) {
-                image = thumb
-            } else if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                        kCGImageSourceThumbnailMaxPixelSize: 800,  // 빠른 탐색 중에도 적당한 화질
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                      ] as CFDictionary) {
-                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                image = img
-                ThumbnailCache.shared.set(url, image: img)
-            }
+            // v8.8.2 fix: 프리뷰 캐시 히트면 고화질 이미지가 이미 표시 중 → 썸네일로 덮어쓰지 않음.
+            //   이전엔 무조건 ThumbnailCache.get → image 에 140px 썸네일 덮어써서
+            //   캐시 100% 완료 상태에서도 네비게이션 시 저화질로 보이던 치명적 버그.
+            if !previewCacheHit, !usesRAWPreviewSource(selected) {
+                // Show thumbnail instantly while full image loads
+                if let thumb = ThumbnailCache.shared.get(url) {
+                    _ = setImageGuarded(thumb, source: "selection.memoryThumb", sourceURL: url)
+                } else {
+                    // v8.9.3 perf: 디스크 I/O + 800px 디코드는 항상 백그라운드 (키 반복 외에도).
+                    //   이전엔 단일 이동 시 main 에서 5~15ms (디스크 fetch) + 5~30ms (CGImageSource 800px decode)
+                    //   소비 → 화살표 1회 클릭 인터벌 50ms+ 가산. 빠른 이동 중 누적 지연 큼.
+                    let targetURL = url
+                    let captureID = pendingPhotoID
+                    DispatchQueue.global(qos: .userInitiated).async { [self] in
+                        // disk thumbnail 우선 시도
+                        if let diskThumb = DiskThumbnailCache.shared.getByPath(url: targetURL) {
+                            DispatchQueue.main.async {
+                                guard self.pendingPhotoID == captureID else { return }
+                                ThumbnailCache.shared.set(targetURL, image: diskThumb)
+                                if self.image == nil {
+                                    _ = self.setImageGuarded(diskThumb, source: "selection.diskThumb.async", sourceURL: targetURL)
+                                }
+                            }
+                            return
+                        }
+                        // 임베디드 800px 썸네일 추출 (JPG 디코드)
+                        guard let source = CGImageSourceCreateWithURL(targetURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                              let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                                kCGImageSourceThumbnailMaxPixelSize: 800,
+                                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                                kCGImageSourceCreateThumbnailWithTransform: true
+                              ] as CFDictionary) else { return }
+                        let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                        let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
+                        DispatchQueue.main.async {
+                            guard self.pendingPhotoID == captureID else { return }
+                            ThumbnailCache.shared.set(targetURL, image: img)
+                            if self.image == nil {
+                                _ = self.setImageGuarded(img, source: "selection.embeddedThumb.async", sourceURL: targetURL)
+                            }
+                        }
+                    }
+                }
+            }  // ! previewCacheHit
 
             // 미리보기 로딩 (키 연타 시 디바운스)
             preloadWork?.cancel()
             preloadWork = nil
             imageLoadWork?.cancel()
             hiResWorkItem?.cancel()
-            viewState.stableImageSize = Self.readImageDimensions(url: url)
+            // v8.7: stableImageSize 중복 호출 제거 (위 1238 라인에서 이미 세팅됨)
 
-            if store.isKeyRepeat {
-                // 빠른 이동 중 → 짧은 디바운스 (캐시 히트만 즉시, 미스는 대기)
-                let cacheKey2 = store.previewResolution > 0
-                    ? url.appendingPathExtension("r\(store.previewResolution)")
-                    : url.appendingPathExtension("orig")
-                if let cached = PreviewImageCache.shared.get(cacheKey2) {
-                    image = cached
-                    lowResImage = cached
-                } else if let thumb = ThumbnailCache.shared.get(url) {
-                    image = thumb  // 썸네일이라도 즉시 표시
+            if isFastNavigation {
+                // v8.9.7+: 우선순위 (1) hiResCache full → (2) NSCache thumb → (3) DiskThumbnailCache disk.
+                //   pendingPhotoID 재확인 — burst 중 빠르게 변하면 set 시점에 이미 stale 할 수 있음.
+                guard pendingPhotoID == newID else {
+                    fputs("[LD] STALE \(url.lastPathComponent) (newID changed, skip gen=\(currentGeneration))\n", stderr)
+                    return
+                }
+                let hiResURL = PreviewLoadingPolicy.hiResURL(for: selected)
+                if let hi = Self.hiResCache.object(forKey: hiResURL as NSURL) {
+                    if setImageGuarded(hi, source: "selection.HIT-HIRES-KR", sourceURL: url) {
+                        hiResImage = hi
+                        isHiResLoaded = true
+                    }
+                    fputs("[SYNC] HIT-HIRES-KR src=\(url.lastPathComponent) ✓\n", stderr)
+                } else {
+                    let thumb: NSImage? = {
+                        if let mem = ThumbnailCache.shared.get(url) { return mem }
+                        if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+                            ThumbnailCache.shared.set(url, image: disk)
+                            return disk
+                        }
+                        return nil
+                    }()
+                    if let thumb {
+                        let thumbMaxDim = max(Int(thumb.size.width), Int(thumb.size.height))
+                        if thumbMaxDim >= 800 {
+                            let didSet = setImageGuarded(thumb, source: "selection.HIT-THUMB-KR", sourceURL: url)
+                            // v8.9.7+: 진짜 hi-res (≥3000) 만 hiResCache 저장 + isHiResLoaded=true.
+                            //   1616 은 hi-res 아님 → Stage 2 업그레이드 자동 트리거 가능하도록 두기.
+                            if didSet && thumbMaxDim >= 3000 {
+                                hiResImage = thumb
+                                isHiResLoaded = true
+                                Self.hiResCache.setObject(thumb, forKey: hiResURL as NSURL)
+                            }
+                            fputs("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px \(thumbMaxDim >= 3000 ? "(hi)" : "(low)") ✓\n", stderr)
+                        } else {
+                            fputs("[LD] SKIP-SMALL-THUMB \(url.lastPathComponent) \(thumbMaxDim)px\n", stderr)
+                        }
+                    } else {
+                        fputs("[LD] SKIP-MISS \(url.lastPathComponent)\n", stderr)
+                    }
                 }
 
-                let delayedWork = DispatchWorkItem {
-                    guard self.pendingPhotoID == newID else { return }
-                    self.loadImageDirect(for: url, id: newID)
-                }
-                imageLoadWork = delayedWork
-                // ⚠️ main 큐에서 dispatch — loadImageDirect의 캐시 HIT 분기가 self.image를 직접 쓰므로
-                // 백그라운드에서 실행 시 SwiftUI @State 업데이트가 누락되어 미리보기가 비어 보임.
-                // 무거운 디코드는 loadImageDirect 내부에서 별도 global 큐로 보냄.
-                // 디바운스 20ms — 키 떼는 즉시 고화질 로딩 (50ms 체감 지연 제거)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: delayedWork)
-
-                // 빠른 탐색 중 ±3장 임베디드 JPEG 프리페치 (다음 이동 instant hit)
-                Self.prefetchEmbeddedNeighbors(store: store, currentURL: url, range: 3)
+                // v8.9.7+: prefetch 즉시 호출 — 내부 isNewBurst/CATCH-UP 로직이 발사 빈도 제어.
+                //   재귀 모드도 활성화 — 큐 cap 10 + concurrency 1 가드로 backlog 안전.
+                //   이전엔 재귀 모드 prefetch SKIP 으로 행 이동 시 썸네일 못 따라가던 문제.
+                Self.prefetchEmbeddedNeighbors(
+                    store: store,
+                    currentURL: url,
+                    range: PreviewLoadingPolicy.embeddedNeighborRangeDuringKeyRepeat()
+                )
             } else {
-                // 단일 이동 → 즉시 로딩
-                loadImageDirect(for: url, id: newID)
+                // v8.9.7+: 단일 이동 — Phase 2 (1500+px) 캐시가 있으면 stage 거치지 않고 즉시 hi-res 표시.
+                //   hi-res cache 도 체크 (full hi-res 디코드 결과).
+                let hiResURL = PreviewLoadingPolicy.hiResURL(for: selected)
+                if let hi = Self.hiResCache.object(forKey: hiResURL as NSURL) {
+                    if setImageGuarded(hi, source: "selection.HIT-HIRES-FULL", sourceURL: url) {
+                        hiResImage = hi
+                        isHiResLoaded = true
+                    }
+                    fputs("[LD] HIT-HIRES-FULL \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height))\n", stderr)
+                } else if let cached = ThumbnailCache.shared.get(url) ?? DiskThumbnailCache.shared.getByPath(url: url),
+                          max(Int(cached.size.width), Int(cached.size.height)) >= 1500 {
+                    let cachedMax = max(Int(cached.size.width), Int(cached.size.height))
+                    if setImageGuarded(cached, source: "selection.HIT-FAST", sourceURL: url) {
+                        lowResImage = cached
+                        // v8.9.7+: 진짜 hi-res (≥3000) 만 isHiResLoaded=true → Stage 1 (1616) 인 경우
+                        //   Stage 2 자동 업그레이드 트리거 가능. 이전엔 1616 도 isHiResLoaded=true 라
+                        //   재방문 시 Stage 2 로 업그레이드 안 되던 버그.
+                        if cachedMax >= 3000 {
+                            hiResImage = cached
+                            isHiResLoaded = true
+                            let hiResNSURL = PreviewLoadingPolicy.hiResURL(for: selected) as NSURL
+                            Self.hiResCache.setObject(cached, forKey: hiResNSURL)
+                        }
+                    }
+                    ThumbnailCache.shared.set(url, image: cached)
+                    fputs("[SYNC] HIT-FAST src=\(url.lastPathComponent) \(cachedMax)px \(cachedMax >= 3000 ? "(hi)" : "(low → upgrade pending)") ✓\n", stderr)
+                } else {
+                    loadImageDirect(for: url, id: newID)
+                }
             }
 
-            // hi-res 로딩 (방향키 꾹 누르면 cancel)
-            // 200ms → 800ms: RAW 풀 디코드가 CPU 137%/400ms 걸리므로, 사용자가 명확히 멈춘 뒤 발화
+            // 빠른 셀렉 모드는 FRV처럼 저해상도/임베디드 프리뷰 우선. hi-res는 사용자가 멈춘 뒤에만 올린다.
+            if !PreviewLoadingPolicy.shouldAutoLoadHiRes(fastCullingMode: store.fastCullingMode) {
+                hiResWorkItem?.cancel()
+                return
+            }
+            // v8.9.7+: 자동 hi-res 재활성화 — loadHiResImage 는 embedded JPEG (camera color) 만 사용 →
+            //   색감 변경 없음. Stage 2 (4096) 즉시 표시 → 사용자 체감 속도 향상.
+
+            // v8.9.6: 키 반복 중 hi-res 디코드가 시작되면 cancel 되어도 이미 CPU를 먹는다.
+            //   반복 이동 중엔 충분히 늦게 예약하고, 키를 놓은 뒤 마지막 선택만 고화질로 승격한다.
+            let newURL = PreviewLoadingPolicy.hiResURL(for: selected)
+            let wasKeyRepeat = isFastNavigation
             let work = DispatchWorkItem {
                 guard self.pendingPhotoID == newID else { return }
+                // v8.9.7: wasKeyRepeat capture + isFastNavigation check 만으론 NAV interval 280ms 시
+                //   delay 350ms 후 fire 시점에 isFastNavigation 이 false 로 flip → hi-res chain 발사 (32초 STALL).
+                //   fire 시점 기준 "마지막 키 입력 후 500ms idle" 체크로 교체.
+                let sinceLastNavMs = (CFAbsoluteTimeGetCurrent() - KeyCaptureView.lastNavTime) * 1000
+                // v8.9.7+: idle 가드 200ms → 80ms 로 단축. 키 멈춤 후 hi-res 표시 평균 1s→500ms 목표.
+                if sinceLastNavMs < 80 {
+                    fputs("[HIRES] BLOCKED sinceLastNav=\(Int(sinceLastNavMs))ms < 80ms\n", stderr)
+                    return
+                }
+                if wasKeyRepeat && self.store.isFastNavigation { return }
                 self.loadHiResForZoom()
             }
             hiResWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+            // hiResCache 에 이미 있으면 debounce 없이 즉시 실행 (표시 지연 0)
+            let alreadyCached: Bool = {
+                let key = newURL as NSURL
+                return Self.hiResCache.object(forKey: key) != nil
+            }()
+            let tier = SystemSpec.shared.effectiveTier
+            var delay = PreviewLoadingPolicy.hiResDelay(
+                isKeyRepeat: wasKeyRepeat,
+                alreadyCached: alreadyCached,
+                tier: tier
+            )
+            // fastCullingMode 면 nav 안정 더 길게 — 키 멈춘 후 ~0.9s 에 hi-res
+            if store.fastCullingMode && !alreadyCached {
+                delay = max(delay, PreviewLoadingPolicy.hiResDelayFastCulling())
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in zoomIn() }
         .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in zoomOut() }
-        .onChange(of: viewState.zoomPreset) { newPreset in
+        .task(id: store.isFastNavigation) {
+            if !store.isFastNavigation { syncImageOnBurstEnd() }
+        }
+        .onChange(of: viewState.zoomPreset) { _, newPreset in
             if newPreset == .fit {
                 switchToLowRes()
+            } else {
+                // v8.9.7+: zoom 진입 시 풀 hi-res deep decode 강제. 일반 nav 에선 자동 hi-res 차단
+                //   (색감 변화 방지) → zoom 시에만 별도 발사. 이미 1차 cache (1616) 표시되어
+                //   isHiResLoaded=true 라도 zoom 은 더 큰 픽셀 필요 → 가드 해제 후 재발사.
+                let currentMax = max(Int(image?.size.width ?? 0), Int(image?.size.height ?? 0))
+                if currentMax < 3000 {
+                    fputs("[HIRES] zoom triggered (current=\(currentMax)px) → deep scan\n", stderr)
+                    isHiResLoaded = false
+                    loadHiResForZoom(forceDeepScan: true)
+                }
             }
         }
         // v8.5 — 원본 image 가 로드되면 비파괴 보정 프리뷰 갱신
-        .onChange(of: image) { _ in refreshDevelopedImage() }
+        .onChange(of: image) { _, _ in refreshDevelopedImage() }
+        // v8.8.1: 캐시 100% 완료 시 현재 사진을 고화질 버전으로 자동 업그레이드.
+        //   캐시가 다 쌓였는데도 저화질 stage1 이 표시되던 케이스 (slow disk skip / key-repeat 취소 등) 대응.
+        .onChange(of: store.previewsLoaded) { _, new in
+            let total = store.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+            guard total > 0, new >= total,
+                  store.thumbCacheCount >= total,
+                  let selected = store.selectedPhoto,
+                  !selected.isFolder, !selected.isParentFolder, !selected.isVideoFile
+            else { return }
+            let url = selected.jpgURL
+            let res = store.previewResolution
+            let sourceURL = PreviewLoadingPolicy.previewSourceURL(for: selected)
+            let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: res, sourceURL: sourceURL)
+            if let hi = PreviewImageCache.shared.get(cacheKey) {
+                // 현재 표시 이미지보다 해상도 크면 교체
+                let curMax = max(image?.size.width ?? 0, image?.size.height ?? 0)
+                let hiMax = max(hi.size.width, hi.size.height)
+                if hiMax > curMax * 1.1 {
+                    fputs("[CACHE-DONE] upgrade preview \(url.lastPathComponent) \(Int(curMax)) → \(Int(hiMax))\n", stderr)
+                    if self.setImageGuarded(hi, source: "CACHE-DONE.upgrade", sourceURL: url) {
+                        self.lowResImage = hi
+                    }
+                }
+            }
+        }
         // 보정값이 외부(슬라이더 등)에서 바뀌면 즉시 반영
         .onReceive(DevelopStore.shared.objectWillChange) { _ in
             // objectWillChange 는 변경 직전 발행 → 다음 runloop 에서 읽어야 반영됨
@@ -1285,7 +1815,7 @@ struct PhotoPreviewView: View {
             isCroppingMode.toggle()
         }
         // 크롭 모드 진입/종료 시 프리뷰 재렌더 (회전/크롭 적용 여부 달라짐)
-        .onChange(of: isCroppingMode) { _ in refreshDevelopedImage() }
+        .onChange(of: isCroppingMode) { _, _ in refreshDevelopedImage() }
         // 보정 토스트 (object: String)
         .onReceive(NotificationCenter.default.publisher(for: .pickShotAdjustmentToast)) { notif in
             guard let msg = notif.object as? String else { return }
@@ -1300,6 +1830,49 @@ struct PhotoPreviewView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleHistogram)) { _ in showHistogram.toggle() }
+        // v8.7: Shift+H 클리핑 오버레이 토글
+        .onReceive(NotificationCenter.default.publisher(for: .toggleClippingOverlay)) { _ in
+            showClippingOverlay.toggle()
+            if showClippingOverlay {
+                regenerateClippingMask(throttled: false)
+            } else {
+                clippingMaskImage = nil
+            }
+        }
+        // 보정 이미지 변화 (슬라이더 조정) — 쓰로틀 재계산
+        .onChange(of: developedImage) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
+        // 사진 전환 — 이전 마스크 즉시 클리어 + 새 이미지 로드 직후 재계산
+        .onChange(of: photo.id) { _, _ in
+            if showClippingOverlay {
+                clippingMaskImage = nil
+                // 약간 지연 — image/rotatedImage 가 새 사진으로 교체된 뒤 계산
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    regenerateClippingMask(throttled: false)
+                }
+            }
+        }
+        // base 이미지 변화 (Stage 1 / Stage 2 로드) — 쓰로틀 재계산
+        .onChange(of: image) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
+        .onChange(of: rotatedImage) { _, _ in
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
+        // v8.6.2: 일괄 회전 알림 — 현재 선택된 사진이 회전 대상에 포함되면 강제 재로드
+        .onReceive(NotificationCenter.default.publisher(for: AsyncThumbnailView.rotationInvalidateNotification)) { note in
+            guard let rotatedURL = note.object as? URL else { return }
+            guard let sel = store.selectedPhoto else { return }
+            if rotatedURL == sel.jpgURL || rotatedURL == sel.rawURL || rotatedURL == sel.displayURL {
+                // 내부 상태 리셋 → loadImageDirect 재실행
+                clearImageState(source: "rotationInvalidate")
+                lowResImage = nil
+                rotatedImage = nil
+                developedImage = nil
+                loadImageDirect(for: sel.jpgURL, id: sel.id)
+            }
+        }
         .sheet(isPresented: $showAIResult) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(aiResultText)
@@ -1366,7 +1939,7 @@ struct PhotoPreviewView: View {
                 Button(action: {
                     if isOriginal {
                         if let img = correctionResult?.correctedImage {
-                            image = img
+                            _ = setImageGuarded(img, source: "correctionToggle.corrected", sourceURL: photo.jpgURL)
                             isOriginal = false
                         }
                     } else {
@@ -1495,7 +2068,7 @@ struct PhotoPreviewView: View {
                 .frame(minWidth: 60, maxWidth: 120)
                 .controlSize(.small)
                 .help("확대/축소 (더블클릭: 화면 맞춤)")
-                .onChange(of: sliderValue) { newVal in
+                .onChange(of: sliderValue) { _, newVal in
                     let scale = sliderToScale(newVal)
                     viewState.customScale = scale
                     if abs(scale - currentFitScale()) < 0.02 {
@@ -1504,7 +2077,7 @@ struct PhotoPreviewView: View {
                         viewState.zoomPreset = ZoomPreset.fromScale(scale) ?? .p100
                         // 확대 시 고화질 로딩 (debounce)
                         hiResWorkItem?.cancel()
-                        let work = DispatchWorkItem { loadHiResForZoom() }
+                        let work = DispatchWorkItem { loadHiResForZoom(forceDeepScan: true) }
                         hiResWorkItem = work
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
                     }
@@ -1590,7 +2163,7 @@ struct PhotoPreviewView: View {
             syncSlider()
             // hi-res debounce (연속 +키 입력 시 마지막만 실행)
             hiResWorkItem?.cancel()
-            let work = DispatchWorkItem { loadHiResForZoom() }
+            let work = DispatchWorkItem { loadHiResForZoom(forceDeepScan: true) }
             hiResWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
@@ -1617,134 +2190,172 @@ struct PhotoPreviewView: View {
 
     // MARK: - Image Loading
 
+    private func installSelectionSettledObserver() {
+        guard selectionSettledObserver == nil else { return }
+        selectionSettledObserver = NotificationCenter.default.addObserver(
+            forName: .pickShotSelectionSettled,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let id = note.object as? UUID else { return }
+            settlePreviewAndHiRes(photoID: id)
+        }
+    }
+
+    private func removeSelectionSettledObserver() {
+        if let observer = selectionSettledObserver {
+            NotificationCenter.default.removeObserver(observer)
+            selectionSettledObserver = nil
+        }
+    }
+
+    private func settlePreviewAndHiRes(photoID: UUID) {
+        guard pendingPhotoID == photoID,
+              store.selectedPhotoID == photoID,
+              !store.isFastNavigation,
+              let selected = store.selectedPhoto,
+              !selected.isFolder,
+              !selected.isParentFolder,
+              !selected.isVideoFile else { return }
+
+        // v8.9.7+: 이미 hi-res 가 표시 중이면 settle 단계에서 다시 로드할 필요 없음.
+        //   기존 동작: isHiResLoaded=false 리셋 + loadImageDirect 재실행 → 이미 Stage 3 가 보여도
+        //   PreviewPipeline.onDisplayImage 가 Stage 2 (embedded JPG ~4096) 로 다시 commit.
+        //   결과: HUD 가 Stage 3 → Stage 2 로 다운그레이드되며 화면도 살짝 뿌예짐.
+        if isHiResLoaded {
+            // NSImage.size 는 논리 단위 (point) → Retina 5462px ARW 가 2731 로 보임.
+            // representations.first.pixelsWide/Hi 로 실제 픽셀 측정.
+            let curMax: Int = {
+                guard let img = image else { return 0 }
+                if let rep = img.representations.first {
+                    return max(rep.pixelsWide, rep.pixelsHigh)
+                }
+                return max(Int(img.size.width), Int(img.size.height))
+            }()
+            if curMax >= 3000 {
+                fputs("[SETTLE] SKIP — hi-res already displayed (\(curMax)px) \(selected.fileName)\n", stderr)
+                return
+            }
+        }
+
+        let url = selected.jpgURL
+        let hiResURL = PreviewLoadingPolicy.hiResURL(for: selected)
+
+        imageLoadWork?.cancel()
+        hiResWorkItem?.cancel()
+        PreviewDecodeScheduler.shared.cancel()
+        previewLoadToken = UUID()
+        isHiResLoaded = false
+
+        loadImageDirect(for: url, id: photoID)
+
+        let work = DispatchWorkItem {
+            guard self.pendingPhotoID == photoID,
+                  self.store.selectedPhotoID == photoID,
+                  !self.store.isFastNavigation else { return }
+            self.loadHiResForZoom()
+        }
+        hiResWorkItem = work
+
+        let alreadyCached = Self.hiResCache.object(forKey: hiResURL as NSURL) != nil
+        let delay: TimeInterval = alreadyCached ? 0.0 : 0.18
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
     /// Load image at configured resolution
     private func loadImageDirect(for url: URL, id: UUID) {
         let resolution = store.previewResolution
         let fileName = url.lastPathComponent
 
+        // v8.6.2: Nikon NEF+JPG 같은 RAW+JPG 쌍이면 RAW 의 임베디드 JPEG 프리뷰가 훨씬 빠름.
+        //   이유: Nikon JPG 는 20-30MB → SubsampleFactor 4로도 풀 스캔 필요.
+        //   NEF 의 임베디드 프리뷰(~1616×1080)는 직접 추출 가능 → Strategy 1 로 즉시 리턴.
+        //   Cache key 는 원본 url(jpgURL) 기준 유지 → sweep/DevelopStore 와 일관.
+        let decodeURL = PreviewLoadingPolicy.decodeURL(
+            for: url,
+            selectedPhoto: store.selectedPhoto,
+            allPhotos: store.photos
+        )
+        if decodeURL != url {
+            fputs("[LD] RAW-pair decode: \(url.lastPathComponent) → \(decodeURL.lastPathComponent)\n", stderr)
+        }
+
         // Cache key includes resolution
-        let cacheKey = resolution > 0 ? url.appendingPathExtension("r\(resolution)") : url.appendingPathExtension("orig")
+        let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: resolution, sourceURL: decodeURL)
         if let cached = PreviewImageCache.shared.get(cacheKey) {
             fputs("[LD] HIT \(fileName) \(Int(cached.size.width))x\(Int(cached.size.height))\n", stderr)
-            // ⚠️ 메인 스레드 보장 — bg 큐에서 호출 시 @State 업데이트 누락 방지
             if Thread.isMainThread {
-                self.image = cached
-                self.lowResImage = cached
+                if self.setImageGuarded(cached, source: "loadImageDirect.HIT.sync", sourceURL: url) {
+                    self.lowResImage = cached
+                }
             } else {
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.pendingPhotoID == id else { return }
-                    self.image = cached
-                    self.lowResImage = cached
+                    if self.setImageGuarded(cached, source: "loadImageDirect.HIT.async", sourceURL: url) {
+                        self.lowResImage = cached
+                    }
                 }
             }
             // 캐시 히트라도 해상도가 낮으면 고화질 계속 로딩
-            if cached.size.width > 1500 { return }
+            // v8.9.7: burst (key-repeat) 중엔 720 캐시 hit 만으로도 충분 — S1 재디코드 + main 재할당 + SwiftUI invalidate
+            //   누적이 5-12초 main freeze 의 주범. settle 시점에 settlePreviewAndHiRes 가 다시 로드함.
+            if cached.size.width > 1500 || store.isFastNavigation { return }
         }
 
         let t0 = CFAbsoluteTimeGetCurrent()
         // Cancel previous loading work
         imageLoadWork?.cancel()
-        let work = DispatchWorkItem(qos: .userInitiated) { [self] in
-            guard self.pendingPhotoID == id else { return }
+        PreviewDecodeScheduler.shared.schedule { [self] isScheduledCurrent in
+            // v8.6.2: GCD worker 는 autorelease pool 이 없음 → ImageIO autoreleased 객체 누적 방지
+            autoreleasepool {
+            guard isScheduledCurrent(), self.pendingPhotoID == id else { return }
 
-            let ext = url.pathExtension.lowercased()
-            let isJPG = ["jpg", "jpeg"].contains(ext)
-
-            if isJPG {
-                // JPG: load at target resolution
-                let targetPx = resolution > 0 ? CGFloat(resolution) : 0
-                let img: NSImage?
-                if targetPx == 0 {
-                    img = NSImage(contentsOf: url)
-                } else {
-                    img = PreviewImageCache.loadOptimized(url: url, maxPixel: targetPx)
+            let selectedJPGURL = store.selectedPhoto?.jpgURL
+            let loadToken = self.previewLoadToken
+            PreviewPipeline.run(.init(
+                url: url,
+                decodeURL: decodeURL,
+                cacheKey: cacheKey,
+                photoID: id,
+                resolution: resolution,
+                fileName: fileName,
+                startedAt: t0,
+                fastCullingMode: store.fastCullingMode,
+                currentFolderIsSlowDisk: store.currentFolderIsSlowDisk,
+                isKeyRepeat: store.isFastNavigation,
+                stage1Portrait: self.firstLoadIsPortrait,
+                isCurrent: {
+                    isScheduledCurrent() &&
+                    self.pendingPhotoID == id &&
+                    self.previewLoadToken == loadToken &&
+                    selectedJPGURL == url
+                },
+                notePreviewLoaded: { store.notePreviewLoaded(url: $0) },
+                onStage1Portrait: {
+                    self.firstLoadIsPortrait = $0
+                    self.firstLoadPhotoID = id
+                },
+                onDisplayImage: { img in
+                    // v8.9.7+: stale dispatch 차단 — pendingPhotoID + URL 검증.
+                    let ok = self.setImageGuarded(img, source: "PreviewPipeline.onDisplayImage", sourceURL: url)
+                    if ok { self.lowResImage = img }
+                },
+                onSchedulePreload: {
+                    self.scheduleSmartPreload(currentID: id, resolution: resolution)
                 }
-                guard let loaded = img, self.pendingPhotoID == id else { return }
-                let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                fputs("[LD] JPG \(fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) \(ms)ms\n", stderr)
-                PreviewImageCache.shared.set(cacheKey, image: loaded)
-                // 미리보기 이미지로 썸네일 캐시도 채우기 (디스크 I/O 없이 즉시)
-                ThumbnailCache.shared.set(url, image: loaded)
-                RunLoop.main.perform(inModes: [.common]) {
-                    guard self.pendingPhotoID == id,
-                          store.selectedPhoto?.jpgURL == url else { return }
-                    self.image = loaded
-                    self.lowResImage = loaded
-                }
-            } else {
-                // RAW: 2-stage loading (tier 기반)
-                let optimalPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
-                let stage1MaxPx = SystemSpec.shared.previewStage1MaxPixel()
-
-                // Stage 1: Fast load — low: 800px / standard: 1200px / high+: 1600px
-                // orientation 은 loadOptimized 내부에서 정확히 처리됨 (v8.6.1: RAW 는 Transform:false + 수동 apply).
-                let fastImage = PreviewImageCache.loadOptimized(url: url, maxPixel: min(stage1MaxPx, optimalPx))
-
-                guard let fast = fastImage, self.pendingPhotoID == id else { return }
-                let ms1 = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                fputs("[LD] RAW-S1 \(fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms\n", stderr)
-
-                // 미리보기 이미지로 썸네일 캐시 채우기
-                ThumbnailCache.shared.set(url, image: fast)
-
-                RunLoop.main.perform(inModes: [.common]) {
-                    guard self.pendingPhotoID == id,
-                          store.selectedPhoto?.jpgURL == url else { return }
-                    self.image = fast
-                    self.lowResImage = fast
-                }
-
-                // Stage 2 시작 전 0.25s 대기 — 사용자가 빠른 탐색(←→) 중이면
-                // Stage 2 비용 회피. 멈춰있을 때만 고화질로 승격.
-                // (userInitiated 백그라운드 큐라 메인스레드 블록 안 함)
-                Thread.sleep(forTimeInterval: 0.25)
-                guard self.pendingPhotoID == id else {
-                    fputs("[LD] RAW-S2 CANCELLED (navigated away during 0.25s wait) \(fileName)\n", stderr)
-                    return
-                }
-
-                // Stage 2: Higher res preview (tier 기반)
-                // low: 1600px (메모리 ~40% 절감) / standard: 2400px / high: 3200px / extreme: 원본
-                // 느린 디스크(HDD/SD/NAS): stage2 스킵 — stage1만으로 충분, 사용자가 줌하면 별도 풀해상도
-                if store.currentFolderIsSlowDisk {
-                    fputs("[LD] RAW-S2 SKIP (slow disk) \(fileName)\n", stderr)
-                    PreviewImageCache.shared.set(cacheKey, image: fast)
-                    DispatchQueue.main.async {
-                        guard self.pendingPhotoID == id else { return }
-                        self.scheduleSmartPreload(currentID: id, resolution: resolution)
-                    }
-                    return
-                }
-                let stage2MaxPx = SystemSpec.shared.previewStage2MaxPixel()
-                let stage2Px: CGFloat = stage2MaxPx == 0 ? optimalPx : stage2MaxPx
-                if stage2Px > stage1MaxPx, let hr = PreviewImageCache.loadOptimized(url: url, maxPixel: stage2Px) {
-                    // orientation 은 loadOptimized 내부에서 처리됨.
-                    let finalHR = hr
-                    guard self.pendingPhotoID == id else { return }
-                    PreviewImageCache.shared.set(cacheKey, image: finalHR)
-                    RunLoop.main.perform(inModes: [.common]) {
-                        if self.pendingPhotoID == id {
-                            self.image = finalHR
-                            self.lowResImage = finalHR
-                        }
-                    }
-                } else {
-                    PreviewImageCache.shared.set(cacheKey, image: fast)
-                }
-            }
-
-            // Prefetch neighbors for instant navigation
-            DispatchQueue.main.async {
-                guard self.pendingPhotoID == id else { return }
-                self.scheduleSmartPreload(currentID: id, resolution: resolution)
-            }
+            ))
+            }  // autoreleasepool end (v8.6.2)
         }
-        imageLoadWork = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func loadImage(for url: URL) {
-        loadImageDirect(for: url, id: pendingPhotoID ?? UUID())
+        // v9.0: pendingPhotoID nil 시 random UUID 생성 → isCurrent() 검증 영원히 실패 + stale dispatch 위험.
+        //   pendingPhotoID 가 없으면 로드 자체를 skip.
+        guard let id = pendingPhotoID else {
+            fputs("[LD] loadImage SKIP — pendingPhotoID nil for \(url.lastPathComponent)\n", stderr)
+            return
+        }
+        loadImageDirect(for: url, id: id)
     }
 
     // MARK: - Crop overlay builder (type-checker 폭주 방지용 분리)
@@ -1759,44 +2370,15 @@ struct PhotoPreviewView: View {
     }
 
     private func cropModeLayer(vSize: CGSize, image: NSImage) -> some View {
-        // 리서치 에이전트 권고 패턴 3: 수동 계산 + topLeading + offset.
-        // SwiftUI aspect fit / overlay 자동 계산 전부 배제 → 픽셀 단위 수동 제어.
-        let s = image.size
-        let imgAR: CGFloat = (s.width > 0 && s.height > 0) ? s.width / s.height : 1
-        let viewAR = vSize.width / max(vSize.height, 1)
-        let fit: CGRect = {
-            if imgAR > viewAR {
-                // 이미지가 더 가로로 길다 → 가로 맞춤, 세로 여백
-                let h = vSize.width / imgAR
-                return CGRect(x: 0, y: (vSize.height - h) / 2, width: vSize.width, height: h)
-            } else {
-                // 이미지가 더 세로로 길다 → 세로 맞춤, 가로 여백
-                let w = vSize.height * imgAR
-                return CGRect(x: (vSize.width - w) / 2, y: 0, width: w, height: vSize.height)
-            }
-        }()
-        return ZStack {
-            Color.black
-                .frame(width: vSize.width, height: vSize.height)
-
-            // (1) 이미지를 fit rect 에 .position 으로 배치 — hit testing 도 함께 이동
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: fit.width, height: fit.height)
-                .clipped()
-                .position(x: fit.midX, y: fit.midY)
-
-            // (2) 크롭 오버레이도 동일 fit rect 에 .position 배치 — hit testing 정상 작동
-            InlineCropOverlay(
-                photoURL: photo.jpgURL,
-                displaySize: fit.size,
-                imageAspectRatio: imgAR,
-                onDismiss: { isCroppingMode = false }
-            )
-            .frame(width: fit.width, height: fit.height)
-            .position(x: fit.midX, y: fit.midY)
-        }
+        // v8.6.1: AppKit NSCropView 기반 — 이미지와 크롭 박스를 단일 NSView draw() 로
+        // 픽셀 단위 렌더. SwiftUI aspect fit 레이아웃 오차 원천 차단.
+        // (기존에 SwiftUI ZStack 에서 수동 fit 계산 + 별도 Image + InlineCropOverlay 로 분리했던
+        //  iter1~22 전부 불필요 — NSCropView 가 내부에서 직접 처리.)
+        InlineCropOverlay(
+            photoURL: photo.jpgURL,
+            image: image,
+            onDismiss: { isCroppingMode = false }
+        )
         .frame(width: vSize.width, height: vSize.height)
         .allowsHitTesting(true)
     }
@@ -1833,10 +2415,33 @@ struct PhotoPreviewView: View {
             return
         }
 
-        // 디바운스 150ms — 슬라이더 드래그 중엔 마지막 값만 실제 렌더
+        // v8.6.2: 2단계 렌더링 (라이트룸 스타일)
+        //   1) 빠른 프리뷰: Stage 1 NSImage 기반 CI 필터 (~20-50ms, 즉시 반응)
+        //   2) 고품질: CIRAWFilter 기반 (300ms idle 뒤 실행, JPG→RAW 품질 업그레이드)
+
+        let baseImage = self.image  // 현재 표시 중인 Stage 1/2 NSImage 캡처
+
+        // Step 1: 빠른 프리뷰 — 즉시 실행 (debounce X, 이전 fast task 는 취소)
+        if let base = baseImage {
+            let fastTask = Task.detached(priority: .userInteractive) { [url, settings] in
+                let t0 = CFAbsoluteTimeGetCurrent()
+                let quick = Self.developPipelineShared.renderFast(baseImage: base, settings: settings)
+                let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                fputs("[DEV-FAST] \(url.lastPathComponent) \(quick == nil ? "FAILED" : "OK") \(ms)ms\n", stderr)
+                await MainActor.run {
+                    guard self.photo.id == photoID else { return }
+                    guard let quick = quick else { return }
+                    let aligned = Self.enforceAspectOfStage1(quick, url: url, stage1Portrait: self.firstLoadIsPortrait)
+                    self.developedImage = aligned
+                    self.developedForPhotoID = photoID
+                }
+            }
+            developRenderTask = fastTask
+        }
+
+        // Step 2: 고품질 follow-up — 300ms idle 뒤 CIRAWFilter 기반 재렌더
         let work = DispatchWorkItem { [settings] in
-            fputs("[DEV-PREVIEW] refresh — \(url.lastPathComponent) exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
-            // 저해상도 프록시 (반응성 우선). 드래그 끝나고 잠잠하면 추후 풀 렌더로 교체 가능.
+            fputs("[DEV-QUALITY] refresh — \(url.lastPathComponent) exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
             let previewSize = CGSize(width: 1400, height: 1000)
             let task = Task.detached(priority: .userInitiated) { [url, settings, previewSize] in
                 let t0 = CFAbsoluteTimeGetCurrent()
@@ -1846,63 +2451,115 @@ struct PhotoPreviewView: View {
                     targetSize: previewSize
                 )
                 let elapsed = CFAbsoluteTimeGetCurrent() - t0
-                fputs("[DEV-PREVIEW] rendered \(rendered == nil ? "FAILED" : "OK") in \(String(format: "%.2f", elapsed))s\n", stderr)
+                fputs("[DEV-QUALITY] rendered \(rendered == nil ? "FAILED" : "OK") in \(String(format: "%.2f", elapsed))s\n", stderr)
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
-                    self.developedImage = rendered
-                    self.developedForPhotoID = photoID
+                    // v8.7: Quality 렌더는 EXIF orient 을 정확히 적용했음. Stage 1 이 틀렸을 수 있음.
+                    //   enforceAspectOfStage1 을 skip 해서 Quality 결과를 "진실" 로 인정.
+                    //   만약 Stage 1 이 엉뚱하게 landscape 로 로드됐다면, Quality 가 portrait 로 보여주는 게 맞음.
+                    if let r = rendered {
+                        let rPortrait = r.size.height > r.size.width
+                        if let s1 = self.firstLoadIsPortrait, s1 != rPortrait {
+                            fputs("[RAW-DIAG] \(url.lastPathComponent) Quality aspect mismatch — stage1=\(s1 ? "P" : "L") quality=\(rPortrait ? "P" : "L") — Quality 신뢰, enforce 생략\n", stderr)
+                        }
+                        self.developedImage = r
+                        self.developedForPhotoID = photoID
+                    }
                 }
             }
             DispatchQueue.main.async { self.developRenderTask = task }
         }
         developRenderDebounce = work
-        // 40ms 만 디바운스 — 연속 이벤트 합치고 빠르게 렌더 시작
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
+        // 300ms idle — 드래그 끝나고 조용해지면 고품질로 업그레이드
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch
     private func scheduleSmartPreload(currentID: UUID, resolution: Int) {
-        // 키 꾹 누르기 중엔 preload 예약 안 함 — 키 놓았을 때 한 번만 실행
-        // 꾹 누르기 시 매 이동마다 20장 로드 요청이 쌓이면 키 놓은 후 수백 개가 한꺼번에
-        // 실행되어 10초+ 블록 (실측 12.2초 렉)
-        if store.isKeyRepeat {
-            preloadWork?.cancel()
+        guard !store.isFastNavigation, !store.fastCullingMode else { return }
+        // v8.6.2 fix: debounce 는 연속 키 입력 중 cancel/reschedule 반복으로 **영원히 실행 안 됨**.
+        //   throttle 패턴으로 교체 — 마지막 실행으로부터 200ms 지났으면 즉시 실행.
+        //   그리고 실행 시점의 **최신 selectedPhotoID** 를 사용 (currentID 는 stale 일 수 있음).
+        // v8.9.4: 스크롤 중이면 preload 자체를 스킵 (viewport 우선)
+        if NSThumbnailCollectionView.activeCoordinator?.isScrollingNow == true {
             return
         }
-
+        let now = Date()
+        let throttleInterval: TimeInterval = store.isFastNavigation ? 0.2 : 0.0
+        if now.timeIntervalSince(lastPrefetchScheduled) < throttleInterval {
+            return  // 너무 빠름 — 직후 호출에 양보
+        }
+        lastPrefetchScheduled = now
         preloadWork?.cancel()
         let work = DispatchWorkItem {
-            self.preloadNeighborsBatch(currentID: currentID, resolution: resolution)
+            // 실행 시점의 최신 ID 사용
+            let latestID = self.pendingPhotoID ?? currentID
+            self.preloadNeighborsBatch(currentID: latestID, resolution: resolution)
         }
         preloadWork = work
-        // 150→500ms 로 증가 — 꾹 누르기 직후 IO 경합 줄이고 Main RunLoop 안정화 대기
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: work)
+        // v8.9.4: utility → background 격하 (CacheSweeper sweep 과 동일 priority)
+        DispatchQueue.global(qos: .background).async(execute: work)
     }
 
-    /// Preload ±20 neighbors into PreviewImageCache with smart resolution selection
+    /// Preload neighbors into PreviewImageCache with smart resolution selection.
+    /// v8.6.2: 열/행 이동 모두 cover — ±10 순차(열) + ±cols*5 행 방향(행) 프리페치.
+    /// v8.9.5 hotfix: 메인에서 photos/index/cols 를 한꺼번에 스냅샷해 racy mutation 회피.
+    ///   이전엔 bg 에서 store.photos / _filteredIndex 를 직접 read → 메인이 동시 write 시
+    ///   swift_bridgeObjectRelease 트랩으로 크래시 (M1 Pro tester 보고됨).
     private func preloadNeighborsBatch(currentID: UUID, resolution: Int) {
-        let photos = store.filteredPhotos
-        guard let currentIdx = photos.firstIndex(where: { $0.id == currentID }) else { return }
+        // 메인 스냅샷 (sync) — Array/Dict COW 가 mid-write 일 때 bg read 가 트랩하던 문제 회피.
+        // sync 비용은 미미 (수 µs), preload 자체가 background-qos 라 main 블로킹 없음.
+        var photos: [PhotoItem] = []
+        var currentIdx: Int = -1
+        var cols: Int = 1
+        var fastCullingMode = false
+        DispatchQueue.main.sync {
+            photos = store.filteredPhotos
+            store.ensureFilteredIndex()
+            currentIdx = store._filteredIndex[currentID] ?? -1
+            cols = max(1, store.actualColumnsPerRow)
+            fastCullingMode = store.fastCullingMode
+        }
+        guard currentIdx >= 0 else { return }
 
-        // Collect neighbors: ±10, closest first for priority ordering
-        var entries: [(url: URL, isRAW: Bool)] = []
-        for offset in 1...10 {
-            // Forward
-            let fwd = currentIdx + offset
-            if fwd < photos.count && !photos[fwd].isFolder && !photos[fwd].isParentFolder {
-                let url = photos[fwd].jpgURL
-                let ext = url.pathExtension.lowercased()
-                let isRAW = FileMatchingService.rawExtensions.contains(ext)
-                entries.append((url: url, isRAW: isRAW))
+        // v8.9.4: 사용자 설정 우선 (Settings → 미리 읽기 거리), 0 이면 tier 자동
+        let userDepth = Int(UserDefaults.standard.double(forKey: "previewPrefetchDepth"))
+        var colRange: Int
+        var rowMult: Int
+        if userDepth > 0 {
+            colRange = userDepth
+            rowMult = max(1, userDepth / 3)
+        } else {
+            let tier = SystemSpec.shared.effectiveTier
+            switch tier {
+            case .low: colRange = 3; rowMult = 1
+            case .standard: colRange = 5; rowMult = 2
+            case .high: colRange = 7; rowMult = 3
+            case .extreme: colRange = 10; rowMult = 4
             }
-            // Backward
-            let bwd = currentIdx - offset
-            if bwd >= 0 && !photos[bwd].isFolder && !photos[bwd].isParentFolder {
-                let url = photos[bwd].jpgURL
-                let ext = url.pathExtension.lowercased()
-                let isRAW = FileMatchingService.rawExtensions.contains(ext)
-                entries.append((url: url, isRAW: isRAW))
-            }
+        }
+        if fastCullingMode {
+            colRange = max(1, colRange / 3)
+            rowMult = max(0, rowMult / 3)
+        }
+
+        // 수집 대상 오프셋 집합 (중복 제거용 Set)
+        var offsets = Set<Int>()
+        for o in 1...colRange { offsets.insert(o); offsets.insert(-o) }
+        for k in 1...rowMult {
+            offsets.insert(cols * k)
+            offsets.insert(-cols * k)
+        }
+
+        // 가까운 거리 우선 (|offset| 작은 순) — preview cache 에 먼저 들어가서 즉시 사용 가능
+        var entries: [(url: URL, decodeURL: URL)] = []
+        for offset in offsets.sorted(by: { abs($0) < abs($1) }) {
+            let idx = currentIdx + offset
+            guard idx >= 0 && idx < photos.count else { continue }
+            let p = photos[idx]
+            guard !p.isFolder && !p.isParentFolder else { continue }
+            let url = p.jpgURL
+            entries.append((url: url, decodeURL: PreviewLoadingPolicy.previewSourceURL(for: p)))
         }
 
         let cache = PreviewImageCache.shared
@@ -1910,28 +2567,30 @@ struct PhotoPreviewView: View {
             // autoreleasepool 로 엔트리마다 CGImageSource/NSImage 임시 객체 즉시 해제
             // 이게 없으면 key repeat 꾹 누르기 시 preview 객체가 쌓여 RAM 폭발 (이동당 ~20MB)
             autoreleasepool {
-                // Check cancellation between each load (selection changed = abort)
-                if self.pendingPhotoID != currentID { return }
+                // v8.6.2 fix: 기존 `pendingPhotoID != currentID` 체크는 key repeat 중 거의 항상 true 가 되어
+                //   prefetch 가 첫 entry 에서 exit → 실질 preload 0 개. 제거하고 cache-check 만 사용.
+                //   (이미 캐시에 있으면 skip 되므로 선택 변경 후 무의미한 로드는 최소화됨)
 
-                // RAW files: preload at 1200px (fast embedded preview)
-                // JPG files: preload at screen-fit size (풀 해상도 프리로딩 방지 — 메모리 5GB→500MB)
-                let preloadRes: Int
-                if entry.isRAW {
-                    preloadRes = 1200
-                } else {
-                    preloadRes = max(resolution, Int(PreviewImageCache.optimalPreviewSize()))
-                }
-
-                // 캐시 키: 원본 URL + 해상도 suffix (경로 안전한 방식)
-                let suffix = ".__cache_r\(preloadRes)"
-                let cacheKey = URL(fileURLWithPath: entry.url.path + suffix)
+                // v8.6.2 CRITICAL FIX: cacheKey 포맷을 loadImageDirect 와 정확히 일치시킴.
+                //   이전엔 `path.__cache_r1200` 에 저장 vs 실제 읽기 `path.r1000` → 100% 버려짐.
+                //   저장: url.appendingPathExtension("r\(resolution)")  또는  ".orig"
+                let cacheKey = PreviewLoadingPolicy.cacheKey(
+                    for: entry.url,
+                    resolution: resolution,
+                    sourceURL: entry.decodeURL
+                )
 
                 // Skip if already cached (RAM or disk)
                 if cache.has(cacheKey) { return }
 
-                // Load the image (항상 다운스케일 — 풀 해상도는 줌 시에만 로드)
-                let maxPx = CGFloat(preloadRes)
-                if let img = PreviewImageCache.loadOptimized(url: entry.url, maxPixel: maxPx) {
+                // 디코드 해상도: 실제 미리보기 경로와 동일하게 resolution 사용 (RAW/JPG 구분 없이)
+                //   - resolution=1000 이면 stage1 최대 1000px
+                //   - loadOptimized 가 RAW 임베디드/JPG SubsampleFactor 자동 선택
+                let maxPx = resolution > 0 ? CGFloat(resolution) : PreviewImageCache.optimalPreviewSize()
+
+                // loadImageDirect 와 동일한 프리뷰 소스 정책 사용.
+                // RAW+JPG 페어는 카메라 색감을 유지하기 위해 JPG, RAW-only 는 RAW를 쓴다.
+                if let img = PreviewImageCache.loadOptimized(url: entry.decodeURL, maxPixel: maxPx) {
                     cache.set(cacheKey, image: img)
                 }
             }
@@ -1970,7 +2629,7 @@ struct PhotoPreviewView: View {
             DispatchQueue.main.async {
                 isCorrecting = false
                 correctionResult = CorrectionResult(correctedImage: rotatedImg, horizonAngle: angle, applied: ["수평/수직 보정 (\(String(format: "%.1f", angle))°)"])
-                image = rotatedImg
+                _ = setImageGuarded(rotatedImg, source: "autoUpright.corrected", sourceURL: url)
                 isOriginal = false
             }
         }
@@ -1981,11 +2640,11 @@ struct PhotoPreviewView: View {
         let rads = CGFloat(degrees * .pi / 180.0)
         let origSize = img.size
 
-        // 회전 후 바운딩 박스
+        // 회전 후 바운딩 박스 (현재 미사용 — 크롭은 원본 aspect 기반)
         let cosA = abs(cos(rads))
         let sinA = abs(sin(rads))
-        let rotatedW = origSize.width * cosA + origSize.height * sinA
-        let rotatedH = origSize.height * cosA + origSize.width * sinA
+        _ = origSize.width * cosA + origSize.height * sinA
+        _ = origSize.height * cosA + origSize.width * sinA
 
         // 검은 영역 없는 최대 크롭 사각형 (원본 종횡비 유지)
         let aspect = origSize.width / origSize.height
@@ -2059,7 +2718,7 @@ struct PhotoPreviewView: View {
                 await MainActor.run {
                     correctionResult = result
                     if let img = result.correctedImage {
-                        image = img
+                        _ = setImageGuarded(img, source: "AICorrection.corrected", sourceURL: url)
                         isOriginal = false
                     }
                     isCorrecting = false
@@ -2115,7 +2774,7 @@ struct PhotoPreviewView: View {
             let nsImg = NSImage(cgImage: cgImg, size: NSSize(width: cgImg.width, height: cgImg.height))
 
             DispatchQueue.main.async {
-                image = nsImg
+                _ = setImageGuarded(nsImg, source: "NPUCorrection.corrected", sourceURL: url)
                 isOriginal = false
                 isCorrecting = false
                 // 원본/보정 토글 활성화 (되돌리기 가능)
@@ -2206,8 +2865,9 @@ struct PhotoPreviewView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             guard let reloaded = NSImage(contentsOf: fileURL) else { return }
             DispatchQueue.main.async {
-                self.image = reloaded
-                self.lowResImage = reloaded
+                if self.setImageGuarded(reloaded, source: "losslessRotation.reload", sourceURL: fileURL) {
+                    self.lowResImage = reloaded
+                }
             }
         }
     }
@@ -2255,11 +2915,148 @@ struct PhotoPreviewView: View {
 
     // MARK: - Zoom-aware Resolution Switching
 
+    private func beginPreviewGeneration(for photoID: UUID, reason: String) -> UInt64 {
+        previewGeneration &+= 1
+        pendingPhotoID = photoID
+        lastHiResDisplayMs = nil
+        #if DEBUG
+        let fileName = store.photos.first(where: { $0.id == photoID })?.fileName ?? "nil"
+        fputs("[PREVIEW-GEN] \(previewGeneration) \(reason) \(fileName) id=\(photoID.uuidString.prefix(8))\n", stderr)
+        #endif
+        return previewGeneration
+    }
+
+    @discardableResult
+    private func commitPreviewFrame(
+        _ img: NSImage?,
+        photoID: UUID,
+        sourceURL: URL,
+        generation: UInt64,
+        quality: PreviewFrame.Quality,
+        source: String
+    ) -> Bool {
+        guard generation == previewGeneration,
+              pendingPhotoID == photoID,
+              store.selectedPhotoID == photoID else {
+            fputs("[PREVIEW-DROP] \(source) src=\(sourceURL.lastPathComponent) gen=\(generation)/\(previewGeneration)\n", stderr)
+            return false
+        }
+        guard let img else {
+            clearImageState(source: source)
+            return true
+        }
+        image = img
+        imageSourceURL = sourceURL
+        imagePhotoID = photoID
+        if quality == .hiRes {
+            lastHiResDisplayMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
+        }
+        let newFrame = PreviewFrame(
+            image: img,
+            photoID: photoID,
+            sourceURL: sourceURL,
+            generation: generation,
+            quality: quality
+        )
+        previewFrame = newFrame
+        #if DEBUG
+        let selectedName = store.selectedPhoto?.fileName ?? "nil"
+        let okSource = store.selectedPhoto.map {
+            sourceURL == $0.jpgURL ||
+            sourceURL == $0.rawURL ||
+            sourceURL == PreviewLoadingPolicy.hiResURL(for: $0)
+        } ?? false
+        fputs("[PREVIEW-CHECK] \(okSource ? "OK" : "MISMATCH") sel=\(selectedName) view=\(sourceURL.lastPathComponent) q=\(quality) gen=\(generation)\n", stderr)
+        // v8.9.7+: HUD 직접 publish — generation 은 사진 전환 시에만 증가하므로 stage 전환은 onChange 미발화.
+        //   여기서 직접 호출해 stage 1 → 2 → 3 변화가 HUD 에 즉시 반영되도록 한다.
+        publishDebugHUD(frame: newFrame)
+        #endif
+        return true
+    }
+
+    /// 이미지 할당 보안 헬퍼 — sourceURL 이 selected 와 다르면 거절.
+    /// stale async callbacks 가 image 를 덮어쓰는 모든 path 검증용.
+    @discardableResult
+    private func setImageGuarded(_ img: NSImage?, source: String, sourceURL: URL?) -> Bool {
+        if img == nil {
+            image = nil
+            imageSourceURL = sourceURL
+            imagePhotoID = store.selectedPhotoID
+            previewFrame = nil
+            return true
+        }
+        guard let sel = store.selectedPhoto else {
+            fputs("[IMG-MISMATCH] \(source) src=\(sourceURL?.lastPathComponent ?? "nil") selected=nil — REJECTED\n", stderr)
+            return false
+        }
+        if let src = sourceURL,
+           src != sel.jpgURL && src != sel.rawURL {
+            fputs("[IMG-MISMATCH] \(source) src=\(src.lastPathComponent) selected=\(sel.jpgURL.lastPathComponent) — REJECTED\n", stderr)
+            return false
+        }
+        return commitPreviewFrame(
+            img,
+            photoID: sel.id,
+            sourceURL: sourceURL ?? sel.jpgURL,
+            generation: previewGeneration,
+            quality: previewQuality(for: source),
+            source: source
+        )
+    }
+
+    private func previewQuality(for source: String) -> PreviewFrame.Quality {
+        // 보정/회전 결과
+        if source.contains("corrected") || source.contains("rotation") { return .edited }
+        // Hi-Res RAW 디코드 결과 (deep RAW demosaic)
+        if source.contains("HIRES") ||
+            source.contains("HiRes") ||
+            source.contains("hiRes") ||
+            source.contains("HIT-FAST") ||
+            source.contains("DISK-PHASE2") ||
+            source.contains("CACHE-DONE.upgrade") ||
+            source.contains("loadHiResForZoom") {
+            return .hiRes
+        }
+        // 작은 thumb (메모리/디스크/embedded thumb / burst placeholder)
+        if source.contains("Thumb") ||
+            source.contains("thumb") ||
+            source.contains("BURST-END") {
+            return .thumbnail
+        }
+        // PreviewImageCache hit, RAW-S1/S2, JPG 등 일반 embedded preview
+        return .embedded
+    }
+
+    private func clearImageState(source: String) {
+        image = nil
+        imageSourceURL = nil
+        imagePhotoID = nil
+        previewFrame = nil
+        fputs("[IMG-CLEAR] \(source)\n", stderr)
+    }
+
+    /// v8.9.7+: burst 종료 시 현재 selectedPhoto 와 image 의 일치성 재확인.
+    private func syncImageOnBurstEnd() {
+        guard let sel = store.selectedPhoto else { return }
+        guard !sel.isFolder, !sel.isParentFolder, !sel.isVideoFile else { return }
+        let url = sel.jpgURL
+        let mem = ThumbnailCache.shared.get(url)
+        let disk = mem ?? DiskThumbnailCache.shared.getByPath(url: url)
+        guard let thumb = disk else { return }
+        let dim = max(Int(thumb.size.width), Int(thumb.size.height))
+        guard dim >= 800 else { return }
+        _ = setImageGuarded(thumb, source: "BURST-END", sourceURL: url)
+        fputs("[LD] BURST-END \(url.lastPathComponent) \(dim)px (재정렬)\n", stderr)
+    }
+
     private func switchToLowRes() {
+        // v8.6.2: HiRes 이미 로드된 상태에서 fit 으로 돌아갈 때 저해상도로 다운그레이드하지 않음.
+        //   이전엔 메모리 절약 목적이었으나 hiResCache LRU 로 이미 관리되므로 화질 유지가 낫다.
+        //   진행 중 hiResLoadWork 만 취소 (loaded 가 아니면 불필요한 작업 중단).
         hiResLoadWork?.cancel()
-        if let low = lowResImage {
-            image = low
-            isHiResLoaded = false
+        hiResInflightURL = nil
+        if !isHiResLoaded, let low = lowResImage {
+            _ = setImageGuarded(low, source: "switchToLowRes", sourceURL: store.selectedPhoto?.jpgURL)
             print("🔍 [ZOOM] low-res restored: \(Int(low.size.width))x\(Int(low.size.height))")
         }
     }
@@ -2312,7 +3109,20 @@ struct PhotoPreviewView: View {
 
     /// 새 hi-res 이미지 삽입 시 countLimit 초과 전에 oldest 엔트리를 명시적으로 제거.
     /// NSCache의 자동 evict는 타이밍이 느려서 피크 메모리 스파이크를 막지 못하므로 사전에 purge.
+    /// hiResCache 에 이미지 저장. 진짜 hi-res (≥3000px) 만 받음 — 작은 embedded preview 가
+    /// hiResCache 에 들어가면 재방문 시 HIT-HIRES-FULL 가 그걸 commit 해서 Stage 3 가 320px 같은
+    /// 이상한 사이즈로 표시되는 버그가 발생함 (v8.9.7+ 수정).
     private static func insertHiRes(_ image: NSImage, forKey url: NSURL, cost: Int) {
+        let pixelMax: Int = {
+            if let rep = image.representations.first {
+                return max(rep.pixelsWide, rep.pixelsHigh)
+            }
+            return max(Int(image.size.width), Int(image.size.height))
+        }()
+        guard pixelMax >= 3000 else {
+            fputs("[HIRES-CACHE] SKIP insert — \(url.lastPathComponent ?? "?") only \(pixelMax)px (<3000 not hi-res)\n", stderr)
+            return
+        }
         hiResCacheLock.lock()
         defer { hiResCacheLock.unlock() }
 
@@ -2361,105 +3171,362 @@ struct PhotoPreviewView: View {
 
     /// 빠른 탐색 시 ±range 이웃 사진의 임베디드 JPEG 썸네일을 백그라운드에서 미리 추출.
     /// 다음 키 입력 시 ThumbnailCache HIT으로 즉시 표시 (디스크 I/O 회피).
-    private static let prefetchQueue = DispatchQueue(label: "preview.prefetch", qos: .userInitiated, attributes: .concurrent)
+    /// v8.9.7: concurrent (수백 동시) → serial (1개) 였다가 → 처리량 부족으로 ↓ +5 점프 못 따라감.
+    ///   적정값: bounded concurrency 2 — disk saturate 안 일으키면서 ARW 추출 50ms × 2 병렬 = 25ms/장 처리량.
+    private static let prefetchOpQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.name = "preview.prefetch"
+        // v8.9.7+: ARW (Sony) 디코드 = CR3 의 28배 (3.7초/장) — concurrency 2 → 1 로 감소.
+        //   QoS .background 시 burst 중 거의 진행 안 됨 → HIT 2건. .utility 유지.
+        q.maxConcurrentOperationCount = 1
+        q.qualityOfService = .utility
+        return q
+    }()
+    private static var prefetchInflight: Set<URL> = []
+    private static let prefetchInflightLock = NSLock()
+    // v8.9.7+: burst 첫 nav 만 광범위 발사. 매 nav refill 은 main STALL 폭주 (9.3초) → 비활성화.
+    //   대신 lastFireIdx 에서 baseRange/2 이상 진행하면 같은 burst 안에서도 재발사 (catch-up).
+    private static var lastPrefetchFireTime: Date = .distantPast
+    private static var lastPrefetchIdx: Int = -1
+    private static var lastFireIdx: Int = -1
+
+    // v8.9.7+: 메모리 압박 자동 throttle (8GB 시스템 대응).
+    //   .warning: 큐 cap 10 → 3 (디스크/메모리 부하 75% 감소)
+    //   .critical: 큐 cap → 0 (prefetch 일시 정지)
+    //   .normal: 큐 cap 10 복구
+    private static var currentQueueCap: Int = 10
+    private static let memoryPressureSource: DispatchSourceMemoryPressure = {
+        let src = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
+        src.setEventHandler {
+            let event = src.data
+            if event.contains(.critical) {
+                currentQueueCap = 0
+                fputs("[MEM-PRESSURE] CRITICAL — prefetch 일시정지 (cap=0)\n", stderr)
+                // 큐 비우기
+                prefetchOpQueue.cancelAllOperations()
+            } else if event.contains(.warning) {
+                currentQueueCap = 3
+                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=3)\n", stderr)
+            } else {
+                currentQueueCap = 10
+                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=10)\n", stderr)
+            }
+        }
+        src.activate()
+        return src
+    }()
+
+    // v8.9.7+: prefetch 디바운스 200ms. NAV 80ms 가 정상화되어 짧게 가능.
+    private static var prefetchDebounceWork: DispatchWorkItem?
+    private static func scheduleDebouncedPrefetch(store: PhotoStore, currentURL: URL) {
+        prefetchDebounceWork?.cancel()
+        let work = DispatchWorkItem {
+            let sinceLastNav = (CFAbsoluteTimeGetCurrent() - KeyCaptureView.lastNavTime) * 1000
+            if sinceLastNav < 150 {
+                fputs("[PREFETCH-KR] DEBOUNCE-SKIP sinceLastNav=\(Int(sinceLastNav))ms\n", stderr)
+                return
+            }
+            prefetchEmbeddedNeighbors(
+                store: store,
+                currentURL: currentURL,
+                range: PreviewLoadingPolicy.embeddedNeighborRangeDuringKeyRepeat()
+            )
+        }
+        prefetchDebounceWork = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
     private static func prefetchEmbeddedNeighbors(store: PhotoStore, currentURL: URL, range: Int) {
         let photos = store.filteredPhotos
-        guard let curIdx = photos.firstIndex(where: { $0.jpgURL == currentURL }) else { return }
+        // v8.6.2: 방향키 꾹 누르기 중 매 호출마다 O(n) 선형 탐색이면 10k 폴더에서 눈에 띄게 느려짐.
+        //   selectedPhoto 와 currentURL 이 일치하면 _filteredIndex 에서 O(1) 로, 아니면 폴백으로 선형.
+        store.ensureFilteredIndex()
+        let curIdx: Int
+        if let selID = store.selectedPhotoID,
+           let sel = store.selectedPhoto, sel.jpgURL == currentURL,
+           let idx = store._filteredIndex[selID] {
+            curIdx = idx
+        } else if let idx = photos.firstIndex(where: { $0.jpgURL == currentURL }) {
+            curIdx = idx
+        } else {
+            return
+        }
 
-        var targets: [URL] = []
-        for offset in 1...range {
-            for sign in [1, -1] {
-                let i = curIdx + sign * offset
-                guard i >= 0 && i < photos.count else { continue }
-                let p = photos[i]
-                guard !p.isFolder && !p.isParentFolder else { continue }
-                let url = p.jpgURL
-                if ThumbnailCache.shared.get(url) == nil {
-                    targets.append(url)
+        // burst 시작 판정: 직전 호출 후 0.3s+ 경과면 새 burst.
+        //   v8.9.7+: lastPrefetchFireTime 을 매 호출 시 업데이트 (이전엔 fire 시만 → 가까운 이동 시
+        //   catchUp threshold 못 채우면 lastPrefetchFireTime 정체 → backward dir 영원히 미감지).
+        let now = Date()
+        let isNewBurst = now.timeIntervalSince(lastPrefetchFireTime) > 0.3
+        let prevIdx = lastPrefetchIdx
+        lastPrefetchIdx = curIdx
+        lastPrefetchFireTime = now  // 매 호출 시 update (가드 통과 여부 무관)
+
+        // 진행 방향 (이전 idx 와 비교).
+        let dir: Int = (!isNewBurst && prevIdx >= 0)
+            ? (curIdx == prevIdx ? 0 : (curIdx > prevIdx ? 1 : -1))
+            : 0
+
+        // 광범위 발사 조건: (a) 새 burst, 또는 (b) 같은 burst 안에서 lastFireIdx 로부터 baseRange/2 이상 진행.
+        let baseRange = Int(Double(range) * 1.5)  // extreme 12 → 18
+        let needsCatchUp: Bool = (lastFireIdx >= 0) && (abs(curIdx - lastFireIdx) >= baseRange / 2)
+        guard isNewBurst || needsCatchUp else { return }
+        lastFireIdx = curIdx
+
+        // 방향 가중 (forward 100% / backward 25%). dir=0 (새 burst) 도 forward 우선.
+        let forwardN: Int
+        let backwardN: Int
+        switch dir {
+        case 1:  forwardN = baseRange;             backwardN = max(2, baseRange / 4)
+        case -1: forwardN = max(2, baseRange / 4); backwardN = baseRange
+        default: forwardN = baseRange;             backwardN = max(2, baseRange / 4)
+        }
+
+        var targets: [(url: URL, decodeURL: URL)] = []
+        // 가까운 이웃부터 (offset 1, 2, …) — 가장 먼저 표시될 가능성 높은 것부터 큐잉
+        for offset in 1...max(forwardN, backwardN) {
+            if offset <= forwardN {
+                let i = curIdx + offset
+                if i >= 0 && i < photos.count {
+                    let p = photos[i]
+                    if !p.isFolder && !p.isParentFolder {
+                        let url = p.jpgURL
+                        let existing = ThumbnailCache.shared.get(url)
+                        let existingMax = existing.map { max(Int($0.size.width), Int($0.size.height)) } ?? 0
+                        // ≥800 만 SKIP. 작은 썸 (140) 은 PREFETCH 가 큰 것으로 덮어쓸 대상.
+                        if existingMax < 800 {
+                            targets.append((url: url, decodeURL: PreviewLoadingPolicy.previewSourceURL(for: p)))
+                        }
+                    }
+                }
+            }
+            if offset <= backwardN {
+                let i = curIdx - offset
+                if i >= 0 && i < photos.count {
+                    let p = photos[i]
+                    if !p.isFolder && !p.isParentFolder {
+                        let url = p.jpgURL
+                        let existing = ThumbnailCache.shared.get(url)
+                        let existingMax = existing.map { max(Int($0.size.width), Int($0.size.height)) } ?? 0
+                        if existingMax < 800 {
+                            targets.append((url: url, decodeURL: PreviewLoadingPolicy.previewSourceURL(for: p)))
+                        }
+                    }
                 }
             }
         }
 
-        for url in targets {
-            prefetchQueue.async {
-                // 이미 채워졌으면 스킵 (race condition 방지)
-                if ThumbnailCache.shared.get(url) != nil { return }
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                      let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                        kCGImageSourceThumbnailMaxPixelSize: 800,
-                        kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                      ] as CFDictionary) else { return }
-                let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
-                ThumbnailCache.shared.set(url, image: img)
+        let tag = isNewBurst ? "BURST-START" : "CATCH-UP"
+        fputs("[PREFETCH-KR] \(tag) idx=\(curIdx) dir=\(dir) f=\(forwardN) b=\(backwardN) targets=\(targets.count)\n", stderr)
+
+        // v8.9.7+: 큐 cap 은 메모리 압박에 따라 동적 (10 / 3 / 0). memoryPressureSource 가 갱신.
+        _ = memoryPressureSource  // 첫 접근 시 활성화
+        let maxQueuedPrefetch = currentQueueCap
+        if maxQueuedPrefetch == 0 {
+            fputs("[PREFETCH-KR] PAUSED (memory critical)\n", stderr)
+            return
+        }
+        for target in targets {
+            prefetchInflightLock.lock()
+            if prefetchInflight.count >= maxQueuedPrefetch {
+                prefetchInflightLock.unlock()
+                fputs("[PREFETCH-KR] QUEUE-FULL inflight=\(prefetchInflight.count) cap=\(maxQueuedPrefetch) — 추가 SKIP\n", stderr)
+                break
+            }
+            if prefetchInflight.contains(target.url) {
+                prefetchInflightLock.unlock()
+                continue
+            }
+            prefetchInflight.insert(target.url)
+            prefetchInflightLock.unlock()
+
+            prefetchOpQueue.addOperation {
+                defer {
+                    prefetchInflightLock.lock()
+                    prefetchInflight.remove(target.url)
+                    prefetchInflightLock.unlock()
+                }
+                // v8.9.7+: ARW 디코드 임시 객체가 RawCamera + CIContext 통해 대량 메모리 점유 →
+                //   main page fault → STALL 12초. autoreleasepool 로 op 종료 즉시 해제.
+                autoreleasepool {
+                    let existing = ThumbnailCache.shared.get(target.url)
+                    let existingMaxDim = existing.map { max(Int($0.size.width), Int($0.size.height)) } ?? 0
+                    guard existingMaxDim < 800,
+                          let source = CGImageSourceCreateWithURL(target.decodeURL as CFURL, [
+                              kCGImageSourceShouldCache: false,
+                              kCGImageSourceShouldCacheImmediately: false
+                          ] as CFDictionary),
+                          let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceThumbnailMaxPixelSize: Int(PreviewLoadingPolicy.keyRepeatNeighborThumbnailMaxPixel()),
+                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceShouldCache: false
+                          ] as CFDictionary) else { return }
+                    let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                    let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
+                    ThumbnailCache.shared.set(target.url, image: img)
+                    fputs("[PREFETCH-KR] THUMB \(target.url.lastPathComponent) src=\(target.decodeURL.lastPathComponent) \(cgThumb.width)x\(cgThumb.height)\n", stderr)
+                }
             }
         }
     }
 
-    private func loadHiResForZoom() {
+    private func loadHiResForZoom(forceDeepScan: Bool = false) {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
+        // v8.9.6: fastCullingMode 가드 제거 — PreviewLoadingPolicy.shouldAutoLoadHiRes
+        //   가 항상 true 로 hi-res 를 허용. fastCullingMode 는 hiResDelay 로만 늦춤.
+        //   key repeat 중에는 여전히 막아야 (디코드 burst 방지).
+        guard !store.isFastNavigation else { return }
         guard !isHiResLoaded else { return }
         // 보정 적용된 이미지를 원본으로 덮어쓰지 않음
         if !isOriginal { return }
 
         Self.initHiResCache()
 
-        // Prefer JPG (fast + correct orientation) over RAW
-        let jpgExt = selected.jpgURL.pathExtension.lowercased()
-        let hasRealJPG = !FileMatchingService.rawExtensions.contains(jpgExt)
-        let hiResURL = hasRealJPG ? selected.jpgURL : (selected.rawURL ?? selected.jpgURL)
+        // RAW+JPG 페어는 카메라 프로파일 색감을 유지하기 위해 JPG를 hi-res 소스로 쓴다.
+        // RAW-only 항목만 RAW/embedded preview 경로를 탄다.
+        let hiResURL = PreviewLoadingPolicy.hiResURL(for: selected)
+
+        // v8.9.7+: 방어 — image 덮어쓰기 직전 store.selectedPhoto 재확인.
+        //   firstWork 등이 늦게 fire 시 옛 selected 로 함수가 진입했어도 마지막 검증.
+        let stillCurrent: () -> Bool = {
+            guard let curSel = store.selectedPhoto else { return false }
+            return PreviewLoadingPolicy.hiResURL(for: curSel) == hiResURL
+        }
 
         if let cached = Self.hiResCache.object(forKey: hiResURL as NSURL) {
-            image = cached
-            hiResImage = cached
-            isHiResLoaded = true
-            prefetchHiResNeighbors()  // Prefetch next photos
+            guard stillCurrent() else {
+                fputs("[HIRES] CACHED ABORT — selection moved away from \(hiResURL.lastPathComponent)\n", stderr)
+                return
+            }
+            if setImageGuarded(cached, source: "loadHiResForZoom.CACHED", sourceURL: hiResURL) {
+                hiResImage = cached
+                isHiResLoaded = true
+            }
+            let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
+            fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) CACHED → shown in \(navMs)ms from nav start\n", stderr)
+            prefetchHiResNeighbors()
             return
+        }
+
+        // v8.9.7+: 디스크에서 큰 hi-res 결과 검색. NSImage.size 는 논리 단위 (point) 라 Retina JPEG
+        //   4096px 가 2048 로 보일 수 있음 → representations.pixelsWide 로 실제 픽셀 측정.
+        if let diskBig = DiskThumbnailCache.shared.getByPath(url: hiResURL) {
+            let pixelMax: Int = {
+                if let rep = diskBig.representations.first {
+                    return max(rep.pixelsWide, rep.pixelsHigh)
+                }
+                return max(Int(diskBig.size.width), Int(diskBig.size.height))
+            }()
+            if pixelMax >= 3000 {
+                guard stillCurrent() else {
+                    fputs("[HIRES] DISK-PHASE2 ABORT — selection moved away from \(hiResURL.lastPathComponent)\n", stderr)
+                    return
+                }
+                if setImageGuarded(diskBig, source: "loadHiResForZoom.DISK-PHASE2", sourceURL: hiResURL) {
+                    hiResImage = diskBig
+                    isHiResLoaded = true
+                }
+                Self.hiResCache.setObject(diskBig, forKey: hiResURL as NSURL)
+                let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
+                fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) DISK-PHASE2 \(pixelMax)px → shown in \(navMs)ms\n", stderr)
+                prefetchHiResNeighbors()
+                return
+            }
         }
 
         // If already have hi-res from this session
         if let hi = hiResImage {
-            image = hi
-            isHiResLoaded = true
+            if setImageGuarded(hi, source: "loadHiResForZoom.sessionHiRes", sourceURL: hiResURL) {
+                isHiResLoaded = true
+            }
             return
         }
 
         let url = hiResURL
         let photoID = selected.id
-        fputs("[HIRES] url=\(url.lastPathComponent) hasRealJPG=\(hasRealJPG) jpgURL=\(selected.jpgURL.lastPathComponent) rawURL=\(selected.rawURL?.lastPathComponent ?? "nil")\n", stderr)
+        // v8.9.7: dedupe — 같은 URL 디코드가 진행 중이면 무시.
+        if hiResInflightURL == url {
+            fputs("[HIRES] dedupe — \(url.lastPathComponent) already in-flight, skip\n", stderr)
+            return
+        }
+        fputs("[HIRES] url=\(url.lastPathComponent) jpgURL=\(selected.jpgURL.lastPathComponent) rawURL=\(selected.rawURL?.lastPathComponent ?? "nil")\n", stderr)
 
         hiResLoadWork?.cancel()
+        hiResInflightURL = url
+        // v8.9.7: burst snapshot — work 가 시작되는 시점에 다시 한번 fast nav 면 deep scan 자동 승격 차단
+        let allowAutoDeepScan = !store.isFastNavigation
         let work = DispatchWorkItem {
             let t0 = CFAbsoluteTimeGetCurrent()
-            var hiRes = Self.loadHiResImage(url: url)
+            let hiRes = Self.loadHiResImage(url: url, allowDeepEmbeddedScan: forceDeepScan, allowAutoDeepScan: allowAutoDeepScan)
             guard self.pendingPhotoID == photoID else { return }
 
-            // Orientation 은 loadHiResImage 내부에서 원본 RAW EXIF 기준으로 이미 보정됨.
-            // (기존의 하드코딩 `orientation: 6` 은 orientation=8 카메라에서 반대 방향으로
-            //  뒤집는 회귀를 유발했어서 제거함. lowRes aspect 와 비교하는 휴리스틱도
-            //  lowRes 자체가 틀렸을 때 오류 전파되는 문제가 있어 제거.)
+            // PR + main 공통: loadHiResImage 내부에서 RAW EXIF 기준으로 이미 보정됨.
+            //   하드코딩 orientation=6 도, 외부 추가 applyOrientation 도 모두 금지
+            //   (orientation=8 카메라 회귀, Sony ARW 이중 회전 모두 방지).
 
             RunLoop.main.perform(inModes: [.common]) {
+                // v8.9.7: in-flight 표시는 어떤 경로로 끝나든 비운다.
+                if self.hiResInflightURL == url { self.hiResInflightURL = nil }
                 guard self.pendingPhotoID == photoID else { return }
                 // 현재 선택된 사진 URL과도 재확인
                 guard url == self.store.selectedPhoto?.jpgURL || url == self.store.selectedPhoto?.rawURL else { return }
                 let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                if let hi = hiRes {
-                    fputs("[HIRES] loaded \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height)) in \(String(format: "%.0f", elapsed))ms\n", stderr)
-                    let currentSize = max(self.image?.size.width ?? 0, self.image?.size.height ?? 0)
-                    let hiResSize = max(hi.size.width, hi.size.height)
-                    guard hiResSize > currentSize else {
-                        fputs("[HIRES] ⚠️ skip — hi-res \(Int(hiResSize))px < current \(Int(currentSize))px\n", stderr)
+                if let rawHi = hiRes {
+                    // v8.6.2 debug: NSImage.size vs 실제 픽셀 dimension 일치 확인
+                    let rawPxW = rawHi.representations.first?.pixelsWide ?? 0
+                    let rawPxH = rawHi.representations.first?.pixelsHigh ?? 0
+                    // v8.6.2: Stage 1 aspect 강제 (HiRes 경로에서 가로/세로 뒤집힘 방지)
+                    let hi = Self.enforceAspectOfStage1(rawHi, url: url, stage1Portrait: self.firstLoadIsPortrait)
+                    let pxW = hi.representations.first?.pixelsWide ?? 0
+                    let pxH = hi.representations.first?.pixelsHigh ?? 0
+                    fputs("[HIRES] loaded \(url.lastPathComponent) size=\(Int(rawHi.size.width))x\(Int(rawHi.size.height)) px=\(rawPxW)x\(rawPxH) → size=\(Int(hi.size.width))x\(Int(hi.size.height)) px=\(pxW)x\(pxH) in \(String(format: "%.0f", elapsed))ms\n", stderr)
+                    // v8.8.2: LOGICAL size 비교 대신 PIXEL 비교 — JPG DPI 메타로 size 가 scale 달라짐.
+                    let currentPxW = self.image?.representations.first?.pixelsWide ?? Int(self.image?.size.width ?? 0)
+                    let currentPxH = self.image?.representations.first?.pixelsHigh ?? Int(self.image?.size.height ?? 0)
+                    let currentPx = max(currentPxW, currentPxH)
+                    let hiPxW = hi.representations.first?.pixelsWide ?? Int(hi.size.width)
+                    let hiPxH = hi.representations.first?.pixelsHigh ?? Int(hi.size.height)
+                    let hiResPx = max(hiPxW, hiPxH)
+                    guard hiResPx > currentPx else {
+                        fputs("[HIRES] ⚠️ skip — hi-res \(hiResPx)px < current \(currentPx)px\n", stderr)
                         return
                     }
-                    let cost = hi.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                    // v8.9: NSBitmapImageRep pixelsWide/pixelsHigh 가 lazy decode 상태에서 0 반환 → cost=1 이 되어
+                    //   NSCache 의 totalCostLimit 을 무력화시키던 버그 수정. cgImage 직접 읽어 bytesPerRow * height 사용.
+                    let cost: Int = {
+                        if let cg = hi.cgImage(forProposedRect: nil, context: nil, hints: nil), cg.height > 0 {
+                            return max(1, cg.bytesPerRow * cg.height)
+                        }
+                        if let rep = hi.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+                            return rep.pixelsWide * rep.pixelsHigh * 4
+                        }
+                        return 10 * 1024 * 1024  // 최소 10MB 로 보수적 추정 (cost=1 방지)
+                    }()
                     // 명시적 LRU 사전 purge 후 삽입 (NSCache 자동 evict 타이밍 보완)
                     Self.insertHiRes(hi, forKey: url as NSURL, cost: cost)
+                    // v8.9.7+: 디스크 영구 저장 — 같은 사진 재방문 시 NSCache LRU evict 됐어도 disk fast-path
+                    //   (loadHiResForZoom 의 DiskThumbnailCache 체크) 가 100ms 안에 표시.
+                    if max(Int(hi.size.width), Int(hi.size.height)) >= 3000 {
+                        let modDate = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
+                        DispatchQueue.global(qos: .utility).async {
+                            DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: hi)
+                        }
+                    }
+                    // v8.9.7+: 최종 가드 — 디코드 끝난 시점 store.selectedPhoto 와 url 매치 확인.
+                    let curSel = self.store.selectedPhoto
+                    let curURL = curSel.map { PreviewLoadingPolicy.hiResURL(for: $0) }
+                    guard curURL == url else {
+                        fputs("[HIRES] FRESH ABORT — selection moved \(url.lastPathComponent) → \(curURL?.lastPathComponent ?? "nil")\n", stderr)
+                        return
+                    }
                     self.hiResImage = hi
-                    self.image = hi
-                    self.isHiResLoaded = true
-                    // No prefetch — saves memory (each hi-res is ~50MB)
+                    if self.setImageGuarded(hi, source: "loadHiResForZoom.FRESH", sourceURL: url) {
+                        self.isHiResLoaded = true
+                    }
+                    let navMs = Int((CFAbsoluteTimeGetCurrent() - self.navStartTime) * 1000)
+                    fputs("[HIRES-DISPLAY] \(url.lastPathComponent) FRESH → shown in \(navMs)ms from nav start (decode \(String(format: "%.0f", elapsed))ms)\n", stderr)
+                    // v8.8.2: 네비게이션 settle 이후에 이웃 HiRes 프리페치 (다음 이동 즉시 HiRes 표시)
+                    self.prefetchHiResNeighbors()
                 } else {
                     fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
                     self.isHiResLoaded = true  // 실패해도 재시도 방지
@@ -2467,44 +3534,96 @@ struct PhotoPreviewView: View {
             }
         }
         hiResLoadWork = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        Self.hiResDecodeQueue.async(execute: work)
     }
 
     /// Prefetch hi-res for ±2 neighboring photos (background, 메모리 절약)
     private func prefetchHiResNeighbors() {
+        // 빠른 이동/빠른 셀렉 중에는 이웃 hi-res 디코드를 쌓지 않는다.
+        // 현재 사진 표시보다 백그라운드 고화질 프리페치가 CPU를 선점하면 방향키 반응이 늦어진다.
+        guard PreviewLoadingPolicy.shouldPrefetchHiRes(
+            isKeyRepeat: store.isFastNavigation,
+            fastCullingMode: store.fastCullingMode
+        ) else { return }
+
         let list = store.filteredPhotos
         guard let currentID = store.selectedPhotoID,
               let currentIdx = list.firstIndex(where: { $0.id == currentID }) else { return }
 
-        let range = 2
+        let range = SystemSpec.shared.hiResPrefetchRadius()
+        guard range > 0 else { return }  // low tier: 프리페치 안 함
+
         let start = max(0, currentIdx - range)
         let end = min(list.count - 1, currentIdx + range)
+        fputs("[HIRES-PREFETCH] start idx=\(currentIdx) range=±\(range) window=\(start)..\(end)\n", stderr)
 
-        DispatchQueue.global(qos: .utility).async {
+        // v8.8.2 메모리 안전성: 직렬 큐 사용 (동시 N개 디코드 → 메모리 스파이크 25GB 방지).
+        //   또 메모리 사용률이 높으면 조기 중단.
+        Self.hiResPrefetchQueue.async {
+            var prefetched = 0
+            var skipped = 0
             for i in start...end {
                 if i == currentIdx { continue }
+
+                // 메모리 압박 체크 — 70% 이상이면 중단
+                let memMB = Double(ProcessInfo.processInfo.physicalMemory) / 1024 / 1024
+                let usedMB = Self.currentMemMB()
+                if usedMB / memMB > 0.55 {
+                    fputs("[HIRES-PREFETCH] abort: mem \(Int(usedMB))MB/\(Int(memMB))MB > 55%\n", stderr)
+                    break
+                }
+
                 let photo = list[i]
                 guard !photo.isFolder, !photo.isParentFolder else { continue }
 
                 let hasJPG = !FileMatchingService.rawExtensions.contains(photo.jpgURL.pathExtension.lowercased())
                 let url = hasJPG ? photo.jpgURL : (photo.rawURL ?? photo.jpgURL)
 
-                // Skip if already cached
-                if Self.hiResCache.object(forKey: url as NSURL) != nil { continue }
+                if Self.hiResCache.object(forKey: url as NSURL) != nil {
+                    skipped += 1
+                    continue
+                }
 
-                // Load hi-res
-                let img = Self.loadHiResImage(url: url)
-                if let img = img {
-                    let cost = img.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
-                    Self.hiResCache.setObject(img, forKey: url as NSURL, cost: cost)
+                autoreleasepool {
+                    if let img = Self.loadHiResImage(url: url, allowDeepEmbeddedScan: false) {
+                        let cost = img.representations.first.map { $0.pixelsWide * $0.pixelsHigh * 4 } ?? 1
+                        Self.insertHiRes(img, forKey: url as NSURL, cost: cost)
+                        // v8.9.7+: 디스크 캐시도 채움 — 다음 방문 시 NSCache evict 됐어도 즉시 표시.
+                        if max(Int(img.size.width), Int(img.size.height)) >= 3000 {
+                            let modDate = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
+                            DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: img)
+                        }
+                        prefetched += 1
+                    }
                 }
             }
+            fputs("[HIRES-PREFETCH] done prefetched=\(prefetched) skipped(cached)=\(skipped)\n", stderr)
         }
     }
 
+    /// v8.8.2: 직렬 HiRes 프리페치 큐 — 동시 HiRes 디코드 금지 (메모리 스파이크 방지)
+    private static let hiResPrefetchQueue = DispatchQueue(label: "com.pickshot.hires.prefetch", qos: .utility)
+    /// v8.9.7: hi-res 메인 디코드용 직렬 큐 — concurrent global 큐에서 deep scan 이 병렬로 쌓이며
+    ///   메모리 폭주 (4096px × N) → swap → main freeze 7-10s 발생하던 문제 차단.
+    ///   하나가 끝나야 다음이 시작 → 메모리/디스크 I/O 안정.
+    private static let hiResDecodeQueue = DispatchQueue(label: "com.pickshot.hires.decode", qos: .userInitiated)
+
+    /// 현재 앱 RSS (MB)
+    private static func currentMemMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        let kerr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return kerr == KERN_SUCCESS ? Double(info.resident_size) / 1024 / 1024 : 0
+    }
+
     /// Static hi-res loader (reusable for prefetch)
-    /// Strategy: JPG direct (fastest) → RAW CGImageSource with SubsampleFactor (fast + orientation correct)
-    private static func loadHiResImage(url: URL) -> NSImage? {
+    /// v8.6.2: RAW 경로 색감 일치화 — parent CGImageSource + transform=true 를 먼저 시도해서
+    /// Display P3 등 ICC 프로파일이 유지되도록. 실패 시만 FFD8 스캔 폴백 (sRGB 로 풀백).
+    private static func loadHiResImage(url: URL, allowDeepEmbeddedScan: Bool = false, allowAutoDeepScan: Bool = true) -> NSImage? {
         let ext = url.pathExtension.lowercased()
         let isRAW = FileMatchingService.rawExtensions.contains(ext)
 
@@ -2517,62 +3636,138 @@ struct PhotoPreviewView: View {
             return NSImage(contentsOf: url)
         }
 
-        // RAW: extract largest embedded JPEG (same color as camera preview, fast)
-        // This is the same approach as Photo Mechanic — use camera's JPEG, not RAW decode
-        // mmap whole file (OS handles paging, no actual full read until accessed)
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-        let scanLimit = min(data.count, 15_000_000)  // Scan up to 15MB for embedded JPEG
+        // v8.9.7: hi-res 목표 해상도 — 모니터별 적응.
+        //   actualPx = logical × backing scale (실제 디스플레이 픽셀)
+        //   hiResTarget = min(actualPx, 4096) — 5K Retina 도 4K 로 cap (deep scan 폭주 방지)
+        //
+        //   적응 결과 예:
+        //     비-Retina FHD 1920 → target 1920 (ARW 1616 충분, scan 안 함)
+        //     Retina FHD/4K 3840 → target 3840 (ARW 1616 부족 → scan, CR3 5760 충분)
+        //     5K Retina 10240 → target 4096 (cap, CR3 5760 항상 충분)
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let screenLogicalMax = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900)
+        let actualPxPrimary = screenLogicalMax * scale
+        let hiResTargetPx = min(Int(actualPxPrimary), 4096)
+        let screenPxPrimary = Double(hiResTargetPx)
+        var parentEmbedded: NSImage?
+        var parentEmbeddedPixels = 0
+        var parentEmbeddedMaxDim = 0  // v8.9.7: deep scan 결정용 (max(w,h))
+        if let parentSrc = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+            let props = CGImageSourceCopyPropertiesAtIndex(parentSrc, 0, nil) as? [String: Any]
+            let origW = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
+            let origH = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
+            let origMax = max(origW, origH)
+            // 센서 raw 보다 크게 요청 금지 (ImageIO 가 상한 넘으면 풀 디코드 시도해서 느려짐)
+            let effectiveMaxPx = origMax > 0 ? min(Int(screenPxPrimary), origMax) : Int(screenPxPrimary)
+            let opts: [NSString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: false,
+                kCGImageSourceShouldCache: false
+            ]
+            if let cg = CGImageSourceCreateThumbnailAtIndex(parentSrc, 0, opts as CFDictionary) {
+                let embeddedMax = max(cg.width, cg.height)
+                if embeddedMax >= 800 {
+                    // RAW-only 도 culling/preview 에서는 카메라가 만든 embedded JPEG 색감을 유지한다.
+                    // CIRAWFilter demosaic 는 더 크더라도 카메라 Picture Profile/Creative Look 과 달라
+                    // "처음엔 카메라 색감 → 잠시 뒤 RAW 색감" 회귀를 만든다.
+                    let raw = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    parentEmbedded = correctThumbnailOrientationIfNeeded(raw, source: parentSrc)
+                    parentEmbeddedPixels = cg.width * cg.height
+                    parentEmbeddedMaxDim = max(cg.width, cg.height)
+                    fputs("[HIRES] parent embedded candidate \(url.lastPathComponent) \(cg.width)x\(cg.height)\n", stderr)
+                } else {
+                    fputs("[HIRES] embedded too small \(url.lastPathComponent) \(cg.width)x\(cg.height) → fallback scan\n", stderr)
+                }
+            }
+        }
 
-        // Find ALL FFD8 markers, pick the LARGEST embedded JPEG
+        // v8.9.7: parent embedded 가 hiResTarget 의 80% 이상이면 그대로 사용 (CR3 5760×3842 등).
+        //   부족하면 (Sony ARW 1616×1080) 자동으로 deep scan 강제 진입.
+        let needsDeepScan: Bool = {
+            if allowDeepEmbeddedScan { return true }
+            // v8.9.7: burst/fastNav 중에는 자동 deep scan 금지 (3000ms ARW marker 스캔이 main freeze 유발)
+            if !allowAutoDeepScan { return false }
+            let target = Int(Double(hiResTargetPx) * 0.8)
+            return parentEmbeddedMaxDim < target
+        }()
+        fputs("[HIRES] decision \(url.lastPathComponent) parentMax=\(parentEmbeddedMaxDim) target=\(Int(Double(hiResTargetPx) * 0.8)) deepScan=\(needsDeepScan) allowAuto=\(allowAutoDeepScan)\n", stderr)
+
+        guard needsDeepScan else {
+            fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels) (no deep scan)\n", stderr)
+            return parentEmbedded
+        }
+        if !allowDeepEmbeddedScan {
+            fputs("[HIRES] parent insufficient (\(parentEmbeddedPixels)px²) → auto deep scan\n", stderr)
+        }
+
+        // RAW 안의 embedded JPEG 후보를 스캔. v8.9.7+: 250ms 목표로 16MB 축소.
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return parentEmbedded }
+        // 32MB → 16MB 로 축소 (Sony ARW/Canon CR3 embedded preview 는 거의 첫 16MB 안에 위치).
+        let scanLimit = min(data.count, 16_000_000)
+
         let ffd8: [UInt8] = [0xFF, 0xD8]
         var bestImage: NSImage? = nil
-        var bestPixels = 0
+        var bestPixels = parentEmbeddedPixels
 
-        // Cache screen resolution before loop to avoid repeated NSScreen.main access
-        let screenPx = max(NSScreen.main?.frame.width ?? 1440, NSScreen.main?.frame.height ?? 900) * (NSScreen.main?.backingScaleFactor ?? 2.0)
+        let screenPx = Double(hiResTargetPx)
+        // 목표 픽셀의 90% 이상이면 충분히 큼 → early termination.
+        let earlyTerminationPixels = Int(Double(hiResTargetPx) * Double(hiResTargetPx) * 0.9 * 0.6)  // ~3.5M for 4K
 
-        for i in 0..<(scanLimit - 2) {
+        scan: for i in 0..<(scanLimit - 2) {
             guard data[i] == ffd8[0] && data[i + 1] == ffd8[1] else { continue }
-            let end = min(i + 10_000_000, data.count)
-            let subData = data.subdata(in: i..<end)
+            guard let jpegRange = Self.completeJPEGRange(in: data, from: i, maxLength: 10_000_000),
+                  jpegRange.count > 4_096 else { continue }
+            let subData = data.subdata(in: jpegRange)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
-            // Check size without full decode
             let props = CGImageSourceCopyPropertiesAtIndex(imgSource, 0, nil) as? [String: Any]
             let w = props?[kCGImagePropertyPixelWidth as String] as? Int ?? 0
             let h = props?[kCGImagePropertyPixelHeight as String] as? Int ?? 0
             let pixels = w * h
 
-            // Only decode if this is larger than what we already have
             guard pixels > bestPixels else { continue }
 
-            // DJI DNG 등에서 썸네일 스트립(가로로 이어붙인 이미지) 제외
-            // 정상 사진은 가로:세로 비율이 5:1을 초과하지 않음
             let aspectRatio = w > h ? Double(w) / max(Double(h), 1) : Double(h) / max(Double(w), 1)
             if aspectRatio > 4.0 { continue }
 
-            // Limit to screen resolution to save memory (50MP = 200MB, 3600px = 50MB)
+            let nativeMax = max(w, h)
+            let effectiveMaxPx = nativeMax > 0 ? min(Int(screenPx), nativeMax) : Int(screenPx)
             let opts: [NSString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: Int(screenPx),
+                kCGImageSourceThumbnailMaxPixelSize: effectiveMaxPx,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 // Transform:false — 아래 correctEmbeddedImageOrientationIfNeeded 에서 수동 적용
                 kCGImageSourceCreateThumbnailWithTransform: false,
-                kCGImageSourceShouldCacheImmediately: true
+                kCGImageSourceShouldCacheImmediately: false  // CG raster pin 방지 (메모리 최적화)
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
                 bestPixels = cgImage.width * cgImage.height
                 bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                // If we found a really big one (>= 3000px), stop scanning
-                if max(cgImage.width, cgImage.height) >= 3000 { break }
+                fputs("[HIRES] scan embedded candidate \(url.lastPathComponent) \(cgImage.width)x\(cgImage.height)\n", stderr)
+                // Early termination: 큰 후보 찾으면 더 스캔 안 함 (속도 우선).
+                if bestPixels >= earlyTerminationPixels {
+                    fputs("[HIRES] early-term at \(bestPixels)px² (target=\(earlyTerminationPixels))\n", stderr)
+                    break scan
+                }
             }
         }
-        // FFD8 subData 로 추출한 embedded JPEG 은 RAW 컨테이너의 TIFF orientation 태그가
-        // 소실됨. 원본 RAW 의 기대 aspect 와 비교해서 불일치 시 수동 회전.
+        // PR + main 통합: 두 회전 보정 로직 모두 적용.
+        //   1) PR: aspect 비교로 회전 (Sony ARW 처럼 orient 태그 소실된 케이스)
+        //   2) main: 부모 RAW TIFF orient 적용 (Nikon Z8/Z9 NEF 처럼 임베디드 태그 없음)
         if let img = bestImage {
-            bestImage = correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+            var corrected = correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+            if let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                corrected = correctThumbnailOrientationIfNeeded(corrected, source: parentSource)
+            }
+            fputs("[HIRES] embedded camera preview selected \(url.lastPathComponent) pixels=\(bestPixels)\n", stderr)
+            return corrected
         }
-        return bestImage
+        if parentEmbedded != nil {
+            fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels)\n", stderr)
+        }
+        return parentEmbedded
     }
 
     private func reloadCurrentImage() {
@@ -2580,11 +3775,17 @@ struct PhotoPreviewView: View {
         loadImageDirect(for: selected.jpgURL, id: pendingPhotoID ?? UUID())
     }
 
-    /// Read image pixel dimensions from file header only (no decode, very fast)
-    private static var _dimensionCache: [URL: CGSize] = [:]
+    /// Read image pixel dimensions + EXIF orientation from file header only (no decode, very fast).
+    /// v8.6.1: orient 도 반환해서 Stage1 하드코딩 `orientation: 6` 이 orient=3/8 파일을 잘못
+    /// 회전시키던 깜빡임 버그 수정.
+    struct ImageDimensionInfo {
+        let size: CGSize       // orientation 적용 후의 display size (5-8 케이스는 swap 됨)
+        let orientation: Int   // 1~8 EXIF orientation
+    }
+    private static var _dimensionCache: [URL: ImageDimensionInfo] = [:]
     private static let _dimensionCacheLock = NSLock()
     private static let maxDimensionCacheSize = 2000
-    private static func readImageDimensions(url: URL) -> CGSize? {
+    static func readImageDimensionInfo(url: URL) -> ImageDimensionInfo? {
         _dimensionCacheLock.lock()
         if let cached = _dimensionCache[url] {
             _dimensionCacheLock.unlock()
@@ -2598,13 +3799,12 @@ struct PhotoPreviewView: View {
         }
         _dimensionCacheLock.unlock()
         // 헤더만 읽기 — ShouldCacheImmediately로 I/O 파이프라인 최적화
-        let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: true]
+        let dimOpts: [NSString: Any] = [kCGImageSourceShouldCacheImmediately: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, dimOpts as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
               let w = props[kCGImagePropertyPixelWidth as String] as? Int,
               let h = props[kCGImagePropertyPixelHeight as String] as? Int,
               w > 0, h > 0 else { return nil }
-        // Check orientation for swap
         let orient = props[kCGImagePropertyOrientation as String] as? Int ?? 1
         let size: CGSize
         if orient >= 5 && orient <= 8 {
@@ -2612,10 +3812,42 @@ struct PhotoPreviewView: View {
         } else {
             size = CGSize(width: w, height: h)
         }
+        let info = ImageDimensionInfo(size: size, orientation: orient)
         _dimensionCacheLock.lock()
-        _dimensionCache[url] = size
+        _dimensionCache[url] = info
         _dimensionCacheLock.unlock()
-        return size
+        return info
+    }
+
+    /// 하위 호환 — 기존 호출처용 (dimension 만 반환).
+    private static func readImageDimensions(url: URL) -> CGSize? {
+        return readImageDimensionInfo(url: url)?.size
+    }
+
+    /// v8.6.1: 삭제된 URL 의 dimension cache 엔트리 제거 (메모리 누수 방지)
+    static func invalidateImageDimensions(for url: URL) {
+        _dimensionCacheLock.lock()
+        _dimensionCache.removeValue(forKey: url)
+        _dimensionCacheLock.unlock()
+    }
+
+    /// v8.6.1: 삭제된 URL 의 hiRes cache 엔트리 제거 (메모리 누수 방지)
+    /// (hi-res 한 장당 50-200MB — 누적되면 치명적)
+    static func removeHiResCache(for url: URL) {
+        let nsurl = url as NSURL
+        hiResCache.removeObject(forKey: nsurl)
+        hiResCacheOrder.removeAll { $0.isEqual(nsurl) }
+    }
+
+    /// v8.6.1: MemoryLeakTracker HUD 가 hiResCache 엔트리 수 조회.
+    static func debugHiResCount() -> Int {
+        return hiResCacheOrder.count
+    }
+
+    /// v8.6.1: 메모리 긴급 해제 — hiResCache 전체 비우기.
+    static func clearAllHiResCache() {
+        hiResCache.removeAllObjects()
+        hiResCacheOrder.removeAll()
     }
 
     /// 원본 RAW/JPG 에서 EXIF orientation + 기대 display aspect 를 읽음.
@@ -2672,25 +3904,71 @@ struct PhotoPreviewView: View {
     /// - orientation=1 또는 이미 일치하는 경우 no-op (정상 파일 영향 없음).
     static func correctThumbnailOrientationIfNeeded(_ image: NSImage, source: CGImageSource) -> NSImage {
         guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return image }
-        let mainOrient = props[kCGImagePropertyOrientation as String] as? Int ?? 1
+        // v8.8.0 fix: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        let mainOrient: Int = {
+            if let o = props[kCGImagePropertyOrientation as String] as? Int { return o }
+            if let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
+               let o = tiff[kCGImagePropertyTIFFOrientation as String] as? Int { return o }
+            return 1
+        }()
         guard mainOrient != 1 else { return image }
         let mainPw = props[kCGImagePropertyPixelWidth as String] as? Int ?? 0
         let mainPh = props[kCGImagePropertyPixelHeight as String] as? Int ?? 0
-        guard mainPw > 0, mainPh > 0 else { return image }
+
+        let thumbLandscape = image.size.width > image.size.height
+
+        // v8.8.0 fix: NEF 등 일부 RAW 는 CGImageSource 가 PixelWidth/Height 를 못 읽음.
+        //   그 경우엔 orientation 값만으로 결정: 5-8 이면 회전 필요하고 thumb 가 landscape 면 rotate.
+        if mainPw == 0 || mainPh == 0 {
+            if (mainOrient >= 5 && mainOrient <= 8) && thumbLandscape {
+                return applyOrientation(image, orientation: mainOrient)
+            }
+            return image  // 정보 부족하지만 rotation 불필요로 추정
+        }
 
         // main image의 "display aspect" (orientation 적용 후)
         let displayLandscape: Bool
         if mainOrient >= 5 && mainOrient <= 8 {
-            // orientation 5-8 → width/height가 swap됨 (raw가 landscape면 display는 portrait)
             displayLandscape = mainPh > mainPw
         } else {
-            // orientation 1-4 → aspect 그대로
             displayLandscape = mainPw > mainPh
         }
-        let thumbLandscape = image.size.width > image.size.height
         if displayLandscape == thumbLandscape { return image }
-        // 불일치: transform=true가 적용되지 않은 케이스 → 수동 회전
         return applyOrientation(image, orientation: mainOrient)
+    }
+
+    /// v8.6.2: orient 과 raw sensor 치수를 받아 **이미 올바른 방향으로 로드되었는지** 판정.
+    ///
+    /// EXIF orient 5~8 은 디스플레이 방향이 sensor raw 의 90° 회전이라 w/h 가 swap 된다.
+    /// `kCGImageSourceCreateThumbnailWithTransform: true` 로 로드하면 대부분 이미 회전이
+    /// 적용돼서 `loaded.size` 가 swap 된 상태로 돌아온다. 이 경우 `applyOrientation` 을
+    /// 또 호출하면 90° 더 돌려서 세로 사진이 뒤집히는 원인이 된다.
+    /// v8.6.2: Stage 1 이 기록한 `firstLoadIsPortrait` 와 new 가 다르면 EXIF orient 로 강제 회전.
+    /// "처음엔 세로로 뜨다가 나중에 가로로 뒤집힘" 버그 차단용.
+    /// - Parameters:
+    ///   - new: 후속 경로(Stage2/HiRes/developed)의 NSImage
+    ///   - url: 원본 파일 (EXIF orient 참조)
+    ///   - stage1Portrait: Stage 1 이 기록한 기준 aspect. nil 이면 기준 없음 → 그대로 반환.
+    static func enforceAspectOfStage1(_ new: NSImage, url: URL, stage1Portrait: Bool?) -> NSImage {
+        guard let stage1Portrait = stage1Portrait else { return new }
+        let newPortrait = new.size.height > new.size.width
+        guard newPortrait != stage1Portrait else { return new }
+        // Mismatch — EXIF orient 으로 회전해서 Stage 1 과 동일한 aspect 를 만든다.
+        // orient 없으면 90° (orient 6) 임시 적용.
+        let info = readImageDimensionInfo(url: url)
+        let orient = (info?.orientation ?? 6) > 1 ? (info?.orientation ?? 6) : 6
+        fputs("[LD-ENFORCE] \(url.lastPathComponent) aspect mismatch — new=\(newPortrait ? "P" : "L") stage1=\(stage1Portrait ? "P" : "L") → applyOrientation(\(orient))\n", stderr)
+        return applyOrientation(new, orientation: orient)
+    }
+
+    static func orientationAlreadyApplied(loadedSize: CGSize, rawSize: CGSize, orientation: Int) -> Bool {
+        guard orientation > 1 else { return true }
+        let needs90 = (5...8).contains(orientation)
+        let rawPortrait = rawSize.height > rawSize.width
+        let loadedPortrait = loadedSize.height > loadedSize.width
+        // orient 5~8 은 로드된 방향이 raw 와 swap 되어야 정상 (이미 회전 적용됨).
+        // orient 2/3/4 (mirror/180°) 는 방향이 유지되어야 정상.
+        return needs90 ? (loadedPortrait != rawPortrait) : (loadedPortrait == rawPortrait)
     }
 
     static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage {
@@ -2698,54 +3976,46 @@ struct PhotoPreviewView: View {
             guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                     ?? { guard let t = image.tiffRepresentation, let b = NSBitmapImageRep(data: t) else { return nil }; return b.cgImage }()
             else { return image }
+            // v8.6.2 fix: 자체 CGAffineTransform 구현이 orient=8 에서 CCW 대신 CW 를 적용해서
+            // 180° 뒤집힘 발생. Apple 검증된 `CIImage.oriented(_:)` 로 교체 (모든 1~8 케이스 처리).
+            guard orientation >= 2 && orientation <= 8,
+                  let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orientation))
+            else { return image }
+            let ci = CIImage(cgImage: cgImage).oriented(cgOri)
+            // v8.6.2: source CGImage 의 colorSpace 보존해서 Display P3 → sRGB 색 변환 방지.
+            let cs = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB()
+            let ctx = CIContext(options: [.useSoftwareRenderer: false, .workingColorSpace: cs, .outputColorSpace: cs])
+            guard let rotated = ctx.createCGImage(ci, from: ci.extent, format: .RGBA8, colorSpace: cs) else { return image }
+            return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
+        }
+    }
 
-            let w = cgImage.width
-            let h = cgImage.height
-
-            // EXIF orientation 1-8 전체 지원.
-            // 5-8 은 width/height swap, 1-4 는 유지.
-            let outputSize: CGSize
-            let transform: CGAffineTransform
-
-            switch orientation {
-            case 2: // Horizontal flip
-                outputSize = CGSize(width: w, height: h)
-                transform = CGAffineTransform(translationX: CGFloat(w), y: 0).scaledBy(x: -1, y: 1)
-            case 3: // 180° rotate (가장 빈번한 허점 — Sony ARW 등)
-                outputSize = CGSize(width: w, height: h)
-                transform = CGAffineTransform(translationX: CGFloat(w), y: CGFloat(h)).rotated(by: .pi)
-            case 4: // Vertical flip
-                outputSize = CGSize(width: w, height: h)
-                transform = CGAffineTransform(translationX: 0, y: CGFloat(h)).scaledBy(x: 1, y: -1)
-            case 5: // Mirrored + 90° CW
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: CGFloat(-h), y: 0).rotated(by: .pi / 2)
-            case 6: // 90° CW (세로 사진 기본값)
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
-            case 7: // Mirrored + 90° CCW
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: 0, y: CGFloat(-w)).rotated(by: -.pi / 2)
-            case 8: // 90° CCW
-                outputSize = CGSize(width: h, height: w)
-                transform = CGAffineTransform(translationX: 0, y: CGFloat(w)).rotated(by: -.pi / 2)
-            default: // orientation 1 또는 알 수 없음 — 원본 반환
-                return image
+    /// v8.7: Shift+H 클리핑 마스크 재생성 — Metal compute kernel 로 1패스 (2-3ms).
+    /// 슬라이더 드래그 중엔 80ms 최소 간격 쓰로틀.
+    private func regenerateClippingMask(throttled: Bool) {
+        if throttled {
+            let now = Date()
+            if now.timeIntervalSince(lastClippingComputeTime) < 0.08 { return }
+            lastClippingComputeTime = now
+        }
+        let source = developedImage ?? rotatedImage ?? image
+        guard let ns = source,
+              let cg = ns.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            clippingMaskImage = nil
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let mask = ClippingOverlayRenderer.makeOverlay(from: cg)
+            DispatchQueue.main.async {
+                if let maskCG = mask {
+                    self.clippingMaskImage = NSImage(
+                        cgImage: maskCG,
+                        size: NSSize(width: maskCG.width, height: maskCG.height)
+                    )
+                } else {
+                    self.clippingMaskImage = nil
+                }
             }
-
-            guard let context = CGContext(data: nil,
-                                           width: Int(outputSize.width),
-                                           height: Int(outputSize.height),
-                                           bitsPerComponent: cgImage.bitsPerComponent,
-                                           bytesPerRow: 0,
-                                           space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-                                           bitmapInfo: cgImage.bitmapInfo.rawValue) else { return image }
-
-            context.concatenate(transform)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
-
-            guard let rotated = context.makeImage() else { return image }
-            return NSImage(cgImage: rotated, size: outputSize)
         }
     }
 
@@ -3739,6 +5009,74 @@ struct BatchCorrectionView: View {
             return true
         } catch {
             return false
+        }
+    }
+}
+
+// MARK: - Rotate Toolbar Button (v8.6.2)
+// 회전 버튼: 클릭 시 아이콘이 해당 방향으로 90° 스핀 애니메이션 → 즉시 피드백
+struct RotateToolbarButton: View {
+    let systemImage: String
+    let clockwise: Bool
+    let action: () -> Void
+
+    @State private var angle: Double = 0
+    @State private var pressed: Bool = false
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.62)) {
+                angle += clockwise ? 90 : -90
+                pressed = true
+            }
+            action()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                withAnimation(.easeOut(duration: 0.18)) { pressed = false }
+            }
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+                .rotationEffect(.degrees(angle))
+                .frame(width: AppTheme.buttonHeight, height: AppTheme.buttonHeight)
+                .background(pressed ? Color.accentColor.opacity(0.25) : AppTheme.toolbarButtonBg)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .scaleEffect(pressed ? 0.92 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .help(clockwise ? "시계방향 90° 회전" : "반시계 90° 회전")
+    }
+}
+
+// MARK: - Progressive Load Tracing (v8.9.4 측정)
+// loadOptimized 가 사용한 전략을 호출자에게 전달하기 위한 참조 타입.
+// nil 전달 시 오버헤드 없음.
+final class LoadTrace {
+    var strategy: String = "none"   // "embedded" | "subsample" | "fullImage" | "rawFallback" | "ciraw"
+    var subsample: Int = 1
+    var origPx: Int = 0
+    var fileSizeBytes: Int64 = 0
+}
+
+// 세션 내 progressive load 시간을 버킷별로 집계. 20회마다 p50/p95 출력.
+final class ProgressiveLoadStats {
+    static let shared = ProgressiveLoadStats()
+    private let lock = NSLock()
+    private var buckets: [String: [Double]] = [:]
+    private let reportEvery = 20
+
+    func record(bucket: String, ms: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        buckets[bucket, default: []].append(ms)
+        let arr = buckets[bucket] ?? []
+        if arr.count % reportEvery == 0 {
+            let sorted = arr.sorted()
+            let p50 = sorted[sorted.count / 2]
+            let p95 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
+            let avg = arr.reduce(0, +) / Double(arr.count)
+            fputs("[LD-STATS] \(bucket) n=\(arr.count) avg=\(Int(avg))ms p50=\(Int(p50))ms p95=\(Int(p95))ms\n", stderr)
         }
     }
 }

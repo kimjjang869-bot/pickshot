@@ -14,11 +14,20 @@ struct ContentView: View {
     // G Select state (used by toolbar extension)
     @ObservedObject var gSelect = GSelectService.shared
     @ObservedObject private var clientSelect = ClientSelectService.shared
+    #if DEBUG
+    @ObservedObject private var memTracker = MemoryLeakTracker.shared
+    @State private var debugStressTimer: DispatchSourceTimer?
+    @State private var debugStressStarted = false
+    @State private var debugOpenedEnvPath = false
+    #endif
     @State var linkCopied = false
     @State var showGSelectQR = false
 
     // Mouse side-button (back/forward) event monitor
     @State private var mouseSideButtonMonitor: Any?
+
+    // v8.6.3: CacheSweeper.prepareForFolder 쓰로틀 (스트리밍 photos 변동)
+    @State private var sweepPrepareWork: DispatchWorkItem?
 
     // 테스터 키 — 숨겨진 Cmd+Shift+Option+K 로 다이얼로그 표시
     @State private var testerKeyMonitor: Any?
@@ -32,8 +41,7 @@ struct ContentView: View {
     private var importResultMessage: String {
         guard let r = store.lastImportResult else { return "가져오기 실패" }
         var msg = "매칭 성공: \(r.matched.count)장"
-        let spCount = r.matched.filter { $0.spacePick }.count
-        if spCount > 0 { msg += "\nSP 셀렉: \(spCount)장" }
+        // v8.9.4: SP 셀렉 잔재 메시지 제거 (기능 폐지)
         if !r.unmatched.isEmpty {
             msg += "\n\n미매칭: \(r.unmatched.count)장"
             msg += "\n\(r.unmatched.prefix(5).joined(separator: ", "))"
@@ -131,6 +139,15 @@ struct ContentView: View {
                     toolbarRow2
                     Divider()
 
+                    // v8.7: 시각 검색 HUD (플로팅, 검색 활성 시만 표시)
+                    #if DEBUG
+                    VisualSearchHUD {
+                        // 해제 시 필터 off + SwiftUI 강제 리렌더
+                        store.visualSearchActive = false
+                        store.invalidateFilterCache()
+                    }
+                    #endif
+
                     // Content area
                     if store.isLoading {
                         // Loading - show progress inside content area (folder browser stays visible)
@@ -182,14 +199,17 @@ struct ContentView: View {
                     } else {
                         // Grid+Preview mode (default)
                         GeometryReader { geo in
-                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.55))
+                            // v8.9.7+: 패널 폭은 유저 드래그(hSplitRatio)로만 결정. 썸네일 크기는 cell
+                            //   렌더링만 영향 — Bridge 스타일. 이전엔 maxColsW 로 썸네일 크기에 따라
+                            //   패널 폭이 자동 변경되어 사용자 의도와 다른 동작.
+                            let leftW = max(300, min(geo.size.width * store.hSplitRatio, geo.size.width * 0.7))
                             let previewH = max(150, min(geo.size.height * store.vSplitRatio, geo.size.height - 120))
                             HStack(spacing: 0) {
                                 // Left panel
                                 VStack(spacing: 0) {
                                     ThumbnailGridView()
-                                        // 스크롤바와 DragHandle이 겹쳐서 폭조절 드래그가 안 잡히는 문제 방지
-                                        .padding(.trailing, 8)
+                                        // v8.6.3: 스크롤바 + DragHandle/창 리사이즈 겹침 방지 (8→14)
+                                        .padding(.trailing, 14)
 
                                     Divider()
                                     // Status bar
@@ -236,13 +256,7 @@ struct ContentView: View {
                                                 .foregroundColor(.yellow)
                                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
 
-                                            let spCount = store.spacePickCount
-                                            if spCount > 0 {
-                                                Text("·").foregroundColor(AppTheme.textDim)
-                                                Text("SP: \(spCount)장")
-                                                    .foregroundColor(.red)
-                                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                            }
+                                            // v8.9.4: SP 셀렉 잔재 — 상태바 SP 카운트 표시 제거
 
                                             Text("·").foregroundColor(AppTheme.textDim)
 
@@ -265,11 +279,12 @@ struct ContentView: View {
                                     .gesture(
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
+                                                // v8.9.2 perf: 임계값 0.003→0.008 강화 (60+ 이벤트 → ~20)
                                                 let currentW = geo.size.width * store.hSplitRatio
                                                 let newW = currentW + value.translation.width
                                                 let newRatio = newW / geo.size.width
                                                 let clamped = max(0.10, min(newRatio, 0.55))
-                                                if abs(clamped - store.hSplitRatio) >= 0.003 {
+                                                if abs(clamped - store.hSplitRatio) >= 0.008 {
                                                     store.hSplitRatio = clamped
                                                 }
                                             }
@@ -282,7 +297,7 @@ struct ContentView: View {
                                         MultiPreviewGrid(store: store)
                                             .frame(height: previewH)
                                     } else if let photo = store.selectedPhoto {
-                                        // 단일 선택 — 기존 미리보기
+                                        // v8.9.4: 미리보기 꽉차게 — 하단 메타 영역/DragHandle/frame 제거
                                         PhotoPreviewView(photo: photo)
                                             .overlay(
                                                 photo.isSpacePicked ?
@@ -291,28 +306,6 @@ struct ContentView: View {
                                                     .allowsHitTesting(false)
                                                 : nil
                                             )
-                                            .frame(height: previewH)
-
-                                        // Vertical divider handle
-                                        DragHandle(axis: .vertical)
-                                            .gesture(
-                                                DragGesture()
-                                                    .onChanged { value in
-                                                        let currentH = geo.size.height * store.vSplitRatio
-                                                        let newH = currentH + value.translation.height
-                                                        let newRatio = newH / geo.size.height
-                                                        store.vSplitRatio = max(0.20, min(newRatio, 0.90))
-                                                    }
-                                            )
-
-                                        // Metadata
-                                        ScrollView {
-                                            VStack(spacing: 12) {
-                                                ExifInfoView(photo: photo)
-                                                // AIAnalysisView — 아직 구현 전, 숨김
-                                            }
-                                            .padding()
-                                        }
                                     } else {
                                         Text("사진을 선택하세요")
                                             .font(.title3)
@@ -322,8 +315,8 @@ struct ContentView: View {
                                 }
                             }
                             .onAppear { updateGridColumns(width: leftW) }
-                            .onChange(of: leftW) { newW in updateGridColumns(width: newW) }
-                            .onChange(of: store.thumbnailSize) { _ in updateGridColumns(width: leftW) }
+                            .onChange(of: leftW) { _, newW in updateGridColumns(width: newW) }
+                            .onChange(of: store.thumbnailSize) { _, _ in updateGridColumns(width: leftW) }
                         }
                     }
                     } // end VStack (toolbarRow2 + content)
@@ -336,6 +329,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $store.showBatchRename) { BatchRenameView() }
+        .sheet(isPresented: $store.showBurstPickerDialog) {
+            BurstPickerDialog(isPresented: $store.showBurstPickerDialog)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $store.showPreferenceTrainingDialog) {
+            PreferenceTrainingDialog(isPresented: $store.showPreferenceTrainingDialog)
+                .environmentObject(store)
+        }
         .sheet(isPresented: $store.showMetadataEditor) {
             MetadataEditorSheet(store: store)
         }
@@ -347,6 +348,13 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSmartSelect) { SmartSelectView() }
         .sheet(isPresented: $store.showSmartCull) { SmartCullView().environmentObject(store) }
         .sheet(isPresented: $store.showBatchProcess) { BatchProcessView() }
+        // v8.7: 시각 검색 결과 변경 시 필터 재적용 (active 일 때만)
+        .onReceive(VisualSearchService.shared.$matchedURLs) { newMatched in
+            guard store.visualSearchActive else { return }
+            // 매칭 결과가 비어버렸는데 active 면 사용자가 닫기를 누르는 과도기 → 건너뛰기 (onDeactivate 가 처리)
+            if newMatched.isEmpty && VisualSearchService.shared.references.isEmpty { return }
+            store.invalidateFilterCache()
+        }
         .sheet(isPresented: $memoryCardService.showBackupPrompt) { MemoryCardBackupPromptView() }
         .sheet(isPresented: $memoryCardService.showBackupResult) { MemoryCardBackupResultView() }
         .sheet(isPresented: $store.showCustomPrompt) { CustomPromptView(store: store) }
@@ -392,11 +400,150 @@ struct ContentView: View {
             .animation(.easeInOut, value: store.isClassifyingScenes)
             .animation(.easeInOut, value: store.isGroupingFaces)
         }
-        .overlay(alignment: .bottomTrailing) {
-            // Navigation Performance HUD (Cmd+Shift+D 로 토글)
-            NavigationPerformanceHUD()
+        .overlay(alignment: .topTrailing) {
+            // v8.9.7+: 통합 디버그 HUD — preview 정보 + nav perf + memory tracker 한 창에 모음.
+            #if DEBUG
+            UnifiedDebugHUD()
                 .padding(.trailing, 16)
-                .padding(.bottom, 40)
+                .padding(.top, 60)
+            #endif
+        }
+        .onAppear {
+            #if DEBUG
+            // v8.6.1: 메모리 누수 추적 스트레스 테스트 provider 연결
+            let tracker = MemoryLeakTracker.shared
+            tracker.stressPhotoProvider = {
+                store.photos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id }
+            }
+            tracker.stressPhotoSelector = { id in
+                store.selectedPhotoID = id
+            }
+            tracker.stressGridColsProvider = {
+                // v8.6.2 fix: 실제 표시 중인 그리드 열 수 반환 (이전엔 6 하드코딩 → 실제 열 수와 달라
+                //   대각선으로 이동하는 버그). store.actualColumnsPerRow 가 updateGridColumns 에서 실시간 갱신됨.
+                let cols = store.actualColumnsPerRow
+                return cols > 0 ? cols : 6
+            }
+            tracker.stressDeleteAction = { ids in
+                store.deleteOriginalFiles(ids: ids)
+            }
+            tracker.stressCacheInvalidator = { urls in
+                PhotoStore.invalidateCachesForDeletedURLs(urls)
+            }
+            tracker.stressURLProvider = { id in
+                store.photos.first(where: { $0.id == id })?.jpgURL
+            }
+            // v8.9.3: 랜덤 폴더 전환 — 현재 폴더의 부모에서 형제 폴더 enumerate
+            tracker.stressFolderProvider = {
+                guard let current = store.folderURL else { return [] }
+                let parent = current.deletingLastPathComponent()
+                let fm = FileManager.default
+                guard let contents = try? fm.contentsOfDirectory(
+                    at: parent,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else { return [] }
+                // 디렉토리만 + 시스템 경로 제외
+                let systemPaths: Set<String> = ["/Volumes", "/System", "/Library", "/usr", "/private"]
+                return contents.filter { url in
+                    var isDir: ObjCBool = false
+                    fm.fileExists(atPath: url.path, isDirectory: &isDir)
+                    return isDir.boolValue && !systemPaths.contains(url.path)
+                }
+            }
+            tracker.stressFolderSwitcher = { url, includeSub in
+                store.startupMode = .viewer
+                if includeSub {
+                    store.loadPhotosRecursive(from: url)
+                } else {
+                    store.loadFolder(url, restoreRatings: true)
+                }
+            }
+            #endif
+
+            // v8.6.2: CacheSweeper 의존성 주입 + 활동 훅
+            let sweeper = CacheSweeper.shared
+            sweeper.isSlowDiskProvider = { ThumbnailLoader.shared.isSlowDisk }
+            sweeper.isBusyProvider = {
+                var busy = store.isLoading || store.isConverting || store.isAnalyzing
+                    || store.isPreloadingThumbs
+                #if DEBUG
+                busy = busy || MemoryLeakTracker.shared.isStressTesting
+                #endif
+                return busy
+            }
+            // v8.9.4: 스크롤 진행 중 sweep 차단 — NSThumbnailCollectionView Coordinator 가 갱신
+            sweeper.isScrollingProvider = { NSThumbnailCollectionView.activeCoordinator?.isScrollingNow ?? false }
+            // v8.9.4: recursive scan 진행 중 sweep 차단
+            sweeper.isRecursiveScanProvider = { [weak store] in store?.isRecursiveScanInProgress ?? false }
+            sweeper.isRecursiveModeProvider = { [weak store] in store?.isRecursiveMode ?? false }
+            // v8.8.1: 적극 캐시 모드 바인딩
+            sweeper.aggressiveModeProvider = { [weak store] in store?.aggressiveCache ?? false }
+            sweeper.selectedIndexProvider = {
+                // v8.6.2: O(n) firstIndex → O(1) _photoIndex
+                guard let id = store.selectedPhotoID,
+                      let idx = store._photoIndex[id] else { return nil }
+                return idx
+            }
+            sweeper.storeNotePreview = { [weak store] url in
+                store?.notePreviewLoaded(url: url)
+            }
+            // 프리뷰와 동일한 소스 정책 사용.
+            // RAW+JPG 페어는 카메라 JPG 색감을 유지하고, RAW-only 항목만 RAW/embedded 경로를 탄다.
+            sweeper.resolveDecodeURLProvider = { [weak store] jpgURL in
+                guard let store = store else { return nil }
+                for p in store.photos {
+                    if p.jpgURL == jpgURL {
+                        return PreviewLoadingPolicy.previewSourceURL(for: p)
+                    }
+                }
+                return nil
+            }
+        }
+        .onChange(of: store.selectedPhotoID) { _, _ in
+            CacheSweeper.shared.notifyActivity()
+        }
+        .onChange(of: store.folderURL) { _, newURL in
+            // v8.6.3: 스트리밍 로드 대응 — photosVersion 변화에서 재구성 (아래 onChange 에서 처리)
+            // v8.7: 폴더 전환 시 시각 검색 상태 save/restore
+            VisualSearchService.shared.switchFolder(
+                to: newURL?.path,
+                currentActive: store.visualSearchActive
+            ) { restoredActive in
+                store.visualSearchActive = restoredActive
+                store.invalidateFilterCache()
+            }
+        }
+        .onChange(of: store.photosVersion) { _, _ in
+            // v8.6.3: photos 가 스트리밍으로 append 될 때마다 sweep 대상 업데이트.
+            //   연속 호출 방지 위해 500ms 쓰로틀 (마지막 상태로 확정).
+            guard let url = store.folderURL else { return }
+            sweepPrepareWork?.cancel()
+            let work = DispatchWorkItem {
+                guard !store.isRecursiveMode else {
+                    // 하위폴더 포함 3~4만 장에서 전체 thumbnail sweep 을 준비하면
+                    // 단일 폴더보다 훨씬 무거워진다. 재귀 모드는 보이는 셀/선택 주변 로딩만 사용한다.
+                    CacheSweeper.shared.cancel()
+                    return
+                }
+                let urls = store.photos.compactMap { p -> URL? in
+                    guard !p.isFolder, !p.isParentFolder else { return nil }
+                    return p.jpgURL
+                }
+                if urls.count > 0 {
+                    CacheSweeper.shared.prepareForFolder(url: url, photos: urls)
+                    // v8.9: CLIP 임베딩 백그라운드 인덱싱 시작 — 적극 캐시 모드일 때만.
+                    //   (기본 모드는 시스템 부하 최소화 원칙)
+                    if store.aggressiveCache && ImageEmbeddingService.shared.isAvailable {
+                        SemanticSearchService.shared.startIndexing(folderURL: url, urls: urls)
+                    }
+                }
+            }
+            sweepPrepareWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+            #if DEBUG
+            startDebugStressDriverIfRequested()
+            #endif
         }
         .alert("셀렉 가져오기 완료", isPresented: $store.showImportResult) {
             Button("확인") {}
@@ -532,7 +679,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(store.isDarkMode ? .dark : .light)
         .background(KeyEventHandlingView(store: store, onFullscreen: { showFullscreen.toggle() }, onHideFullscreen: { showFullscreen = false }))
-        .onChange(of: store.showFullscreenPreview) { newVal in
+        .onChange(of: store.showFullscreenPreview) { _, newVal in
             if newVal {
                 showFullscreen = true
                 store.showFullscreenPreview = false
@@ -553,7 +700,7 @@ struct ContentView: View {
                     .animation(.easeInOut(duration: 0.3), value: store.showToast)
             }
         }
-        .onChange(of: store.showDualViewer) { show in
+        .onChange(of: store.showDualViewer) { _, show in
             if show {
                 openDualViewer()
             } else {
@@ -561,8 +708,211 @@ struct ContentView: View {
                 dualWindow = nil
             }
         }
-        .onAppear { setupMouseSideButtonMonitor() }
-        .onDisappear { teardownMouseSideButtonMonitor() }
+        .onAppear {
+            setupMouseSideButtonMonitor()
+            setupCacheSweeperActivityMonitor()
+            setupVisualSearchCropObserver()
+            #if DEBUG
+            scheduleDebugRecursivePathOpenIfRequested()
+            startDebugStressDriverIfRequested()
+            #endif
+        }
+        .onDisappear {
+            teardownMouseSideButtonMonitor()
+            teardownCacheSweeperActivityMonitor()
+            teardownVisualSearchCropObserver()
+        }
+    }
+
+    @State private var visualSearchCropObserver: NSObjectProtocol?
+
+    #if DEBUG
+    private func scheduleDebugRecursivePathOpenIfRequested() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            openDebugRecursivePathIfRequested()
+        }
+    }
+
+    private func openDebugRecursivePathIfRequested() {
+        guard !debugOpenedEnvPath else { return }
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["PICKSHOT_DEBUG_OPEN_RECURSIVE_PATH"], !path.isEmpty else { return }
+        debugOpenedEnvPath = true
+        let url = URL(fileURLWithPath: path)
+        store.startupMode = .viewer
+        store.loadPhotosRecursive(from: url)
+        fputs("[DEBUG-OPEN] recursive path=\(path)\n", stderr)
+    }
+
+    private func startDebugStressDriverIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard env["PICKSHOT_STRESS_DRIVER"] == "1" else { return }
+        guard !debugStressStarted else { return }
+
+        let selectableCount = store.photoCount
+        guard selectableCount > 0 else {
+            debugStressStarted = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                debugStressStarted = false
+                startDebugStressDriverIfRequested()
+            }
+            return
+        }
+
+        debugStressStarted = true
+
+        let pattern = env["PICKSHOT_STRESS_PATTERN"] ?? "mixed"
+        let intervalMs = max(5, min(200, Int(env["PICKSHOT_STRESS_INTERVAL_MS"] ?? "") ?? 10))
+        let durationSec = max(5, min(1800, Int(env["PICKSHOT_STRESS_DURATION_SEC"] ?? "") ?? 120))
+        let layout = env["PICKSHOT_STRESS_LAYOUT"] ?? "grid"
+
+        if layout == "filmstrip" {
+            store.setLayoutMode(.filmstrip)
+            store.showFolderBrowser = false
+        } else {
+            store.setLayoutMode(.gridPreview)
+            store.showFolderBrowser = true
+        }
+
+        let start = Date()
+        var step = 0
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+        timer.schedule(deadline: .now() + 0.3, repeating: .milliseconds(intervalMs), leeway: .milliseconds(1))
+        timer.setEventHandler {
+            DispatchQueue.main.async {
+                let elapsed = Date().timeIntervalSince(start)
+                if elapsed >= Double(durationSec) {
+                    timer.cancel()
+                    return
+                }
+                guard !store.isLoading, !store.filteredPhotos.isEmpty else { return }
+
+                store.isKeyRepeat = true
+                switch pattern {
+                case "right":
+                    store.selectRight()
+                case "row":
+                    store.selectDown()
+                case "diagonal":
+                    (step % 2 == 0) ? store.selectRight() : store.selectDown()
+                case "zigzag":
+                    let phase = step % 120
+                    if phase < 45 { store.selectRight() }
+                    else if phase < 60 { store.selectDown() }
+                    else if phase < 105 { store.selectLeft() }
+                    else { store.selectDown() }
+                default:
+                    let phase = step % 20
+                    if phase < 12 { store.selectRight() }
+                    else if phase < 15 { store.selectDown() }
+                    else if phase < 18 { store.selectLeft() }
+                    else { store.selectUp() }
+                }
+                step += 1
+
+                let logEvery = max(1, 1000 / intervalMs)
+                if step % logEvery == 0 {
+                    let rss = Int(PhotoStore.currentAppMemoryMB())
+                    let selectedName = store.selectedPhoto?.fileName ?? "-"
+                    fputs("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n", stderr)
+                }
+            }
+        }
+        timer.setCancelHandler {
+            DispatchQueue.main.async {
+                store.isKeyRepeat = false
+                if let id = store.selectedPhotoID {
+                    store.scheduleSelectionIdleWork(for: id, delay: 0.05)
+                }
+                debugStressTimer = nil
+                let rss = Int(PhotoStore.currentAppMemoryMB())
+                fputs("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n", stderr)
+            }
+        }
+        debugStressTimer = timer
+        timer.resume()
+        fputs("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n", stderr)
+    }
+    #endif
+
+    private func setupVisualSearchCropObserver() {
+        if visualSearchCropObserver != nil { return }
+        visualSearchCropObserver = NotificationCenter.default.addObserver(
+            forName: .pickShotOpenVisualSearchCrop,
+            object: nil,
+            queue: .main
+        ) { _ in openVisualSearchCropWindow() }
+    }
+    private func teardownVisualSearchCropObserver() {
+        if let o = visualSearchCropObserver { NotificationCenter.default.removeObserver(o) }
+        visualSearchCropObserver = nil
+    }
+
+    // MARK: - v8.7 Visual Search Crop Window 열기 (비모달, 멀티 인스턴스)
+    private func openVisualSearchCropWindow() {
+        guard let url = store.visualSearchCropURL else { return }
+        store.showVisualSearchCrop = false  // flag 재사용 가능하게 초기화
+
+        let folderPhotos = store.photos.compactMap { p -> URL? in
+            guard !p.isFolder, !p.isParentFolder else { return nil }
+            return p.jpgURL
+        }
+
+        VisualSearchCropWindowController.shared.present(
+            sourceURL: url,
+            mode: store.visualSearchCropMode,
+            presetLabel: store.visualSearchPresetLabel,
+            folderPhotos: folderPhotos
+        ) { mode, shots, label in
+            let group = DispatchGroup()
+            var successCount = 0
+            for shot in shots {
+                group.enter()
+                VisualSearchService.shared.addReference(
+                    mode: mode,
+                    sourceURL: shot.url,
+                    cropRect: shot.rect,
+                    label: label
+                ) { ok in
+                    if ok { successCount += 1 }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                if successCount > 0 {
+                    store.visualSearchActive = true
+                    store.showToastMessage("🔍 \(successCount)장 등록 완료 — 검색 시작")
+                    let urls = store.photos.compactMap { p -> URL? in
+                        guard !p.isFolder, !p.isParentFolder else { return nil }
+                        return p.jpgURL
+                    }
+                    VisualSearchService.shared.runSearch(on: urls)
+                } else {
+                    store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
+                }
+            }
+        }
+    }
+
+    // MARK: - v8.6.2: CacheSweeper 활동 감지 (스크롤 + 키)
+    @State private var sweeperActivityMonitor: Any?
+
+    private func setupCacheSweeperActivityMonitor() {
+        if sweeperActivityMonitor != nil { return }
+        sweeperActivityMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.scrollWheel, .keyDown, .leftMouseDown]
+        ) { event in
+            CacheSweeper.shared.notifyActivity()
+            return event  // 이벤트 소비 금지 (UI 에 그대로 전달)
+        }
+    }
+
+    private func teardownCacheSweeperActivityMonitor() {
+        if let m = sweeperActivityMonitor {
+            NSEvent.removeMonitor(m)
+            sweeperActivityMonitor = nil
+        }
+        CacheSweeper.shared.cancel()
     }
 
     /// 마우스 사이드 버튼 (뒤로=3, 앞으로=4) → 폴더 이력 네비게이션
@@ -626,6 +976,7 @@ struct ContentView: View {
                 return nil
             }
             // Cmd+Shift+D (keyCode 2) — Navigation Performance HUD 토글
+            #if DEBUG
             let cmdShift: NSEvent.ModifierFlags = [.command, .shift]
             if masked == cmdShift && event.keyCode == 2 {
                 DispatchQueue.main.async {
@@ -633,6 +984,24 @@ struct ContentView: View {
                 }
                 return nil
             }
+            // v8.6.1: Cmd+Shift+Option+M (keyCode 46) — Memory Leak Tracker HUD 토글
+            if masked.contains(fullMod) && event.keyCode == 46 {
+                DispatchQueue.main.async {
+                    let tracker = MemoryLeakTracker.shared
+                    if tracker.isTracking { tracker.stop() } else { tracker.start() }
+                }
+                return nil
+            }
+            // v8.9.3 alt: Cmd+Ctrl+M (keyCode 46) — 메뉴 충돌 회피용 보조 단축키
+            let cmdCtrl: NSEvent.ModifierFlags = [.command, .control]
+            if masked == cmdCtrl && event.keyCode == 46 {
+                DispatchQueue.main.async {
+                    let tracker = MemoryLeakTracker.shared
+                    if tracker.isTracking { tracker.stop() } else { tracker.start() }
+                }
+                return nil
+            }
+            #endif
             return event
         }
     }

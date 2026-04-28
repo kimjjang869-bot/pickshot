@@ -129,6 +129,198 @@ struct FileMatchingService {
         return seconds > 0 ? seconds : nil
     }
 
+    /// v8.7: 파일명에서 "번호" 추출 (마지막 숫자 블록)
+    ///   - "IMG_1234" → 1234
+    ///   - "IMG_1234_LR" → 1234
+    ///   - "DSC-5678-edit" → 5678
+    ///   - "IMG_1234_crop_v2" → 2 (마지막 숫자) — 편집 버전 구분 안 되는 케이스
+    /// 매칭의 정확도는 촬영기 파일명 관례에 의존. 대부분 `PREFIX_NNNN[suffix]` 구조.
+    static func extractTrailingNumber(from baseName: String) -> Int? {
+        let lower = baseName.lowercased()
+        // 뒤에서부터 탐색하되, 편집 접미사 (_lr, _edit, -crop 등) 는 스킵하고 그 앞 숫자 찾기
+        // 간단 휴리스틱: 뒤에서 숫자 시작점을 찾되, non-digit 이 나오면 일단 스톱.
+        //   숫자 블록이 여러 개면 가장 오른쪽 "길이 3+" 숫자 채택 (짧은 version suffix 필터링)
+        var blocks: [(range: Range<String.Index>, value: Int)] = []
+        var idx = lower.startIndex
+        while idx < lower.endIndex {
+            if lower[idx].isNumber {
+                let start = idx
+                var end = idx
+                while end < lower.endIndex, lower[end].isNumber {
+                    end = lower.index(after: end)
+                }
+                if let n = Int(lower[start..<end]) {
+                    blocks.append((start..<end, n))
+                }
+                idx = end
+            } else {
+                idx = lower.index(after: idx)
+            }
+        }
+        // 길이 3+ 블록 중 가장 오른쪽 (일반적 파일번호 특성)
+        if let best = blocks.reversed().first(where: {
+            lower.distance(from: $0.range.lowerBound, to: $0.range.upperBound) >= 3
+        }) {
+            return best.value
+        }
+        // fallback: 마지막 숫자 블록
+        return blocks.last?.value
+    }
+
+    /// v8.6.3: 스트리밍 + 병렬 스캔.
+    /// 최상위 서브폴더를 동시에 스캔하고, 배치 단위로 `onBatch` 콜백을 main thread 에서 호출.
+    /// 카메라 3대 시나리오 (3 subfolders × 2000장 = 6000장) 에서 첫 배치 ~200ms 내 UI 업데이트 → 체감 3~5배 향상.
+    /// - Parameters:
+    ///   - folderURL: 루트 폴더
+    ///   - recursive: true 면 하위폴더까지 포함
+    ///   - isSlowDisk: HDD/NAS 등 슬로우 디스크면 병렬도 낮춤 (head thrashing 방지)
+    ///   - onBatch: 새 배치 발생 시 (main thread)
+    ///   - onComplete: 모든 스캔 완료 시 총 장수 (main thread)
+    static func scanAndMatchStreaming(
+        folderURL: URL,
+        recursive: Bool,
+        isSlowDisk: Bool = false,
+        // v8.9.4: cancel token — 새 recursive scan 시작 시 옛 batch callback 차단
+        isCancelled: @escaping () -> Bool = { false },
+        onBatch: @escaping ([PhotoItem]) -> Void,
+        onComplete: @escaping (Int) -> Void
+    ) {
+        DispatchQueue.global(qos: .utility).async {
+            let overallStart = CFAbsoluteTimeGetCurrent()
+
+            if !recursive {
+                let items = scanAndMatch(folderURL: folderURL, recursive: false)
+                DispatchQueue.main.async {
+                    guard !isCancelled() else { onComplete(0); return }
+                    if !items.isEmpty { onBatch(items) }
+                    onComplete(items.filter { !$0.isFolder && !$0.isParentFolder }.count)
+                }
+                return
+            }
+
+            let fm = FileManager.default
+            let topChildren = (try? fm.contentsOfDirectory(
+                at: folderURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            let topFolders = topChildren.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }
+
+            // v8.9.4: batch coalescing — main reload 폭주 방지.
+            //   기존엔 서브폴더마다 즉시 main async → photosVersion bump 폭주 → reloadData 폭주.
+            //   v8.9.4-fix: collectorQueue 의 timer event handler 안에서 collectorQueue.sync 를 호출하면
+            //               dispatch_sync deadlock crash → _doFlush 는 항상 collectorQueue 위에서 실행되는
+            //               것을 전제로 호출자가 책임지고 dispatch.async 로 진입.
+            let collectorQueue = DispatchQueue(label: "com.pickshot.scan.collector")
+            // 클로저 내 mutable 캡처를 위해 class 박스 사용 (Swift @Sendable 위반 회피)
+            final class CollectorState {
+                var pendingBatch: [PhotoItem] = []
+                var lastFlushAt: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+                var totalCount: Int = 0
+            }
+            let state = CollectorState()
+            // 대량 재귀 스캔은 main reload/정렬 비용이 병목이 되므로 조금 크게 묶는다.
+            // 첫 배치는 timer 로 곧 올라오고, 이후에는 단일 폴더와 비슷하게 viewport 로딩이 우선된다.
+            let flushIntervalMs: Double = isSlowDisk ? 900 : 700
+            let flushSizeThreshold = isSlowDisk ? 1200 : 1600
+
+            // 항상 collectorQueue 위에서만 호출.
+            func _doFlushOnQueue(force: Bool) {
+                let now = CFAbsoluteTimeGetCurrent()
+                let elapsedMs = (now - state.lastFlushAt) * 1000
+                let shouldFlush = force
+                    || state.pendingBatch.count >= flushSizeThreshold
+                    || (state.pendingBatch.count > 0 && elapsedMs >= flushIntervalMs)
+                if shouldFlush && !state.pendingBatch.isEmpty {
+                    let batch = state.pendingBatch
+                    state.pendingBatch.removeAll(keepingCapacity: true)
+                    state.lastFlushAt = now
+                    DispatchQueue.main.async {
+                        guard !isCancelled() else { return }
+                        onBatch(batch)
+                    }
+                }
+            }
+
+            // 외부 (scan worker) 에서 호출 — async 로 큐에 넣기만 함
+            func appendItems(_ items: [PhotoItem]) {
+                collectorQueue.async {
+                    state.pendingBatch.append(contentsOf: items)
+                    state.totalCount += items.count
+                    _doFlushOnQueue(force: false)
+                }
+            }
+
+            // 1) 최상위 파일 먼저
+            if isCancelled() { DispatchQueue.main.async { onComplete(0) }; return }
+            let topLevelOnly = scanAndMatch(folderURL: folderURL, recursive: false)
+                .filter { !$0.isFolder && !$0.isParentFolder }
+            if !topLevelOnly.isEmpty {
+                appendItems(topLevelOnly)
+            }
+
+            // 2) 서브폴더 병렬 스캔 — v8.9.4: SSD 4 → 2 보수화 (file-system contention 감소)
+            //   - SSD: 2
+            //   - HDD/NAS/SD: 1
+            let maxConcurrent = isSlowDisk ? 1 : min(max(topFolders.count, 1), 2)
+            let semaphore = DispatchSemaphore(value: maxConcurrent)
+            let group = DispatchGroup()
+            let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .utility, attributes: .concurrent)
+
+            fputs("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n", stderr)
+
+            for sub in topFolders {
+                if isCancelled() { break }
+                group.enter()
+                scanQueue.async {
+                    semaphore.wait()
+                    let subStart = CFAbsoluteTimeGetCurrent()
+                    defer {
+                        let elapsed = (CFAbsoluteTimeGetCurrent() - subStart) * 1000
+                        // 5초 이상 걸린 서브폴더는 stall 후보 — 로그 남김
+                        if elapsed > 5000 {
+                            fputs("[SCAN] SLOW subfolder \(sub.lastPathComponent) took \(Int(elapsed))ms\n", stderr)
+                        }
+                        semaphore.signal()
+                        group.leave()
+                    }
+                    if isCancelled() { return }
+                    let subItems = scanAndMatch(folderURL: sub, recursive: true)
+                        .filter { !$0.isFolder && !$0.isParentFolder }
+                    if !subItems.isEmpty && !isCancelled() {
+                        appendItems(subItems)
+                    }
+                }
+            }
+
+            // 주기 flush — coalescing 사이에 시간이 비면 강제 flush 보장
+            // Timer event handler 는 collectorQueue 위에서 실행되므로 _doFlushOnQueue 직접 호출 (sync 금지!).
+            let flushTimer = DispatchSource.makeTimerSource(queue: collectorQueue)
+            let flushInterval = flushIntervalMs / 1000.0
+            flushTimer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
+            flushTimer.setEventHandler {
+                if !isCancelled() { _doFlushOnQueue(force: false) }
+            }
+            flushTimer.resume()
+
+            group.notify(queue: .main) {
+                flushTimer.cancel()
+                // 마지막 잔여 flush + totalCount 회수 — collectorQueue 에 async 로 진입
+                collectorQueue.async {
+                    _doFlushOnQueue(force: true)
+                    let final = state.totalCount
+                    DispatchQueue.main.async {
+                        let elapsed = (CFAbsoluteTimeGetCurrent() - overallStart) * 1000
+                        fputs("[SCAN] streaming total \(final) photos in \(Int(elapsed))ms (parallel=\(maxConcurrent))\n", stderr)
+                        onComplete(isCancelled() ? 0 : final)
+                    }
+                }
+            }
+        }
+    }
+
     /// Scans a folder and its subdirectories for JPG/RAW/image/video files and matches them by filename.
     /// Uses UTType for accurate file type detection with extension-based fallback.
     /// Supports structures like:
@@ -144,7 +336,7 @@ struct FileMatchingService {
             enumOptions.insert(.skipsSubdirectoryDescendants)
         }
         // 파일 크기/날짜를 enumerator에서 한번에 가져와 stat() 중복 제거
-        let prefetchKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
+        let prefetchKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
         guard let enumerator = fileManager.enumerator(
             at: folderURL,
             includingPropertiesForKeys: Array(prefetchKeys),
@@ -166,8 +358,14 @@ struct FileMatchingService {
         var otherFiles: [String: URL] = [:]
 
         while let fileURL = enumerator.nextObject() as? URL {
-            guard let rv = try? fileURL.resourceValues(forKeys: prefetchKeys),
-                  rv.isRegularFile == true else { continue }
+            guard let rv = try? fileURL.resourceValues(forKeys: prefetchKeys) else { continue }
+            if recursive, rv.isDirectory == true {
+                if shouldSkipRecursiveDirectory(fileURL) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+            guard rv.isRegularFile == true else { continue }
 
             let baseName = fileURL.deletingPathExtension().lastPathComponent.lowercased()
             let info = FileInfo(
@@ -190,24 +388,68 @@ struct FileMatchingService {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         } ?? []
 
+        // v8.7: 파일번호 기반 매칭 (옵션) — _LR, -edit 같은 접미사 자동 무시
+        //   설정 UserDefaults "matchByFileNumber" = true 일 때 활성
+        let useNumberMatching = UserDefaults.standard.bool(forKey: "matchByFileNumber")
+        // 번호 → FileInfo 인덱스 (충돌 시 먼저 나온 것 유지)
+        var jpgByNumber: [Int: FileInfo] = [:]
+        var rawByNumber: [Int: FileInfo] = [:]
+        if useNumberMatching {
+            for (base, info) in jpgFiles {
+                if let num = extractTrailingNumber(from: base), jpgByNumber[num] == nil {
+                    jpgByNumber[num] = info
+                }
+            }
+            for (base, info) in rawFiles {
+                if let num = extractTrailingNumber(from: base), rawByNumber[num] == nil {
+                    rawByNumber[num] = info
+                }
+            }
+        }
+
+        /// JPG 엔트리와 매칭되는 RAW 찾기 — 정확 매칭 먼저, 없으면 번호 매칭
+        func pairedRAW(forJPGBase jpgBase: String) -> FileInfo? {
+            if let exact = rawFiles[jpgBase] { return exact }
+            if useNumberMatching,
+               let num = extractTrailingNumber(from: jpgBase),
+               let byNum = rawByNumber[num] {
+                return byNum
+            }
+            return nil
+        }
+
+        /// 어떤 JPG 키가 RAW 를 "소유" 하는지 판정 (중복 매핑 방지)
+        func rawBaseIsPairedFromJPG(_ rawBase: String) -> Bool {
+            if jpgFiles[rawBase] != nil { return true }
+            if useNumberMatching,
+               let num = extractTrailingNumber(from: rawBase),
+               let jpgInfo = jpgByNumber[num],
+               // 해당 JPG 가 존재하고 + 이 RAW 를 pairedRAW 로 가져간다면 true
+               pairedRAW(forJPGBase: jpgInfo.url.deletingPathExtension().lastPathComponent.lowercased())?.url == rawFiles[rawBase]?.url {
+                return true
+            }
+            return false
+        }
+
         // JPG가 있는 파일: JPG를 미리보기로, RAW를 매칭 (stat() 불필요 — enumerator에서 이미 로드)
         var result: [PhotoItem] = jpgFiles
             .sorted { $0.key < $1.key }
             .map { baseName, jpgInfo in
+                let rawInfo = pairedRAW(forJPGBase: baseName)
                 var item = PhotoItem(
                     jpgURL: jpgInfo.url,
-                    rawURL: rawFiles[baseName]?.url
+                    rawURL: rawInfo?.url
                 )
                 item.fileModDate = jpgInfo.modDate
                 item.jpgFileSize = jpgInfo.size
-                if let rawInfo = rawFiles[baseName] {
-                    item.rawFileSize = rawInfo.size
+                if let r = rawInfo {
+                    item.rawFileSize = r.size
                 }
                 return item
             }
 
-        // RAW만 있는 파일
-        let rawOnly = rawFiles.filter { jpgFiles[$0.key] == nil }
+        // RAW만 있는 파일 — 번호 매칭 시에도 JPG 에 딸린 것은 제외
+        let rawOnly = rawFiles.filter { !rawBaseIsPairedFromJPG($0.key) }
         let rawOnlyItems = rawOnly
             .sorted { $0.key < $1.key }
             .map { baseName, rawInfo in
@@ -236,7 +478,9 @@ struct FileMatchingService {
             }
         result.append(contentsOf: imageOnlyItems)
 
-        // Video files (duration extracted lightweight)
+        // Video files
+        // v8.9.4: videoDuration(url:) 는 AVAsset 동기 로드 (비싸고 NAS 에서 매우 느림).
+        //         초기 스캔에선 0 으로 두고 PhotoPreviewView 가 첫 표시 직전 lazy 로드.
         let videoItems = videoFiles
             .sorted { $0.key < $1.key }
             .map { baseName, vidInfo in
@@ -246,7 +490,7 @@ struct FileMatchingService {
                 )
                 item.fileModDate = vidInfo.modDate
                 item.jpgFileSize = vidInfo.size
-                item.videoDuration = videoDuration(url: vidInfo.url)
+                // item.videoDuration = 0 (default) — preview 표시 시점에 lazy 채움
                 return item
             }
         result.append(contentsOf: videoItems)
@@ -264,6 +508,19 @@ struct FileMatchingService {
         result.insert(contentsOf: folderItems, at: 0)
 
         return result
+    }
+
+    private static func shouldSkipRecursiveDirectory(_ url: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        if name.hasSuffix(".lrdata")
+            || name.hasSuffix(".lrcat-data")
+            || name.hasSuffix(".photoslibrary")
+            || name.hasSuffix(".aplibrary")
+            || name.hasSuffix(".photolibrary")
+            || name.hasSuffix(".app") {
+            return true
+        }
+        return false
     }
 }
 

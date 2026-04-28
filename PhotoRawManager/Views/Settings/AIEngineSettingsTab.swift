@@ -65,7 +65,7 @@ struct AIEngineSettingsTab: View {
                                     SecureField("sk-ant-...", text: $claudeAPIKey)
                                         .textFieldStyle(.roundedBorder)
                                         .onAppear { claudeAPIKey = ClaudeVisionService.getAPIKey() ?? "" }
-                                        .onChange(of: claudeAPIKey) { v in
+                                        .onChange(of: claudeAPIKey) { _, v in
                                             ClaudeVisionService.setAPIKey(v)
                                             ClaudeVisionService.invalidateAPIKeyCache()
                                         }

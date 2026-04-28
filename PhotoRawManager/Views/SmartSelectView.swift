@@ -67,8 +67,8 @@ struct SmartSelectView: View {
             }
         }.padding(24).frame(width: 520, height: 560)
         .onAppear { updateConfig(); store.previewSmartSelect() }
-        .onChange(of: criteria) { _ in updateConfig(); store.previewSmartSelect(); applied = false }
-        .onChange(of: cullIntensity) { _ in updateConfig(); store.previewSmartSelect(); applied = false }
+        .onChange(of: criteria) { _, _ in updateConfig(); store.previewSmartSelect(); applied = false }
+        .onChange(of: cullIntensity) { _, _ in updateConfig(); store.previewSmartSelect(); applied = false }
     }
 
     private var intensityDescription: String {

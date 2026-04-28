@@ -85,11 +85,15 @@ struct MultiPreviewCell: View {
             if let hi = hiResImage {
                 Image(nsImage: hi)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: cellW, height: cellH)
+                    .clipped()
             } else if let thumb = ThumbnailCache.shared.get(photo.jpgURL) {
                 Image(nsImage: thumb)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: cellW, height: cellH)
+                    .clipped()
             } else {
                 ProgressView().scaleEffect(0.5)
             }
@@ -119,15 +123,17 @@ struct MultiPreviewCell: View {
                     }
                 }
                 Spacer()
-                Text(photo.fileName)
-                    .font(.system(size: 9, weight: .medium))
+                // v8.6.2: 파일 확장자 포함 + 폰트 크기 확대 (9 → 13) — 다중선택 프리뷰 가독성 개선
+                Text(photo.fileNameWithExtension)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
                     .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.black.opacity(0.5))
-                    .cornerRadius(2)
-                    .padding(.bottom, 3)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.65))
+                    .cornerRadius(3)
+                    .padding(.bottom, 5)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -138,10 +144,20 @@ struct MultiPreviewCell: View {
             // 고화질 로딩 (선명하게)
             loadHiRes()
         }
+        // v8.6.2: 회전 알림 → 강제 재로드
+        .onReceive(NotificationCenter.default.publisher(for: AsyncThumbnailView.rotationInvalidateNotification)) { note in
+            guard let rotatedURL = note.object as? URL else { return }
+            if rotatedURL == photo.jpgURL || rotatedURL == photo.rawURL || rotatedURL == photo.displayURL {
+                hiResImage = nil
+                loadHiRes()
+            }
+        }
     }
 
     private func loadHiRes() {
-        let url = photo.jpgURL
+        // RAW+JPG 페어는 JPG placeholder 로 즉시 보여준 뒤, RAW displayURL 기준 고화질로 교체한다.
+        // 셀 자체는 fill+clip 이라 JPG/RAW aspect 차이로 검은 바가 드러나지 않는다.
+        let url = photo.displayURL
         // 셀 실제 표시 크기 × Retina 2배 — 최소 1600px 확보해서 선명도 유지
         // (이전 800px 는 Retina 에서 업스케일되어 뭉개짐)
         let scale = NSScreen.main?.backingScaleFactor ?? 2.0

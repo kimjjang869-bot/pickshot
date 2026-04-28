@@ -29,7 +29,7 @@ struct UprightGuideView: View {
                 Toggle("미리보기", isOn: $showPreview)
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .onChange(of: showPreview) { newValue in
+                    .onChange(of: showPreview) { _, newValue in
                         if newValue {
                             generatePreview()
                         }

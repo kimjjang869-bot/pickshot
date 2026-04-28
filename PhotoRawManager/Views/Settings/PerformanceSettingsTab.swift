@@ -82,11 +82,19 @@ struct PerformanceSettingsTab: View {
                                 Text("경로: ~/Library/Logs/PickShot/")
                                     .font(.system(size: 9, design: .monospaced))
                                     .foregroundColor(.secondary)
+                                Text("앱 로그: ~/Library/Caches/PickShot/logs/")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(.secondary)
                             }
                             Spacer()
                             VStack(spacing: 6) {
-                                Button("로그 폴더 열기") {
+                                Button("성능 로그 열기") {
                                     PerformanceMonitor.shared.openLogFolder()
+                                }
+                                .font(.system(size: 11))
+
+                                Button("앱 로그 열기") {
+                                    AppLogger.openLogFolder()
                                 }
                                 .font(.system(size: 11))
 

@@ -548,7 +548,7 @@ struct ClientSelectSetupView: View {
                     TextField("0 = 무제한", text: $limitInputText)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                        .onChange(of: limitInputText) { newValue in
+                        .onChange(of: limitInputText) { _, newValue in
                             if let v = Int(newValue.trimmingCharacters(in: .whitespaces)), v >= 0 {
                                 selectionLimit = v
                             }

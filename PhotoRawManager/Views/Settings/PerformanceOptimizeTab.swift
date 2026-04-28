@@ -7,23 +7,24 @@
 
 import SwiftUI
 import Metal
+import CryptoKit
 
 struct PerformanceOptimizeTab: View {
     @State private var isBenchmarking = false
     @State private var benchmarkDone = false
-    @State private var cpuScore: String = "—"
-    @State private var gpuScore: String = "—"
-    @State private var ramInfo: String = "—"
-    @State private var diskSpeed: String = "—"
+    @State private var cpuLabel: String = "—"
+    @State private var gpuLabel: String = "—"
+    @State private var ramLabel: String = "—"
+    @State private var diskLabel: String = "—"
+    @State private var totalScore: Int = 0
     @State private var recommendedProfile: String = "—"
     @State private var applied = false
     @State private var selectedProfile: String = ""
 
-    @AppStorage("previewMaxResolution") private var previewMaxResolution = "original"
-    @AppStorage("previewCacheSize") private var previewCacheSize = 20.0
+    @AppStorage("previewMaxResolution") private var previewMaxResolution = "1000"  // v8.6.2 기본값 통일
+    @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
-    @AppStorage("thumbnailCacheMaxGB") private var thumbnailCacheMaxGB: Double = 2.0
-    @AppStorage("userPerformanceProfile") private var userPerformanceProfileRaw: String = "auto"
+    @AppStorage("thumbnailCacheMaxGB") private var thumbnailCacheMaxGB: Double = 0.0  // v8.6.2: 0 = 자동(macOS 관리)
 
     var body: some View {
         ScrollView {
@@ -45,27 +46,7 @@ struct PerformanceOptimizeTab: View {
                         infoRow("RAM", "\(SystemSpec.shared.ramGB)GB")
                         infoRow("GPU", SystemSpec.shared.gpuName)
                         infoRow("macOS", SystemSpec.shared.osVersion)
-                        infoRow("성능 티어", "\(tierDisplayName(SystemSpec.shared.effectiveTier)) (자동: \(tierDisplayName(SystemSpec.shared.autoTier)))")
-                    }.padding(4)
-                }
-
-                // 성능 프로필 선택 (SystemSpec 연동)
-                GroupBox("성능 프로필") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker("성능 프로필", selection: $userPerformanceProfileRaw) {
-                            Text("자동").tag("auto")
-                            Text("속도 우선").tag("speed")
-                            Text("균형").tag("balanced")
-                            Text("화질 우선").tag("quality")
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: userPerformanceProfileRaw) { newValue in
-                            if let p = UserPerformanceProfile(rawValue: newValue) {
-                                SystemSpec.shared.userProfile = p
-                            }
-                        }
-                        Text("자동: 하드웨어에 맞춘 기본값 · 속도/화질: 한 단계 티어 조정")
-                            .font(.system(size: 11)).foregroundColor(.secondary)
+                        infoRow("성능 티어", tierDisplayName(SystemSpec.shared.autoTier))
                     }.padding(4)
                 }
 
@@ -79,13 +60,23 @@ struct PerformanceOptimizeTab: View {
                             }
                         } else if benchmarkDone {
                             HStack(spacing: 20) {
-                                benchBox(title: "CPU", value: cpuScore, color: .blue)
-                                benchBox(title: "GPU", value: gpuScore, color: .green)
-                                benchBox(title: "디스크", value: diskSpeed, color: .orange)
-                                benchBox(title: "RAM", value: ramInfo, color: .purple)
+                                benchBox(title: "CPU", value: cpuLabel, color: .blue)
+                                benchBox(title: "GPU", value: gpuLabel, color: .green)
+                                benchBox(title: "디스크", value: diskLabel, color: .orange)
+                                benchBox(title: "RAM", value: ramLabel, color: .purple)
                             }
 
                             Divider()
+
+                            // 종합 점수 (RAM 40% 가중)
+                            HStack(spacing: 8) {
+                                Text("종합 점수")
+                                    .font(.system(size: 12, weight: .medium))
+                                Text("\(totalScore) / 100")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(scoreColor(totalScore))
+                                Spacer()
+                            }
 
                             HStack {
                                 Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
@@ -112,7 +103,7 @@ struct PerformanceOptimizeTab: View {
                             HStack(spacing: 12) {
                                 profileButton("speed", icon: "hare", title: "속도 우선", desc: "낮은 해상도\n빠른 탐색")
                                 profileButton("balanced", icon: "scale.3d", title: "균형 (추천)", desc: "적정 해상도\n적정 캐시")
-                                profileButton("quality", icon: "eye", title: "화질 우선", desc: "최대 해상도\n큰 캐시")
+                                profileButton("quality", icon: "eye", title: "화질 우선", desc: "높은 해상도\n충분한 캐시")
                             }
 
                             if applied {
@@ -168,9 +159,16 @@ struct PerformanceOptimizeTab: View {
 
     private func benchBox(title: String, value: String, color: Color) -> some View {
         VStack(spacing: 2) {
-            Text(value).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(color)
+            Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(color)
             Text(title).font(.system(size: 10)).foregroundColor(.secondary)
         }.frame(width: 80)
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        if score >= 80 { return .green }
+        if score >= 60 { return .blue }
+        if score >= 40 { return .orange }
+        return .red
     }
 
     private func profileButton(_ profile: String, icon: String, title: String, desc: String) -> some View {
@@ -193,7 +191,7 @@ struct PerformanceOptimizeTab: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Benchmark
+    // MARK: - Benchmark (종합 점수 도입: RAM 40% + CPU 25% + GPU 15% + Disk 20%)
 
     private func runBenchmark() {
         isBenchmarking = true
@@ -202,56 +200,87 @@ struct PerformanceOptimizeTab: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024*1024*1024))
-            let cores = ProcessInfo.processInfo.activeProcessorCount
 
-            // CPU 벤치마크: 1000x1000 이미지 리사이즈 속도
+            // --- CPU 벤치마크: SHA256 해시 반복 (순수 산술 연산, GPU 가속 배제)
+            // 이전 `ctx.fill` 방식은 GPU 래스터라이저가 최적화해서 M1/M3 Max 차이가 미미했음.
+            // SHA256 은 ALU/memory bandwidth 에 의존해 실제 CPU 성능 차이 반영.
             let cpuStart = CFAbsoluteTimeGetCurrent()
-            for _ in 0..<10 {
-                autoreleasepool {
-                    let w = 1000, h = 1000
-                    if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w*4,
-                                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-                        ctx.setFillColor(CGColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1))
-                        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-                        let _ = ctx.makeImage()
-                    }
+            var buf = Data(count: 1 << 20)  // 1MB
+            for i in 0..<buf.count { buf[i] = UInt8(i & 0xFF) }
+            for _ in 0..<20 {
+                let digest = SHA256.hash(data: buf)
+                // 결과를 다음 iteration 의 입력에 섞어 optimizer 가 제거 못 하게
+                let bytes = Array(digest)
+                for (idx, b) in bytes.enumerated() where idx < buf.count {
+                    buf[idx] = buf[idx] &+ b
                 }
             }
             let cpuTime = (CFAbsoluteTimeGetCurrent() - cpuStart) * 1000
-            let cpuScoreVal = cpuTime < 50 ? "매우 빠름" : cpuTime < 100 ? "빠름" : cpuTime < 200 ? "보통" : "느림"
+            // 경험 기준 (20회 × 1MB SHA256):
+            //   M3 Max / M4 Max: ~15ms  | M1 Pro 16GB: ~30ms  | M1 MBA 8GB: ~50ms  | Intel: ~150ms+
+            let cpuScoreVal: Int
+            let cpuLabelVal: String
+            if cpuTime < 20      { cpuScoreVal = 100; cpuLabelVal = "최고" }
+            else if cpuTime < 40 { cpuScoreVal = 80;  cpuLabelVal = "빠름" }
+            else if cpuTime < 80 { cpuScoreVal = 60;  cpuLabelVal = "보통" }
+            else if cpuTime < 160{ cpuScoreVal = 30;  cpuLabelVal = "느림" }
+            else                 { cpuScoreVal = 10;  cpuLabelVal = "매우 느림" }
 
-            // GPU 체크
-            let hasGPU = MTLCreateSystemDefaultDevice() != nil
-            let gpuName = MTLCreateSystemDefaultDevice()?.name ?? "없음"
-            let gpuScoreVal = gpuName.contains("M4") || gpuName.contains("M3") ? "최고" :
-                              gpuName.contains("M2") || gpuName.contains("M1") ? "우수" : "보통"
+            // --- GPU: 칩 세대 기반 ---
+            let gpuName = MTLCreateSystemDefaultDevice()?.name ?? ""
+            let gpuScoreVal: Int
+            let gpuLabelVal: String
+            if gpuName.contains("M4")      { gpuScoreVal = 100; gpuLabelVal = "최고" }
+            else if gpuName.contains("M3") { gpuScoreVal = 85;  gpuLabelVal = "우수" }
+            else if gpuName.contains("M2") { gpuScoreVal = 70;  gpuLabelVal = "양호" }
+            else if gpuName.contains("M1") { gpuScoreVal = 55;  gpuLabelVal = "보통" }
+            else if gpuName.contains("Intel") { gpuScoreVal = 20; gpuLabelVal = "낮음" }
+            else                           { gpuScoreVal = 40;  gpuLabelVal = "보통" }
 
-            // 디스크 속도 (임시 파일 쓰기/읽기)
+            // --- RAM: PickShot 의 최대 병목 — 가중치 40% ---
+            let ramScoreVal: Int
+            let ramLabelVal: String
+            if ramGB >= 24      { ramScoreVal = 100; ramLabelVal = "최고" }
+            else if ramGB >= 16 { ramScoreVal = 65;  ramLabelVal = "보통" }
+            else if ramGB >= 8  { ramScoreVal = 30;  ramLabelVal = "낮음" }
+            else                { ramScoreVal = 10;  ramLabelVal = "매우 낮음" }
+
+            // --- Disk: 10MB write+read ---
             let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_bench.tmp")
-            let testData = Data(repeating: 0xAA, count: 10_000_000) // 10MB
+            let testData = Data(repeating: 0xAA, count: 10_000_000)
             let diskStart = CFAbsoluteTimeGetCurrent()
             try? testData.write(to: tmpFile)
             let _ = try? Data(contentsOf: tmpFile)
             try? FileManager.default.removeItem(at: tmpFile)
             let diskTime = (CFAbsoluteTimeGetCurrent() - diskStart) * 1000
-            let diskSpeedVal = diskTime < 50 ? "SSD 고속" : diskTime < 100 ? "SSD" : diskTime < 500 ? "HDD" : "느림"
+            let diskScoreVal: Int
+            let diskLabelVal: String
+            if diskTime < 30       { diskScoreVal = 100; diskLabelVal = "고속 SSD" }
+            else if diskTime < 80  { diskScoreVal = 75;  diskLabelVal = "SSD" }
+            else if diskTime < 200 { diskScoreVal = 40;  diskLabelVal = "HDD" }
+            else                   { diskScoreVal = 15;  diskLabelVal = "느림" }
 
-            // 추천 프로필 결정
-            let profile: String
-            if ramGB >= 32 && cores >= 8 && gpuScoreVal == "최고" {
-                profile = "🚀 고성능 — 최대 설정 가능"
-            } else if ramGB >= 16 && cores >= 4 {
-                profile = "⚡ 균형 — 표준 설정 추천"
-            } else {
-                profile = "🐢 절약 — 속도 우선 설정 추천"
-            }
+            // --- 종합 점수 (가중 평균) ---
+            let total = Int(
+                Double(cpuScoreVal) * 0.25 +
+                Double(gpuScoreVal) * 0.15 +
+                Double(ramScoreVal) * 0.40 +
+                Double(diskScoreVal) * 0.20
+            )
+
+            // --- 추천 프로필 (종합 점수 기반) ---
+            let recommended: String
+            if total >= 75      { recommended = "화질 우선" }
+            else if total >= 50 { recommended = "균형 (추천)" }
+            else                { recommended = "속도 우선" }
 
             DispatchQueue.main.async {
-                self.cpuScore = cpuScoreVal
-                self.gpuScore = gpuScoreVal
-                self.ramInfo = "\(ramGB)GB"
-                self.diskSpeed = diskSpeedVal
-                self.recommendedProfile = profile
+                self.cpuLabel = cpuLabelVal
+                self.gpuLabel = gpuLabelVal
+                self.ramLabel = "\(ramGB)GB (\(ramLabelVal))"
+                self.diskLabel = diskLabelVal
+                self.totalScore = total
+                self.recommendedProfile = recommended
                 self.isBenchmarking = false
                 self.benchmarkDone = true
             }
@@ -259,31 +288,45 @@ struct PerformanceOptimizeTab: View {
     }
 
     // MARK: - Apply Profile
+    // 마진 원칙: "쾌적하고 빠르게" 모토 — 모든 프로필에서 폴더 이동 끊김 없게 장수 충분히 확보.
+    // 최대 해상도도 3000px 에서 상한 (줌 시에는 loadHiResImage 가 full-res 로 대체).
+    //
+    // RAM 구간 × 프로필:
+    //   8GB   / speed: 300px×80장×1.5GB   balanced: 500px×50장×2GB   quality: 800px×35장×2GB
+    //   16GB  / speed: 600px×80장×2GB     balanced: 1000px×60장×3GB  quality: 1600px×40장×3GB
+    //   24GB+ / speed: 1200px×80장×3GB    balanced: 1800px×60장×4GB  quality: 3000px×40장×5GB
 
     private func applyProfile(_ profile: String) {
         let ramGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
 
-        switch profile {
-        case "speed":
-            // 속도 우선: 빠른 탐색, 메모리 절약
-            previewMaxResolution = ramGB >= 16 ? "original" : "3000"
-            previewCacheSize = Double(min(15, max(5, ramGB / 4)))
-            defaultThumbnailSize = 100
-            thumbnailCacheMaxGB = Double(min(2.0, max(0.5, Double(ramGB) / 16)))
-        case "balanced":
-            // 균형 (추천): RAM에 맞는 최적 설정
-            previewMaxResolution = "original"
-            previewCacheSize = Double(min(25, max(10, ramGB / 3)))
-            defaultThumbnailSize = 100
-            thumbnailCacheMaxGB = Double(min(3.0, max(0.5, Double(ramGB) / 10)))
-        case "quality":
-            // 화질 우선: 최대 해상도, 큰 캐시
-            previewMaxResolution = "original"
-            previewCacheSize = Double(min(40, max(15, ramGB / 2)))
-            defaultThumbnailSize = 100
-            thumbnailCacheMaxGB = Double(min(6.0, max(1.0, Double(ramGB) / 8)))
-        default: break
+        // RAM 구간: low(<16), mid(16~23), high(24+)
+        enum RamBand { case low, mid, high }
+        let band: RamBand = ramGB < 16 ? .low : (ramGB < 24 ? .mid : .high)
+
+        let res: String
+        let cache: Double
+        let diskGB: Double
+
+        switch (profile, band) {
+        // 속도 우선 — 해상도 작게, 장수 많이
+        case ("speed", .low):   res = "300";  cache = 80; diskGB = 1.5
+        case ("speed", .mid):   res = "600";  cache = 80; diskGB = 2.0
+        case ("speed", .high):  res = "1200"; cache = 80; diskGB = 3.0
+        // 균형 — 적정 해상도, 적정 장수
+        case ("balanced", .low):  res = "500";  cache = 50; diskGB = 2.0
+        case ("balanced", .mid):  res = "1000"; cache = 60; diskGB = 3.0
+        case ("balanced", .high): res = "1800"; cache = 60; diskGB = 4.0
+        // 화질 우선 — 해상도 크게, 장수 약간 적게 (but 30+ 유지)
+        case ("quality", .low):   res = "800";  cache = 35; diskGB = 2.0
+        case ("quality", .mid):   res = "1600"; cache = 40; diskGB = 3.0
+        case ("quality", .high):  res = "3000"; cache = 40; diskGB = 5.0
+        default: return
         }
+
+        previewMaxResolution = res
+        previewCacheSize = cache
+        thumbnailCacheMaxGB = diskGB
+        defaultThumbnailSize = 100
 
         selectedProfile = profile
         applied = true
@@ -293,8 +336,8 @@ struct PerformanceOptimizeTab: View {
 
 extension PerformanceOptimizeTab {
     func resetDefaults() {
-        previewMaxResolution = "original"; previewCacheSize = 20.0
-        defaultThumbnailSize = 150.0; thumbnailCacheMaxGB = 2.0
+        previewMaxResolution = "1000"; previewCacheSize = 50.0
+        defaultThumbnailSize = 150.0; thumbnailCacheMaxGB = 0.0  // 0 = 자동
         selectedProfile = ""; applied = false
     }
 }

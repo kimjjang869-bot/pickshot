@@ -530,7 +530,7 @@ struct SmartCullView: View {
             ], spacing: 6) {
                 ForEach(quizPhotos) { photo in
                     let selected = quizSelected.contains(photo.id)
-                    AsyncThumbnailView(url: photo.jpgURL)
+                    AsyncThumbnailView(url: photo.displayURL)
                         .frame(height: 100)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(

@@ -17,6 +17,11 @@ private struct GridWidthKey: PreferenceKey {
 
 struct ThumbnailGridView: View {
     @EnvironmentObject var store: PhotoStore
+    /// v8.6.2: 키 꾹 누르기 중 proxy.scrollTo 쓰로틀 (debounce 아님)
+    ///   최소 100ms 간격으로 '반드시' 발동 — debounce 는 연속 입력 중 끝까지 실행 안 되는 문제로
+    ///   스크롤이 따라가지 못함.
+    @State private var scrollThrottleLastFire: Date = .distantPast
+    @State private var scrollTrailingWork: DispatchWorkItem?
 
     var body: some View {
         GeometryReader { geo in
@@ -30,11 +35,20 @@ struct ThumbnailGridView: View {
                     }
             } else {
                 // SwiftUI LazyVGrid / List (안정적 + 메모리 캐시 8GB)
+                //   v8.7: useNativeGrid UserDefaults true → AppKit NSCollectionView 사용 (10배 빠름)
                 VStack(spacing: 0) {
                     if store.viewMode == .list {
-                        // SwiftUI Table — Finder와 동일한 컬럼 리사이즈/정렬
-                        NativeListView()
+                        // v8.7: NSTableView 기반 — Finder/Bridge 수준 멀티 드래그 + 성능
+                        NativeTableListView()
                             .environmentObject(store)
+                    } else if UserDefaults.standard.bool(forKey: "useLazyVGrid") == false {
+                        // v8.7: 네이티브 NSCollectionView — 2000+장 폴더에서 60fps 스크롤/네비
+                        NSThumbnailCollectionView()
+                            .environmentObject(store)
+                            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                                handleExternalDrop(providers: providers)
+                                return true
+                            }
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView {
@@ -91,9 +105,27 @@ struct ThumbnailGridView: View {
                                     Label("새 폴더 만들기", systemImage: "folder.badge.plus")
                                 }
                             }
-                            .onChange(of: store.scrollTrigger) { _ in
+                            .onChange(of: store.scrollTrigger) { _, _ in
                                 guard let id = store.selectedPhotoID else { return }
-                                proxy.scrollTo(id, anchor: nil)
+                                // v8.6.2: 10k+ 폴더에서 LazyVGrid scrollTo 가 느림 → 쓰로틀.
+                                //   - 단일 이동 또는 100ms 경과: 즉시 실행
+                                //   - 연속 입력 중: trailing 예약 (마지막 위치로 확실히 스크롤 보장)
+                                let now = Date()
+                                if !store.isKeyRepeat || now.timeIntervalSince(scrollThrottleLastFire) >= 0.1 {
+                                    proxy.scrollTo(id, anchor: nil)
+                                    scrollThrottleLastFire = now
+                                    scrollTrailingWork?.cancel()
+                                } else {
+                                    // 너무 빠른 연속 호출 → trailing 한 번만 예약 (끝까지 반영 보장)
+                                    scrollTrailingWork?.cancel()
+                                    let work = DispatchWorkItem {
+                                        guard let newID = store.selectedPhotoID else { return }
+                                        proxy.scrollTo(newID, anchor: nil)
+                                        scrollThrottleLastFire = Date()
+                                    }
+                                    scrollTrailingWork = work
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+                                }
                             }
                         }
                     }
@@ -202,34 +234,46 @@ struct ThumbnailGridView: View {
                             count: max(1, store.actualColumnsPerRow))
 
         let photos = store.filteredPhotos  // Compute once, not per-cell
+        let selectedID = store.selectedPhotoID
+        let selectedIDs = store.selectedPhotoIDs
         return LazyVGrid(columns: columns, spacing: 10, pinnedViews: []) {
             ForEach(photos) { photo in
                 LazyThumbnailWrapper(
                     photo: photo,
                     size: size,
-                    isSelected: store.isSelected(photo.id),
-                    isFocused: store.selectedPhotoID == photo.id,
+                    isSelected: selectedIDs.contains(photo.id),
+                    isFocused: selectedID == photo.id,
                     onTap: {
                         let flags = NSEvent.modifierFlags
                         store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
                     }
                 )
+                // v8.6.2: Equatable conformance 로 선택 상태 변경 시 해당 cell 2개만 re-render
+                //   (이전에 selected 였다가 해제된 cell + 새로 selected 된 cell). 나머지 10k-2 개는 스킵.
+                .equatable()
                 .id(photo.id)
+                // v8.6.3: 러버밴드 선택용 셀 프레임 수집
+                .background(GeometryReader { geo in
+                    Color.clear.preference(
+                        key: GridCellFrameKey.self,
+                        value: [photo.id: geo.frame(in: .named("pickshotGrid"))]
+                    )
+                })
             }
         }
         .padding(8)
         .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    store.deselectAll()
-                }
-                .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
-                    // Finder 등에서 그리드 빈 영역에 드롭 → 현재 폴더로 복사
-                    handleExternalDrop(providers: providers)
-                    return true
-                }
+            // v8.6.3: 러버밴드 (marquee) 선택 — 빈 영역에서 드래그 시작하면 사각형 그리고 교차 셀 선택
+            MarqueeSelectionBackground(
+                coordinateSpaceName: "pickshotGrid",
+                allPhotoIDs: photos.filter { !$0.isFolder && !$0.isParentFolder }.map(\.id),
+                store: store
+            )
         )
+        .coordinateSpace(name: "pickshotGrid")
+        .onPreferenceChange(GridCellFrameKey.self) { frames in
+            MarqueeFrameRegistry.shared.frames = frames
+        }
     }
 
     // MARK: - List View
@@ -336,9 +380,16 @@ struct ThumbnailGridView: View {
 
 // MARK: - 네이티브 Table 목록뷰 (Finder 스타일 컬럼 리사이즈)
 
+/// 리스트뷰 전용 Table 바운딩 frame 수집 — NSEvent 모니터의 hit test 용.
+private struct ListViewBoundsKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 struct NativeListView: View {
     @EnvironmentObject var store: PhotoStore
     @State private var selection: Set<UUID> = []
+    @State private var listExifLoadWork: DispatchWorkItem? = nil
     @State private var sortOrder: [KeyPathComparator<PhotoItem>] = [
         .init(\.fileModDate, order: .reverse)
     ]
@@ -350,111 +401,73 @@ struct NativeListView: View {
         return f
     }()
 
+    /// sortOrder 변화에 따라 store.filteredPhotos 를 지역적으로 재정렬해 Table 에 제공.
+    /// SwiftUI Table(data, sortOrder:) 는 data 를 스스로 재정렬하지 않으므로 수동 적용.
+    private var sortedRows: [PhotoItem] {
+        let base = store.filteredPhotos
+        if sortOrder.isEmpty { return base }
+        // 폴더/parent 는 항상 상단에 고정. 사진만 sortOrder 적용.
+        let folders = base.filter { $0.isFolder || $0.isParentFolder }
+        let photos = base.filter { !$0.isFolder && !$0.isParentFolder }
+        let sortedPhotos = photos.sorted(using: sortOrder)
+        return folders + sortedPhotos
+    }
+
     var body: some View {
-        Table(store.filteredPhotos, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
-            TableColumn("이름") { photo in
-                let livePhoto = store.livePhoto(photo.id) ?? photo
-                HStack(spacing: 6) {
-                    if photo.isParentFolder {
-                        Image(systemName: "chevron.up.circle.fill")
-                            .font(.system(size: 16)).foregroundColor(.blue)
-                    } else if photo.isFolder {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 16)).foregroundColor(.blue)
-                    } else {
-                        AsyncThumbnailView(url: photo.jpgURL)
-                            .frame(width: 42, height: 28)
-                            .clipShape(RoundedRectangle(cornerRadius: 2))
-                    }
-                    Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                    if !photo.isFolder && !photo.isParentFolder {
-                        let badge = photo.fileTypeBadge
-                        Text(badge.text)
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 3).padding(.vertical, 1)
-                            .background(badgeColor(badge.color).opacity(0.8))
-                            .cornerRadius(2)
-                    }
-                    if let labelColor = livePhoto.colorLabel.color {
-                        Circle().fill(labelColor).frame(width: 10, height: 10)
-                    }
-                }
-                .frame(height: 32)
-                .background(
-                    GeometryReader { geo in
-                        if let labelColor = livePhoto.colorLabel.color {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(labelColor.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(labelColor.opacity(0.5), lineWidth: 2)
-                                )
-                                .frame(width: 2000, height: geo.size.height + 4)
-                                .offset(x: -8, y: -2)
-                        } else if livePhoto.rating == 5 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(AppTheme.starGold.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(AppTheme.starGold.opacity(0.5), lineWidth: 2)
-                                )
-                                .frame(width: 2000, height: geo.size.height + 4)
-                                .offset(x: -8, y: -2)
-                        }
-                    }
-                )
-                .onAppear {
-                    if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
-                        store.loadExifIfNeeded(for: photo.id)
-                    }
-                }
+        Table(sortedRows, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
+            TableColumn("이름", value: \.fileNameWithExtension) { photo in
+                listNameCell(photo: photo)
             }
-            .width(min: 150, ideal: 250, max: 600)
+            .width(min: 200, ideal: 320, max: 600)
             .customizationID("name")
             .disabledCustomizationBehavior(.visibility)
 
             TableColumn("수정일", value: \.fileModDate) { photo in
                 Text(photo.isFolder ? "--" : Self.dateFormatter.string(from: photo.fileModDate))
                     .font(.system(size: 11)).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            }
-            .width(min: 80, ideal: 95, max: 160)
-            .customizationID("date")
-
-            TableColumn("크기") { photo in
-                Text(formatSize(photo.jpgFileSize + photo.rawFileSize))
-                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            }
-            .width(min: 40, ideal: 55, max: 80)
-            .customizationID("size")
-
-            TableColumn("종류") { photo in
-                Text(photo.isFolder ? "폴더" : photo.jpgURL.pathExtension.uppercased())
-                    .font(.system(size: 11)).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 35, ideal: 50, max: 80)
+            .width(min: 100, ideal: 120, max: 180)
+            .customizationID("date")
+
+            TableColumn("크기", value: \.totalFileSize) { photo in
+                Text(photo.isFolder ? "--" : formatSize(photo.totalFileSize))
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .width(min: 55, ideal: 70, max: 100)
+            .customizationID("size")
+
+            TableColumn("종류", value: \.kindSortKey) { photo in
+                Text(prettyKind(for: photo))
+                    .font(.system(size: 11)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .width(min: 75, ideal: 100, max: 150)
             .customizationID("type")
 
-            TableColumn("별점") { photo in
+            TableColumn("별점", value: \.rating) { photo in
                 let rating = store.livePhoto(photo.id)?.rating ?? photo.rating
-                HStack(spacing: 0) {
-                    if rating > 0 {
-                        ForEach(1...rating, id: \.self) { _ in
-                            Image(systemName: "star.fill").font(.system(size: 8)).foregroundColor(AppTheme.starGold)
+                // Lightroom/Capture One 스타일 — 5개 별 전부 표시, 채워진 만큼 골드 색
+                HStack(spacing: 1) {
+                    if photo.isFolder || photo.isParentFolder {
+                        Text("").frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(1...5, id: \.self) { idx in
+                            Image(systemName: idx <= rating ? "star.fill" : "star")
+                                .font(.system(size: 9))
+                                .foregroundColor(idx <= rating ? AppTheme.starGold : Color.white.opacity(0.18))
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 40, ideal: 65, max: 100)
+            .width(min: 70, ideal: 80, max: 110)
             .customizationID("rating")
 
-            TableColumn("해상도") { photo in
+            TableColumn("해상도", value: \.resolutionSortKey) { photo in
                 let exif = store.exifFor(photo.id)
                 Group {
                     if let w = exif?.imageWidth, let h = exif?.imageHeight {
@@ -462,39 +475,33 @@ struct NativeListView: View {
                             .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
                     } else { Text("") }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 70, ideal: 100, max: 150)
+            .width(min: 80, ideal: 100, max: 150)
             .customizationID("resolution")
             .defaultVisibility(.hidden)
 
-            TableColumn("카메라") { photo in
+            TableColumn("카메라", value: \.cameraSortKey) { photo in
                 Text(store.exifFor(photo.id)?.cameraModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 60, ideal: 110, max: 200)
+            .width(min: 80, ideal: 120, max: 200)
             .customizationID("camera")
             .defaultVisibility(.hidden)
 
-            TableColumn("렌즈") { photo in
+            TableColumn("렌즈", value: \.lensSortKey) { photo in
                 Text(store.exifFor(photo.id)?.lensModel ?? "")
                     .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .width(min: 60, ideal: 120, max: 200)
+            .width(min: 80, ideal: 120, max: 200)
             .customizationID("lens")
             .defaultVisibility(.hidden)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: UUID.self) { ids in
-            // 행 우클릭 메뉴
-            Button {
-                store.selectedPhotoIDs = ids
-                store.requestDeleteOriginal(ids: ids)
-            } label: {
-                Label("휴지통으로 이동", systemImage: "trash")
-            }
+            listContextMenu(for: ids)
         } primaryAction: { ids in
             // 더블클릭 — 폴더면 진입
             if let id = ids.first, let idx = store._photoIndex[id], idx < store.photos.count {
@@ -504,7 +511,7 @@ struct NativeListView: View {
                 }
             }
         }
-        .onChange(of: selection) { newSelection in
+        .onChange(of: selection) { _, newSelection in
             store.selectedPhotoIDs = newSelection
             if newSelection.count == 1, let first = newSelection.first {
                 store.selectedPhotoID = first
@@ -517,7 +524,7 @@ struct NativeListView: View {
                 }
             }
         }
-        .onChange(of: store.selectedPhotoIDs) { newIDs in
+        .onChange(of: store.selectedPhotoIDs) { _, newIDs in
             if newIDs != selection {
                 selection = newIDs
             }
@@ -528,10 +535,12 @@ struct NativeListView: View {
                 store.triggerListExifLoad()
             }
         }
-        .onChange(of: store.photosVersion) { _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                store.triggerListExifLoad()
-            }
+        .onChange(of: store.photosVersion) { _, _ in
+            // v8.9 perf: 500ms → 100ms + cancellable. photosVersion 폭주 시에도 마지막 1회만 실행.
+            listExifLoadWork?.cancel()
+            let work = DispatchWorkItem { store.triggerListExifLoad() }
+            listExifLoadWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
         }
         .focusable()
         .onKeyPress { press in
@@ -539,7 +548,208 @@ struct NativeListView: View {
         }
     }
 
+    /// 이름 컬럼 셀 뷰 — 썸네일 + 파일명 + SP/G 배지 + 컬러라벨 인디케이터.
+    /// `.draggable` 로 단일 파일 드래그 지원 (SwiftUI Table 의 내부 tracking loop 때문에
+    /// NSEvent 글로벌 모니터로 멀티 드래그 불가 — 현재 아키텍처 한계).
+    @ViewBuilder
+    private func listNameCell(photo: PhotoItem) -> some View {
+        let livePhoto = store.livePhoto(photo.id) ?? photo
+        HStack(spacing: 8) {
+            if let labelColor = livePhoto.colorLabel.color {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(labelColor)
+                    .frame(width: 3, height: 20)
+            } else {
+                Color.clear.frame(width: 3)
+            }
+
+            if photo.isParentFolder {
+                Image(systemName: "arrow.up.circle")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, height: 34)
+            } else if photo.isFolder {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(.accentColor.opacity(0.85))
+                    .frame(width: 50, height: 34)
+            } else {
+                AsyncThumbnailView(url: photo.displayURL)
+                    .frame(width: 50, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+            }
+
+            Text(photo.fileNameWithExtension)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if livePhoto.isSpacePicked {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.red)
+            }
+            if livePhoto.isGSelected {
+                Text("G")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 2).fill(Color.green))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                .onChanged { value in
+                    // Table 의 내부 mouse tracking 과 간섭 없이 드래그 감지.
+                    //   onChanged 가 여러 번 호출되므로 한 번만 drag session 개시.
+                    guard !Self.listDragInProgress else { return }
+                    Self.listDragInProgress = true
+                    fputs("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n", stderr)
+                    initiateListDrag(anchor: photo)
+                }
+                .onEnded { _ in
+                    Self.listDragInProgress = false
+                }
+        )
+        .onAppear {
+            if !photo.isFolder && !photo.isParentFolder && photo.exifData == nil {
+                store.loadExifIfNeeded(for: photo.id)
+            }
+        }
+    }
+
+    /// 리스트뷰 드래그 진행 상태 — simultaneousGesture 가 여러 번 fire 하므로 중복 방지.
+    /// ListViewDragSource.draggingSession(endedAt:) 에서 리셋하므로 internal.
+    nonisolated(unsafe) static var listDragInProgress: Bool = false
+
+    /// 드래그 시작 — 선택된 모든 파일로 NSDraggingSession 개시
+    private func initiateListDrag(anchor: PhotoItem) {
+        guard let event = NSApp.currentEvent else {
+            fputs("[ListDrag] ❌ no current event\n", stderr)
+            return
+        }
+        // 선택에 anchor 포함 안 되면 단독 드래그
+        let ids: Set<UUID> = store.selectedPhotoIDs.contains(anchor.id)
+            ? store.selectedPhotoIDs : [anchor.id]
+        var urls: [URL] = []
+        for id in ids {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            if p.isParentFolder { continue }
+            if p.isFolder {
+                urls.append(p.jpgURL)
+            } else {
+                urls.append(p.jpgURL)
+                if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+            }
+        }
+        guard !urls.isEmpty else { return }
+
+        let side: CGFloat = 80
+        let defaultFrame = NSRect(x: -side / 2, y: -side / 2, width: side, height: side)
+
+        // 프리뷰 생성
+        var previewImage: NSImage? = nil
+        let thumb = DiskThumbnailCache.shared.getByPath(url: anchor.jpgURL)
+            ?? ThumbnailCache.shared.get(anchor.jpgURL)
+        if let image = thumb {
+            let resized = NSImage(size: NSSize(width: side, height: side))
+            resized.lockFocus()
+            NSGraphicsContext.current?.imageInterpolation = .high
+            let r = min(side / image.size.width, side / image.size.height)
+            let w = image.size.width * r
+            let h = image.size.height * r
+            image.draw(in: NSRect(x: (side - w)/2, y: (side - h)/2, width: w, height: h))
+            if ids.count > 1 {
+                let badge = "\(ids.count)" as NSString
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                    .foregroundColor: NSColor.white
+                ]
+                let bsize = badge.size(withAttributes: attrs)
+                let bW = max(20, bsize.width + 8)
+                let bRect = NSRect(x: side - bW - 2, y: side - 18, width: bW, height: 16)
+                NSColor.systemBlue.setFill()
+                NSBezierPath(roundedRect: bRect, xRadius: 8, yRadius: 8).fill()
+                badge.draw(at: NSPoint(x: bRect.midX - bsize.width/2, y: bRect.midY - bsize.height/2),
+                           withAttributes: attrs)
+            }
+            resized.unlockFocus()
+            previewImage = resized
+        }
+
+        var items: [NSDraggingItem] = []
+        for (i, url) in urls.enumerated() {
+            let pb = NSPasteboardItem()
+            pb.setString(url.absoluteString, forType: .fileURL)
+            let di = NSDraggingItem(pasteboardWriter: pb)
+            di.setDraggingFrame(defaultFrame, contents: i == 0 ? previewImage : nil)
+            items.append(di)
+        }
+
+        guard let contentView = event.window?.contentView else {
+            fputs("[ListDrag] ❌ no contentView\n", stderr)
+            return
+        }
+        _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
+        fputs("[ListDrag] ✅ session started with \(urls.count) items\n", stderr)
+    }
+
+    /// 리스트뷰 우클릭 컨텍스트 메뉴 — 썸네일뷰 PhotoContextMenu 재사용.
+    @ViewBuilder
+    private func listContextMenu(for ids: Set<UUID>) -> some View {
+        // 우클릭 시 해당 행을 선택으로 전환 (썸네일뷰와 동일 UX)
+        let _ = {
+            if !ids.isEmpty && ids != selection {
+                DispatchQueue.main.async {
+                    selection = ids
+                    store.selectedPhotoIDs = ids
+                    if let first = ids.first { store.selectedPhotoID = first }
+                }
+            }
+        }()
+        let effectiveIDs: Set<UUID> = ids.isEmpty ? selection : ids
+        let firstID = effectiveIDs.first
+        let idx: Int? = firstID.flatMap { store._photoIndex[$0] }
+        if let i = idx, i < store.photos.count {
+            PhotoContextMenu(photo: store.photos[i], store: store)
+        } else {
+            Text("선택된 파일 없음").disabled(true)
+        }
+    }
+
+    private func handleKeyPressExt(_ press: KeyPress) -> KeyPress.Result {
+        // Cmd+C/X/V — 복사/잘라내기/붙여넣기
+        if press.modifiers.contains(.command) {
+            switch press.characters.lowercased() {
+            case "c":
+                copySelectionToPasteboard(store: store)
+                return .handled
+            case "x":
+                cutSelectionToPasteboard(store: store)
+                return .handled
+            case "v":
+                pasteFilesFromPasteboard(store: store)
+                return .handled
+            case "a":
+                store.selectAll()
+                selection = store.selectedPhotoIDs
+                return .handled
+            default: break
+            }
+        }
+        return .ignored
+    }
+
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        // Cmd 단축키 먼저 처리
+        if handleKeyPressExt(press) == .handled { return .handled }
+
         let chars = press.characters
 
         // 스페이스바: 별 5개 토글 (포커스 사진 기준, 다중 선택 시 일괄)
@@ -586,6 +796,31 @@ struct NativeListView: View {
         }
 
         return .ignored
+    }
+
+    /// Finder 스타일 파일 종류 라벨 — "JPEG 이미지", "Sony RAW", "MP4 비디오" 등
+    private func prettyKind(for photo: PhotoItem) -> String {
+        if photo.isParentFolder { return "상위 폴더" }
+        if photo.isFolder { return "폴더" }
+        let ext = photo.jpgURL.pathExtension.lowercased()
+        switch ext {
+        case "jpg", "jpeg": return "JPEG 이미지"
+        case "png": return "PNG 이미지"
+        case "heic": return "HEIC 이미지"
+        case "tif", "tiff": return "TIFF 이미지"
+        case "arw": return "Sony RAW"
+        case "cr2", "cr3": return "Canon RAW"
+        case "nef": return "Nikon RAW"
+        case "raf": return "Fuji RAW"
+        case "orf": return "Olympus RAW"
+        case "rw2": return "Panasonic RAW"
+        case "pef": return "Pentax RAW"
+        case "dng": return "Adobe DNG"
+        case "mp4": return "MP4 비디오"
+        case "mov": return "QuickTime 비디오"
+        case "m4v": return "M4V 비디오"
+        default: return ext.uppercased()
+        }
     }
 
     private func formatSize(_ bytes: Int64) -> String {
@@ -688,13 +923,25 @@ extension ThumbnailGridView {
 
 // MARK: - Lazy Wrappers (prevent full grid re-render on selection change)
 
-struct LazyThumbnailWrapper: View {
+struct LazyThumbnailWrapper: View, Equatable {
     let photo: PhotoItem
     let size: CGFloat
     let isSelected: Bool
     let isFocused: Bool
     let onTap: () -> Void
     @EnvironmentObject var store: PhotoStore
+
+    // v8.6.2: 선택 상태/사진ID/크기만 비교. store 변경 (예: thumbCacheCount) 에는 re-render 안 함.
+    static func == (l: LazyThumbnailWrapper, r: LazyThumbnailWrapper) -> Bool {
+        l.photo.id == r.photo.id
+            && l.size == r.size
+            && l.isSelected == r.isSelected
+            && l.isFocused == r.isFocused
+            && l.photo.rating == r.photo.rating
+            && l.photo.colorLabel == r.photo.colorLabel
+            && l.photo.isSpacePicked == r.photo.isSpacePicked
+            && l.photo.isGSelected == r.photo.isGSelected
+    }
 
     var body: some View {
         if photo.isParentFolder {
@@ -748,7 +995,7 @@ struct LazyThumbnailWrapper: View {
         } else if photo.isFolder {
             // Subfolder item — 미리보기 사진 4장 or 폴더 아이콘
             VStack(spacing: 4) {
-                if store.showFolderPreview {
+                if store.showFolderPreview && !store.isRecursiveMode {
                     FolderPreviewGrid(folderURL: photo.jpgURL, size: size)
                 } else {
                     ZStack {
@@ -828,6 +1075,12 @@ struct LazyThumbnailWrapper: View {
                 photo: photo, store: store, cellWidth: size
             ))
             .onTapGesture { onTap() }
+            .background(RightClickSelector {
+                // v8.8.0: 우클릭 시 사진 선택 (이미 선택돼 있으면 유지)
+                if !store.selectedPhotoIDs.contains(photo.id) {
+                    store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                }
+            })
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
                     Button("Finder에서 열기") {
@@ -974,7 +1227,7 @@ struct LazyListRowWrapper: View {
             .onAppear {
                 store.loadExifIfNeeded(for: photo.id)
             }
-            .onChange(of: store.photosVersion) { _ in
+            .onChange(of: store.photosVersion) { _, _ in
                 // 정렬/필터 변경 후에도 EXIF 재로딩
                 store.loadExifIfNeeded(for: photo.id)
             }
@@ -985,6 +1238,13 @@ struct LazyListRowWrapper: View {
                     onTap()
                 }
             }
+            .background(RightClickSelector {
+                // v8.8.0: 우클릭 시 사진 선택
+                if !photo.isFolder && !photo.isParentFolder,
+                   !store.selectedPhotoIDs.contains(photo.id) {
+                    store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+                }
+            })
             .contextMenu {
                 if photo.isFolder || photo.isParentFolder {
                     Button("Finder에서 열기") {
@@ -994,6 +1254,40 @@ struct LazyListRowWrapper: View {
                     PhotoContextMenu(photo: photo, store: store)
                 }
             }
+    }
+}
+
+// MARK: - Right-Click Select Helper
+
+/// v8.8.0: 우클릭 시 콜백 실행 (이벤트는 통과 → SwiftUI .contextMenu 가 여전히 열림).
+///   썸네일 셀에 .background(RightClickSelector { ... }) 로 붙여 "우클릭 = 사진 선택" 기능 추가.
+struct RightClickSelector: NSViewRepresentable {
+    let onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = RightClickCatcherView()
+        v.onRightClick = onRightClick
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? RightClickCatcherView)?.onRightClick = onRightClick
+    }
+
+    final class RightClickCatcherView: NSView {
+        var onRightClick: (() -> Void)?
+        override func rightMouseDown(with event: NSEvent) {
+            onRightClick?()
+            super.rightMouseDown(with: event)
+        }
+        /// 좌클릭 이벤트는 SwiftUI 로 통과 — 우클릭만 가로챔.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent else { return nil }
+            if event.type == .rightMouseDown || event.type == .rightMouseUp {
+                return super.hitTest(point)
+            }
+            return nil
+        }
     }
 }
 
@@ -1101,6 +1395,16 @@ struct PhotoContextMenu: View {
     }
 
     var body: some View {
+        // v8.9: CLIP 기반 유사 이미지 검색 (MobileCLIP-BLT)
+        if ImageEmbeddingService.shared.isAvailable {
+            Button(action: {
+                findSimilar(to: photo, store: store)
+            }) {
+                Label("이 사진과 비슷한 사진 찾기", systemImage: "sparkle.magnifyingglass")
+            }
+            Divider()
+        }
+
         // 복사 / 잘라내기 / 붙여넣기
         Button(action: { copySelectionToPasteboard(store: store) }) {
             Label("복사  ⌘C", systemImage: "doc.on.doc")
@@ -1239,6 +1543,98 @@ struct PhotoContextMenu: View {
             Label("이름 변경 (\(targetCount)장)", systemImage: "pencil")
         }
 
+        // v8.6.2: 일괄 회전 (JPG: EXIF 재기록, RAW: XMP 사이드카)
+        Menu {
+            Button("90° 시계방향") { store.batchRotate(ids: targetIDs, degreesCW: 90) }
+            Button("180°")         { store.batchRotate(ids: targetIDs, degreesCW: 180) }
+            Button("270° (반시계 90°)") { store.batchRotate(ids: targetIDs, degreesCW: 270) }
+        } label: {
+            Label("회전 (\(targetCount)장)", systemImage: "rotate.right")
+        }
+
+        // v8.6.3: Adobe Camera Raw (Photoshop) 로 열기
+        Button(action: {
+            openInCameraRaw(ids: targetIDs, store: store)
+        }) {
+            Label("Camera Raw 에서 열기 (\(targetCount)장)", systemImage: "camera.metering.matrix")
+        }
+        .disabled(!hasAnyRAW(ids: targetIDs, store: store))
+
+        // v8.7: 참조 기반 시각 검색 — "이 얼굴/사물이 있는 사진 찾기" (Debug 전용)
+        #if DEBUG
+        Menu {
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .face
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+            }) {
+                Label("이 얼굴 찾기 (영역 드래그)", systemImage: "person.circle")
+            }
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .object
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+            }) {
+                Label("이 사물/배경 찾기 (영역 드래그)", systemImage: "sparkle.magnifyingglass")
+            }
+            Button(action: {
+                store.visualSearchCropURL = photo.jpgURL
+                store.visualSearchCropMode = .clothing
+                store.visualSearchPresetLabel = nil
+                NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+            }) {
+                Label("같은 옷 찾기 (상체 자동 또는 드래그)", systemImage: "tshirt")
+            }
+            // 기존 얼굴 레퍼런스 label 들 — "같은 사람 추가 샷" 바로가기
+            let existingLabels = Set(VisualSearchService.shared.references
+                .filter { $0.mode == .face }
+                .compactMap { $0.label })
+            if !existingLabels.isEmpty {
+                Divider()
+                ForEach(Array(existingLabels).sorted(), id: \.self) { lbl in
+                    Button(action: {
+                        store.visualSearchCropURL = photo.jpgURL
+                        store.visualSearchCropMode = .face
+                        store.visualSearchPresetLabel = lbl
+                        NotificationCenter.default.post(name: .pickShotOpenVisualSearchCrop, object: nil)
+                    }) {
+                        Label("'\(lbl)' 에 샷 추가 (옆/뒷면)", systemImage: "plus.circle")
+                    }
+                }
+            }
+            // v8.7: 학습 — 현재 검색이 active 일 때만 표시
+            if store.visualSearchActive && !VisualSearchService.shared.references.isEmpty {
+                Divider()
+                // 활성 검색의 label 들 표시 (사용자가 "이 사람 아님" 선언 가능)
+                let activeLabels = Set(VisualSearchService.shared.references
+                    .filter { $0.mode == .face }
+                    .compactMap { $0.label }
+                )
+                ForEach(Array(activeLabels).sorted(), id: \.self) { lbl in
+                    Button(action: {
+                        VisualSearchService.shared.markAsNotMatching(url: photo.jpgURL, forLabel: lbl)
+                        store.showToastMessage("학습됨: '\(lbl)' 아님으로 표시")
+                    }) {
+                        Label("'\(lbl)' 아님 (학습)", systemImage: "hand.thumbsdown")
+                    }
+                }
+            }
+            if !VisualSearchService.shared.references.isEmpty {
+                Divider()
+                Button(action: {
+                    VisualSearchService.shared.clearAll()
+                    store.visualSearchActive = false
+                }) {
+                    Label("검색 기준 모두 해제", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Label("비슷한 사진 찾기", systemImage: "magnifyingglass")
+        }
+        #endif
+
         Divider()
 
         // Copy filename
@@ -1373,6 +1769,87 @@ struct PhotoContextMenu: View {
 
 }
 
+// MARK: - RAW 헬퍼 (top-level — PhotoContextMenu + NativeTableListView Coordinator 공유)
+
+func hasAnyRAW(ids: Set<UUID>, store: PhotoStore) -> Bool {
+    for id in ids {
+        guard let idx = store._photoIndex[id] else { continue }
+        let p = store.photos[idx]
+        if p.rawURL != nil || FileMatchingService.rawExtensions.contains(p.jpgURL.pathExtension.lowercased()) {
+            return true
+        }
+    }
+    return false
+}
+
+/// Adobe Camera Raw (Photoshop) 로 RAW 파일 열기.
+/// /Applications 아래 Photoshop 버전을 찾아 사용. 없으면 기본 앱으로 열림.
+func openInCameraRaw(ids: Set<UUID>, store: PhotoStore) {
+        let urls: [URL] = ids.compactMap { id in
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { return nil }
+            let p = store.photos[idx]
+            if let raw = p.rawURL { return raw }
+            if FileMatchingService.rawExtensions.contains(p.jpgURL.pathExtension.lowercased()) { return p.jpgURL }
+            return nil
+        }
+        guard !urls.isEmpty else {
+            store.showToastMessage("⚠️ 선택에 RAW 파일이 없습니다")
+            return
+        }
+        // Photoshop 찾기 — Adobe 는 /Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app 구조
+        let ws = NSWorkspace.shared
+        var photoshop: URL? = nil
+        // 1) Bundle ID 로 직접 조회 (가장 확실)
+        if let bundleURL = ws.urlForApplication(withBundleIdentifier: "com.adobe.Photoshop") {
+            photoshop = bundleURL
+        }
+        // 2) Fallback: /Applications 깊이 2까지 스캔해서 Adobe Photoshop*.app 찾기 (최신 버전 우선)
+        if photoshop == nil {
+            let fm = FileManager.default
+            let topLevel = (try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Applications"), includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+            var candidates: [URL] = []
+            for item in topLevel {
+                let name = item.lastPathComponent.lowercased()
+                if name.hasSuffix(".app") && name.contains("photoshop") {
+                    candidates.append(item)
+                } else if name.contains("photoshop") {
+                    // 서브폴더 한 단계 더 — Adobe 표준 구조
+                    let sub = (try? fm.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)) ?? []
+                    for s in sub where s.pathExtension == "app" && s.lastPathComponent.lowercased().contains("photoshop") {
+                        candidates.append(s)
+                    }
+                }
+            }
+            // 최신 버전 우선 — "Adobe Photoshop 2026.app" > "2025" > "2024" > "(Beta)"
+            photoshop = candidates.sorted { $0.lastPathComponent > $1.lastPathComponent }.first
+        }
+        if let ps = photoshop {
+            fputs("[RAW] Camera Raw 대상 앱: \(ps.path)\n", stderr)
+        } else {
+            fputs("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n", stderr)
+        }
+
+        if let ps = photoshop {
+            let cfg = NSWorkspace.OpenConfiguration()
+            cfg.activates = true
+            ws.open(urls, withApplicationAt: ps, configuration: cfg) { _, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        store.showToastMessage("⚠️ Camera Raw 열기 실패: \(error.localizedDescription)")
+                    } else {
+                        store.showToastMessage("📷 \(urls.count)장 → \(ps.lastPathComponent)")
+                    }
+                }
+            }
+        } else {
+            // Photoshop 없음 — 기본 앱으로 열기 (macOS 가 연결된 앱 사용)
+            for u in urls {
+                ws.open(u)
+            }
+            store.showToastMessage("📷 \(urls.count)장 기본 앱으로 열기 (Photoshop 미설치)")
+        }
+    }
+
 // MARK: - Thumbnail Cell (Grid)
 
 struct ThumbnailCell: View, Equatable {
@@ -1405,7 +1882,7 @@ struct ThumbnailCell: View, Equatable {
 
     var body: some View {
         VStack(spacing: 3) {
-            AsyncThumbnailView(url: photo.jpgURL)
+            AsyncThumbnailView(url: photo.displayURL)
                 .frame(width: size, height: imgH)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.cellCornerRadius, style: .continuous))
@@ -1417,7 +1894,8 @@ struct ThumbnailCell: View, Equatable {
                 .overlay(videoOverlay, alignment: .center)
 
             // File name
-            Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+            // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
+Text(photo.fileNameWithExtension)
                 .font(.system(size: AppTheme.fontCaption))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
@@ -1675,7 +2153,8 @@ struct ThumbnailCell: View, Equatable {
 
         let borderColor: Color = {
             if let labelColor = photo.colorLabel.color { return labelColor }
-            if photo.rating == 5 { return AppTheme.starGold }
+            // v8.7: ★5 테두리는 노란 레이블과 구분되는 오렌지 (ratingFiveBorder)
+            if photo.rating == 5 { return AppTheme.ratingFiveBorder }
             if isFocused { return AppTheme.focusBorder }
             if isSelected { return AppTheme.selectionBorder.opacity(0.7) }
             return Color.clear
@@ -1749,7 +2228,7 @@ struct ListRow: View {
                     } else if photo.isFolder {
                         Image(systemName: "folder.fill").font(.system(size: imgSize * 0.7)).foregroundColor(.blue)
                     } else {
-                        AsyncThumbnailView(url: photo.jpgURL)
+                        AsyncThumbnailView(url: photo.displayURL)
                             .frame(width: imgSize, height: imgSize * 0.67)
                             .clipShape(RoundedRectangle(cornerRadius: 2))
                     }
@@ -1757,7 +2236,8 @@ struct ListRow: View {
                 .frame(width: imgSize, height: imgSize * 0.67)
 
                 HStack(spacing: 3) {
-                    Text(store.showFileExtension ? photo.fileNameWithExtension : photo.fileName)
+                    // v8.6.2: 확장자 항상 표시 — RAW/JPG 구분이 중요 (CR3 vs JPG 등)
+Text(photo.fileNameWithExtension)
                         .font(.system(size: 12)).lineLimit(1)
                     if isFile {
                         let badge = photo.fileTypeBadge
@@ -1918,11 +2398,12 @@ class ThumbnailCache {
         // UserDefaults의 thumbnailCacheMaxGB를 썸네일 countLimit 힌트로 사용
         let savedCacheGB = UserDefaults.standard.double(forKey: "thumbnailCacheMaxGB")
 
+        // v8.6.1: cost 단위가 bytes 로 통일됨 → totalCostLimit 도 bytes.
+        // 기존엔 `gbValue * 1024 * 1024` 가 KB 단위라고 주석에 쓰여있었지만 실제 저장은
+        // bytes 상수 × 1,048,576 = MB 단위였음 → NSCache 가 사실상 무제한으로 쌓아 누수.
         if savedCacheGB > 0 {
-            // UserDefaults 기반: GB → KB 단위 totalCostLimit
             let gbValue = savedCacheGB
-            cache.totalCostLimit = Int(gbValue * 1024 * 1024)  // GB → KB
-            // countLimit은 GB 비례
+            cache.totalCostLimit = Int(gbValue * 1024 * 1024 * 1024)  // GB → bytes
             let count: Int
             if gbValue >= 2.0 { count = 20000 }
             else if gbValue >= 1.0 { count = 10000 }
@@ -1931,9 +2412,8 @@ class ThumbnailCache {
             cache.countLimit = count
             baseCountLimit = count
         } else {
-            // 기본: SystemSpec tier 기반 자동 설정 (cost 단위 = KB, totalCostLimit 단위 = KB)
             let mb = SystemSpec.shared.thumbnailCacheMB()
-            cache.totalCostLimit = mb * 1024  // MB → KB
+            cache.totalCostLimit = mb * 1024 * 1024  // MB → bytes
             let count: Int
             switch SystemSpec.shared.effectiveTier {
             case .extreme: count = 20000
@@ -1951,27 +2431,40 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        // CGImage 기반 실제 메모리 크기 계산 (KB 단위)
+        // v8.6.1 메모리 누수 수정: cost 단위를 **bytes** 로 통일 (이전엔 KB 단위로 저장되어
+        // totalCostLimit 이 실제 값의 1/1024 로 오해되어 NSCache 자동 evict 가 사실상 작동 안 함).
+        // applyCacheLimits() 에서 totalCostLimit 도 bytes 단위로 맞춰야 함.
         let cost: Int
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            cost = max(1, (cg.bytesPerRow * cg.height) / 1024)
+            cost = max(1, cg.bytesPerRow * cg.height)
         } else {
             let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
             let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
-            cost = max(1, (pixelW * pixelH * 4) / 1024)
+            cost = max(1, pixelW * pixelH * 4)
         }
         cache.setObject(image, forKey: url as NSURL, cost: cost)
+        // v8.6.2: CacheProgressGauge 용 — URL 유입 알림 (PhotoStore 에서 중복 카운트 방지)
+        NotificationCenter.default.post(name: .thumbnailCacheInserted, object: url)
     }
 
     func removeAll() {
         cache.removeAllObjects()
     }
 
-    /// 디버그용 — NSCache 는 총 bytes 를 직접 노출하지 않지만
-    /// countLimit 과 totalCostLimit 은 접근 가능 (bytes 는 추정)
+    /// v8.6.1: 사진 삭제 시 해당 URL 캐시 제거 (메모리 누수 방지)
+    func remove(url: URL) {
+        cache.removeObject(forKey: url as NSURL)
+    }
+
+    /// v8.6.1: 메모리 압박 시 cost/count 상한 절반으로 축소 (즉시 evict 유도).
+    func reduceCacheLimit() {
+        cache.totalCostLimit = max(cache.totalCostLimit / 2, 64 * 1024 * 1024)  // 최소 64MB
+        cache.countLimit = max(cache.countLimit / 2, 500)
+    }
+
+    /// 디버그용 — countLimit 과 totalCostLimit 만 확인 (NSCache.count 는 private)
     func debugCountAndLimit() -> (count: Int, limitMB: Int) {
-        // NSCache.count 는 내부 private — 대신 limit 과 countLimit 만 확인 가능
-        return (0, cache.totalCostLimit / 1024 / 1024)  // KB → MB (cost 단위는 KB)
+        return (0, cache.totalCostLimit / 1024 / 1024)  // bytes → MB
     }
 }
 
@@ -1984,9 +2477,32 @@ class ThumbnailLoader {
     private let lock = NSLock()
     var normalConcurrency: Int = 4
 
+    // v8.9.4: viewport-우선 스케줄러
+    //   - generation: 스크롤/선택 이동마다 +1 → 옛 작업의 결과는 폐기
+    //   - activeURLs: 현재 보이는 셀 + 작은 버퍼. 이 set 밖이면 즉시 reject.
+    private var generation: UInt64 = 0
+    private var activeURLs: Set<URL> = []
+    private let genLock = NSLock()
+
     init() {
         queue.maxConcurrentOperationCount = 4
-        queue.qualityOfService = .utility
+        // v8.9.4: viewport 셀 우선 — userInitiated 로 격상
+        // (CacheSweeper sweep queue 는 utility 로 분리되어 있어 우선순위 충돌 없음)
+        queue.qualityOfService = .userInitiated
+    }
+
+    /// 스크롤/선택 이동마다 호출 → 옛 작업 무효화
+    func bumpGeneration() {
+        genLock.lock()
+        generation &+= 1
+        genLock.unlock()
+    }
+
+    /// 현재 보이는 셀 URL 갱신 (visible + 버퍼). callback 직전 활성 여부 검사.
+    func setActiveURLs(_ urls: Set<URL>) {
+        genLock.lock()
+        activeURLs = urls
+        genLock.unlock()
     }
 
     /// 스크롤 시 대기 중인 작업 전부 취소 (보이는 셀만 새로 요청)
@@ -1995,11 +2511,57 @@ class ThumbnailLoader {
         lock.lock()
         pendingCallbacks.removeAll()
         lock.unlock()
+        bumpGeneration()
+    }
+
+    /// v8.9.4: 보이는 URL은 유지하고 그 외만 취소
+    func cancelPending(keeping keepURLs: Set<URL>) {
+        // OperationQueue 자체는 selective cancel 불가 → 옛 세대 표시로 callback 단계에서 차단
+        bumpGeneration()
+        setActiveURLs(keepURLs)
+        lock.lock()
+        // 보이지 않는 URL 의 pending callback 즉시 폐기
+        let toRemove = pendingCallbacks.keys.filter { !keepURLs.contains($0) }
+        for u in toRemove { pendingCallbacks.removeValue(forKey: u) }
+        lock.unlock()
+    }
+
+    /// 현재 generation snapshot (작업 시작 시점)
+    fileprivate func currentGeneration() -> UInt64 {
+        genLock.lock(); defer { genLock.unlock() }
+        return generation
+    }
+
+    /// callback 직전 검사: generation 일치 + activeURLs 안에 있어야 통과
+    fileprivate func shouldDeliver(url: URL, gen: UInt64) -> Bool {
+        genLock.lock(); defer { genLock.unlock() }
+        if !activeURLs.isEmpty && !activeURLs.contains(url) {
+            ThumbnailLoader.droppedCallbacks &+= 1
+            return false
+        }
+        if gen != generation && activeURLs.isEmpty {
+            ThumbnailLoader.droppedCallbacks &+= 1
+            return false
+        }
+        return true
+    }
+
+    // v8.9.4: 측정용 카운터 — viewport 스케줄러 효과 검증
+    static var droppedCallbacks: UInt64 = 0
+    var pendingCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return pendingCallbacks.count
+    }
+    /// stderr 로 현재 상태 출력 — 디버그 콘솔에서 확인
+    func dumpStats() {
+        let pending = pendingCount
+        let ops = queue.operationCount
+        fputs("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n", stderr)
     }
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
     func throttle() {
-        queue.maxConcurrentOperationCount = 2
+        queue.maxConcurrentOperationCount = 1
     }
 
     /// 탐색 멈추면 프리로딩 복구
@@ -2032,10 +2594,10 @@ class ThumbnailLoader {
         case .externalHDD:
             isNetworkMode = false
             isExternalHDD = true
-            // HDD NCQ 큐 깊이 활용 — 6-way까지 sustained throughput 증가 (8-way는 USB 외장에서 역효과)
-            queue.maxConcurrentOperationCount = 6
-            normalConcurrency = 6
-            AppLogger.log(.performance, "External HDD: concurrency=6, thumbSize=160 for \(path)")
+            // HDD/USB 외장은 랜덤 읽기 경합이 체감 렉으로 바로 이어짐 → 보수적으로 2-way.
+            queue.maxConcurrentOperationCount = 2
+            normalConcurrency = 2
+            AppLogger.log(.performance, "External HDD: concurrency=2, thumbSize=160 for \(path)")
         case .sdCard:
             // SD카드: 랜덤 읽기 극도로 느림 → 직렬 처리 + 최소 썸네일
             isNetworkMode = false
@@ -2046,12 +2608,10 @@ class ThumbnailLoader {
         case .network:
             isNetworkMode = true
             isExternalHDD = false
-            // NAS 30-50MB/s 기준: 병목은 네트워크 대역폭
-            // 4-way 가 최적 (8+ 은 NIC 포화, TCP retransmit → 오히려 느려짐)
-            // 전제: 스테이지1 썸네일은 RAW 임베디드 JPEG (3-5MB) + 부분 읽기
-            queue.maxConcurrentOperationCount = 4
-            normalConcurrency = 4
-            AppLogger.log(.performance, "NAS/Network: concurrency=4 (대역폭 보호), thumbSize=100 for \(path)")
+            // NAS는 대역폭보다 latency/packet 재전송이 문제라 UI 반응성을 위해 2-way로 제한.
+            queue.maxConcurrentOperationCount = 2
+            normalConcurrency = 2
+            AppLogger.log(.performance, "NAS/Network: concurrency=2 (UI headroom), thumbSize=100 for \(path)")
         }
     }
 
@@ -2176,6 +2736,29 @@ class ThumbnailLoader {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date.distantPast
     }
 
+    /// v8.6.2: CacheSweeper 용 동기 생성. 디스크 캐시까지 채움.
+    /// 이미 캐시에 있으면 즉시 리턴 (추가 I/O 없음).
+    @discardableResult
+    func generateThumbnailSync(url: URL) -> NSImage? {
+        if ThumbnailCache.shared.get(url) != nil { return nil }
+        if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+            // v8.8.1 fix: 디스크 히트 시 실제로 메모리 캐시에 채우기 (이전 버전은 주석만 있고 미구현 →
+            //   thumbCacheCount 가 증가 안 해서 진행률이 99% 정체).
+            ThumbnailCache.shared.set(url, image: disk)
+            return nil
+        }
+        // 실제 추출 (feed-forward 경로와 동일 extractThumbnail)
+        let img = Self.extractThumbnailFast(url: url) ?? Self.extractThumbnail(url: url)
+        guard let raw = img else { return nil }
+        // v8.6.2: 사용자 회전 override 적용
+        let deg = PhotoStore.rotationOverrideCW(for: url)
+        let image = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
+        ThumbnailCache.shared.set(url, image: image)
+        let modDate = Self.fileModDate(url)
+        DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: image)
+        return image
+    }
+
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
@@ -2192,6 +2775,10 @@ class ThumbnailLoader {
 
         // 3. Need to extract from file — queue it
         lock.lock()
+        if !isURLActiveOrUnbounded(url) {
+            lock.unlock()
+            return
+        }
         // Double-check: 다른 스레드가 lock 대기 중 캐시에 저장했을 수 있음
         if let cached = ThumbnailCache.shared.get(url) {
             lock.unlock()
@@ -2205,6 +2792,8 @@ class ThumbnailLoader {
         }
         pendingCallbacks[url] = [completion]
 
+        // v8.9.4: 작업 시작 시점의 generation 캡처
+        let opGen = currentGeneration()
         let op = BlockOperation()
         op.addExecutionBlock { [weak self, weak op] in
             // background queue worker thread 는 main autorelease pool 과 별개 → 명시적 pool 필수
@@ -2212,6 +2801,13 @@ class ThumbnailLoader {
             // key repeat 꾹 누르기 중 RAM 이 GB 단위로 증가함
             autoreleasepool {
             guard let op = op, !op.isCancelled else { return }
+            // v8.9.4: 작업 시작 직전 generation/visible 검사 → 옛 작업 즉시 폐기
+            if let self = self, !self.shouldDeliver(url: url, gen: opGen) {
+                self.lock.lock()
+                self.pendingCallbacks.removeValue(forKey: url)
+                self.lock.unlock()
+                return
+            }
             let isNAS = ThumbnailLoader.shared.isNetworkMode
             let isHDD = ThumbnailLoader.shared.isExternalHDD
 
@@ -2235,8 +2831,12 @@ class ThumbnailLoader {
                 let callbacks = self?.pendingCallbacks.removeValue(forKey: url) ?? []
                 self?.lock.unlock()
 
-                DispatchQueue.main.async {
-                    for cb in callbacks { cb(diskCached) }
+                // v8.9.4: callback 직전 generation/visible 검사
+                let deliver = self?.shouldDeliver(url: url, gen: opGen) ?? true
+                if deliver {
+                    DispatchQueue.main.async {
+                        for cb in callbacks { cb(diskCached) }
+                    }
                 }
                 return
             }
@@ -2263,12 +2863,22 @@ class ThumbnailLoader {
                 fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
             }
 
+            // v8.6.2: 사용자 회전 override 적용
+            if let raw = image {
+                let deg = PhotoStore.rotationOverrideCW(for: url)
+                image = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
+            }
+
             if let image = image {
                 // Memory cache: immediate (needed for UI)
                 ThumbnailCache.shared.set(url, image: image)
                 // Disk cache: HDD/NAS에서는 읽기 완료 후 배치로 저장 (I/O 경합 방지)
                 if isHDD || isNAS {
+                    // v8.6.1: append 도 lock 안에서 (worker thread 다수가 동시에 append 하면
+                    // Array realloc 중 race → 크래시)
+                    Self.diskCacheWriteLock.lock()
                     Self.pendingDiskCacheWrites.append((url, image))
+                    Self.diskCacheWriteLock.unlock()
                     Self.flushDiskCacheIfNeeded()
                 } else {
                     DispatchQueue.global(qos: .utility).async {
@@ -2284,6 +2894,9 @@ class ThumbnailLoader {
 
             // 취소된 경우 콜백 호출 안함 (placeholder 생성도 방지)
             guard !op.isCancelled, let image = image else { return }
+            // v8.9.4: callback 직전 generation/visible 검사 — 옛 작업의 결과는 UI 미반영
+            let deliver = self?.shouldDeliver(url: url, gen: opGen) ?? true
+            guard deliver else { return }
             DispatchQueue.main.async {
                 for cb in callbacks { cb(image) }
             }
@@ -2291,6 +2904,11 @@ class ThumbnailLoader {
         }
         queue.addOperation(op)
         lock.unlock()
+    }
+
+    private func isURLActiveOrUnbounded(_ url: URL) -> Bool {
+        genLock.lock(); defer { genLock.unlock() }
+        return activeURLs.isEmpty || activeURLs.contains(url)
     }
 
     // MARK: - HDD 배치 디스크 캐시 저장 (I/O 경합 방지)
@@ -2351,13 +2969,33 @@ class ThumbnailLoader {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts as CFDictionary) else { return nil }
 
         // 메인 이미지 EXIF orientation 읽기 (RAW 썸네일에 orientation이 없을 수 있음)
-        let mainOrientation: Int
-        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-           let orient = props[kCGImagePropertyOrientation as String] as? Int {
-            mainOrientation = orient
-        } else {
-            mainOrientation = 1  // normal
+        // v8.8.0: NEF 등 일부 RAW 는 top-level orientation 이 없고 TIFF dictionary 안에만 존재.
+        // v8.9.4: Canon CR3 등은 top-level/TIFF 모두 1 (가로) 로 보고하지만 실제 portrait 촬영.
+        //         → Exif dict 의 PixelXDimension/YDimension 으로 실제 표시 비율 추정.
+        var mainOrientation: Int = 1
+        var mainW: Int? = nil
+        var mainH: Int? = nil
+        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            if let orient = props[kCGImagePropertyOrientation as String] as? Int {
+                mainOrientation = orient
+            } else if let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
+                      let orient = tiff[kCGImagePropertyTIFFOrientation as String] as? Int {
+                mainOrientation = orient
+            } else if let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any],
+                      let orient = exif["Orientation"] as? Int {
+                mainOrientation = orient
+            }
+            // Exif PixelX/Y Dimension 에서 실제 표시 W/H 추출
+            if let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any] {
+                mainW = exif[kCGImagePropertyExifPixelXDimension as String] as? Int
+                mainH = exif[kCGImagePropertyExifPixelYDimension as String] as? Int
+            }
+            if mainW == nil { mainW = props[kCGImagePropertyPixelWidth as String] as? Int }
+            if mainH == nil { mainH = props[kCGImagePropertyPixelHeight as String] as? Int }
         }
+        // CR3 휴리스틱: orientation 메타가 1(가로)인데 thumb 이 가로(W>H)이고
+        //   메인이 portrait 이어야 하는 경우 식별 어려움. mainW/mainH 가 portrait 이면 thumb 회전 필요.
+        let mainIsPortrait: Bool = (mainW ?? 0) > 0 && (mainH ?? 0) > 0 && (mainH! > mainW!)
 
         // 임베디드 썸네일만 시도 (파일 전체 디코딩 안 함)
         let embedOpts: [NSString: Any] = [
@@ -2374,7 +3012,39 @@ class ThumbnailLoader {
         for idx in 0..<maxIdx {
             if let cg = CGImageSourceCreateThumbnailAtIndex(source, idx, embedOpts as CFDictionary) {
                 if cg.width >= 80 && cg.height >= 80 {
-                    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    let thumbLandscape = cg.width > cg.height
+
+                    // v8.9.4 LibRaw Phase 1: orientation 폴백
+                    //   ImageIO 가 mainOrientation=1 로 읽었지만 LibRaw 가 정확한 회전값을 알 수 있음.
+                    //   특히 Canon CR3 MakerNote 케이스 100% 해결.
+                    var resolvedOrientation = mainOrientation
+                    if isRAW && mainOrientation == 1, let lr = LibRawDecoder(url: url) {
+                        let lrOrient = lr.exifOrientation
+                        if lrOrient != 1 {
+                            resolvedOrientation = lrOrient
+                            fputs("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n", stderr)
+                        }
+                    }
+                    #if DEBUG
+                    if isRAW && ProcessInfo.processInfo.environment["PICKSHOT_THUMB_ORIENT_LOG"] == "1" {
+                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
+                    }
+                    #endif
+
+                    // 1) EXIF orientation 5-8 (LibRaw 또는 ImageIO 가 알려준): 명시적 회전 정보 → 적용
+                    if isRAW && (resolvedOrientation >= 5 && resolvedOrientation <= 8) {
+                        if thumbLandscape, let rotated = applyOrientation(img, orientation: resolvedOrientation) {
+                            return rotated
+                        }
+                    }
+                    // 2) v8.9.4 휴리스틱 폴백: orientation=1 이지만 메인이 portrait → 90° CW
+                    if isRAW && resolvedOrientation == 1 && mainIsPortrait && thumbLandscape {
+                        if let rotated = applyOrientation(img, orientation: 6) {
+                            return rotated
+                        }
+                    }
+                    return img
                 }
             }
         }
@@ -2450,7 +3120,13 @@ class ThumbnailLoader {
         // (전체 파일 다운로드 회피 → 30-50MB/s 링크에서 10배 이상 빠름)
         if isRAW && ThumbnailLoader.shared.isNetworkMode {
             if let cgImage = NASOptimizedReader.extractRAWThumbnail(url: url, maxPixel: CGFloat(thumbSize)) {
-                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                // v8.8.0 fix: Nikon Z8/Z9 NEF 등 embedded preview 에 orient 태그가 없는 RAW 보정.
+                //   부모 파일 source 에서 top-level/TIFF.Orientation 을 읽어 적용.
+                if let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: parentSource)
+                }
+                return img
             }
             // 실패 시 일반 경로로 폴백 (아래)
         }
@@ -2467,7 +3143,7 @@ class ThumbnailLoader {
                     kCGImageSourceCreateThumbnailFromImageAlways: false,
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCacheImmediately: false,
                     kCGImageSourceShouldCache: false
                 ]
                 for idx in 0..<imageCount {
@@ -2485,7 +3161,7 @@ class ThumbnailLoader {
                     kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceSubsampleFactor: 8,
-                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceShouldCacheImmediately: false,
                     kCGImageSourceShouldCache: false
                 ]
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, genOpts as CFDictionary) {
@@ -2496,8 +3172,14 @@ class ThumbnailLoader {
         }
 
         // RAW Step 3: Embedded JPEG extraction (last resort — for unsupported RAW formats)
+        // v8.8.0 fix: Nikon Z8/Z9 NEF 등은 Step 1/2 가 nil 리턴 (PixelWidth=nil) → Step 3 타는데
+        //   embedded JPEG 에 orient 태그가 없어 수동 회전 필요. correctThumbnailOrientationIfNeeded 는
+        //   부모 RAW 의 top-level 또는 TIFF.Orientation 을 읽어 적용.
         if isRAW {
             if let img = extractEmbeddedJPEG(url: url, maxSize: thumbSize) {
+                if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                    return PhotoPreviewView.correctThumbnailOrientationIfNeeded(img, source: source)
+                }
                 return img
             }
             return nil
@@ -2526,7 +3208,7 @@ class ThumbnailLoader {
                 kCGImageSourceThumbnailMaxPixelSize: thumbSize,
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: false,
                 kCGImageSourceShouldCache: false
             ]
             if subsample > 1 {
@@ -2590,8 +3272,9 @@ class ThumbnailLoader {
         var bestSize = 0
 
         for offset in offsets {
-            let end = min(offset + 1_500_000, data.count)
-            let subData = data.subdata(in: offset..<end)
+            guard let jpegRange = completeJPEGRange(in: data, from: offset, maxLength: 1_500_000),
+                  jpegRange.count > 4_096 else { continue }
+            let subData = data.subdata(in: jpegRange)
             guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
                   CGImageSourceGetCount(imgSource) > 0 else { continue }
 
@@ -2612,6 +3295,23 @@ class ThumbnailLoader {
 
         return bestImage
     }
+
+    private static func completeJPEGRange(in data: Data, from offset: Int, maxLength: Int) -> Range<Int>? {
+        guard offset >= 0, offset + 3 < data.count,
+              data[offset] == 0xFF, data[offset + 1] == 0xD8 else { return nil }
+
+        let endLimit = min(offset + maxLength, data.count)
+        guard endLimit - offset > 4 else { return nil }
+
+        var cursor = offset + 2
+        while cursor + 1 < endLimit {
+            if data[cursor] == 0xFF, data[cursor + 1] == 0xD9 {
+                return offset..<(cursor + 2)
+            }
+            cursor += 1
+        }
+        return nil
+    }
 }
 
 // MARK: - Async Thumbnail View
@@ -2621,8 +3321,13 @@ struct AsyncThumbnailView: View {
     @State private var image: NSImage?
     @State private var loadedURL: URL?
     @State private var retryCount: Int = 0
+    /// v8.6.2: 회전 이벤트 리스닝용 — 회전 시 캐시 무효화 + 재로드 트리거
+    static let rotationInvalidateNotification = Notification.Name("com.pickshot.rotation.invalidate")
     /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
     static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
+    /// v8.6.2: I/O 스파이크 방지 — 동시 디스크 읽기 최대 4개로 제한.
+    ///   빠른 필름스트립 스크롤 시 20+ 셀 동시 로드 → 디스크 스파이크 현상 억제.
+    static let thumbIOSemaphore = DispatchSemaphore(value: 4)
 
     var body: some View {
         Group {
@@ -2642,14 +3347,22 @@ struct AsyncThumbnailView: View {
                 loadThumbnail()
             }
         }
-        .onChange(of: url) { newURL in
+        .onChange(of: url) { _, newURL in
             if loadedURL != newURL {
                 loadThumbnail()
             }
         }
-        .onChange(of: retryCount) { _ in
+        .onChange(of: retryCount) { _, _ in
             // 재시도 트리거
             if image == nil {
+                loadThumbnail()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Self.rotationInvalidateNotification)) { note in
+            // v8.6.2: 회전된 파일이 이 셀의 URL 이면 강제 재로드
+            if let rotatedURL = note.object as? URL, rotatedURL == self.url {
+                self.image = nil
+                self.loadedURL = nil
                 loadThumbnail()
             }
         }
@@ -2673,8 +3386,13 @@ struct AsyncThumbnailView: View {
             return
         }
 
-        // 3~4. 임베디드 + 생성 — 백그라운드
+        // 3~4. 임베디드 + 생성 — 백그라운드 (semaphore 로 동시성 4개 제한 → I/O 스파이크 방지)
         Self.thumbConcurrentQueue.async {
+            Self.thumbIOSemaphore.wait()
+            defer { Self.thumbIOSemaphore.signal() }
+
+            // 빠른 스크롤로 이미 다른 URL 로 바뀌었으면 작업 skip
+            guard self.loadedURL == currentURL else { return }
 
             // 3. 임베디드 썸네일 (파일 헤더, < 1ms)
             let srcOpts: [NSString: Any] = [kCGImageSourceShouldCache: false]
@@ -2685,7 +3403,10 @@ struct AsyncThumbnailView: View {
                 kCGImageSourceCreateThumbnailWithTransform: true
                ] as CFDictionary),
                cgThumb.width >= 30 {
-                let ns = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+                // v8.6.2: 사용자 회전 override 적용
+                let deg = PhotoStore.rotationOverrideCW(for: currentURL)
+                let ns = deg == 0 ? raw : RotationService.rotateImage(raw, degreesCW: deg)
                 ThumbnailCache.shared.set(currentURL, image: ns)
                 RunLoop.main.perform(inModes: [.common]) {
                     guard self.loadedURL == currentURL else { return }
@@ -2747,6 +3468,19 @@ struct MultiFileDragView: NSViewRepresentable {
 
         override var acceptsFirstResponder: Bool { false }
 
+        /// v8.6.2: hitTest 를 실제 클릭 이벤트 처리 중이 아닐 때는 nil 로 돌려서
+        /// SwiftUI `.help()` tooltip / onHover 가 뒷 뷰에 정상 dispatch 되도록.
+        /// mouse down 이후 드래그 추적 중에만 self 를 반환해서 이벤트 라우팅을 유지.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            // 현재 클릭/드래그 추적 중이거나, 현재 이벤트가 mouseDown 이면 이 뷰가 받음.
+            if mouseDownPoint != nil { return self }
+            if NSApp.currentEvent?.type == .leftMouseDown {
+                return self
+            }
+            // hover / mouseMoved / tooltip / rightMouseDown(→ contextMenu) 은 모두 SwiftUI 로 투과.
+            return nil
+        }
+
         override func mouseDown(with event: NSEvent) {
             mouseDownPoint = event.locationInWindow
             didStartDrag = false
@@ -2779,6 +3513,12 @@ struct MultiFileDragView: NSViewRepresentable {
             guard let store = store, let photo = photo else { return }
             // parentFolder(상위 폴더 네비게이션) 만 제외. 일반 폴더는 드래그 허용.
             guard !photo.isParentFolder else { return }
+
+            // v8.6.2: 드래그 시작 즉시 선택 반영 — 미선택 사진을 잡고 드래그 시작해도
+            // 바로 선택 하이라이트가 켜지고 드래그 미리보기에도 반영됨.
+            if !store.selectedPhotoIDs.contains(photo.id) {
+                store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
+            }
 
             // Collect all selected file/folder URLs
             // ⚠️ 영상 .xmp 사이드카는 드래그에 포함 안 함 — 편집툴이 별도 파일로 오해해서 import 실패
@@ -2819,14 +3559,11 @@ struct MultiFileDragView: NSViewRepresentable {
             let dragImage: NSImage
             // ⚠️ 영상 파일엔 NSImage(contentsOf:) 쓰지 말 것 — main 에서 전체 디코딩 시도 → 무한 멈춤
             // 영상은 DiskThumbnailCache 또는 메모리 ThumbnailCache 만 사용
-            let loadedThumb: NSImage? = {
-                if photo.isVideoFile {
-                    return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
-                        ?? ThumbnailCache.shared.get(photo.jpgURL)
-                }
-                return DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
-                    ?? NSImage(contentsOf: photo.jpgURL)
-            }()
+            // v8.6.2: NSImage(contentsOf:) 메인 스레드 블로킹 제거
+            //   → 캐시 miss 면 그냥 시스템 파일 아이콘 사용 (드래그 시작을 절대 막지 않음)
+            let loadedThumb: NSImage? =
+                DiskThumbnailCache.shared.getByPath(url: photo.jpgURL)
+                ?? ThumbnailCache.shared.get(photo.jpgURL)
             if let thumbImage = loadedThumb {
                 // 리사이즈
                 let resized = NSImage(size: NSSize(width: previewSize, height: previewSize))
@@ -2886,7 +3623,7 @@ extension MultiFileDragView.DragOverlayNSView: NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.async {
             DragDropState.shared.dropTargetID = nil
         }
     }
@@ -3118,14 +3855,15 @@ class TileDocumentView: NSView {
     @objc func scrollChanged() {
         updateVisibleTiles()
 
-        // 스크롤 멈춤 감지 debounce → visible ±5행 prefetch
-        // 키보드 이동(PhotoStore.prefetchNearbyThumbnails ±30장)과 동등한 UX 제공
+        // 스크롤 멈춤 감지 debounce → visible 주변만 prefetch
+        // 대량 재귀 폴더는 스크롤/선택 즉시성을 위해 더 늦고 작게 채운다.
         scrollPrefetchWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.prefetchAroundVisible()
         }
         scrollPrefetchWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+        let delay: TimeInterval = photos.count > 10_000 ? 0.18 : 0.08
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3135,8 +3873,9 @@ class TileDocumentView: NSView {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
         let visibleRect = scrollView.documentVisibleRect
 
-        // HDD에서도 적극적 prefetch (concurrency 4와 함께 동작) — 사용자가 스크롤 직후 회색 placeholder 보지 않도록
-        let margin = ThumbnailLoader.shared.isSlowDisk ? 4 : 5
+        // 대량 재귀 폴더에서는 보이는 범위를 벗어난 디코드를 최소화한다.
+        let isHugeFolder = photos.count > 10_000
+        let margin = isHugeFolder ? 1 : (ThumbnailLoader.shared.isSlowDisk ? 4 : 5)
         let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
         let totalRows = (photos.count + cols - 1) / cols
         let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)
@@ -3376,7 +4115,7 @@ class TileLayer: CALayer {
         imageLayer.frame = CGRect(x: 5, y: 2, width: size, height: imgH)
         borderLayer.frame = imageLayer.frame.insetBy(dx: -2, dy: -2)
         textLayer.frame = CGRect(x: 0, y: imgH + 4, width: bounds.width, height: 14)
-        textLayer.string = photo.fileName
+        textLayer.string = photo.fileNameWithExtension  // v8.6.2: 확장자 표시
 
         // 뱃지 (R+J, JPG, CR3 등)
         if !photo.isFolder && !photo.isParentFolder {
@@ -3823,7 +4562,7 @@ struct DropIndicatorOverlay: View {
         }
         .allowsHitTesting(false)
         .onAppear { observer.bind(to: photoID) }
-        .onChange(of: photoID) { _ in observer.bind(to: photoID) }
+        .onChange(of: photoID) { _, _ in observer.bind(to: photoID) }
     }
 
     private func dropBar(height: CGFloat) -> some View {
@@ -3842,3 +4581,278 @@ struct DropIndicatorOverlay: View {
     }
 }
 
+
+// MARK: - v8.6.3 Marquee (Rubber-band) Selection
+
+/// 셀 프레임을 부모로 전파하는 PreferenceKey
+struct GridCellFrameKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// 마지막으로 수집된 셀 프레임을 전역 저장 — MarqueeSelectionBackground 가 참조 (SwiftUI state 반복 업데이트 회피)
+final class MarqueeFrameRegistry {
+    static let shared = MarqueeFrameRegistry()
+    var frames: [UUID: CGRect] = [:]
+    private init() {}
+}
+
+/// 러버밴드 선택 배경. 빈 영역에서 드래그 시작 시 사각형 그림. 드래그 종료 시 교차 셀 선택.
+struct MarqueeSelectionBackground: View {
+    let coordinateSpaceName: String
+    let allPhotoIDs: [UUID]
+    let store: PhotoStore
+
+    @State private var dragStart: CGPoint?
+    @State private var dragCurrent: CGPoint?
+    @State private var baseSelection: Set<UUID> = []
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(coordinateSpaceName))
+                    .onChanged { value in
+                        if dragStart == nil {
+                            dragStart = value.startLocation
+                            let flags = NSEvent.modifierFlags
+                            // Cmd/Shift 누르고 드래그면 기존 선택 유지
+                            if flags.contains(.command) || flags.contains(.shift) {
+                                baseSelection = store.selectedPhotoIDs
+                            } else {
+                                baseSelection = []
+                            }
+                        }
+                        dragCurrent = value.location
+                        updateLiveSelection()
+                    }
+                    .onEnded { value in
+                        dragCurrent = value.location
+                        updateLiveSelection()
+                        dragStart = nil
+                        dragCurrent = nil
+                    }
+            )
+            .simultaneousGesture(
+                // 빈 영역 탭 → 선택 해제 (드래그 아닌 단순 탭만)
+                TapGesture().onEnded {
+                    if dragStart == nil {
+                        store.deselectAll()
+                    }
+                }
+            )
+            .overlay(
+                Group {
+                    if let s = dragStart, let c = dragCurrent {
+                        let rect = CGRect(
+                            x: min(s.x, c.x),
+                            y: min(s.y, c.y),
+                            width: abs(c.x - s.x),
+                            height: abs(c.y - s.y)
+                        )
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.accentColor.opacity(0.15))
+                            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.accentColor, lineWidth: 1))
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                            .allowsHitTesting(false)
+                    }
+                }
+            )
+    }
+
+    private func updateLiveSelection() {
+        guard let s = dragStart, let c = dragCurrent else { return }
+        let rect = CGRect(
+            x: min(s.x, c.x),
+            y: min(s.y, c.y),
+            width: abs(c.x - s.x),
+            height: abs(c.y - s.y)
+        )
+        let frames = MarqueeFrameRegistry.shared.frames
+        var hits: Set<UUID> = baseSelection
+        for id in allPhotoIDs {
+            if let f = frames[id], f.intersects(rect) {
+                hits.insert(id)
+            }
+        }
+        // 큰 폴더에서 매 프레임마다 set 비교는 비용 있음 → 다르면만 업데이트
+        if hits != store.selectedPhotoIDs {
+            store.selectedPhotoIDs = hits
+            if let first = hits.first {
+                store.selectedPhotoID = first
+            }
+        }
+    }
+}
+
+// MARK: - ListView Drag Monitor (v8.7)
+
+/// 리스트뷰 드래그 → Finder 멀티 파일 복사를 위한 글로벌 NSEvent 모니터.
+/// 필름스트립과 동일한 방식: 이벤트를 consume 안 함. Table selection 은 SwiftUI 가 처리.
+/// 드래그 임계값 초과 시 store.selectedPhotoIDs 전체를 NSDraggingSession 으로 개시.
+final class ListViewDragMonitor: ObservableObject {
+    private var monitor: Any?
+    private var downLocation: NSPoint?
+    private var didStartDrag = false
+    private let threshold: CGFloat = 6
+    private weak var store: PhotoStore?
+
+    /// NativeListView 의 global frame — PreferenceKey 로 업데이트. SwiftUI 좌표계 (top-origin).
+    var tableBounds: CGRect = .zero
+
+    func install(store: PhotoStore) {
+        self.store = store
+        uninstall()
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+        fputs("[ListDrag] monitor installed\n", stderr)
+    }
+
+    func uninstall() {
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+    }
+
+    deinit { uninstall() }
+
+    private func handle(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            let inBounds = isInTableBounds(event: event)
+            downLocation = inBounds ? event.locationInWindow : nil
+            didStartDrag = false
+            fputs("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n", stderr)
+
+        case .leftMouseDragged:
+            let hasStart = downLocation != nil
+            let hasStore = store != nil
+            let selCount = store?.selectedPhotoIDs.count ?? 0
+            if !didStartDrag && hasStart && hasStore && selCount > 0 {
+                let dist = hypot(event.locationInWindow.x - downLocation!.x,
+                                 event.locationInWindow.y - downLocation!.y)
+                if dist > threshold {
+                    didStartDrag = true
+                    fputs("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n", stderr)
+                    initiateDrag(event: event, store: store!)
+                }
+            } else if !didStartDrag {
+                // 드래그 실패 이유 로깅 (한 번만)
+                fputs("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n", stderr)
+            }
+
+        case .leftMouseUp:
+            downLocation = nil
+            didStartDrag = false
+
+        default:
+            break
+        }
+    }
+
+    /// NSEvent 좌표가 Table bounds 내에 있는지 체크. Y 축 플립 처리.
+    private func isInTableBounds(event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let appkit = window.convertPoint(toScreen: event.locationInWindow)
+        let screen = NSScreen.screens.first { $0.frame.contains(appkit) } ?? NSScreen.main
+        guard let frame = screen?.frame else { return false }
+        let swiftUIY = frame.origin.y + frame.height - appkit.y
+        return tableBounds.contains(NSPoint(x: appkit.x, y: swiftUIY))
+    }
+
+    /// 선택된 사진 전체 + JPG/RAW 쌍을 NSDraggingSession 으로 개시.
+    private func initiateDrag(event: NSEvent, store: PhotoStore) {
+        var urls: [URL] = []
+        for id in store.selectedPhotoIDs {
+            guard let idx = store._photoIndex[id], idx < store.photos.count else { continue }
+            let p = store.photos[idx]
+            if p.isParentFolder { continue }
+            if p.isFolder {
+                urls.append(p.jpgURL)
+            } else {
+                urls.append(p.jpgURL)
+                if let raw = p.rawURL, raw != p.jpgURL { urls.append(raw) }
+            }
+        }
+        guard !urls.isEmpty else { return }
+
+        // 드래그 프리뷰: 포커스 사진의 썸네일 + 개수 배지
+        let side: CGFloat = 80
+        let defaultFrame = NSRect(x: -side / 2, y: -side / 2, width: side, height: side)
+        var previewImage: NSImage? = nil
+        let anchorURL: URL? = {
+            if let focusID = store.selectedPhotoID,
+               let idx = store._photoIndex[focusID],
+               idx < store.photos.count {
+                return store.photos[idx].jpgURL
+            }
+            return urls.first
+        }()
+        if let url = anchorURL {
+            let thumb =
+                DiskThumbnailCache.shared.getByPath(url: url)
+                ?? ThumbnailCache.shared.get(url)
+            if let image = thumb {
+                let resized = NSImage(size: NSSize(width: side, height: side))
+                resized.lockFocus()
+                NSGraphicsContext.current?.imageInterpolation = .high
+                let r = min(side / image.size.width, side / image.size.height)
+                let w = image.size.width * r
+                let h = image.size.height * r
+                image.draw(in: NSRect(x: (side - w)/2, y: (side - h)/2, width: w, height: h))
+                if store.selectedPhotoIDs.count > 1 {
+                    let badge = "\(store.selectedPhotoIDs.count)" as NSString
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let bsize = badge.size(withAttributes: attrs)
+                    let bW = max(20, bsize.width + 8)
+                    let bRect = NSRect(x: side - bW - 2, y: side - 18, width: bW, height: 16)
+                    NSColor.systemBlue.setFill()
+                    NSBezierPath(roundedRect: bRect, xRadius: 8, yRadius: 8).fill()
+                    badge.draw(at: NSPoint(x: bRect.midX - bsize.width/2, y: bRect.midY - bsize.height/2),
+                               withAttributes: attrs)
+                }
+                resized.unlockFocus()
+                previewImage = resized
+            }
+        }
+
+        var items: [NSDraggingItem] = []
+        for (i, url) in urls.enumerated() {
+            let pb = NSPasteboardItem()
+            pb.setString(url.absoluteString, forType: .fileURL)
+            let di = NSDraggingItem(pasteboardWriter: pb)
+            di.setDraggingFrame(defaultFrame, contents: i == 0 ? previewImage : nil)
+            items.append(di)
+        }
+
+        guard let contentView = event.window?.contentView else { return }
+        _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
+    }
+}
+
+final class ListViewDragSource: NSObject, NSDraggingSource {
+    static let shared = ListViewDragSource()
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        return context == .outsideApplication ? .copy : .move
+    }
+    /// 드래그 종료 시 listDragInProgress 플래그 해제 (NSDraggingSession 이 뒷단 mouse loop 를
+    /// 가져가기 때문에 SwiftUI DragGesture.onEnded 가 호출되지 않음).
+    func draggingSession(_ session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint,
+                         operation: NSDragOperation) {
+        NativeListView.listDragInProgress = false
+        fputs("[ListDrag] session ended — flag reset\n", stderr)
+    }
+}

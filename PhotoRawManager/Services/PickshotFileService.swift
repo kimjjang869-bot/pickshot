@@ -282,7 +282,7 @@ class PickshotFileService {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             let result = applyPickshotFile(url: url, to: &store.photos, photoIndex: store._photoIndex)
             if let result = result {
-                store.photosVersion += 1
+                store.invalidateFilterCache()
                 store.lastImportResult = result
                 store.showImportResult = true
             }

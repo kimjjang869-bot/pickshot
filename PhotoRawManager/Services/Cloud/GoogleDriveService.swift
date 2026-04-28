@@ -233,7 +233,13 @@ class GoogleDriveService {
             fputs("[GDRIVE] resumable session started: \(fileName)\n", stderr)
 
             // Step 2: 파일 데이터 PUT (uploadTask로 스트리밍 — 메모리에 전체 로드 안 함)
-            var putRequest = URLRequest(url: URL(string: uploadURL)!)
+            // v9.0: 서버 응답 URL 파싱 실패 시 force unwrap 크래시 방지.
+            guard let putURL = URL(string: uploadURL) else {
+                fputs("[GDRIVE] invalid upload URL from server: \(uploadURL)\n", stderr)
+                completion(nil, NSError(domain: "GoogleDrive", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"]))
+                return
+            }
+            var putRequest = URLRequest(url: putURL)
             putRequest.httpMethod = "PUT"
             putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             putRequest.setValue(mimeType, forHTTPHeaderField: "Content-Type")
@@ -453,9 +459,10 @@ class GoogleDriveService {
 
     // MARK: - OAuth 2.0
 
-    // OAuth credentials loaded lazily (avoids keychain popup at app launch)
-    // 기본 OAuth 자격증명 (Secrets.xcconfig 없는 사용자도 사용 가능)
-    // Google Desktop App의 client_secret은 "not confidential" — Google 공식 문서 참조
+    // OAuth credentials — Secrets.xcconfig 또는 환경변수에서 로드.
+    // 보안 권고: 아래 defaultClientID/Secret 은 소스에 평문이라 DMG strings 로 추출 가능.
+    //   Google Desktop App 정책상 "not confidential" 이지만, 앱 사칭 방지를 위해 추후 obfuscation
+    //   또는 강제 Secrets.xcconfig 요구로 전환 권장. (v8.6.1 현재는 배포 호환성 위해 유지)
     private static let defaultClientID = "661638823938-f9bk0a503pv0js0iskdqd196erkg40ua.apps.googleusercontent.com"
     private static let defaultClientSecret = "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"
     static var oauthClientID: String {
@@ -576,19 +583,8 @@ class GoogleDriveService {
             .replacingOccurrences(of: "=", with: "")
         oauthState = stateToken
 
-        let scopes = "https://www.googleapis.com/auth/drive.file"
-        let authURL = "https://accounts.google.com/o/oauth2/v2/auth"
-            + "?client_id=\(oauthClientID)"
-            + "&redirect_uri=\(oauthRedirectURI)"
-            + "&response_type=code"
-            + "&scope=\(scopes)"
-            + "&access_type=offline"
-            + "&prompt=consent"
-            + "&code_challenge=\(codeChallenge)"
-            + "&code_challenge_method=S256"
-            + "&state=\(stateToken)"
-
-        // Start local HTTP server to receive callback
+        // v8.8.0: 서버를 먼저 시작해서 실제 바인딩된 port 를 얻은 뒤 redirect_uri 에 반영.
+        //   8085 가 사용중이면 8086, 8087 … 로 fallback.
         startLocalOAuthServer { code, error in
             if let error = error {
                 completion(nil, error)
@@ -601,18 +597,42 @@ class GoogleDriveService {
             exchangeCodeForToken(code: code, completion: completion)
         }
 
+        // 바인딩된 port 로 redirect_uri 구성
+        let port = localServer?.boundPort ?? 8085
+        let redirect = "http://127.0.0.1:\(port)/oauth/callback"
+        oauthRedirectURIRuntime = redirect
+
+        let scopes = "https://www.googleapis.com/auth/drive.file"
+        let authURL = "https://accounts.google.com/o/oauth2/v2/auth"
+            + "?client_id=\(oauthClientID)"
+            + "&redirect_uri=\(redirect)"
+            + "&response_type=code"
+            + "&scope=\(scopes)"
+            + "&access_type=offline"
+            + "&prompt=consent"
+            + "&code_challenge=\(codeChallenge)"
+            + "&code_challenge_method=S256"
+            + "&state=\(stateToken)"
+
         // Open browser
         if let url = URL(string: authURL) {
             NSWorkspace.shared.open(url)
         }
     }
 
+    /// v8.8.0: 실제 서버가 바인딩된 redirect URI. token 교환 시 동일한 값 사용해야 함.
+    private static var oauthRedirectURIRuntime: String = "http://127.0.0.1:8085/oauth/callback"
+
     private static var localServer: LocalOAuthServer?
     private static var oauthState: String = ""  // CSRF 방지용 state 토큰
 
     private static func startLocalOAuthServer(completion: @escaping (String?, Error?) -> Void) {
-        let expectedState = oauthState
-        localServer = LocalOAuthServer(port: 8085, completion: { code, error in
+        _ = oauthState
+        // v8.8.0: 이전 OAuth 시도가 완료/취소 안 된 경우 listener 가 port 를 잡고 있을 수 있음 → 먼저 해제.
+        localServer?.stop()
+        localServer = nil
+        // v8.6.1 보안: LocalOAuthServer 에 expectedState 전달 (CSRF 방지)
+        localServer = LocalOAuthServer(port: 8085, expectedState: oauthState, completion: { code, error in
             // state 파라미터 미검증 시 CSRF 공격 가능 — 서버에서 state 추출 후 비교
             completion(code, error)
         })
@@ -632,7 +652,7 @@ class GoogleDriveService {
         // 빈 문자열로 보내면 Google이 invalid_request 에러 → 빈 값이면 파라미터 생략
         var body = "code=\(code)"
             + "&client_id=\(oauthClientID)"
-            + "&redirect_uri=\(oauthRedirectURI)"
+            + "&redirect_uri=\(oauthRedirectURIRuntime)"  // v8.8.0: start 시 바인딩된 port 와 일치
             + "&grant_type=authorization_code"
             + "&code_verifier=\(codeVerifier)"
         if !oauthClientSecret.isEmpty {
@@ -651,7 +671,7 @@ class GoogleDriveService {
             }
 
             // 보안: 토큰 응답은 로그에 출력하지 않음 (access_token 노출 방지)
-            let responseStr = String(data: data, encoding: .utf8) ?? "unreadable"
+            _ = String(data: data, encoding: .utf8) ?? "unreadable"
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 completion(nil, APIError(message: "토큰 교환: JSON 파싱 실패"))

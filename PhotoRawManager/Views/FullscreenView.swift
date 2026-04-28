@@ -76,7 +76,7 @@ struct FullscreenView: View {
                 fullscreenBottomBar
             }
         }
-        .onChange(of: store.selectedPhotoID) { _ in flashInfo() }
+        .onChange(of: store.selectedPhotoID) { _, _ in flashInfo() }
     }
 
     // MARK: - Bottom Bar
