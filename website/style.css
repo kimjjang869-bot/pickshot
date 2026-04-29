@@ -65,13 +65,15 @@ img { display: block; max-width: 100%; height: auto; }
   font-family: var(--display); font-style: italic; font-weight: 400;
   background: linear-gradient(135deg, var(--accent-g), var(--accent-2));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  /* CJK 이탤릭 합성(skew) 시 오른쪽 글리프가 배경 박스 밖으로 삐져나가
-     background-clip: text 때문에 끝 글자가 잘리는 현상 방지 */
+  /* v9.0.2: CJK 이탤릭 합성(skew) 시 오른쪽 글리프가 배경 박스 밖으로 삐져나가
+     background-clip: text 때문에 끝 글자가 잘리는 현상 방지.
+     skew 각도가 크기 때문에 padding 더 많이 — "법" 등 받침 있는 글자 클리핑 방지. */
   display: inline-block;
-  padding-right: 0.14em;
-  margin-right: -0.04em;
+  padding: 0 0.32em 0.06em 0.04em;  /* right 더 큼 — italic 끝 글자 받침 보호 */
+  margin-right: -0.18em;             /* 시각적 간격은 정상 유지 */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  overflow: visible;
 }
 em { font-style: normal; color: var(--ink); font-weight: 600; }
 strong { color: var(--ink); font-weight: 600; }
@@ -278,27 +280,50 @@ strong { color: var(--ink); font-weight: 600; }
   font-family: var(--display);
   font-weight: 500;
   font-size: clamp(42px, 6.5vw, 84px);
-  line-height: 1.04;
-  letter-spacing: -0.035em;
+  line-height: 1.08;
+  letter-spacing: -0.025em;            /* v9.0.2: 한국어 가독성 위해 자간 살짝 완화 */
   margin-bottom: 28px;
   color: var(--ink);
   /* 이탤릭 합성 글리프가 화면 오른쪽으로 삐져나가지 않도록 안전 여백 */
-  padding: 0 0.1em;
+  padding: 0 0.18em 0.08em;
+  word-break: keep-all;                 /* 한국어 어절 단위 줄바꿈 */
+  overflow-wrap: break-word;
+  text-wrap: balance;                   /* v9.0.2: 2줄 시 양쪽 균형 (Safari 17+/Chrome) */
+}
+.h-line {
+  display: block;
+  animation: reveal-up .9s var(--ease-out) both;
+  padding-right: 0.12em;                /* v9.0.2: italic 마진 반영 — 받침 클리핑 방지 */
+  /* v9.0.2: 영어/숫자/한글 어절 사이는 줄바꿈 가능하나 어절 내부는 막음 */
   word-break: keep-all;
 }
-.h-line { display: block; animation: reveal-up .9s var(--ease-out) both; padding-right: 0.05em; }
 .h-line:nth-child(1) { animation-delay: .25s; }
 .h-line:nth-child(2) { animation-delay: .45s; }
+/* v9.0.2: 강조 단어 + 마침표가 떨어지지 않게 묶기 */
+.h-keep {
+  white-space: nowrap;
+  display: inline-block;
+}
 @keyframes reveal-up {
   from { opacity: 0; transform: translateY(28px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .hero-sub {
-  max-width: 640px; margin: 0 auto 40px;
+  max-width: 720px; margin: 0 auto 40px;
   font-size: 18px; color: var(--ink-2);
-  line-height: 1.65;
+  line-height: 1.7;
+  letter-spacing: -0.005em;
+  word-break: keep-all;
+  text-wrap: pretty;                  /* 마지막 줄 외톨이 단어 방지 (Chrome 117+) */
   animation: reveal-up .9s var(--ease-out) .65s both;
+}
+/* v9.0.2: 어절 단위 자연스러운 줄바꿈 — 줄 사이 공백 한 칸 */
+.hs-line {
+  display: inline;
+}
+.hs-line + .hs-line::before {
+  content: " ";
 }
 
 .hero-cta {
