@@ -275,19 +275,7 @@ struct ExportView: View {
                             }
                         }
                     }
-                    // Result
-                    if let result = store.conversionResult {
-                        HStack(spacing: 6) {
-                            Image(systemName: result.failed == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundColor(result.failed == 0 ? .green : .orange)
-                            Text("\(result.succeeded)장 완료 (\(String(format: "%.1f", result.totalTime))초)")
-                                .font(.system(size: 12, weight: .medium))
-                            if result.failed > 0 {
-                                Text("· \(result.failed)장 실패")
-                                    .font(.system(size: 11)).foregroundColor(.red)
-                            }
-                        }
-                    }
+                    // v9.0.2: 변환 완료 메시지 제거 — Finder 자동 열기로 충분.
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)

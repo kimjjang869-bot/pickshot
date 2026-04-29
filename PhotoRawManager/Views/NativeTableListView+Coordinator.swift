@@ -452,6 +452,21 @@ extension NativeTableListView {
             }
         }
 
+        // MARK: - Double Click (v9.0.2)
+
+        /// 더블클릭 → 폴더 진입 / 부모 진입 (파일은 no-op).
+        @objc func handleDoubleClick(_ sender: Any?) {
+            guard let table = tableView else { return }
+            let row = table.clickedRow
+            guard row >= 0, row < rows.count else { return }
+            let photo = rows[row]
+            if photo.isParentFolder, let parent = store.folderURL?.deletingLastPathComponent() {
+                store.loadFolder(parent, restoreRatings: true)
+            } else if photo.isFolder {
+                store.loadFolder(photo.jpgURL, restoreRatings: true)
+            }
+        }
+
         // MARK: - Keyboard
 
         /// NSTableView.keyDown 에서 호출 — 처리됐으면 true 반환.

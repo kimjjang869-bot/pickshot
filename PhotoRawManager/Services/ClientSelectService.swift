@@ -487,45 +487,41 @@ class ClientSelectService: ObservableObject {
     // MARK: - 사진 리사이즈
 
     private func resizePhoto(photo: PhotoItem, index: Int, tempDir: URL) -> URL? {
+        // v9.0.2: RAWConversionService 의 새 파이프라인 사용 — Stage 3 임베디드 추출 + orientation +
+        //   다단계 Lanczos 다운샘플. 색감 / 화질 / 회전 모두 본 변환 엔진과 동일.
         let sourceURL = photo.jpgURL
-        let ext = sourceURL.pathExtension.lowercased()
-        let isRAW = FileMatchingService.rawExtensions.contains(ext)
+        let targetMax: CGFloat = 1200
 
-        var thumbnail: CGImage? = nil
-
-        // RAW (NEF/ARW/CR3/RAF 등)는 ImageIO 의 CGImageSourceCreateThumbnailAtIndex 가
-        // Bayer main image 디코드에 실패해 "검정 이미지" 를 반환하는 케이스가 있음 (특히
-        // 니콘 NEF, 소니 ARW). `kCGImageSourceCreateThumbnailFromImageAlways: true` 가
-        // embedded preview JPEG 를 의도적으로 건너뛰기 때문. → RAW 는 CGImageSource
-        // 경로를 건너뛰고 PreviewImageCache.loadOptimized 로 (embedded JPEG 추출 /
-        // CIRAWFilter 포함된 검증 경로) 직행.
-        if !isRAW {
-            if let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) {
-                let options: [CFString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: 1200,
-                    // embedded preview 가 있으면 우선 사용 (Always → IfAbsent) — JPG 도
-                    // embedded thumbnail 이 있으면 훨씬 빠르고 거의 동일 품질.
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                ]
-                thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
+        let cgImage: CGImage? = autoreleasepool {
+            // 1차: deep embedded JPEG (RAW 면 Stage 3, JPG 면 임베디드/풀이미지).
+            if let cg = RAWConversionService.extractDeepEmbeddedJPEG(url: sourceURL) {
+                var ci = CIImage(cgImage: cg)
+                // 2차: 부모 orientation 적용 (세로 사진 정방향).
+                ci = RAWConversionService.applyParentOrientationIfNeeded(ci, url: sourceURL, embeddedSize: CGSize(width: cg.width, height: cg.height))
+                // 3차: 다단계 Lanczos 다운샘플.
+                let extent = ci.extent
+                let origMax = max(extent.width, extent.height)
+                if origMax > targetMax {
+                    ci = RAWConversionService.highQualityDownscale(ci, targetMax: targetMax)
+                }
+                return RAWConversionService.ciContext.createCGImage(ci, from: ci.extent,
+                                                                     format: .RGBA8,
+                                                                     colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
             }
-        }
-
-        // RAW 이거나 CGImageSource 실패: PreviewImageCache.loadOptimized 로 fallback.
-        if thumbnail == nil {
-            let reason = isRAW ? "RAW" : "CGImageSource 실패"
-            fputs("[CLIENT] \(reason) → loadOptimized: \(sourceURL.lastPathComponent)\n", stderr)
-            if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: 1200),
+            // 폴백: PreviewImageCache.loadOptimized (DNG without thumb 등).
+            fputs("[CLIENT] embedded extraction 실패 → loadOptimized 폴백: \(sourceURL.lastPathComponent)\n", stderr)
+            if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: targetMax),
                let cgImg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                thumbnail = cgImg
+                return cgImg
             }
+            return nil
         }
 
-        guard let finalThumb = thumbnail else {
+        guard let finalThumb = cgImage else {
             fputs("[CLIENT] ❌ 리사이즈 완전 실패: \(sourceURL.lastPathComponent)\n", stderr)
             return nil
         }
+        fputs("[CLIENT] 리사이즈 완료 \(finalThumb.width)x\(finalThumb.height) — \(sourceURL.lastPathComponent)\n", stderr)
 
         // 파일명: 접두어 있으면 "접두어_0001.jpg", 없으면 "0001_원본이름.jpg"
         let fileName: String
@@ -539,7 +535,7 @@ class ClientSelectService: ObservableObject {
         guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, "public.jpeg" as CFString, 1, nil) else { return nil }
 
         let jpegOptions: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: 0.8
+            kCGImageDestinationLossyCompressionQuality: 0.85
         ]
         CGImageDestinationAddImage(dest, finalThumb, jpegOptions as CFDictionary)
 

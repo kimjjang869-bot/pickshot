@@ -138,7 +138,7 @@ struct RAWConversionService {
     }
 
     // Shared Metal-backed CIContext (reused across all conversions)
-    private static let ciContext: CIContext = {
+    static let ciContext: CIContext = {
         if let device = MTLCreateSystemDefaultDevice() {
             return CIContext(mtlDevice: device, options: [
                 .cacheIntermediates: false,
@@ -476,7 +476,8 @@ struct RAWConversionService {
 
     /// PhotoPreviewView.loadHiResImage 의 deep scan 과 동일 — Sony ARW 등은 index 0 (1616px) 외에
     /// 파일 바이트 안에 더 큰 embedded JPEG (4096px+) 가 박혀있어 0xFFD8 마커 스캔으로 추출.
-    private static func extractDeepEmbeddedJPEG(url: URL) -> CGImage? {
+    /// v9.0.2: ClientSelectService 에서도 사용 (internal 노출).
+    static func extractDeepEmbeddedJPEG(url: URL) -> CGImage? {
         // 1차: 표준 CGImageSource index 0 (Canon CR3 / Nikon NEF 는 보통 여기서 4000+px 나옴).
         var bestImage: CGImage? = nil
         var bestPixels = 0
@@ -546,7 +547,7 @@ struct RAWConversionService {
     ///   Sony ARW 등은 deep embedded JPEG 가 sensor raw 방향으로 박혀있어,
     ///   부모 orientation 이 5~8 (세로) 인데 임베디드 가 가로 aspect 면 회전 필요.
     ///   loadHiResImage 의 correctThumbnailOrientationIfNeeded 와 같은 전략.
-    private static func applyParentOrientationIfNeeded(_ ci: CIImage, url: URL, embeddedSize: CGSize) -> CIImage {
+    static func applyParentOrientationIfNeeded(_ ci: CIImage, url: URL, embeddedSize: CGSize) -> CIImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [
             kCGImageSourceShouldCache: false
         ] as CFDictionary),
@@ -616,7 +617,7 @@ struct RAWConversionService {
     /// - 2-step: 0.25 ≤ scale < 0.5 (2~4× 다운샘플) → 0.5× Lanczos + 최종 Lanczos.
     /// - 3-step: scale < 0.25 (4×+ 다운샘플) → 0.5× × 0.5× + 최종.
     /// 다단계 이유: Lanczos 도 한 번에 4×+ 다운샘플 시 aliasing/blur 발생 → step 별로 처리하면 sinc filter 가 더 정확히 동작.
-    private static func highQualityDownscale(_ input: CIImage, targetMax: CGFloat) -> CIImage {
+    static func highQualityDownscale(_ input: CIImage, targetMax: CGFloat) -> CIImage {
         let extent = input.extent
         let origMax = max(extent.width, extent.height)
         guard origMax > targetMax else { return input }

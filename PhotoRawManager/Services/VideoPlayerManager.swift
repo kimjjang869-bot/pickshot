@@ -616,10 +616,18 @@ class VideoPlayerManager: ObservableObject {
         }
     }
 
+    /// 사용자가 명시적으로 LUT 끄기 — composition + activeLUT 둘 다 클리어.
     func removeLUT() {
         player.currentItem?.videoComposition = nil
         lutApplied = false
         activeLUT = nil
+    }
+
+    /// v9.0.2: 일반 영상으로 자동 전환 시 — composition 만 제거.
+    ///   activeLUT 은 그대로 유지해야 다음 LOG 영상에서 자동 재적용됨.
+    private func removeLUTCompositionOnly() {
+        player.currentItem?.videoComposition = nil
+        lutApplied = false
     }
 
     // MARK: - JKL 역재생 중 LUT 임시 보류/복원
@@ -813,9 +821,9 @@ class VideoPlayerManager: ObservableObject {
                     applyLUT(lut.data, dimension: lut.dimension)
                 }
             } else if !isLOGish && lutApplied {
-                // 일반 영상으로 전환 → LUT 꺼서 원본 감마 유지
-                fputs("[LUT] 일반 영상 감지 → LUT 자동 해제\n", stderr)
-                removeLUT()
+                // 일반 영상으로 전환 → composition 만 끄고 activeLUT 은 유지 (다음 LOG 영상 재적용 위해).
+                fputs("[LUT] 일반 영상 감지 → LUT 자동 해제 (activeLUT 유지)\n", stderr)
+                removeLUTCompositionOnly()
             }
         }
     }

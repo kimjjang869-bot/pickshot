@@ -915,11 +915,15 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         // MARK: Double click for folders
 
         func collectionView(_ collectionView: NSCollectionView, shouldSelectItemsAt indexPaths: Set<IndexPath>) -> Set<IndexPath> {
-            // Check for double-click on folder
-            if let event = NSApp.currentEvent, event.clickCount == 2 {
-                for indexPath in indexPaths {
-                    let idx = indexPath.item
-                    guard idx < photos.count else { continue }
+            // v9.0.2: 더 엄격한 조건 — rubber-band 드래그 중에 발화하지 않게.
+            //   double-click 은 단일 cell + leftMouseUp 이벤트일 때만 처리.
+            if let event = NSApp.currentEvent,
+               event.clickCount == 2,
+               event.type == .leftMouseUp,
+               indexPaths.count == 1,
+               let indexPath = indexPaths.first {
+                let idx = indexPath.item
+                if idx < photos.count {
                     let photo = photos[idx]
                     if photo.isFolder || photo.isParentFolder {
                         DispatchQueue.main.async { [weak self] in

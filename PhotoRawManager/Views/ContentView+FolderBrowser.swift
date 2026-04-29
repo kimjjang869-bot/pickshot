@@ -70,16 +70,17 @@ struct FolderBrowserView: View {
     @State private var folderViewMode: FolderViewMode = .tree
     @State private var favoritesHeight: CGFloat = 550
     // v8.9.4: 우측 사이드바 하단 탭 (즐겨찾기 / 메타데이터 / 메타데이터 편집)
-    @State private var sidebarTab: SidebarTab = .favorites
+    // v9.0.2: 기본 탭 메타데이터 + 순서 메타데이터 → 즐겨찾기 → 편집.
+    @State private var sidebarTab: SidebarTab = .metadata
     enum SidebarTab: String, CaseIterable, Identifiable {
-        case favorites = "즐겨찾기"
         case metadata = "메타데이터"
+        case favorites = "즐겨찾기"
         case editor = "편집"
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .favorites: return "star.fill"
             case .metadata: return "info.circle"
+            case .favorites: return "star.fill"
             case .editor: return "pencil.circle"
             }
         }
@@ -1671,7 +1672,10 @@ struct SidebarMetadataView: View {
 
                 Divider()
 
-                // 카메라 / 렌즈
+                // 카메라 / 렌즈 / 메이커 (v9.0.2)
+                if let make = displayExif?.cameraMake, !make.isEmpty {
+                    rowKV("제조사", make)
+                }
                 if let cam = displayExif?.cameraModel {
                     rowKV("카메라", cam)
                 }
@@ -1681,13 +1685,42 @@ struct SidebarMetadataView: View {
 
                 // 촬영 설정
                 if let e = displayExif {
-                    if e.iso != nil || e.shutterSpeed != nil || e.aperture != nil || e.focalLength != nil {
+                    if e.iso != nil || e.shutterSpeed != nil || e.aperture != nil || e.focalLength != nil
+                        || e.exposureBias != nil {
                         Divider()
                     }
                     if let iso = e.iso { rowKV("ISO", "\(iso)") }
                     if let shutter = e.shutterSpeed { rowKV("셔터", shutter) }
                     if let aperture = e.aperture { rowKV("조리개", String(format: "f/%.1f", aperture)) }
                     if let focal = e.focalLength { rowKV("초점거리", String(format: "%.0fmm", focal)) }
+                    if let bias = e.exposureBias, abs(bias) > 0.01 {
+                        rowKV("노출보정", String(format: "%+.1f EV", bias))
+                    }
+                }
+
+                // v9.0.2: 픽쳐스타일 / 색공간 / 비트심도 / DPI
+                if let p = displayExif {
+                    if p.pictureStyle != nil || p.pictureStyleColorSpace != nil
+                        || p.bitDepth != nil || p.dpiX != nil {
+                        Divider()
+                    }
+                    if let ps = p.pictureStyle, !ps.isEmpty { rowKV("픽쳐스타일", ps) }
+                    if let cs = p.pictureStyleColorSpace, !cs.isEmpty { rowKV("색공간", cs) }
+                    if let bd = p.bitDepth { rowKV("비트심도", "\(bd)bit") }
+                    if let dx = p.dpiX, let dy = p.dpiY {
+                        rowKV("DPI", dx == dy ? "\(dx)" : "\(dx) × \(dy)")
+                    }
+                }
+
+                // GPS (있을 때만)
+                if let e = displayExif, e.hasGPS {
+                    Divider()
+                    if let place = e.placeName, !place.isEmpty {
+                        rowKV("위치", place)
+                    }
+                    if let lat = e.latitude, let lon = e.longitude {
+                        rowKV("좌표", String(format: "%.5f, %.5f", lat, lon))
+                    }
                 }
 
                 // 일시
