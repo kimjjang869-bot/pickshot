@@ -1379,3 +1379,233 @@ strong { color: var(--ink); font-weight: 600; }
   70%  { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
+
+/* ============================================================
+   v9.0.2 — Pricing redesign (Simple / Pro 2-tier + Annual)
+============================================================ */
+
+.section-pricing .section-head { margin-bottom: 56px; }
+
+/* 월/연 토글 */
+.price-toggle {
+  display: inline-flex;
+  margin-top: 28px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  gap: 4px;
+}
+.pt-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 9px 22px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: -0.01em;
+}
+.pt-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) inset;
+}
+.pt-save {
+  margin-left: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: white;
+  border-radius: 4px;
+}
+
+/* 2-카드 그리드 */
+.price-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  max-width: 1000px;
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+.price-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 38px 34px 32px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 22px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+.price-card:hover {
+  transform: translateY(-3px);
+}
+.price-simple:hover { border-color: rgba(255, 255, 255, 0.14); }
+
+.price-pro {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.10) 0%, rgba(34, 197, 94, 0.04) 100%);
+  border-color: rgba(99, 102, 241, 0.30);
+  box-shadow: 0 20px 48px -16px rgba(99, 102, 241, 0.25);
+}
+.price-pro:hover {
+  border-color: rgba(99, 102, 241, 0.50);
+  box-shadow: 0 26px 60px -14px rgba(99, 102, 241, 0.40);
+}
+
+/* Pro orb 발광 */
+.price-orb {
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.price-ribbon {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #6366f1, #22c55e);
+  color: white;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px -4px rgba(99, 102, 241, 0.6);
+  z-index: 2;
+}
+
+.price-head {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.price-tag {
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+.price-tag.pro {
+  background: linear-gradient(135deg, #818cf8, #4ade80);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  font-size: 16px;
+}
+.price-tagline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 18px;
+  letter-spacing: -0.005em;
+}
+.price-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.price-num {
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.96);
+}
+.price-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+}
+.price-yearly-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(34, 197, 94, 0.85);
+  font-weight: 500;
+}
+
+.price-list {
+  list-style: none;
+  margin: 0 0 24px 0;
+  padding: 0;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+.price-list li {
+  position: relative;
+  padding: 9px 0 9px 22px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.price-list li:last-child { border-bottom: none; }
+.price-list li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  color: rgba(34, 197, 94, 0.8);
+  font-weight: 700;
+  font-size: 12px;
+}
+.price-list li.pl-section {
+  font-size: 12px;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding-left: 0;
+  margin-bottom: 4px;
+  border-bottom: none;
+}
+.price-list li.pl-section::before { content: ""; }
+.price-list li.pl-pro::before { content: ""; padding-right: 0; }
+.price-list li.pl-pro {
+  padding-left: 0;
+}
+.price-list strong {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 600;
+}
+
+.btn-block { width: 100%; }
+
+.price-note {
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  letter-spacing: -0.005em;
+}
+
+.price-fineprint {
+  margin-top: 40px;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 768px) {
+  .price-grid { grid-template-columns: 1fr; gap: 16px; }
+  .price-card { padding: 28px 24px 26px; }
+  .price-num { font-size: 36px; }
+  .price-orb { width: 130px; height: 130px; top: -28px; right: -28px; }
+}

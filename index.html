@@ -549,23 +549,72 @@
   <div class="section-inner">
     <div class="section-head center">
       <div class="kicker">가격</div>
-      <h2 class="section-title">카드 없이 7일, 이후 월 ₩2,900</h2>
-    </div>
-    <div class="price-card" data-reveal>
-      <div class="price-orb"></div>
-      <div class="price-head">
-        <div class="price-name">PickShot Pro</div>
-        <div class="price-amount"><span class="price-num">2,900</span><span class="price-unit">원 / 월</span></div>
+      <h2 class="section-title">카드 없이 7일,<br>이후 월&nbsp;₩2,900 부터</h2>
+      <p class="section-sub center">시작은 2,900원. 클라이언트 워크플로우가 필요해지면 Pro 로.<br>둘 다 7일 무료, 카드는 체험 끝나기 하루 전에만 요청.</p>
+
+      <!-- 월/연간 토글 -->
+      <div class="price-toggle" role="tablist">
+        <button class="pt-btn active" data-billing="monthly">월 결제</button>
+        <button class="pt-btn" data-billing="yearly">연 결제 <span class="pt-save">17% 할인</span></button>
       </div>
-      <ul class="price-list">
-        <li><strong>무제한 사진 · 영상</strong> · 완전 로컬 처리 · 클라우드 요금 0</li>
-        <li>모든 기능 — G-Select · 적극 캐시 · 클라이언트 뷰어 · LOG LUT · 얼굴 그룹</li>
-        <li>비파괴 보정 + 프리셋 + 복사 붙여넣기 + XMP 양방향</li>
-        <li>자연어 검색 (v8.9+) 자동 업데이트</li>
-        <li>우선 지원 · 기능 요청 반영 (12년차 개발자 직접 대응)</li>
-      </ul>
-      <a href="#download" class="btn btn-primary btn-lg btn-block">7일 무료 시작 →</a>
-      <div class="price-note">언제든 취소. 카드는 체험 종료 하루 전에만 요청됩니다.</div>
+    </div>
+
+    <div class="price-grid">
+      <!-- Simple -->
+      <div class="price-card price-simple" data-reveal>
+        <div class="price-head">
+          <div class="price-tag">Simple</div>
+          <div class="price-tagline">가볍게, 셀렉만 빠르게</div>
+          <div class="price-amount">
+            <span class="price-num" data-monthly="2,900" data-yearly="29,000">2,900</span>
+            <span class="price-unit">원 <span class="pu-cycle">/ 월</span></span>
+          </div>
+          <div class="price-yearly-note" hidden>월 환산 2,420원</div>
+        </div>
+        <ul class="price-list">
+          <li><strong>초고속 RAW 뷰잉</strong> — 2,000장 1.5초</li>
+          <li>별점 · 색상 라벨 · Space Pick</li>
+          <li>JPG/RAW 폴더 자동 매칭</li>
+          <li>기본 내보내기 (해상도 1개 · 원본 유지 파일명)</li>
+          <li>메모리카드 백업 (1장씩 수동)</li>
+          <li>워터마크 1개 (배치 X)</li>
+          <li>비파괴 보정 + 프리셋</li>
+        </ul>
+        <a href="#download" class="btn btn-secondary btn-lg btn-block">7일 무료 시작</a>
+        <div class="price-note">셀렉 도구 1개로 충분한 분께</div>
+      </div>
+
+      <!-- Pro -->
+      <div class="price-card price-pro" data-reveal>
+        <div class="price-orb"></div>
+        <div class="price-ribbon">추천</div>
+        <div class="price-head">
+          <div class="price-tag pro">Pro</div>
+          <div class="price-tagline">행사 만장 → 클라이언트 폴더까지</div>
+          <div class="price-amount">
+            <span class="price-num" data-monthly="8,900" data-yearly="89,000">8,900</span>
+            <span class="price-unit">원 <span class="pu-cycle">/ 월</span></span>
+          </div>
+          <div class="price-yearly-note" hidden>월 환산 7,420원 · 1개월 무료</div>
+        </div>
+        <ul class="price-list">
+          <li class="pl-section">Simple 의 <strong>모든 기능</strong> +</li>
+          <li class="pl-pro">🔥 <strong>클라이언트 워크플로우</strong> — G-Select · 웹 뷰어 · 펜/코멘트 · QR 공유</li>
+          <li class="pl-pro">🤖 <strong>AI 자동화</strong> — 연사 베스트 · 얼굴 그룹 · 스마트 셀렉 · 의미 검색</li>
+          <li class="pl-pro">🎨 <strong>고급 출력</strong> — RAW→JPG 변환 (Stage3 + Lanczos) · 화보 느낌 · 배치 처리 · 컨택트시트 PDF</li>
+          <li class="pl-pro">📷 <strong>워크플로우</strong> — 카메라 테더링 · 연속 메모리카드 백업</li>
+          <li class="pl-pro">🎬 <strong>영상</strong> — LOG 자동 LUT · JKL 역재생 · 마커</li>
+          <li class="pl-pro">🔄 <strong>Lightroom 양방향</strong> — XMP 사이드카 · 셀렉 import/export</li>
+          <li>⚡ 적극 캐시 모드 + 우선 지원 + 기능 요청 반영</li>
+        </ul>
+        <a href="#download" class="btn btn-primary btn-lg btn-block">Pro 7일 무료 체험</a>
+        <div class="price-note">미팅 1회 = 1시간 절약 × 월 5회 → Pro 가격의 6배 가치</div>
+      </div>
+    </div>
+
+    <div class="price-fineprint">
+      가격은 부가세 포함. 7일 후 자동으로 Simple 로 강등 — Pro 체험 끝나도 돈 빠지지 않음.<br>
+      언제든 해지 가능. 결제는 Apple ID 또는 카드.
     </div>
   </div>
 </section>
