@@ -217,6 +217,8 @@ class PhotoStore: ObservableObject {
     /// true for very fast repeated taps. Treat like key-repeat for preview/EXIF scheduling.
     var isNavigationBurst: Bool = false
     var isFastNavigation: Bool { isKeyRepeat || isNavigationBurst }
+    /// v9.0.2: 네비 burst 동안 InitialPreviewGenerator/IdlePrefetch 등 백그라운드 작업이 참고할 글로벌 플래그.
+    nonisolated(unsafe) static var navigationBusy: Bool = false
     static var lastNavigationMoveTime: CFAbsoluteTime = 0
     static var navigationBurstWork: DispatchWorkItem?
     /// Cmd+X 로 잘라낸 사진 ID — 썸네일 흐리게 표시용 (paste 완료 시 clear)

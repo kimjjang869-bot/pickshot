@@ -1491,23 +1491,7 @@ struct PhotoContextMenu: View {
             Label(photo.isGSelected ? "G셀렉 해제" : "G셀렉", systemImage: "cloud")
         }
 
-        // Color label submenu
-        Menu {
-            ForEach(ColorLabel.allCases, id: \.self) { label in
-                Button(action: {
-                    for id in targetIDs {
-                        if let idx = store._photoIndex[id] { store.photos[idx].colorLabel = label }
-                    }
-                }) {
-                    HStack {
-                        Circle().fill(label.color ?? .gray).frame(width: 10, height: 10)
-                        Text(label == .none ? "라벨 없음" : label.rawValue)
-                    }
-                }
-            }
-        } label: {
-            Label("컬러 라벨", systemImage: "tag.fill")
-        }
+        // v9.0.2: 중복 "컬러 라벨" 메뉴 제거 — 위 1466~ 의 setColorLabel 버전만 유지.
 
         Divider()
 
@@ -1552,13 +1536,7 @@ struct PhotoContextMenu: View {
             Label("회전 (\(targetCount)장)", systemImage: "rotate.right")
         }
 
-        // v8.6.3: Adobe Camera Raw (Photoshop) 로 열기
-        Button(action: {
-            openInCameraRaw(ids: targetIDs, store: store)
-        }) {
-            Label("Camera Raw 에서 열기 (\(targetCount)장)", systemImage: "camera.metering.matrix")
-        }
-        .disabled(!hasAnyRAW(ids: targetIDs, store: store))
+        // v9.0.2: "Camera Raw 에서 열기" 메뉴 제거 (요청).
 
         // v8.7: 참조 기반 시각 검색 — "이 얼굴/사물이 있는 사진 찾기" (Debug 전용)
         #if DEBUG

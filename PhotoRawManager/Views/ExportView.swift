@@ -56,6 +56,8 @@ struct ExportView: View {
     }
 
     @State private var convOptions = RAWConversionService.ExportOptions()
+    /// v9.0.2: 직접 입력 해상도 — String 버퍼 (TextField 자유 편집 위함).
+    @State private var customResolutionText: String = "3000"
 
     private var photosToExport: [PhotoItem] {
         switch exportMode {
@@ -94,53 +96,156 @@ struct ExportView: View {
 
             // RAW → JPG options
             if exportTarget == .rawToJpg {
-                VStack(spacing: 10) {
-                    // Row 1: Resolution + Quality
-                    HStack(spacing: 10) {
-                        Spacer()
-                        Text("해상도").font(.system(size: 11)).foregroundColor(.secondary)
-                        Picker("", selection: $convOptions.resolution) {
-                            ForEach(RAWConversionService.Resolution.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.frame(width: 85)
-                        Text("품질").font(.system(size: 11)).foregroundColor(.secondary)
-                        Picker("", selection: $convOptions.quality) {
-                            ForEach(RAWConversionService.Quality.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.frame(width: 120)
-                        Text("GPU").font(.system(size: 9, weight: .bold)).foregroundColor(.orange)
-                            .padding(.horizontal, 5).padding(.vertical, 2).background(Color.orange.opacity(0.12)).cornerRadius(3)
-                        Spacer()
-                    }
+                VStack(spacing: 12) {
 
-                    // Row 2: Sharpening + Color Space + Auto Horizon
-                    HStack(spacing: 10) {
-                        Spacer()
-                        Text("샤프닝").font(.system(size: 11)).foregroundColor(.secondary)
-                        Picker("", selection: $convOptions.sharpening) {
-                            ForEach(RAWConversionService.Sharpening.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.frame(width: 80)
-                        Text("색공간").font(.system(size: 11)).foregroundColor(.secondary)
-                        Picker("", selection: $convOptions.colorSpace) {
-                            ForEach(RAWConversionService.OutputColorSpace.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.frame(width: 110)
-                        // 수평 보정 — 추후 활성화 예정
-                        // Toggle("수평", isOn: $convOptions.autoHorizon)
-                        Spacer()
-                    }
-
-                    // Row 3: Filename pattern
-                    HStack(spacing: 10) {
-                        Spacer()
-                        Text("파일명").font(.system(size: 11)).foregroundColor(.secondary)
-                        Picker("", selection: $convOptions.filenamePattern) {
-                            ForEach(RAWConversionService.FilenamePattern.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.frame(width: 120)
-                        if convOptions.filenamePattern == .prefixNumber {
-                            TextField("접두사", text: $convOptions.filenamePrefix)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 100)
-                                .font(.system(size: 11))
+                    // ── 섹션 1: 이미지 크기 ──
+                    convertSection(icon: "ruler", title: "이미지 크기") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 12) {
+                                fieldLabel("해상도")
+                                Picker("", selection: $convOptions.resolution) {
+                                    ForEach(RAWConversionService.Resolution.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                }
+                                .frame(width: 130)
+                                if convOptions.resolution == .custom {
+                                    TextField("3000", text: $customResolutionText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 80)
+                                        .font(.system(size: 12))
+                                        .onChange(of: customResolutionText) { _, newVal in
+                                            // 빈 문자열/잘못된 입력 시에는 convOptions 갱신 안 함 (TextField 는 그대로 보여줌).
+                                            //   유효한 100~20000 범위 정수일 때만 반영.
+                                            if let n = Int(newVal.trimmingCharacters(in: .whitespaces)),
+                                               (100...20000).contains(n) {
+                                                convOptions.customMaxPixel = n
+                                            }
+                                        }
+                                        .onAppear {
+                                            customResolutionText = "\(convOptions.customMaxPixel)"
+                                        }
+                                    Text("px").font(.system(size: 11)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                fieldLabel("DPI")
+                                Picker("", selection: $convOptions.dpi) {
+                                    Text("72").tag(72)
+                                    Text("150").tag(150)
+                                    Text("300").tag(300)
+                                    Text("600").tag(600)
+                                }
+                                .frame(width: 90)
+                            }
                         }
-                        Spacer()
+                    }
+
+                    // ── 섹션 2: 출력 품질 ──
+                    convertSection(icon: "sparkles.square.filled.on.square", title: "출력 품질") {
+                        HStack(spacing: 12) {
+                            fieldLabel("품질")
+                            Picker("", selection: $convOptions.quality) {
+                                ForEach(RAWConversionService.Quality.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }
+                            .frame(width: 140)
+                            Spacer()
+                            fieldLabel("색공간")
+                            Picker("", selection: $convOptions.colorSpace) {
+                                ForEach(RAWConversionService.OutputColorSpace.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }
+                            .frame(width: 130)
+                            Text("GPU")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.15))
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    // ── 섹션 3: 샤프닝 ──
+                    convertSection(icon: "wand.and.rays", title: "샤프닝") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 12) {
+                                fieldLabel("효과")
+                                Picker("", selection: $convOptions.sharpening) {
+                                    ForEach(RAWConversionService.Sharpening.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                }
+                                .frame(width: 150)
+                                Spacer()
+                            }
+
+                            // 직접 조절 선택 시 슬라이더 3개
+                            if convOptions.sharpening == .unsharpMask {
+                                VStack(spacing: 6) {
+                                    unsharpSlider(label: "강도",
+                                                  value: $convOptions.unsharpAmount,
+                                                  range: 0.1...3.0, step: 0.05,
+                                                  fmt: { String(format: "%.0f%%", $0 * 100) })
+                                    unsharpSlider(label: "범위",
+                                                  value: $convOptions.unsharpRadius,
+                                                  range: 0.3...5.0, step: 0.1,
+                                                  fmt: { String(format: "%.1fpx", $0) })
+                                    unsharpSlider(label: "노이즈 보호",
+                                                  value: $convOptions.unsharpThreshold,
+                                                  range: 0.0...0.2, step: 0.005,
+                                                  fmt: { String(format: "%.0f", $0 * 255) })
+                                }
+                                .padding(10)
+                                .background(Color.black.opacity(0.18))
+                                .cornerRadius(6)
+                            }
+                            // 화보 느낌 선택 시 안내
+                            if convOptions.sharpening == .editorial {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "info.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.orange.opacity(0.8))
+                                    Text("매거진 화보처럼 — 톤 깊이 + 디테일 + 입체감을 한 번에 더해줍니다")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            // 자연/선명/또렷 선택 시 짧은 안내
+                            if [.natural, .sharp, .crisp].contains(convOptions.sharpening) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.green.opacity(0.85))
+                                    Text("외각선 또렷 + 헤일로 안 보임 + 밝기 100% 보존")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 섹션 4: 파일 ──
+                    convertSection(icon: "doc.text", title: "파일") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                fieldLabel("파일명")
+                                Picker("", selection: $convOptions.filenamePattern) {
+                                    ForEach(RAWConversionService.FilenamePattern.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                }
+                                .frame(width: 150)
+                                if convOptions.filenamePattern == .prefixNumber {
+                                    TextField("접두사", text: $convOptions.filenamePrefix)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 120)
+                                        .font(.system(size: 12))
+                                }
+                                Spacer()
+                            }
+                            if store.isRecursiveMode {
+                                Toggle(isOn: $convOptions.preserveFolderStructure) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "folder.badge.gearshape").font(.system(size: 12))
+                                        Text("원본 폴더 구조 유지").font(.system(size: 12))
+                                    }
+                                }
+                                .toggleStyle(.checkbox)
+                                .help("하위 폴더에 있는 사진을 같은 폴더 이름으로 분류해 출력합니다")
+                            }
+                        }
                     }
 
                     // Progress (변환 진행은 시트 내에서도 표시)
@@ -519,10 +624,16 @@ struct ExportView: View {
             cancelPtr.initialize(to: false)
             defer { cancelPtr.deinitialize(count: 1); cancelPtr.deallocate() }
 
+            // v9.0.2: 폴더 구조 유지 옵션을 위한 baseFolder 주입.
+            var effectiveOptions = convOptions
+            if effectiveOptions.preserveFolderStructure {
+                effectiveOptions.baseFolder = store.folderURL
+            }
+
             let result = RAWConversionService.batchConvert(
                 photos: photos,
                 outputFolder: outputFolder,
-                options: convOptions,
+                options: effectiveOptions,
                 cancelFlag: cancelPtr
             ) { done, total in
                 DispatchQueue.main.async {
@@ -541,6 +652,69 @@ struct ExportView: View {
                     NSWorkspace.shared.open(outputFolder)
                 }
             }
+        }
+    }
+
+    // MARK: - Conversion Section Card (v9.0.2)
+
+    /// 섹션 카드 — 아이콘 + 제목 + 컨텐츠 영역.
+    @ViewBuilder
+    private func convertSection<Content: View>(
+        icon: String,
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .cornerRadius(6)
+    }
+
+    /// 필드 라벨 — 일관된 폭, 우측 정렬.
+    @ViewBuilder
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(.secondary)
+            .frame(width: 50, alignment: .trailing)
+    }
+
+    // MARK: - Unsharp Mask Slider (v9.0.2)
+
+    @ViewBuilder
+    private func unsharpSlider(label: String,
+                               value: Binding<Double>,
+                               range: ClosedRange<Double>,
+                               step: Double,
+                               fmt: @escaping (Double) -> String) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 70, alignment: .trailing)
+            Slider(value: value, in: range, step: step)
+                .frame(maxWidth: 280)
+            Text(fmt(value.wrappedValue))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.primary)
+                .frame(width: 60, alignment: .leading)
         }
     }
 

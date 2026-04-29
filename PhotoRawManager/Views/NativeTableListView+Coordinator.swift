@@ -295,13 +295,7 @@ extension NativeTableListView {
             rotateItem.submenu = rotateSub
             menu.addItem(rotateItem)
 
-            // Camera Raw 에서 열기
-            let cameraRawItem = NSMenuItem(title: "Camera Raw 에서 열기 (\(count)장)",
-                                           action: #selector(ctxOpenInCameraRaw), keyEquivalent: "")
-            cameraRawItem.target = self
-            cameraRawItem.image = NSImage(systemSymbolName: "camera.metering.matrix", accessibilityDescription: nil)
-            cameraRawItem.isEnabled = hasAnyRAW(ids: ids, store: store)
-            menu.addItem(cameraRawItem)
+            // v9.0.2: "Camera Raw 에서 열기" 메뉴 제거 (요청).
 
             menu.addItem(.separator())
 

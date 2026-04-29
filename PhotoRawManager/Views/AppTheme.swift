@@ -205,15 +205,18 @@ final class InitialPreviewGenerator: ObservableObject {
     @Published private(set) var phase: Int = 0  // 0=idle, 1=900px, 2=1800px, 3=full RAW
     private var allURLs: [URL] = []
 
-    // v8.9.7+: 순차 (concurrency 1) — FIFO 순서 보장.
-    //   QoS .userInitiated — nav 중에도 시스템이 throttle 안 함. 사용자가 명시 클릭한 작업이라 우선.
+    // v9.0.2: QoS .utility 로 강등 — .userInitiated 는 main 과 동등 우선순위 경쟁으로 응답없음 유발.
+    //   concurrency 1 + .utility + op 사이 5ms yield → main runloop 블록 방지.
     private let queue: OperationQueue = {
         let q = OperationQueue()
         q.name = "preview.initial-generator"
         q.maxConcurrentOperationCount = 1
-        q.qualityOfService = .userInitiated
+        q.qualityOfService = .utility
         return q
     }()
+
+    /// op 사이 main 에 양보할 시간 (ms). Phase 별 부하에 따라 조정.
+    private static let yieldMs: [Int: UInt32] = [1: 3, 2: 8, 3: 12]
 
     func cancel() {
         queue.cancelAllOperations()
@@ -327,9 +330,13 @@ final class InitialPreviewGenerator: ObservableObject {
         for url in urls {
             queue.addOperation { [weak self] in
                 guard let self else { return }
-                // v8.9.7+: nav 중에도 계속 생성 — burst slow-down 제거.
-                //   .utility QoS + concurrency 1 으로 main 의 사용자 nav 우선순위 유지.
-                //   prefetch queue 와 별개 큐라 디스크 contention 가능하나 사용자 요청 우선.
+                // v9.0.2: 네비 burst 동안엔 디스크/CPU 양보 — STALL/Stage3 지연 원인이었음.
+                //   busy 가 풀릴 때까지 짧게 대기 (최대 1초). 그래도 busy 면 다음 op 로 미룸.
+                var waited = 0
+                while PhotoStore.navigationBusy && waited < 20 {
+                    usleep(50_000) // 50ms
+                    waited += 1
+                }
 
                 autoreleasepool {
                     let existing = DiskThumbnailCache.shared.getByPath(url: url) ?? ThumbnailCache.shared.get(url)
@@ -363,9 +370,15 @@ final class InitialPreviewGenerator: ObservableObject {
                     }
                     let img = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
                     ThumbnailCache.shared.set(url, image: img)
+                    // v9.0.2: 디스크 쓰기는 별도 백그라운드 큐로 분리 — 메인 nav 와 디스크 contention 회피.
                     let modDate = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
-                    DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: img)
+                    DispatchQueue.global(qos: .background).async {
+                        DiskThumbnailCache.shared.set(url: url, modDate: modDate, image: img)
+                    }
                 }
+                // v9.0.2: op 사이 main 에 양보 — phase 별 부하 비례.
+                let yieldUs = UInt32(Self.yieldMs[self.phase] ?? 5) * 1000
+                usleep(yieldUs)
                 DispatchQueue.main.async { [weak self] in self?.advance() }
             }
         }

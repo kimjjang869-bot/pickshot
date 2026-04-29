@@ -50,9 +50,12 @@ extension ContentView {
                     AggressiveCacheToggle(store: store)
                     // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
                     FastCullingToggle(store: store)
-                    // v8.9.7+: 초기 미리보기 토글 — 토끼 옆 (FastCullingToggle 직후)
+                    // v9.0: 초기 미리보기 토글 일시 비활성화 (응답없음 발생 — Phase 3 RAW 디코드 큐 backpressure 문제).
+                    //   Debug 에서만 노출해 추후 fix 후 v9.1+ 에서 다시 활성화.
+                    #if DEBUG
                     InitialPreviewToggle()
                         .fixedSize(horizontal: true, vertical: true)
+                    #endif
                     // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
                     activeFilterBadge
                 }

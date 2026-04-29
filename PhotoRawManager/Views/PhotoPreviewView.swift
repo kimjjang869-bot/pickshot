@@ -1189,10 +1189,24 @@ struct PhotoPreviewView: View {
                     }
                     .contextMenu { previewBgMenu }
                 } else {
-                    // No image yet - show empty background
-                    store.previewBackgroundColor
-                        .contextMenu { previewBgMenu }
-                        .frame(width: vSize.width, height: vSize.height)
+                    // v9.0.2: 빠른 네비 중 검은 화면 방지 — placeholder 로 이전 프레임 흐릿하게.
+                    //   큰 이미지(8192px 등)를 그대로 렌더하면 main thread 디코드 75ms+ → 키씹힘.
+                    //   .interpolation(.none) + 작은 frame 캡으로 GPU rasterize 비용 최소화.
+                    ZStack {
+                        store.previewBackgroundColor
+                        if let placeholder = previewFrame?.image ?? image {
+                            Image(nsImage: placeholder)
+                                .resizable()
+                                .interpolation(.none)
+                                .antialiased(false)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: min(vSize.width, 1200), maxHeight: min(vSize.height, 1200))
+                                .opacity(0.55)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .contextMenu { previewBgMenu }
+                    .frame(width: vSize.width, height: vSize.height)
                 }
                 }
                 .onAppear {
@@ -3768,6 +3782,25 @@ struct PhotoPreviewView: View {
             fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels)\n", stderr)
         }
         return parentEmbedded
+    }
+
+    /// FFD8 시작 후 maxLength 안쪽에서 첫 FFD9 (JPEG EOI) 까지의 range 반환.
+    /// nil = JPEG marker 매칭 실패 (불완전한 데이터 등).
+    private static func completeJPEGRange(in data: Data, from offset: Int, maxLength: Int) -> Range<Int>? {
+        guard offset >= 0, offset + 3 < data.count,
+              data[offset] == 0xFF, data[offset + 1] == 0xD8 else { return nil }
+
+        let endLimit = min(offset + maxLength, data.count)
+        guard endLimit - offset > 4 else { return nil }
+
+        var cursor = offset + 2
+        while cursor + 1 < endLimit {
+            if data[cursor] == 0xFF, data[cursor + 1] == 0xD9 {
+                return offset..<(cursor + 2)
+            }
+            cursor += 1
+        }
+        return nil
     }
 
     private func reloadCurrentImage() {

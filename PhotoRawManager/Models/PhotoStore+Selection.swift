@@ -155,10 +155,13 @@ extension PhotoStore {
 
         if rapidTap || isKeyRepeat {
             isNavigationBurst = true
+            // v9.0.2: 글로벌 navigation-busy 플래그 ON — InitialPreviewGenerator 등이 디스크 양보.
+            PhotoStore.navigationBusy = true
             Self.navigationBurstWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.isNavigationBurst = false
+                PhotoStore.navigationBusy = false
                 if let id = self.selectedPhotoID {
                     self.scheduleSelectionIdleWork(for: id, delay: 0.05)
                 }
