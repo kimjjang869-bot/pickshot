@@ -1502,12 +1502,19 @@ struct PhotoContextMenu: View {
             Label("내보내기 (\(targetCount)장)", systemImage: "square.and.arrow.up")
         }
 
-        // RAW → JPG conversion (opens export sheet in RAW→JPG tab)
+        // RAW → JPG conversion (opens export sheet in RAW→JPG tab) — Pro 전용
         Button(action: {
-            store.exportOpenAsRawConvert = true
-            store.showExportSheet = true
+            if FeatureGate.allows(.rawToJpgConvert) {
+                store.exportOpenAsRawConvert = true
+                store.showExportSheet = true
+            } else {
+                store.proLockedFeature = .rawToJpgConvert
+            }
         }) {
-            Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
+            HStack {
+                Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
+                if !FeatureGate.allows(.rawToJpgConvert) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+            }
         }
 
         Divider()

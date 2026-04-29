@@ -1,101 +1,101 @@
 import SwiftUI
 import StoreKit
 
+/// v9.0.2: Simple / Pro 2-tier 구독 페이월 — Annual 17% 할인 토글 포함.
 struct PaywallView: View {
     @ObservedObject var subscriptionManager = SubscriptionManager.shared
     @Environment(\.dismiss) var dismiss
+    @State private var billingMode: BillingMode = .monthly
+
+    enum BillingMode { case monthly, yearly }
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            VStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 40))
-                    .foregroundColor(.blue)
-
-                Text("PickShot Pro")
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.purple, .blue],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 14)
+                        .opacity(0.6)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(LinearGradient(colors: [.purple, .blue],
+                                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+                Text("PickShot 구독")
                     .font(.system(size: 22, weight: .bold))
-
-                Text("AI로 사진 선별을 한 단계 업그레이드")
-                    .font(.system(size: 13))
+                Text("행사 만장을 30분에 추리는 도구.\n7일 무료 체험, 카드는 끝나기 하루 전에만 요청.")
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
             }
             .padding(.top, 24)
             .padding(.bottom, 16)
 
-            Divider()
+            // 월 / 연 토글
+            HStack(spacing: 4) {
+                billingButton(.monthly, label: "월 결제")
+                billingButton(.yearly, label: "연 결제 (17% 할인)")
+            }
+            .padding(4)
+            .background(Color.gray.opacity(0.12))
+            .cornerRadius(20)
+            .padding(.bottom, 16)
 
             ScrollView {
-                VStack(spacing: 16) {
-                    // Free features
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("무료로 제공되는 기능", systemImage: "gift.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.green)
+                VStack(spacing: 12) {
+                    // Simple 카드
+                    tierCard(
+                        title: "Simple",
+                        subtitle: "가볍게, 셀렉만 빠르게",
+                        price: billingMode == .monthly ? "₩2,900" : "₩29,000",
+                        unit: billingMode == .monthly ? "/ 월" : "/ 년",
+                        yearlyHint: billingMode == .yearly ? "월 환산 ₩2,420" : nil,
+                        accent: .gray,
+                        productID: billingMode == .monthly
+                            ? SubscriptionManager.simpleMonthlyID
+                            : SubscriptionManager.simpleYearlyID,
+                        bullets: [
+                            "초고속 RAW 뷰잉",
+                            "별점 / 색상 라벨 / Space Pick",
+                            "JPG/RAW 자동 매칭",
+                            "기본 내보내기",
+                            "단일 메모리카드 백업",
+                            "워터마크 1개",
+                            "비파괴 보정"
+                        ]
+                    )
 
-                        freeFeatureRow("사진 불러오기 / 미리보기 (무제한)")
-                        freeFeatureRow("별점 / 스페이스 셀렉")
-                        freeFeatureRow("RAW + Lightroom 내보내기")
-                        freeFeatureRow("품질 분석 (로컬)")
-                        freeFeatureRow("장면 분류 / 얼굴 그룹핑")
-                        freeFeatureRow("슬라이드쇼 / 배치 이름 변경")
-                        freeFeatureRow("자동 보정 (로컬)")
-                    }
-                    .padding(12)
-                    .background(Color.green.opacity(0.05))
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.2)))
-
-                    // Pro features
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Pro 전용 AI 기능", systemImage: "sparkles")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.blue)
-
-                        proFeatureRow("🤖 AI 스마트 분류", "행사/인물/군중/분위기 자동 분류")
-                        proFeatureRow("🤖 AI 자동 보정", "한국 화보 스타일 자동 보정")
-                        proFeatureRow("🤖 AI 베스트샷", "연사 중 최고의 한 장 자동 선별")
-                        proFeatureRow("🤖 AI 사진 설명", "사진 내용 자연어 설명")
-                        proFeatureRow("🤖 AI 보정 제안", "프로 수준 보정값 제안")
-                    }
-                    .padding(12)
-                    .background(Color.blue.opacity(0.05))
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue.opacity(0.2)))
-
-                    // Price cards
-                    VStack(spacing: 8) {
-                        ForEach(subscriptionManager.proProducts, id: \.id) { product in
-                            let isYearly = subscriptionManager.isYearly(product)
-                            let isPurchased = subscriptionManager.purchasedProductIDs.contains(product.id)
-
-                            let bgColor: Color = isPurchased ? Color.green.opacity(0.1) : (isYearly ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
-                            let borderColor: Color = isPurchased ? Color.green : (isYearly ? Color.blue : Color.gray.opacity(0.2))
-                            let borderWidth: CGFloat = isYearly ? 2 : 1
-
-                            Button(action: {
-                                Task { await subscriptionManager.purchase(product) }
-                            }) {
-                                SubscriptionRowLabel(
-                                    isYearly: isYearly,
-                                    isPurchased: isPurchased,
-                                    displayPrice: product.displayPrice
-                                )
-                                .padding(14)
-                                .background(bgColor)
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(borderColor, lineWidth: borderWidth)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isPurchased)
-                        }
-                    }
+                    // Pro 카드 — 추천
+                    tierCard(
+                        title: "Pro",
+                        subtitle: "행사 만장 → 클라이언트 폴더까지",
+                        price: billingMode == .monthly ? "₩8,900" : "₩89,000",
+                        unit: billingMode == .monthly ? "/ 월" : "/ 년",
+                        yearlyHint: billingMode == .yearly ? "월 환산 ₩7,420 · 1개월 무료" : nil,
+                        accent: .blue,
+                        isRecommended: true,
+                        productID: billingMode == .monthly
+                            ? SubscriptionManager.proMonthlyID
+                            : SubscriptionManager.proYearlyID,
+                        bullets: [
+                            "Simple 의 모든 기능 포함",
+                            "🔥 클라이언트 워크플로우 (G-Select + 웹 뷰어)",
+                            "🎨 RAW→JPG 변환 (Stage3 + Lanczos + 화보 느낌)",
+                            "📑 배치 처리 + 컨택트시트 PDF",
+                            "🎬 LOG 자동 LUT (영상)",
+                            "⚡ 적극 캐시 모드",
+                            "🔄 Lightroom XMP 양방향",
+                            "🤖 AI 자동화 (v9.1+ Pro 우선 공개)"
+                        ]
+                    )
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, 8)
             }
 
             Divider()
@@ -105,7 +105,9 @@ struct PaywallView: View {
                 Button("구매 복원") {
                     Task { await subscriptionManager.restorePurchases() }
                 }
-                .font(.caption)
+                .font(.system(size: 11))
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -115,10 +117,9 @@ struct PaywallView: View {
                     Text("현재: \(subscriptionManager.currentTier.displayName)")
                         .font(.system(size: 11, weight: .medium))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .foregroundColor(subscriptionManager.currentTier == .pro ? .blue : .gray)
-                .background((subscriptionManager.currentTier == .pro ? Color.blue : Color.gray).opacity(0.1))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .foregroundColor(tierColor(subscriptionManager.currentTier))
+                .background(tierColor(subscriptionManager.currentTier).opacity(0.12))
                 .cornerRadius(5)
 
                 Spacer()
@@ -126,71 +127,157 @@ struct PaywallView: View {
                 Button("닫기") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
-            .padding(16)
+            .padding(14)
         }
-        .frame(width: 440, height: 620)
+        .frame(width: 480, height: 720)
     }
 
-    private func freeFeatureRow(_ text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundColor(.green)
-            Text(text)
-                .font(.system(size: 11))
+    @ViewBuilder
+    private func billingButton(_ mode: BillingMode, label: String) -> some View {
+        Button {
+            withAnimation { billingMode = mode }
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: billingMode == mode ? .bold : .medium))
+                .foregroundColor(billingMode == mode ? .white : .primary)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(billingMode == mode
+                    ? AnyShapeStyle(LinearGradient(colors: [.purple, .blue],
+                                                   startPoint: .leading, endPoint: .trailing))
+                    : AnyShapeStyle(Color.clear))
+                .cornerRadius(16)
         }
+        .buttonStyle(.plain)
     }
 
-    private func proFeatureRow(_ title: String, _ desc: String) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-            Text(desc)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-        }
-    }
-}
+    @ViewBuilder
+    private func tierCard(
+        title: String,
+        subtitle: String,
+        price: String,
+        unit: String,
+        yearlyHint: String?,
+        accent: Color,
+        isRecommended: Bool = false,
+        productID: String,
+        bullets: [String]
+    ) -> some View {
+        let product = subscriptionManager.products.first(where: { $0.id == productID })
+        let isPurchased = subscriptionManager.purchasedProductIDs.contains(productID)
 
-struct SubscriptionRowLabel: View {
-    let isYearly: Bool
-    let isPurchased: Bool
-    let displayPrice: String
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(isYearly ? "연간" : "월간")
-                        .font(.system(size: 14, weight: .bold))
-                    if isYearly {
-                        Text("2개월 무료")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange)
-                            .cornerRadius(4)
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 17, weight: .bold))
+                        if isRecommended {
+                            Text("추천")
+                                .font(.system(size: 9, weight: .heavy))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(LinearGradient(colors: [.purple, .blue],
+                                                           startPoint: .leading, endPoint: .trailing))
+                                .foregroundColor(.white)
+                                .cornerRadius(4)
+                        }
                     }
-                }
-                Text(isYearly ? "매월 ₩1,250 (34% 할인)" : "매월 결제")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            if isPurchased {
-                Label("구독 중", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.green)
-            } else {
-                VStack(alignment: .trailing) {
-                    Text(displayPrice)
-                        .font(.system(size: 16, weight: .bold))
-                    Text(isYearly ? "/년" : "/월")
-                        .font(.system(size: 10))
+                    Text(subtitle)
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 1) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(price)
+                            .font(.system(size: 22, weight: .bold))
+                        Text(unit)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    if let hint = yearlyHint {
+                        Text(hint)
+                            .font(.system(size: 9))
+                            .foregroundColor(.green)
+                    }
+                }
             }
+
+            Divider()
+
+            // Bullets
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(bullets, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(accent)
+                            .frame(width: 12, height: 12)
+                            .padding(.top, 3)
+                        Text(line)
+                            .font(.system(size: 11))
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            // CTA
+            Button(action: {
+                guard let product else { return }
+                Task { await subscriptionManager.purchase(product) }
+            }) {
+                HStack {
+                    if isPurchased {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("구독 중")
+                    } else if product == nil {
+                        Image(systemName: "hourglass")
+                        Text("App Store 연결 대기")
+                    } else if isRecommended {
+                        Text("Pro 7일 무료 체험")
+                    } else {
+                        Text("Simple 시작")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.vertical, 11)
+                .background(
+                    isPurchased
+                        ? AnyShapeStyle(Color.green)
+                        : (isRecommended
+                            ? AnyShapeStyle(LinearGradient(colors: [.purple, .blue],
+                                                           startPoint: .leading, endPoint: .trailing))
+                            : AnyShapeStyle(Color.gray.opacity(0.6)))
+                )
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+            .disabled(isPurchased || product == nil)
+        }
+        .padding(16)
+        .background(
+            isRecommended
+                ? AnyShapeStyle(LinearGradient(colors: [
+                    Color.purple.opacity(0.06),
+                    Color.blue.opacity(0.03)
+                ], startPoint: .top, endPoint: .bottom))
+                : AnyShapeStyle(Color.gray.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isRecommended ? Color.purple.opacity(0.35) : Color.gray.opacity(0.18), lineWidth: isRecommended ? 1.5 : 1)
+        )
+        .cornerRadius(12)
+    }
+
+    private func tierColor(_ tier: SubscriptionTier) -> Color {
+        switch tier {
+        case .free: return .gray
+        case .simple: return .green
+        case .pro: return .blue
         }
     }
 }

@@ -5,11 +5,13 @@ import StoreKit
 
 enum SubscriptionTier: String, Comparable {
     case free = "free"
-    case pro = "pro"
+    case simple = "simple"   // v9.0.2: ₩2,900/월 — 셀렉 도구만
+    case pro = "pro"         // v9.0.2: ₩8,900/월 — 클라이언트/AI/고급출력
 
     var displayName: String {
         switch self {
         case .free: return "Free"
+        case .simple: return "Simple"
         case .pro: return "Pro"
         }
     }
@@ -17,6 +19,7 @@ enum SubscriptionTier: String, Comparable {
     var icon: String {
         switch self {
         case .free: return "person.circle"
+        case .simple: return "person.crop.circle.fill"
         case .pro: return "star.circle.fill"
         }
     }
@@ -24,12 +27,13 @@ enum SubscriptionTier: String, Comparable {
     var color: String {
         switch self {
         case .free: return "gray"
+        case .simple: return "green"
         case .pro: return "blue"
         }
     }
 
     static func < (lhs: SubscriptionTier, rhs: SubscriptionTier) -> Bool {
-        let order: [SubscriptionTier] = [.free, .pro]
+        let order: [SubscriptionTier] = [.free, .simple, .pro]
         return (order.firstIndex(of: lhs) ?? 0) < (order.firstIndex(of: rhs) ?? 0)
     }
 }
@@ -69,13 +73,18 @@ class SubscriptionManager: ObservableObject {
     static let shared = SubscriptionManager()
 
     // Product IDs - match these in App Store Connect
-    // Pro: ₩1,900/month, ₩15,000/year
-    static let proMonthlyID = "com.pickshot.pro.monthly"    // ₩1,900
-    static let proYearlyID = "com.pickshot.pro.yearly"      // ₩15,000
+    // v9.0.2 새 가격 정책:
+    //   Simple: ₩2,900/월, ₩29,000/년 (셀렉 도구)
+    //   Pro:    ₩8,900/월, ₩89,000/년 (클라이언트 + 고급 출력 + 영상)
+    static let simpleMonthlyID = "com.pickshot.simple.monthly"  // ₩2,900
+    static let simpleYearlyID  = "com.pickshot.simple.yearly"   // ₩29,000
+    static let proMonthlyID    = "com.pickshot.pro.monthly"     // ₩8,900
+    static let proYearlyID     = "com.pickshot.pro.yearly"      // ₩89,000
 
-    // Keep legacy IDs for migration
-    static let premiumMonthlyID = "com.pickshot.premium.monthly"
-    static let premiumYearlyID = "com.pickshot.premium.yearly"
+    // Keep legacy IDs for migration (이전 ₩1,900 가격)
+    static let legacyProMonthlyID = "com.pickshot.pro.legacy.monthly"
+    static let premiumMonthlyID   = "com.pickshot.premium.monthly"
+    static let premiumYearlyID    = "com.pickshot.premium.yearly"
 
     @Published var currentTier: SubscriptionTier = .free
     @Published var products: [Product] = []
@@ -152,7 +161,9 @@ class SubscriptionManager: ObservableObject {
     }
 
     private var productIDs: Set<String> {
-        [Self.proMonthlyID, Self.proYearlyID,
+        [Self.simpleMonthlyID, Self.simpleYearlyID,
+         Self.proMonthlyID, Self.proYearlyID,
+         Self.legacyProMonthlyID,
          Self.premiumMonthlyID, Self.premiumYearlyID]
     }
 
@@ -243,13 +254,21 @@ class SubscriptionManager: ObservableObject {
         }
         purchasedProductIDs = newPurchased
 
-        // Any pro or premium purchase = Pro tier
-        if newPurchased.contains(Self.proMonthlyID) ||
-           newPurchased.contains(Self.proYearlyID) ||
-           newPurchased.contains(Self.premiumMonthlyID) ||
-           newPurchased.contains(Self.premiumYearlyID) {
+        // v9.0.2: 새 가격 정책 — Simple / Pro / Free 3-tier.
+        let isPro = newPurchased.contains(Self.proMonthlyID)
+            || newPurchased.contains(Self.proYearlyID)
+            || newPurchased.contains(Self.legacyProMonthlyID)
+            || newPurchased.contains(Self.premiumMonthlyID)
+            || newPurchased.contains(Self.premiumYearlyID)
+        let isSimple = newPurchased.contains(Self.simpleMonthlyID)
+            || newPurchased.contains(Self.simpleYearlyID)
+
+        if isPro {
             currentTier = .pro
-            // 구독이 활성화되면 트라이얼 만료 Paywall 을 즉시 닫는다.
+            showTrialExpiredPaywall = false
+            isTrialExpired = false
+        } else if isSimple {
+            currentTier = .simple
             showTrialExpiredPaywall = false
             isTrialExpired = false
         } else {

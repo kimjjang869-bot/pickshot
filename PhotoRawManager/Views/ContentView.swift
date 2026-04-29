@@ -333,6 +333,10 @@ struct ContentView: View {
             BurstPickerDialog(isPresented: $store.showBurstPickerDialog)
                 .environmentObject(store)
         }
+        // v9.0.2: Pro 잠금 모달 — proLockedFeature 가 set 되면 표시.
+        .sheet(item: $store.proLockedFeature) { feature in
+            ProLockModal(feature: feature)
+        }
         .sheet(isPresented: $store.showPreferenceTrainingDialog) {
             PreferenceTrainingDialog(isPresented: $store.showPreferenceTrainingDialog)
                 .environmentObject(store)

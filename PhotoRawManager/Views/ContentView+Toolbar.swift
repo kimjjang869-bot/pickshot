@@ -107,22 +107,43 @@ extension ContentView {
                         qualityFilterMenu
                     }
 
-                    // 클라이언트 셀렉
+                    // 클라이언트 셀렉 — Pro 전용
                     Menu {
-                        Button(action: { ClientSelectService.shared.requestStart() }) {
-                            Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.requestStart() }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
+                            HStack {
+                                Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                                if !FeatureGate.allows(.clientSelect) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
-                        Button(action: { ClientSelectService.shared.showSessionList = true }) {
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.showSessionList = true }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
                             Label("내 세션 목록", systemImage: "list.clipboard")
                         }
-                        Button(action: { ClientSelectService.shared.showProxySetup = true }) {
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.showProxySetup = true }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
                             Label("Apps Script 프록시 설정", systemImage: "network.badge.shield.half.filled")
                         }
                         Divider()
-                        Button(action: { store.importPickshotFile() }) {
-                            Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                        Button(action: {
+                            if FeatureGate.allows(.pickshotFileImport) { store.importPickshotFile() }
+                            else { store.proLockedFeature = .pickshotFileImport }
+                        }) {
+                            HStack {
+                                Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                                if !FeatureGate.allows(.pickshotFileImport) { Spacer(); Image(systemName: "hourglass").font(.system(size: 9)).foregroundColor(.orange) }
+                            }
                         }
-                        Button(action: { importPickshotFromDrive() }) {
+                        Button(action: {
+                            if FeatureGate.allows(.driveUpload) { importPickshotFromDrive() }
+                            else { store.proLockedFeature = .driveUpload }
+                        }) {
                             Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
                         }
                     } label: {
@@ -130,19 +151,31 @@ extension ContentView {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .help("클라이언트 셀렉 보내기/가져오기")
+                    .help("클라이언트 셀렉 보내기/가져오기 (Pro)")
 
                     // 내보내기
                     Menu {
                         Button(action: { store.showExportSheet = true }) {
                             Label("내보내기 (Cmd+E)", systemImage: "square.and.arrow.up")
                         }
-                        Button(action: { store.showBatchProcess = true }) {
-                            Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
+                        Button(action: {
+                            if FeatureGate.allows(.batchProcess) { store.showBatchProcess = true }
+                            else { store.proLockedFeature = .batchProcess }
+                        }) {
+                            HStack {
+                                Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
+                                if !FeatureGate.allows(.batchProcess) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
                         Divider()
-                        Button(action: { store.showContactSheet = true }) {
-                            Label("컨택트시트 PDF", systemImage: "tablecells")
+                        Button(action: {
+                            if FeatureGate.allows(.contactSheetPDF) { store.showContactSheet = true }
+                            else { store.proLockedFeature = .contactSheetPDF }
+                        }) {
+                            HStack {
+                                Label("컨택트시트 PDF", systemImage: "tablecells")
+                                if !FeatureGate.allows(.contactSheetPDF) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
                         Button(action: {
                             store.metadataEditorMode = store.selectedPhotoIDs.count > 1 ? .batch : .single
@@ -488,8 +521,21 @@ extension ContentView {
                     Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
                 }
                 .disabled(store.isClassifyingScenes)
-                Button(action: { store.showBurstPickerDialog = true }) {
-                    Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                Button(action: {
+                    // v9.0.2: Pro 기능 게이트 — 무료 사용자는 잠금 모달 표시.
+                    if FeatureGate.allows(.burstBestAuto) {
+                        store.showBurstPickerDialog = true
+                    } else {
+                        store.proLockedFeature = .burstBestAuto
+                    }
+                }) {
+                    HStack {
+                        Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                        if !FeatureGate.allows(.burstBestAuto) {
+                            Spacer()
+                            Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple)
+                        }
+                    }
                 }
             }
 

@@ -184,6 +184,7 @@ struct SubscriptionBadge: View {
     private var badgeColor: Color {
         switch sub.currentTier {
         case .free: return .gray
+        case .simple: return .green
         case .pro: return .blue
         }
     }

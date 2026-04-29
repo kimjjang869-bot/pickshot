@@ -151,8 +151,13 @@ struct AggressiveCacheToggle: View {
 
     var body: some View {
         Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                store.aggressiveCache.toggle()
+            // v9.0.2: Pro 게이트 — 무료 사용자는 잠금 모달.
+            if FeatureGate.allows(.aggressiveCache) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    store.aggressiveCache.toggle()
+                }
+            } else {
+                store.proLockedFeature = .aggressiveCache
             }
         }) {
             ZStack {

@@ -225,6 +225,8 @@ class PhotoStore: ObservableObject {
     @Published var pendingCutPhotoIDs: Set<UUID> = []
     /// v8.9: 연사 베스트 선별 다이얼로그 표시 토글
     @Published var showBurstPickerDialog: Bool = false
+    /// v9.0.2: Pro 잠금 모달 표시용 — nil 이 아니면 그 기능에 대한 잠금 모달 표시.
+    @Published var proLockedFeature: AppFeature? = nil
     /// v8.9: 내 취향 학습 다이얼로그 표시 토글
     @Published var showPreferenceTrainingDialog: Bool = false
     /// 빠른 탐색 시 썸네일 즉시 표시용 콜백 (디스크 I/O 없음)
