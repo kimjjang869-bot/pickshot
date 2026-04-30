@@ -134,19 +134,27 @@ final class MemoryGuardService {
         let now = currentRamMB()
         let t = CFAbsoluteTimeGetCurrent()
 
-        if now >= emergencyMB {
+        // v9.0.2: baseline 기반 dynamic warning — baseline 대비 +2GB 시 Layer 2.
+        //   64GB Mac 에서 8GB cap 까지 가기 전, 작은 누수도 일찍 잡음.
+        //   기존: 절대 임계값 (8GB/12GB/16GB) 만 → 수 시간 사용 시 누적 캐시 안 잡힘.
+        let dynamicWarning = baselineRamMB + 2048   // +2GB
+        let dynamicEmergency = baselineRamMB + 4096 // +4GB
+
+        if now >= emergencyMB || now >= dynamicEmergency {
             // Layer 3 — 한계선 돌파
             if t - lastEmergencyTime >= emergencyCooldown {
                 lastEmergencyTime = t
-                fputs("[MemGuard] 🔴 \(now)MB ≥ emergency \(emergencyMB)MB — Layer 3 발동\n", stderr)
+                let why = now >= emergencyMB ? "abs cap" : "baseline+4GB"
+                fputs("[MemGuard] 🔴 \(now)MB ≥ \(why) — Layer 3 발동 (baseline=\(baselineRamMB)MB)\n", stderr)
                 DispatchQueue.main.async { [weak self] in self?.executeLayer3(reason: "self-monitored") }
             }
             lastLayer = 3
-        } else if now >= warningMB {
+        } else if now >= warningMB || now >= dynamicWarning {
             // Layer 2 — 주의선
             if t - lastWarningTime >= warningCooldown {
                 lastWarningTime = t
-                fputs("[MemGuard] 🟡 \(now)MB ≥ warning \(warningMB)MB — Layer 2 (HiRes trim)\n", stderr)
+                let why = now >= warningMB ? "abs cap" : "baseline+2GB"
+                fputs("[MemGuard] 🟡 \(now)MB ≥ \(why) — Layer 2 (HiRes trim, baseline=\(baselineRamMB)MB)\n", stderr)
                 DispatchQueue.main.async { [weak self] in self?.executeLayer2(reason: "self-monitored") }
             }
             lastLayer = 2

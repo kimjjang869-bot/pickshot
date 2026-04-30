@@ -123,9 +123,9 @@ final class DevelopPipeline {
                 if scaleFactor < 1.0 { raw.scaleFactor = scaleFactor }
                 raw.exposure = Float(settings.exposure)
                 if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
-                    let kelvin = 5500.0 + settings.temperature * 45.0
-                    raw.neutralTemperature = Float(kelvin)
-                    raw.neutralTint = Float(settings.tint * 1.5)
+                    let rawWB = rawWhiteBalanceValues(for: settings)
+                    raw.neutralTemperature = Float(rawWB.temperature)
+                    raw.neutralTint = Float(rawWB.tint)
                 }
                 if var rawOut = raw.outputImage {
                     // orient 적용 (CIRAWFilter sensor raw → display orient)
@@ -206,10 +206,10 @@ final class DevelopPipeline {
             // RAW 의 수동 WB — temperature/tint 는 절대값(K/G-M) 이 필요
             if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
                 // -100~+100 를 5000K 기준 ±4500K 범위로 매핑
-                let kelvin = 5500.0 + settings.temperature * 45.0
-                raw.neutralTemperature = Float(kelvin)
-                raw.neutralTint = Float(settings.tint * 1.5)
-                fputs("[DEV-PIPELINE] RAW WB temp=\(kelvin)K tint=\(settings.tint)\n", stderr)
+                let rawWB = rawWhiteBalanceValues(for: settings)
+                raw.neutralTemperature = Float(rawWB.temperature)
+                raw.neutralTint = Float(rawWB.tint)
+                fputs("[DEV-PIPELINE] RAW WB temp=\(rawWB.temperature)K tint=\(rawWB.tint)\n", stderr)
             }
             guard var image = raw.outputImage else {
                 fputs("[DEV-PIPELINE] ❌ raw.outputImage 가 nil — \(url.lastPathComponent)\n", stderr)
@@ -316,7 +316,9 @@ final class DevelopPipeline {
             if let out = f.outputImage { image = out }
         }
 
-        // 3) 자동 노출 (히스토그램 중앙값 기반 보정)
+        // 3) 자동 노출 (구형 단축키/프리셋 호환용)
+        // 플로팅바의 자동 버튼은 computeAutoExposure()가 계산한 값을 exposure에 직접 저장한다.
+        // 여기서는 예전처럼 이미지 평균을 크게 다시 맞추지 않고 아주 약한 안전 보정만 적용한다.
         if settings.exposureAuto {
             image = applyAutoExposure(to: image)
         }
@@ -325,8 +327,10 @@ final class DevelopPipeline {
         if settings.contrast != 0 {
             let f = CIFilter.colorControls()
             f.inputImage = image
-            // -100 → 0.5, +100 → 1.5
-            f.contrast = Float(1.0 + settings.contrast / 200.0)
+            // Lightroom-style soft mapping: -100 → 0.75, +100 → 1.25.
+            // Camera preview/JPG 기반에서는 CIColorControls contrast 가 강하게 느껴져
+            // 기존 ±0.5 매핑(+25=1.125)을 ±0.25(+25=1.0625)로 완화.
+            f.contrast = Float(1.0 + settings.contrast * 0.0025)
             if let out = f.outputImage { image = out }
         }
 
@@ -391,15 +395,19 @@ final class DevelopPipeline {
             result = shadesOfGrayAWB(result)
         }
 
-        // 수동 WB: temperature(-100~+100) → RGB 게인 (간단 모델)
+        // 수동 WB: temperature/tint(-100~+100) → 부드러운 RGB 게인.
+        // 이전 매핑(+100에서 B 0.65)은 카메라 JPG 룩 위에서 너무 과격해
+        // Lightroom/Capture One에 가까운 완만한 응답으로 낮춘다.
         if settings.temperature != 0 || settings.tint != 0 {
             let t = settings.temperature / 100.0  // -1 ~ +1
             let tn = settings.tint / 100.0
-            // 따뜻하게(+t) → R 게인↑, B 게인↓
-            let rGain = 1.0 + t * 0.35
-            let bGain = 1.0 - t * 0.35
-            // 틴트: +tn(마젠타) → G 게인↓
-            let gGain = 1.0 - tn * 0.25
+            let warmR = t >= 0 ? t * 0.18 : t * 0.12
+            let warmB = t >= 0 ? -t * 0.14 : -t * 0.20
+            let magentaBoost = max(tn, 0) * 0.025
+            let greenPull = min(tn, 0) * 0.020
+            let rGain = (1.0 + warmR + magentaBoost + greenPull).clamped(to: 0.78...1.24)
+            let gGain = (1.0 - tn * 0.10).clamped(to: 0.88...1.12)
+            let bGain = (1.0 + warmB + magentaBoost + greenPull).clamped(to: 0.76...1.26)
 
             let f = CIFilter.colorMatrix()
             f.inputImage = result
@@ -511,7 +519,7 @@ final class DevelopPipeline {
         let luminance = (0.299 * Double(bitmap[0]) + 0.587 * Double(bitmap[1]) + 0.114 * Double(bitmap[2])) / 255.0
         let target = 0.45  // 중앙에서 약간 어두운 쪽 목표
         let ratio = target / max(luminance, 0.01)
-        let ev = log2(ratio).clamped(to: -1.0...1.5)  // 극단값 방지
+        let ev = (log2(ratio) * 0.35).clamped(to: -0.4...0.6)  // 호환용 약한 보정
 
         let f = CIFilter.exposureAdjust()
         f.inputImage = image
@@ -556,9 +564,10 @@ final class DevelopPipeline {
     }
 
     /// 4영역(shadows/darks/lights/highlights) 슬라이더를 5포인트 CIToneCurve 로 변환해 적용.
-    /// 각 슬라이더 값 -100~+100 은 해당 영역 y 좌표를 약 ±0.12 만큼 이동.
+    /// 각 슬라이더 값 -100~+100 은 해당 영역 y 좌표를 약 ±0.08 만큼 이동.
+    /// 카메라 preview 기반 편집에서는 ±0.12가 과하게 보여 Lightroom식으로 완화.
     private func applyRegionTones(to image: CIImage, settings: DevelopSettings) -> CIImage {
-        let scale: CGFloat = 0.0012  // -100~+100 → ±0.12
+        let scale: CGFloat = 0.0008  // -100~+100 → ±0.08
         let shY = CGFloat(settings.toneShadows) * scale
         let dkY = CGFloat(settings.toneDarks) * scale
         let ltY = CGFloat(settings.toneLights) * scale
@@ -571,6 +580,15 @@ final class DevelopPipeline {
             CGPoint(x: 1.0,  y: max(0, min(1, 1.0  + hlY)))
         ]
         return applyCurve(to: image, points: points)
+    }
+
+    /// RAW 단계에서 쓰는 수동 WB 매핑.
+    /// UI 값 -100...+100을 너무 넓은 Kelvin 범위로 보내면 한 칸만 움직여도 색이 튀므로
+    /// 5500K 기준 약 2300K...8700K와 완만한 tint로 제한한다.
+    private func rawWhiteBalanceValues(for settings: DevelopSettings) -> (temperature: Double, tint: Double) {
+        let kelvin = (5500.0 + settings.temperature * 32.0).clamped(to: 2300...8700)
+        let tint = (settings.tint * 0.65).clamped(to: -65...65)
+        return (kelvin, tint)
     }
 
     /// 자동 커브: 히스토그램의 검정/흰점을 레벨 스트레칭 + 중간톤 S 커브.
@@ -595,64 +613,63 @@ final class DevelopPipeline {
         }
 
         let (black, white) = levels
-        // 2) 레벨 스트레칭 + 약한 S 를 결합한 5점 (입력 X 는 원본 범위, 출력 Y 는 0~1 선형+S)
-        // 검정점 살짝 띄워 보정 (0.02~0.05) — 순수 0 으로 밀면 자연스럽지 않음
-        let blackOut: CGFloat = 0.02
-        let whiteOut: CGFloat = 0.98
-
+        // 2) 약한 S 커브. 엔드포인트는 고정해서 검정/흰점이 갑자기 꺾이지 않게 한다.
         let mid = (black + white) / 2
         let lower25 = black + (mid - black) * 0.5
         let upper75 = mid + (white - mid) * 0.5
 
         let points = [
-            CGPoint(x: CGFloat(max(0, black)), y: blackOut),
-            CGPoint(x: CGFloat(lower25), y: 0.22),
+            CGPoint(x: 0, y: 0),
+            CGPoint(x: CGFloat(max(0.02, lower25)), y: 0.24),
             CGPoint(x: CGFloat(mid), y: 0.5),
-            CGPoint(x: CGFloat(upper75), y: 0.78),
-            CGPoint(x: CGFloat(min(1, white)), y: whiteOut)
+            CGPoint(x: CGFloat(min(0.98, upper75)), y: 0.76),
+            CGPoint(x: 1, y: 1)
         ]
         return applyCurve(to: image, points: points)
     }
 
     /// 이미지에서 256-bin 휘도 히스토그램 추출.
+    /// Core Image `CIAreaHistogram` 출력은 픽셀 카운트 이미지라기보다 float histogram texture라
+    /// 8bit RGBA로 바로 읽으면 피크가 쉽게 클램프된다. 자동 커브/대비는 실제 픽셀 분포가
+    /// 중요하므로 작은 프록시로 렌더한 뒤 CPU에서 카운트한다.
     private func extractLuminanceHistogram(from image: CIImage) -> [Int] {
-        // CIAreaHistogram: 가로 256 x 세로 1 픽셀의 히스토그램 이미지 생성
-        let histFilter = CIFilter.areaHistogram()
-        histFilter.inputImage = image
-        histFilter.extent = image.extent
-        histFilter.scale = 1
-        histFilter.count = 256
+        let sourceExtent = image.extent
+        guard sourceExtent.width > 0, sourceExtent.height > 0 else { return [] }
 
-        guard let histImage = histFilter.outputImage else { return [] }
+        let maxPixel: CGFloat = 384
+        let scale = min(maxPixel / sourceExtent.width, maxPixel / sourceExtent.height, 1.0)
+        let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let extent = scaled.extent.integral
+        let width = max(1, Int(extent.width))
+        let height = max(1, Int(extent.height))
 
-        // 4 채널 RGBA (G 만 루미넌스 근사로 사용)
-        var buffer = [UInt8](repeating: 0, count: 256 * 4)
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
         context.render(
-            histImage,
-            toBitmap: &buffer,
-            rowBytes: 256 * 4,
-            bounds: CGRect(x: 0, y: 0, width: 256, height: 1),
+            scaled,
+            toBitmap: &pixels,
+            rowBytes: width * 4,
+            bounds: extent,
             format: .RGBA8,
             colorSpace: CGColorSpaceCreateDeviceRGB()
         )
 
-        // 휘도 근사: 0.299R + 0.587G + 0.114B
         var bins: [Int] = Array(repeating: 0, count: 256)
-        for i in 0..<256 {
-            let r = Int(buffer[i * 4])
-            let g = Int(buffer[i * 4 + 1])
-            let b = Int(buffer[i * 4 + 2])
-            bins[i] = Int(0.299 * Double(r) + 0.587 * Double(g) + 0.114 * Double(b))
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let r = Int(pixels[i])
+            let g = Int(pixels[i + 1])
+            let b = Int(pixels[i + 2])
+            let luminance = (r * 299 + g * 587 + b * 114) / 1000
+            bins[luminance] += 1
         }
         return bins
     }
 
-    /// 히스토그램에서 상/하위 1% 지점 찾기. 값 0~1.
+    /// 히스토그램에서 상/하위 0.5% 지점 찾기. 값 0~1.
     private func blackWhitePoints(histogram bins: [Int]) -> (Double, Double)? {
         guard bins.count == 256 else { return nil }
         let total = bins.reduce(0, +)
         guard total > 0 else { return nil }
-        let threshold = Double(total) * 0.01
+        let threshold = Double(total) * 0.005
 
         var acc = 0
         var black = 0
@@ -682,131 +699,161 @@ final class DevelopPipeline {
 
     // MARK: - Auto-Value Computation (자동 버튼이 실제 값 반영용)
 
-    /// 이미지 분석 후 자동 WB 가 계산하는 온도/틴트 값(-100~+100).
-    /// 가벼운 썸네일로 계산 (수백 ms).
-    func computeAutoWB(url: URL) -> (temperature: Double, tint: Double)? {
-        // 썸네일 프록시로 로드 (512x512)
-        var settings = DevelopSettings()
-        settings.wbAuto = false  // 로드 단계에서 AWB 로직 안 타게
-        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
-            return nil
-        }
-
-        // Shades of Gray 와 동일 계산: pow 3 → area average → cbrt → 게인
-        let pow3 = CIFilter.gammaAdjust()
-        pow3.inputImage = input
-        pow3.power = 3.0
-        guard let powered = pow3.outputImage else { return nil }
-        let avg = CIFilter.areaAverage()
-        avg.inputImage = powered
-        avg.extent = powered.extent
-        guard let avgOut = avg.outputImage else { return nil }
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(
-            avgOut, toBitmap: &bitmap, rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-        let r = max(pow(Double(bitmap[0]) / 255.0, 1.0 / 3.0), 0.02)
-        let g = max(pow(Double(bitmap[1]) / 255.0, 1.0 / 3.0), 0.02)
-        let b = max(pow(Double(bitmap[2]) / 255.0, 1.0 / 3.0), 0.02)
-        // 역산: rGain = g/r, bGain = g/b → rGain>1 이면 이미지 R 이 부족 → 따뜻하게 (온도 +)
-        let rGain = (g / r).clamped(to: 0.5...2.0)
-        let bGain = (g / b).clamped(to: 0.5...2.0)
-        // temperature: R vs B 차이
-        let temperature = ((rGain - bGain) * 100).clamped(to: -100...100)
-        // tint: R+B 평균과 G(=1) 차이 — rb 평균이 1보다 작으면 G 과다 → tint 음수(초록)
-        //       rb 평균이 1보다 크면 G 부족 → tint 양수(마젠타)
-        let rbMean = (rGain + bGain) / 2
-        let tint = ((rbMean - 1.0) * 100).clamped(to: -100...100)
-        return (temperature, tint)
+    private struct AnalysisSample {
+        let r: Double
+        let g: Double
+        let b: Double
+        let l: Double
+        let saturation: Double
     }
 
-    /// 자동 노출 계산: 휘도 중앙값 목표 0.45 기준 EV.
-    func computeAutoExposure(url: URL) -> Double? {
-        var settings = DevelopSettings()
-        settings.exposureAuto = false
-        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
+    /// 자동 보정은 RAW demosaic가 아니라 카메라 JPG/내장 프리뷰에 가까운 분석용 썸네일을 기준으로 한다.
+    /// 그래야 사용자가 보는 카메라 색감 기준으로 자동값이 움직이고, RAW 파일만 있어도 초기 프리뷰와 일관된다.
+    private func analysisSamples(url: URL, maxPixel: Int = 512) -> [AnalysisSample]? {
+        let options: [NSString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return nil
         }
-        let avg = CIFilter.areaAverage()
-        avg.inputImage = input
-        avg.extent = input.extent
-        guard let avgOut = avg.outputImage else { return nil }
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(
-            avgOut, toBitmap: &bitmap, rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-        let luminance = (0.299 * Double(bitmap[0]) + 0.587 * Double(bitmap[1]) + 0.114 * Double(bitmap[2])) / 255.0
-        let target = 0.45
-        let ratio = target / max(luminance, 0.01)
-        let ev = log2(ratio).clamped(to: -2.0...2.0)
-        return (ev * 10).rounded() / 10
+
+        let width = cg.width
+        let height = cg.height
+        guard width > 0, height > 0 else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let ctx = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var samples: [AnalysisSample] = []
+        samples.reserveCapacity(width * height)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let r = Double(pixels[i]) / 255.0
+            let g = Double(pixels[i + 1]) / 255.0
+            let b = Double(pixels[i + 2]) / 255.0
+            let maxC = max(r, g, b)
+            let minC = min(r, g, b)
+            let l = 0.299 * r + 0.587 * g + 0.114 * b
+            let saturation = maxC > 0.0001 ? (maxC - minC) / maxC : 0
+            samples.append(AnalysisSample(r: r, g: g, b: b, l: l, saturation: saturation))
+        }
+        return samples
     }
 
-    /// 자동 대비 — 히스토그램 유효 범위가 좁으면 대비 올림, 넓으면 유지/감소.
-    func computeAutoContrast(url: URL) -> Double? {
-        let settings = DevelopSettings()
-        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
-            return nil
+    private func luminanceHistogram(samples: [AnalysisSample]) -> [Int] {
+        var bins = [Int](repeating: 0, count: 256)
+        for sample in samples {
+            let idx = Int((sample.l * 255.0).rounded()).clamped(to: 0...255)
+            bins[idx] += 1
         }
-        let bins = extractLuminanceHistogram(from: input)
+        return bins
+    }
+
+    private func percentile(_ p: Double, in bins: [Int]) -> Double? {
         guard bins.count == 256 else { return nil }
         let total = bins.reduce(0, +)
         guard total > 0 else { return nil }
-
-        // 5% / 95% percentile 찾기
-        let threshold = Double(total) * 0.05
+        let target = max(0, min(1, p)) * Double(total)
         var acc = 0
-        var lowBin = 0
         for i in 0..<256 {
             acc += bins[i]
-            if Double(acc) >= threshold { lowBin = i; break }
+            if Double(acc) >= target {
+                return Double(i) / 255.0
+            }
         }
-        acc = 0
-        var highBin = 255
-        for i in stride(from: 255, through: 0, by: -1) {
-            acc += bins[i]
-            if Double(acc) >= threshold { highBin = i; break }
-        }
-        let range = Double(highBin - lowBin) / 255.0  // 0~1
-        guard range > 0.05 else { return 0 }
+        return 1
+    }
 
-        // 이상적 range 0.85 목표. 현재 range 가 좁으면 대비 올림, 넓으면 살짝 내림.
-        let target = 0.85
+    /// 이미지 분석 후 자동 WB 가 계산하는 온도/틴트 값(-100~+100).
+    /// 카메라 프리뷰 기준의 저채도/중간톤 픽셀만 사용해 색 피사체 편향을 줄인다.
+    func computeAutoWB(url: URL) -> (temperature: Double, tint: Double)? {
+        guard let samples = analysisSamples(url: url), !samples.isEmpty else { return nil }
+
+        var neutral = samples.filter {
+            $0.l > 0.16 && $0.l < 0.88 && $0.saturation < 0.22
+        }
+        if neutral.count < max(80, samples.count / 80) {
+            neutral = samples.filter { $0.l > 0.20 && $0.l < 0.82 && $0.saturation < 0.35 }
+        }
+        guard neutral.count >= 20 else { return (0, 0) }
+
+        let r = max(neutral.reduce(0) { $0 + $1.r } / Double(neutral.count), 0.02)
+        let g = max(neutral.reduce(0) { $0 + $1.g } / Double(neutral.count), 0.02)
+        let b = max(neutral.reduce(0) { $0 + $1.b } / Double(neutral.count), 0.02)
+
+        let rGain = (g / r).clamped(to: 0.70...1.35)
+        let bGain = (g / b).clamped(to: 0.70...1.35)
+        let rbMean = (rGain + bGain) / 2.0
+        let gGain = (1.0 / max(rbMean, 0.02)).clamped(to: 0.82...1.18)
+
+        let temperature = (((rGain - bGain) / 0.70) * 100.0 * 0.65).clamped(to: -60...60)
+        let tint = (((1.0 - gGain) / 0.25) * 100.0 * 0.65).clamped(to: -45...45)
+        return (temperature, tint)
+    }
+
+    /// 자동 노출 계산: 평균이 아니라 중간톤 percentile 기준. 하이라이트 보호를 같이 건다.
+    func computeAutoExposure(url: URL) -> Double? {
+        guard let samples = analysisSamples(url: url), !samples.isEmpty else { return nil }
+        let bins = luminanceHistogram(samples: samples)
+        guard let p50 = percentile(0.50, in: bins),
+              let p95 = percentile(0.95, in: bins),
+              let p05 = percentile(0.05, in: bins) else { return nil }
+
+        let targetMid = 0.46
+        var ev = log2(targetMid / max(p50, 0.02))
+
+        // 밝은 사진은 무리하게 끌어내리지 않고, 어두운 사진은 하이라이트가 날아가지 않게 제한.
+        let highlightLimit = log2(0.94 / max(p95, 0.02))
+        ev = min(ev, highlightLimit)
+        if p05 < 0.02 && ev < 0 { ev *= 0.5 }
+        ev = ev.clamped(to: -1.2...1.4)
+        return (ev * 10).rounded() / 10
+    }
+
+    /// 자동 대비 — 5/95보다 넓은 2/98 percentile로 장면 전체 범위를 보수적으로 판단.
+    func computeAutoContrast(url: URL) -> Double? {
+        guard let samples = analysisSamples(url: url), !samples.isEmpty else { return nil }
+        let bins = luminanceHistogram(samples: samples)
+        guard let low = percentile(0.02, in: bins),
+              let high = percentile(0.98, in: bins) else { return nil }
+        let range = max(0.02, high - low)
+        let target = 0.82
         let ratio = target / range
-        // ratio 1.0 → 0, ratio 1.5 → +50, ratio 2.0 → +100
-        // ratio < 1 → 음수 (이미 대비 강함 → 낮추기)
-        let contrast = (ratio - 1.0) * 100
-        return max(-40, min(100, contrast.rounded()))
+        let contrast = ((ratio - 1.0) * 48.0).clamped(to: -24...42)
+        return contrast.rounded()
     }
 
     /// 자동 커브 계산 — 히스토그램 기반 5포인트 반환.
     func computeAutoCurve(url: URL) -> [CGPoint]? {
-        var settings = DevelopSettings()
-        settings.curveAuto = false
-        guard let input = loadCIImage(url: url, settings: settings, targetSize: CGSize(width: 512, height: 512)) else {
-            return nil
-        }
-        let bins = extractLuminanceHistogram(from: input)
-        guard let (black, white) = blackWhitePoints(histogram: bins) else {
-            return nil
-        }
-        let blackOut: CGFloat = 0.02
-        let whiteOut: CGFloat = 0.98
-        let mid = (black + white) / 2
-        let lower25 = black + (mid - black) * 0.5
-        let upper75 = mid + (white - mid) * 0.5
+        guard let samples = analysisSamples(url: url), !samples.isEmpty else { return nil }
+        let bins = luminanceHistogram(samples: samples)
+        guard let p10 = percentile(0.10, in: bins),
+              let p50 = percentile(0.50, in: bins),
+              let p90 = percentile(0.90, in: bins) else { return nil }
+
+        let shadowLift = (0.22 - p10).clamped(to: -0.03...0.05)
+        let highlightPull = (p90 - 0.82).clamped(to: -0.04...0.04)
+        let midAdjust = (0.46 - p50).clamped(to: -0.04...0.04)
+
         return [
-            CGPoint(x: CGFloat(max(0, black)), y: blackOut),
-            CGPoint(x: CGFloat(lower25), y: 0.22),
-            CGPoint(x: CGFloat(mid), y: 0.5),
-            CGPoint(x: CGFloat(upper75), y: 0.78),
-            CGPoint(x: CGFloat(min(1, white)), y: whiteOut)
+            CGPoint(x: 0, y: 0),
+            CGPoint(x: 0.25, y: CGFloat((0.25 + shadowLift).clamped(to: 0.18...0.34))),
+            CGPoint(x: 0.50, y: CGFloat((0.50 + midAdjust).clamped(to: 0.44...0.56))),
+            CGPoint(x: 0.75, y: CGFloat((0.75 - highlightPull).clamped(to: 0.66...0.84))),
+            CGPoint(x: 1, y: 1)
         ]
     }
 

@@ -282,9 +282,10 @@ final class CropNSView: NSView {
         let dxN = (p.x - dragStartPoint.x) / ir.width
         let dyN = (p.y - dragStartPoint.y) / ir.height
         let shift = event.modifierFlags.contains(.shift)
+        let lockedPixelAspect = aspectRatio ?? (shift ? effectivePixelAspect() : nil)
         var newRect = dragStartRect
-        applyDrag(&newRect, handle: h, dxN: dxN, dyN: dyN, shiftLock: shift)
-        cropRect = clampNormalized(newRect)
+        applyDrag(&newRect, handle: h, dxN: dxN, dyN: dyN, lockedPixelAspect: lockedPixelAspect)
+        cropRect = clampNormalized(newRect, preservingPixelAspect: lockedPixelAspect)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -293,7 +294,7 @@ final class CropNSView: NSView {
         window?.invalidateCursorRects(for: self)
     }
 
-    private func applyDrag(_ rect: inout CGRect, handle h: HandleType, dxN: CGFloat, dyN: CGFloat, shiftLock: Bool) {
+    private func applyDrag(_ rect: inout CGRect, handle h: HandleType, dxN: CGFloat, dyN: CGFloat, lockedPixelAspect: Double?) {
         switch h {
         case .move:
             rect.origin.x = max(0, min(1 - dragStartRect.width, dragStartRect.origin.x + dxN))
@@ -338,8 +339,8 @@ final class CropNSView: NSView {
         rect.size.width = max(0.05, rect.size.width)
         rect.size.height = max(0.05, rect.size.height)
 
-        // Shift 잠금 — 현재 aspect 유지
-        if shiftLock, let pixelAR = effectivePixelAspect() {
+        // 비율 잠금 — 프리셋 비율이 있으면 항상 잠금, Free 상태에서는 Shift 동안 현재 비율 유지.
+        if let pixelAR = lockedPixelAspect {
             guard let img = image, img.size.height > 0 else { return }
             let imgAR = img.size.width / img.size.height
             let norm = CGFloat(pixelAR) / imgAR
@@ -369,14 +370,70 @@ final class CropNSView: NSView {
         return (cropRect.width / cropRect.height) * imgAR
     }
 
-    private func clampNormalized(_ r: CGRect) -> CGRect {
+    private func clampNormalized(_ r: CGRect, preservingPixelAspect pixelAR: Double? = nil) -> CGRect {
         var r = r
-        r.origin.x = max(0, min(1, r.origin.x))
-        r.origin.y = max(0, min(1, r.origin.y))
-        r.size.width = min(r.size.width, 1 - r.origin.x)
-        r.size.height = min(r.size.height, 1 - r.origin.y)
-        r.size.width = max(0.05, r.size.width)
-        r.size.height = max(0.05, r.size.height)
+        if r.size.width < 0 {
+            r.origin.x += r.size.width
+            r.size.width = -r.size.width
+        }
+        if r.size.height < 0 {
+            r.origin.y += r.size.height
+            r.size.height = -r.size.height
+        }
+
+        guard let pixelAR,
+              let img = image,
+              img.size.width > 0,
+              img.size.height > 0 else {
+            r.origin.x = max(0, min(1, r.origin.x))
+            r.origin.y = max(0, min(1, r.origin.y))
+            r.size.width = min(r.size.width, 1 - r.origin.x)
+            r.size.height = min(r.size.height, 1 - r.origin.y)
+            r.size.width = max(0.05, r.size.width)
+            r.size.height = max(0.05, r.size.height)
+            return r
+        }
+
+        let imgAR = img.size.width / img.size.height
+        let normAR = CGFloat(pixelAR) / max(imgAR, 0.0001)
+        let minSide: CGFloat = 0.05
+        let cx = min(max(r.midX, 0), 1)
+        let cy = min(max(r.midY, 0), 1)
+
+        var width = max(r.width, minSide)
+        var height = max(r.height, minSide)
+
+        if width / max(height, 0.0001) > normAR {
+            height = width / normAR
+        } else {
+            width = height * normAR
+        }
+
+        let maxWAtCenter = max(minSide, min(cx, 1 - cx) * 2)
+        let maxHAtCenter = max(minSide, min(cy, 1 - cy) * 2)
+        if width > maxWAtCenter {
+            width = maxWAtCenter
+            height = width / normAR
+        }
+        if height > maxHAtCenter {
+            height = maxHAtCenter
+            width = height * normAR
+        }
+
+        if width > 1 {
+            width = 1
+            height = width / normAR
+        }
+        if height > 1 {
+            height = 1
+            width = height * normAR
+        }
+
+        width = max(minSide, min(width, 1))
+        height = max(minSide, min(height, 1))
+        r = CGRect(x: cx - width / 2, y: cy - height / 2, width: width, height: height)
+        r.origin.x = max(0, min(1 - r.width, r.origin.x))
+        r.origin.y = max(0, min(1 - r.height, r.origin.y))
         return r
     }
 

@@ -8,6 +8,8 @@ struct ContentView: View {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var folderBrowserExpanded: Bool = false
     @State private var folderBrowserWidth: CGFloat = 250
+    @State private var folderBrowserResizeStartWidth: CGFloat?
+    @State private var folderBrowserResizePreviewWidth: CGFloat?
     @State private var showFullscreen: Bool = false
     @State private var dualWindow: NSWindow?
 
@@ -37,6 +39,8 @@ struct ContentView: View {
     @State private var testerKeyAlertSuccess: Bool = false
 
     private var folderSizeText: String { store.cachedFolderSizeText }
+    private let folderBrowserMinWidth: CGFloat = 120
+    private let folderBrowserMaxWidth: CGFloat = 560
 
     private var importResultMessage: String {
         guard let r = store.lastImportResult else { return "가져오기 실패" }
@@ -109,7 +113,7 @@ struct ContentView: View {
                     // Folder Browser Sidebar (only when photos loaded)
                     if store.showFolderBrowser {
                         FolderBrowserView(isExpanded: $folderBrowserExpanded)
-                            .frame(width: folderBrowserExpanded ? min(folderBrowserWidth, 280) : 36)
+                            .frame(width: folderBrowserExpanded ? folderBrowserWidth.clamped(to: folderBrowserMinWidth...folderBrowserMaxWidth) : 36)
                             .animation(.easeInOut(duration: 0.2), value: folderBrowserExpanded)
 
                         // Drag handle for resizing
@@ -121,8 +125,17 @@ struct ContentView: View {
                                 .gesture(
                                     DragGesture()
                                         .onChanged { value in
-                                            let newWidth = folderBrowserWidth + value.translation.width
-                                            folderBrowserWidth = max(120, min(400, newWidth))
+                                            let startWidth = folderBrowserResizeStartWidth ?? folderBrowserWidth
+                                            folderBrowserResizeStartWidth = startWidth
+                                            let newWidth = startWidth + value.translation.width
+                                            folderBrowserResizePreviewWidth = newWidth.clamped(to: folderBrowserMinWidth...folderBrowserMaxWidth)
+                                        }
+                                        .onEnded { _ in
+                                            if let preview = folderBrowserResizePreviewWidth {
+                                                folderBrowserWidth = preview
+                                            }
+                                            folderBrowserResizeStartWidth = nil
+                                            folderBrowserResizePreviewWidth = nil
                                         }
                                 )
                                 .onHover { inside in
@@ -320,6 +333,17 @@ struct ContentView: View {
                         }
                     }
                     } // end VStack (toolbarRow2 + content)
+                }
+                .overlay(alignment: .leading) {
+                    if store.showFolderBrowser,
+                       folderBrowserExpanded,
+                       let preview = folderBrowserResizePreviewWidth {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.65))
+                            .frame(width: 3)
+                            .offset(x: preview)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
 
@@ -893,10 +917,10 @@ struct ContentView: View {
                     VisualSearchService.shared.runSearch(on: urls)
                 } else {
                     store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
+                    }
                 }
             }
         }
-    }
 
     // MARK: - v8.6.2: CacheSweeper 활동 감지 (스크롤 + 키)
     @State private var sweeperActivityMonitor: Any?
@@ -1121,5 +1145,11 @@ struct TesterKeyInputSheet: View {
         }
         .padding(20)
         .frame(width: 380)
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

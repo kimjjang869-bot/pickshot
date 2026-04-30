@@ -125,6 +125,10 @@ class PreviewImageCache {
     // 디스크 쓰기 serialization: evict 시 concurrent queue 로 뿌리면 누적 I/O 병목 → 직렬 큐로 변경
     // 빠른 네비게이션 후반부에 속도 저하 주요 원인 (20장 이동 = 20개 JPEG 인코딩 병렬 → 디스크 경합)
     private let diskEvictQueue = DispatchQueue(label: "previewcache.evict", qos: .utility)
+    /// v9.0.2: 디스크 evict 큐 깊이 추적 — backlog 너무 크면 새 evict 스킵해서 폭주 방지.
+    private var diskEvictBacklog: Int = 0
+    private let diskEvictBacklogLock = NSLock()
+    private static let diskEvictBacklogMax = 30
 
     init() {
         // UserDefaults에 저장된 값 우선, 없으면 RAM 기반 자동 설정
@@ -226,9 +230,23 @@ class PreviewImageCache {
                 accessTime.removeValue(forKey: key)
                 let diskPath = diskKey(for: key)
                 let capturedImg = evictedImg
+                // v9.0.2: backlog 가 너무 많으면 디스크 쓰기 스킵 — 폭주 방지.
+                //   evict 자체는 진행 (메모리는 free), 디스크 쓰기만 누락.
+                diskEvictBacklogLock.lock()
+                let currentBacklog = diskEvictBacklog
+                diskEvictBacklog += 1
+                diskEvictBacklogLock.unlock()
+                if currentBacklog >= Self.diskEvictBacklogMax {
+                    diskEvictBacklogLock.lock(); diskEvictBacklog -= 1; diskEvictBacklogLock.unlock()
+                    continue
+                }
                 // 직렬 큐로 뿌려서 동시 JPEG 인코딩/디스크 쓰기 경합 방지
-                // (빠른 네비게이션 시 누적되는 작업 수가 제한됨)
-                diskEvictQueue.async {
+                diskEvictQueue.async { [weak self] in
+                    defer {
+                        self?.diskEvictBacklogLock.lock()
+                        self?.diskEvictBacklog -= 1
+                        self?.diskEvictBacklogLock.unlock()
+                    }
                     // 이미 디스크에 있으면 쓰기 스킵 — 불필요한 I/O 제거
                     if FileManager.default.fileExists(atPath: diskPath.path) { return }
                     if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
@@ -721,6 +739,8 @@ struct PhotoPreviewView: View {
     @State private var developedForPhotoID: UUID? = nil
     /// 진행 중인 렌더링 작업 (사진 전환 시 취소).
     @State private var developRenderTask: Task<Void, Never>? = nil
+    /// latest-wins 렌더 세대. 이전 보정 렌더가 늦게 끝나도 화면에 올라오지 않게 막는다.
+    @State private var developRenderGeneration: UInt64 = 0
     /// 디바운스 타이머 (150ms) — 슬라이더 드래그 중 연속 변경 시 마지막만 실행
     @State private var developRenderDebounce: DispatchWorkItem? = nil
     /// Shared pipeline (Metal CIContext 공유).
@@ -2408,6 +2428,8 @@ struct PhotoPreviewView: View {
         // 기존 디바운스/작업 취소
         developRenderDebounce?.cancel()
         developRenderTask?.cancel()
+        developRenderGeneration &+= 1
+        let renderGeneration = developRenderGeneration
 
         let url = photo.jpgURL
         let photoID = photo.id
@@ -2429,21 +2451,24 @@ struct PhotoPreviewView: View {
             return
         }
 
-        // v8.6.2: 2단계 렌더링 (라이트룸 스타일)
-        //   1) 빠른 프리뷰: Stage 1 NSImage 기반 CI 필터 (~20-50ms, 즉시 반응)
-        //   2) 고품질: CIRAWFilter 기반 (300ms idle 뒤 실행, JPG→RAW 품질 업그레이드)
+        // v9.0.3 camera-look develop:
+        //   보정 프리뷰는 사용자가 처음 본 카메라 JPG/embedded preview 색감 위에서만 처리한다.
+        //   RAW-only 파일도 여기서 CIRAWFilter 로 neutral RAW 색감으로 갈아타지 않는다.
+        //   1) 빠른 프리뷰: 현재 화면 NSImage 기반 CI 필터 (~20-50ms, 즉시 반응)
+        //   2) idle follow-up: 더 큰 카메라-look 이미지(hiRes/lowRes/image)가 있으면 같은 필터 재적용
 
         let baseImage = self.image  // 현재 표시 중인 Stage 1/2 NSImage 캡처
 
         // Step 1: 빠른 프리뷰 — 즉시 실행 (debounce X, 이전 fast task 는 취소)
         if let base = baseImage {
-            let fastTask = Task.detached(priority: .userInteractive) { [url, settings] in
+            let fastTask = Task.detached(priority: .userInteractive) { [url, settings, renderGeneration] in
                 let t0 = CFAbsoluteTimeGetCurrent()
                 let quick = Self.developPipelineShared.renderFast(baseImage: base, settings: settings)
                 let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 fputs("[DEV-FAST] \(url.lastPathComponent) \(quick == nil ? "FAILED" : "OK") \(ms)ms\n", stderr)
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
+                    guard self.developRenderGeneration == renderGeneration else { return }
                     guard let quick = quick else { return }
                     let aligned = Self.enforceAspectOfStage1(quick, url: url, stage1Portrait: self.firstLoadIsPortrait)
                     self.developedImage = aligned
@@ -2453,30 +2478,26 @@ struct PhotoPreviewView: View {
             developRenderTask = fastTask
         }
 
-        // Step 2: 고품질 follow-up — 300ms idle 뒤 CIRAWFilter 기반 재렌더
-        let work = DispatchWorkItem { [settings] in
-            fputs("[DEV-QUALITY] refresh — \(url.lastPathComponent) exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
-            let previewSize = CGSize(width: 1400, height: 1000)
-            let task = Task.detached(priority: .userInitiated) { [url, settings, previewSize] in
+        // Step 2: camera-look follow-up — 180ms idle 뒤 현재 확보된 가장 큰 preview 기반 재렌더.
+        // RAW CIRAWFilter 를 타지 않기 때문에 보정 도중 색감이 바뀌지 않는다.
+        let work = DispatchWorkItem { [settings, renderGeneration] in
+            guard self.developRenderGeneration == renderGeneration else { return }
+            let qualityBase = self.hiResImage ?? self.lowResImage ?? self.image
+            guard let qualityBase else { return }
+            let basePx = qualityBase.representations.first.map { max($0.pixelsWide, $0.pixelsHigh) }
+                ?? max(Int(qualityBase.size.width), Int(qualityBase.size.height))
+            fputs("[DEV-LOOK] refresh — \(url.lastPathComponent) base=\(basePx)px exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
+            let task = Task.detached(priority: .userInitiated) { [url, settings, qualityBase, basePx, renderGeneration] in
                 let t0 = CFAbsoluteTimeGetCurrent()
-                let rendered = Self.developPipelineShared.render(
-                    url: url,
-                    settings: settings,
-                    targetSize: previewSize
-                )
+                let rendered = Self.developPipelineShared.renderFast(baseImage: qualityBase, settings: settings)
                 let elapsed = CFAbsoluteTimeGetCurrent() - t0
-                fputs("[DEV-QUALITY] rendered \(rendered == nil ? "FAILED" : "OK") in \(String(format: "%.2f", elapsed))s\n", stderr)
+                fputs("[DEV-LOOK] rendered \(rendered == nil ? "FAILED" : "OK") base=\(basePx)px in \(String(format: "%.2f", elapsed))s\n", stderr)
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
-                    // v8.7: Quality 렌더는 EXIF orient 을 정확히 적용했음. Stage 1 이 틀렸을 수 있음.
-                    //   enforceAspectOfStage1 을 skip 해서 Quality 결과를 "진실" 로 인정.
-                    //   만약 Stage 1 이 엉뚱하게 landscape 로 로드됐다면, Quality 가 portrait 로 보여주는 게 맞음.
+                    guard self.developRenderGeneration == renderGeneration else { return }
                     if let r = rendered {
-                        let rPortrait = r.size.height > r.size.width
-                        if let s1 = self.firstLoadIsPortrait, s1 != rPortrait {
-                            fputs("[RAW-DIAG] \(url.lastPathComponent) Quality aspect mismatch — stage1=\(s1 ? "P" : "L") quality=\(rPortrait ? "P" : "L") — Quality 신뢰, enforce 생략\n", stderr)
-                        }
-                        self.developedImage = r
+                        let aligned = Self.enforceAspectOfStage1(r, url: url, stage1Portrait: self.firstLoadIsPortrait)
+                        self.developedImage = aligned
                         self.developedForPhotoID = photoID
                     }
                 }
@@ -2484,8 +2505,8 @@ struct PhotoPreviewView: View {
             DispatchQueue.main.async { self.developRenderTask = task }
         }
         developRenderDebounce = work
-        // 300ms idle — 드래그 끝나고 조용해지면 고품질로 업그레이드
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        // 180ms idle — 보정 값이 멈췄을 때만 더 큰 camera-look base 에 재적용
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
     }
 
     /// Schedule smart preload of ±20 neighbors, cancelling any previous batch

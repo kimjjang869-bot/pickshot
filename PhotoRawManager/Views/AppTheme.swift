@@ -327,7 +327,15 @@ final class InitialPreviewGenerator: ObservableObject {
     }
 
     private func enqueueOps(urls: [URL], maxPixel: Int, allowRawDecode: Bool = false) {
+        // v9.0.2: 큐 크기 cap — 한 번에 너무 많은 op 적재되면 OperationQueue 내부 자료구조
+        //   메모리 무거워짐 + cancel 시 검사 비용 ↑. 100 단위로 나누지 않고 그냥 cap 만 둠.
+        let maxQueueLength = 200
         for url in urls {
+            // 큐가 너무 길면 짧게 대기 — 시스템 부하 방지.
+            while queue.operationCount > maxQueueLength {
+                Thread.sleep(forTimeInterval: 0.05)
+                if queue.isSuspended || PhotoStore.navigationBusy { break }
+            }
             queue.addOperation { [weak self] in
                 guard let self else { return }
                 // v9.0.2: 네비 burst 동안엔 디스크/CPU 양보 — STALL/Stage3 지연 원인이었음.

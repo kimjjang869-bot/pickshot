@@ -44,6 +44,11 @@ class VideoPlayerManager: ObservableObject {
     private var statusObservation: NSKeyValueObservation?
     private var rateObservation: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
+    /// v9.0.2: loadVideo 마다 추가되던 익명 observer 3개를 토큰으로 저장 → cleanup() 에서 일괄 제거.
+    ///   이전엔 매 영상 재생마다 observer 3개씩 누적되어 NotificationCenter 가 점차 느려짐.
+    private var failedObserver: NSObjectProtocol?
+    private var stalledObserver: NSObjectProtocol?
+    private var errorLogObserver: NSObjectProtocol?
     private var currentURL: URL?
     private var originalComposition: AVVideoComposition?
     private var metadataTask: Task<Void, Never>?
@@ -156,18 +161,19 @@ class VideoPlayerManager: ObservableObject {
         }
 
         // 재생 중 에러 감지 (버퍼 고갈, 디코딩 실패 등)
-        NotificationCenter.default.addObserver(
+        // v9.0.2: 토큰 저장 — cleanup() 에서 removeObserver 가능하게.
+        failedObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
         ) { notification in
             let err = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
             fputs("[Video] ❌ 재생 중 실패: \(err?.localizedDescription ?? "unknown")\n", stderr)
         }
-        NotificationCenter.default.addObserver(
+        stalledObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
         ) { _ in
             fputs("[Video] ⚠️ 재생 정체 (버퍼 고갈 또는 디코딩 지연)\n", stderr)
         }
-        NotificationCenter.default.addObserver(
+        errorLogObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemNewErrorLogEntry, object: item, queue: .main
         ) { [weak self] _ in
             guard let self, let log = self.player.currentItem?.errorLog(),
@@ -1006,6 +1012,19 @@ class VideoPlayerManager: ObservableObject {
         if let obs = endObserver {
             NotificationCenter.default.removeObserver(obs)
             endObserver = nil
+        }
+        // v9.0.2: 누적 누수 픽스 — loadVideo 에서 추가한 3개 observer 도 제거.
+        if let obs = failedObserver {
+            NotificationCenter.default.removeObserver(obs)
+            failedObserver = nil
+        }
+        if let obs = stalledObserver {
+            NotificationCenter.default.removeObserver(obs)
+            stalledObserver = nil
+        }
+        if let obs = errorLogObserver {
+            NotificationCenter.default.removeObserver(obs)
+            errorLogObserver = nil
         }
         statusObservation?.invalidate()
         statusObservation = nil
