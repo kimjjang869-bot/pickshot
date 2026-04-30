@@ -2416,19 +2416,32 @@ class ThumbnailCache {
     }
 
     func set(_ url: URL, image: NSImage) {
-        // v8.6.1 메모리 누수 수정: cost 단위를 **bytes** 로 통일 (이전엔 KB 단위로 저장되어
-        // totalCostLimit 이 실제 값의 1/1024 로 오해되어 NSCache 자동 evict 가 사실상 작동 안 함).
-        // applyCacheLimits() 에서 totalCostLimit 도 bytes 단위로 맞춰야 함.
-        let cost: Int
+        // v9.1 격차 #4: NSImage representation 정규화 — 여러 rep (TIFF + JPEG 등) 보유 시
+        //   메모리 2~3배. 단일 CGImage rep 만 남겨 30~50% 절감.
+        //   추가 효과: lazy decode 1회로 끝 (다음 paint 시 즉시 사용).
+        let normalized: NSImage
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            // 이미 1개 rep 이고 CGImage 면 원본 사용 (불필요한 wrap 회피).
+            if image.representations.count == 1, image.representations.first is NSBitmapImageRep {
+                normalized = image
+            } else {
+                normalized = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+            }
+        } else {
+            normalized = image
+        }
+
+        // cost 단위를 bytes 로 통일 (NSCache 자동 evict 정확히 작동).
+        let cost: Int
+        if let cg = normalized.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             cost = max(1, cg.bytesPerRow * cg.height)
         } else {
-            let pixelW = image.representations.first?.pixelsWide ?? Int(image.size.width)
-            let pixelH = image.representations.first?.pixelsHigh ?? Int(image.size.height)
+            let pixelW = normalized.representations.first?.pixelsWide ?? Int(normalized.size.width)
+            let pixelH = normalized.representations.first?.pixelsHigh ?? Int(normalized.size.height)
             cost = max(1, pixelW * pixelH * 4)
         }
-        cache.setObject(image, forKey: url as NSURL, cost: cost)
-        // v8.6.2: CacheProgressGauge 용 — URL 유입 알림 (PhotoStore 에서 중복 카운트 방지)
+        cache.setObject(normalized, forKey: url as NSURL, cost: cost)
+        // CacheProgressGauge 용 — URL 유입 알림 (PhotoStore 에서 중복 카운트 방지)
         NotificationCenter.default.post(name: .thumbnailCacheInserted, object: url)
     }
 
@@ -3239,11 +3252,30 @@ class ThumbnailLoader {
             if !moreData.isEmpty {
                 data.append(moreData)
                 handle.closeFile()
-                return findBestEmbeddedJPEG(in: data, maxSize: maxSize)
+                if let img = findBestEmbeddedJPEG(in: data, maxSize: maxSize) {
+                    return img
+                }
+                // v9.1 격차 #3: ImageIO/JPEG scan 모두 실패 시 LibRaw 폴백
+                //   Sigma X3F (PPM 임베디드 only), Hasselblad 3FR (TIFF 임베디드), 신규 카메라.
+                //   half-size 라 ~50-100ms — 썸네일 용도로 OK.
+                if let dec = LibRawDecoder(url: url) {
+                    if let nsImg = dec.extractEmbeddedThumb() { return nsImg }
+                    if let cg = dec.demosaicToCGImage(useHalfSize: true, quality: .linear) {
+                        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    }
+                }
+                return nil
             }
         }
 
         handle.closeFile()
+        // v9.1: 첫 read 도 짧고 JPEG 못 찾았을 때 — LibRaw 폴백.
+        if let dec = LibRawDecoder(url: url) {
+            if let nsImg = dec.extractEmbeddedThumb() { return nsImg }
+            if let cg = dec.demosaicToCGImage(useHalfSize: true, quality: .linear) {
+                return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+            }
+        }
         return nil
     }
 

@@ -87,6 +87,69 @@ final class LibRawDecoder {
         let data = Data(bytes: buf, count: Int(thumb.tlength))
         return (data, thumb.tformat.rawValue == LIBRAW_THUMBNAIL_JPEG)
     }
+
+    // MARK: - v9.1: Full RAW Demosaic (LibRaw → CGImage)
+
+    /// LibRaw 옵션 prepass — Apple ImageIO 보다 빠른 RAW 디코드 위함.
+    /// 기본 설정: half-size = 1 (빠른 미리보기 / fit 모드용), use_camera_wb = 1.
+    /// fullSize = true 면 풀해상도 (느리나 100% 줌용).
+    enum DemosaicQuality: Int32 {
+        case fastHalf = 0       // half-size (1/2 해상도, 가장 빠름 — 100~150ms 풀프레임)
+        case linear = 1         // bilinear (빠른 demosaic)
+        case ahd = 3            // AHD (기본, 균형)
+        case dcb = 4            // DCB (고품질)
+        case amaze = 11         // AMaZE (RawTherapee 사용 — 최고 품질 but 느림)
+    }
+
+    /// 풀 RAW demosaic + CGImage 반환.
+    /// - useHalfSize: true 면 half-size (1/2 해상도, 4× 빠름) — fit 모드용 권장.
+    /// - quality: false 시 어차피 무시. true 면 품질 설정.
+    func demosaicToCGImage(useHalfSize: Bool = true, quality: DemosaicQuality = .ahd, useCameraWB: Bool = true) -> CGImage? {
+        // 옵션 셋업 (.params 직접 수정).
+        proc.pointee.params.half_size = useHalfSize ? 1 : 0
+        proc.pointee.params.use_camera_wb = useCameraWB ? 1 : 0
+        proc.pointee.params.user_qual = quality.rawValue
+        proc.pointee.params.no_auto_bright = 0
+        proc.pointee.params.output_color = 1   // sRGB
+        proc.pointee.params.output_bps = 8
+        proc.pointee.params.gamm.0 = 1.0 / 2.4  // sRGB gamma curve
+        proc.pointee.params.gamm.1 = 12.92
+
+        guard libraw_unpack(proc) == LIBRAW_SUCCESS.rawValue else { return nil }
+        guard libraw_dcraw_process(proc) == LIBRAW_SUCCESS.rawValue else { return nil }
+
+        var status: Int32 = 0
+        guard let memImg = libraw_dcraw_make_mem_image(proc, &status),
+              status == LIBRAW_SUCCESS.rawValue else { return nil }
+        defer { libraw_dcraw_clear_mem(memImg) }
+
+        let img = memImg.pointee
+        let width = Int(img.width)
+        let height = Int(img.height)
+        let bits = Int(img.bits)
+        let colors = Int(img.colors)
+        let bytesPerRow = width * colors * (bits / 8)
+        let dataSize = Int(img.data_size)
+
+        // libraw_processed_image_t 의 data 는 flexible array — pointer 위치 직접 계산.
+        let basePtr = withUnsafePointer(to: &memImg.pointee.data) { UnsafeRawPointer($0) }
+        let pixelPtr = basePtr.advanced(by: 0)
+
+        // CGImage 생성 (sRGB / 8-bit / 3-channel)
+        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+              let provider = CGDataProvider(data: NSData(bytes: pixelPtr, length: dataSize)) else {
+            return nil
+        }
+        return CGImage(
+            width: width, height: height,
+            bitsPerComponent: bits, bitsPerPixel: bits * colors,
+            bytesPerRow: bytesPerRow,
+            space: cs,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: provider, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent
+        )
+    }
 }
 
 // MARK: - LIBRAW_SUCCESS 상수 호환 (libraw.h 의 #define 0 대응)

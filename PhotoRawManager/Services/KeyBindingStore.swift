@@ -15,12 +15,24 @@ final class KeyBindingStore: ObservableObject {
     /// 커스텀 재매핑 가능한 단축키 action 목록.
     /// 기본값은 KeyEventHandling 의 하드코딩 조건과 일치.
     enum Action: String, CaseIterable, Identifiable {
+        // ── 보정 (기존) ──
         case exposureDown, exposureUp
         case tempCooler, tempWarmer
         case autoExposure, autoWB, autoCurve
         case resetAdjustments
         case cropMode
         case copyAdjust, pasteAdjust
+        // ── v9.1 격차 #5: FRV 식 핵심 단축키 커스터마이징 ──
+        case nextPhoto, prevPhoto                  // 다음/이전 사진
+        case nextPhotoRow, prevPhotoRow            // 다음/이전 줄 (그리드)
+        case toggleFullscreen                      // 전체화면
+        case toggleHistogram                       // 히스토그램
+        case toggleClippingOverlay                 // 클리핑 오버레이
+        case toggleFocusPeaking                    // 포커스 피킹
+        case zoomFit, zoom100                      // 맞춤/100%
+        case rotateCW, rotateCCW                   // 시계/반시계 90°
+        case toggleMetadataPanel                   // 메타데이터 패널
+        case markGreen, markYellow, markRed, markBlue, markPurple   // 컬러 라벨
 
         var id: String { rawValue }
 
@@ -37,6 +49,24 @@ final class KeyBindingStore: ObservableObject {
             case .cropMode: return "인라인 크롭 모드"
             case .copyAdjust: return "보정값 복사"
             case .pasteAdjust: return "보정값 붙여넣기"
+            case .nextPhoto: return "다음 사진"
+            case .prevPhoto: return "이전 사진"
+            case .nextPhotoRow: return "다음 줄 (그리드)"
+            case .prevPhotoRow: return "이전 줄 (그리드)"
+            case .toggleFullscreen: return "전체화면 토글"
+            case .toggleHistogram: return "히스토그램 토글"
+            case .toggleClippingOverlay: return "클리핑 오버레이 토글"
+            case .toggleFocusPeaking: return "포커스 피킹 토글"
+            case .zoomFit: return "맞춤"
+            case .zoom100: return "100% 줌"
+            case .rotateCW: return "시계방향 90° 회전"
+            case .rotateCCW: return "반시계방향 90° 회전"
+            case .toggleMetadataPanel: return "메타데이터 패널 토글"
+            case .markGreen: return "초록 라벨"
+            case .markYellow: return "노랑 라벨"
+            case .markRed: return "빨강 라벨"
+            case .markBlue: return "파랑 라벨"
+            case .markPurple: return "보라 라벨"
             }
         }
 
@@ -53,6 +83,24 @@ final class KeyBindingStore: ObservableObject {
             case .cropMode:     return Binding(key: "c", keyCode: 8, modifiers: [])
             case .copyAdjust:   return Binding(key: "c", keyCode: 8, modifiers: [.command, .shift])
             case .pasteAdjust:  return Binding(key: "v", keyCode: 9, modifiers: [.command, .shift])
+            case .nextPhoto:        return Binding(key: "→", keyCode: 124, modifiers: [])
+            case .prevPhoto:        return Binding(key: "←", keyCode: 123, modifiers: [])
+            case .nextPhotoRow:     return Binding(key: "↓", keyCode: 125, modifiers: [])
+            case .prevPhotoRow:     return Binding(key: "↑", keyCode: 126, modifiers: [])
+            case .toggleFullscreen: return Binding(key: "f", keyCode: 3,  modifiers: [.command])
+            case .toggleHistogram:  return Binding(key: "h", keyCode: 4,  modifiers: [])
+            case .toggleClippingOverlay: return Binding(key: "h", keyCode: 4, modifiers: [.shift])
+            case .toggleFocusPeaking:    return Binding(key: "p", keyCode: 35, modifiers: [.shift])
+            case .zoomFit:          return Binding(key: "0", keyCode: 29, modifiers: [.command])
+            case .zoom100:          return Binding(key: "1", keyCode: 18, modifiers: [.command])
+            case .rotateCW:         return Binding(key: "]", keyCode: 30, modifiers: [.command])
+            case .rotateCCW:        return Binding(key: "[", keyCode: 33, modifiers: [.command])
+            case .toggleMetadataPanel: return Binding(key: "i", keyCode: 34, modifiers: [])
+            case .markGreen:        return Binding(key: "8", keyCode: 28, modifiers: [])
+            case .markYellow:       return Binding(key: "7", keyCode: 26, modifiers: [])
+            case .markRed:          return Binding(key: "6", keyCode: 22, modifiers: [])
+            case .markBlue:         return Binding(key: "9", keyCode: 25, modifiers: [])
+            case .markPurple:       return Binding(key: "0", keyCode: 29, modifiers: [])
             }
         }
     }

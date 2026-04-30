@@ -1209,18 +1209,16 @@ struct PhotoPreviewView: View {
                     }
                     .contextMenu { previewBgMenu }
                 } else {
-                    // v9.0.2: 빠른 네비 중 검은 화면 방지 — placeholder 로 이전 프레임 흐릿하게.
-                    //   큰 이미지(8192px 등)를 그대로 렌더하면 main thread 디코드 75ms+ → 키씹힘.
-                    //   .interpolation(.none) + 작은 frame 캡으로 GPU rasterize 비용 최소화.
+                    // v9.1: placeholder 풀사이즈 복원 — 1200px cap 으로 작게 렌더되던 문제 수정.
+                    //   이전 프레임이 있으면 vSize 가득 흐릿하게 표시 (검은 화면 방지 목적).
                     ZStack {
                         store.previewBackgroundColor
                         if let placeholder = previewFrame?.image ?? image {
                             Image(nsImage: placeholder)
                                 .resizable()
-                                .interpolation(.none)
-                                .antialiased(false)
+                                .interpolation(.medium)
                                 .aspectRatio(contentMode: .fit)
-                                .frame(maxWidth: min(vSize.width, 1200), maxHeight: min(vSize.height, 1200))
+                                .frame(width: vSize.width, height: vSize.height)
                                 .opacity(0.55)
                                 .allowsHitTesting(false)
                         }
@@ -3801,8 +3799,27 @@ struct PhotoPreviewView: View {
         }
         if parentEmbedded != nil {
             fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels)\n", stderr)
+            return parentEmbedded
         }
-        return parentEmbedded
+
+        // v9.1: 모든 임베디드 추출 실패 시 — LibRaw 풀 demosaic 폴백.
+        //   ImageIO 가 못 읽는 RAW (Sigma X3F, Hasselblad 3FR, 신규 카메라) 도 처리 가능.
+        //   half-size + AHD = ~100-150ms (FRV 와 비슷).
+        let t0 = CFAbsoluteTimeGetCurrent()
+        if let dec = LibRawDecoder(url: url),
+           let cg = dec.demosaicToCGImage(useHalfSize: true, quality: .ahd) {
+            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            fputs("[HIRES] LibRaw demosaic 폴백 \(url.lastPathComponent) \(cg.width)x\(cg.height) in \(Int(elapsed))ms\n", stderr)
+            // EXIF orientation 적용
+            var img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+            let orient = dec.exifOrientation
+            if orient > 1 {
+                img = applyOrientation(img, orientation: orient)
+            }
+            return img
+        }
+        fputs("[HIRES] ❌ 모든 디코드 실패 \(url.lastPathComponent)\n", stderr)
+        return nil
     }
 
     /// FFD8 시작 후 maxLength 안쪽에서 첫 FFD9 (JPEG EOI) 까지의 range 반환.
