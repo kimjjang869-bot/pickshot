@@ -20,6 +20,7 @@ struct PerformanceOptimizeTab: View {
     @State private var recommendedProfile: String = "—"
     @State private var applied = false
     @State private var selectedProfile: String = ""
+    @ObservedObject private var superCull = SuperCullMode.shared
 
     @AppStorage("previewMaxResolution") private var previewMaxResolution = "1000"  // v8.6.2 기본값 통일
     @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
@@ -34,6 +35,47 @@ struct PerformanceOptimizeTab: View {
                     Image(systemName: "bolt.circle.fill").font(.system(size: 32)).foregroundColor(.accentColor)
                     Text("성능 최적화").font(.system(size: 16, weight: .bold))
                     Text("시스템을 분석하고 최적의 설정을 자동으로 적용합니다").font(.system(size: 12)).foregroundColor(.secondary)
+                }
+
+                Divider()
+
+                // v9.1: 슈퍼 셀렉 모드 (테스트용)
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(superCull.isActive ? .orange : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("🚀 슈퍼 셀렉 모드 (실험용)")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("썸네일/미리보기 속도에만 집중. 모든 부가 기능 OFF.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $superCull.isActive)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        }
+                        if superCull.isActive {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("OFF 항목:")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                Text("• InitialPreview / IdlePrefetch / EXIF batch")
+                                    .font(.system(size: 10)).foregroundColor(.secondary)
+                                Text("• AI / 얼굴 그룹 / 의미 검색")
+                                    .font(.system(size: 10)).foregroundColor(.secondary)
+                                Text("• 적극 캐시 / 메타데이터 사이드바 자동 갱신")
+                                    .font(.system(size: 10)).foregroundColor(.secondary)
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.06))
+                            .cornerRadius(4)
+                        }
+                    }
+                    .padding(4)
                 }
 
                 Divider()

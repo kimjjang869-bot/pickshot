@@ -297,8 +297,11 @@ extension PhotoStore {
                 // HDD: visible 로딩이 거의 끝난 후(2초)에 시작 — 디스크 경합 회피가 visible 표시 속도에 가장 큰 영향
                 // SSD: 1.5초 (visible 로딩이 빨라서 충돌 적음)
                 let prewarmDelay: TimeInterval = (self?.currentFolderIsSlowDisk ?? false) ? 2.0 : 1.5
+                // v9.1: SuperCullMode ON 시 모든 백그라운드 prefetch/EXIF/initial-preview 차단.
+                let superCull = SuperCullMode.unsafeIsActive
                 DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay) {
                     guard self?.folderURL == url, self?.isRecursiveMode == false else { return }
+                    if superCull { return }
                     self?.preloadAllThumbnails()
                 }
                 // v8.9.7+: Lightroom 식 초기 미리보기 사전 생성 (옵트인). burst 100% cache hit 목표.
@@ -309,7 +312,8 @@ extension PhotoStore {
                           self.folderURL == url,
                           autoInit,
                           !self.isRecursiveMode,
-                          self.photos.count <= 10000
+                          self.photos.count <= 10000,
+                          !superCull
                     else { return }
                     let urls = self.photos.compactMap { p -> URL? in
                         (p.isFolder || p.isParentFolder) ? nil : p.jpgURL
@@ -320,7 +324,9 @@ extension PhotoStore {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     guard self?.folderURL == url,
                           self?.fastCullingMode == false,
-                          self?.isRecursiveMode == false else { return }
+                          self?.isRecursiveMode == false,
+                          !superCull
+                    else { return }
                     let count = self?.viewMode == .list ? 200 : 50
                     self?.batchLoadExif(count: count)
                 }
@@ -328,7 +334,9 @@ extension PhotoStore {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     guard self?.folderURL == url,
                           self?.fastCullingMode == false,
-                          self?.isRecursiveMode == false else { return }
+                          self?.isRecursiveMode == false,
+                          !superCull
+                    else { return }
                     self?.startIdlePreviewPrefetch()
                 }
             }

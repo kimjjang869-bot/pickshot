@@ -134,6 +134,7 @@
 		'MFXU10002' = {isa = PBXBuildFile; fileRef = MFXU10001; };
 		'MG10001' = {isa = PBXBuildFile; fileRef = MG10002; };
 		'SDT10001' = {isa = PBXBuildFile; fileRef = SDT10002; };
+		'SCM10001' = {isa = PBXBuildFile; fileRef = SCM10002; };
 		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
 		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
 		'NAV10001' = {isa = PBXBuildFile; fileRef = NAV10002; };
@@ -347,6 +348,7 @@
 		'MFXU10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFXUpscaler.swift; sourceTree = "<group>"; };
 		'MG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MemoryGuardService.swift; path = PhotoRawManager/Services/MemoryGuardService.swift; sourceTree = SOURCE_ROOT; };
 		'SDT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlowdownTracker.swift; sourceTree = "<group>"; };
+		'SCM10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperCullMode.swift; sourceTree = "<group>"; };
 		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
 		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
 		'NAV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCore.swift; sourceTree = "<group>"; };
@@ -684,6 +686,7 @@
 				DH10002,
 				MG10002,
 				SDT10002,
+				SCM10002,
 				DEV10003,
 				DEV10005,
 				DEV60001,
@@ -1024,6 +1027,7 @@
 				DH10001,
 				MG10001,
 				SDT10001,
+				SCM10001,
 				DEV10002,
 				DEV10004,
 				DEV10006,
