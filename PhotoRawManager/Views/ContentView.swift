@@ -813,7 +813,9 @@ struct ContentView: View {
                     timer.cancel()
                     return
                 }
-                guard !store.isLoading, !store.filteredPhotos.isEmpty else { return }
+                guard !store.isLoading,
+                      !store.isRecursiveScanInProgress,
+                      !store.filteredPhotos.isEmpty else { return }
 
                 store.isKeyRepeat = true
                 switch pattern {

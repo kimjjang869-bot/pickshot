@@ -123,8 +123,11 @@ enum PreviewLoadingPolicy {
     // v8.9.6: fastCullingMode 에서도 현재 사진은 hi-res 로 올린다 (FRV 패턴).
     //   이전엔 fastCullingMode 면 영영 hi-res 안 올라 5K 화면에서 임베디드 1616px 흐릿하게 보였음.
     //   neighbor prefetch 는 여전히 shouldPrefetchHiRes 로 차단.
+    // v9.1: 슈퍼 셀렉 모드 ON 시 자동 hi-res 차단 (Stage 2 까지만).
+    //   사용자 명시 줌/100% (loadHiResForZoom forceDeepScan) 은 별도 경로라 통과.
     static func shouldAutoLoadHiRes(fastCullingMode: Bool) -> Bool {
-        true
+        if SuperCullMode.isActive { return false }
+        return true
     }
 
     static func hiResDelay(isKeyRepeat: Bool, alreadyCached: Bool, tier: PerformanceTier) -> TimeInterval {

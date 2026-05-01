@@ -182,6 +182,8 @@ struct FileMatchingService {
         isSlowDisk: Bool = false,
         // v8.9.4: cancel token — 새 recursive scan 시작 시 옛 batch callback 차단
         isCancelled: @escaping () -> Bool = { false },
+        // v9.1: 진행률 — (완료 폴더수, 전체 폴더수) 메인큐로 전달.
+        onProgress: ((Int, Int) -> Void)? = nil,
         onBatch: @escaping ([PhotoItem]) -> Void,
         onComplete: @escaping (Int) -> Void
     ) {
@@ -271,6 +273,14 @@ struct FileMatchingService {
 
             fputs("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n", stderr)
 
+            // v9.1: 진행률 — top-level 서브폴더 완료 카운터.
+            //   top-level 1개에 nested 폴더가 들어있을 수 있으나, 사용자에게 "움직이고 있다" 시각 피드백
+            //   목적상 충분. 시작 시 즉시 0/N 발행.
+            let totalFolders = max(topFolders.count, 1)
+            let progressLock = NSLock()
+            var completedFolders = 0
+            DispatchQueue.main.async { onProgress?(0, totalFolders) }
+
             for sub in topFolders {
                 if isCancelled() { break }
                 group.enter()
@@ -283,6 +293,11 @@ struct FileMatchingService {
                         if elapsed > 5000 {
                             fputs("[SCAN] SLOW subfolder \(sub.lastPathComponent) took \(Int(elapsed))ms\n", stderr)
                         }
+                        progressLock.lock()
+                        completedFolders += 1
+                        let done = completedFolders
+                        progressLock.unlock()
+                        DispatchQueue.main.async { onProgress?(done, totalFolders) }
                         semaphore.signal()
                         group.leave()
                     }

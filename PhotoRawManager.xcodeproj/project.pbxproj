@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		069D174038784E019EFEA489 /* ContactSheetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */; };
 		16DDFAAB68A755A85E023264 /* LibRawDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3306606A090F08DB9738BB61 /* LibRawDecoder.swift */; };
+		5C00000000000000000000B1 /* SuperCullMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C00000000000000000000B2 /* SuperCullMode.swift */; };
 		1AFAF8F0102C4E9CB0A41550 /* MetadataEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */; };
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
 		2812FB343C1A4B86BA87ADCF /* ContactSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */; };
@@ -223,6 +224,7 @@
 		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
 		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
 		3306606A090F08DB9738BB61 /* LibRawDecoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibRawDecoder.swift; sourceTree = "<group>"; };
+		5C00000000000000000000B2 /* SuperCullMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperCullMode.swift; sourceTree = "<group>"; };
 		355C7F48E6B8ADC5DE0EE0E6 /* PickShot-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "PickShot-Bridging-Header.h"; sourceTree = "<group>"; };
 		4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSheetService.swift; sourceTree = "<group>"; };
 		4BFF8CC000002001001010A0 /* MobileCLIPImage.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileCLIPImage.mlpackage; sourceTree = "<group>"; };
@@ -689,6 +691,7 @@
 				DEV60001,
 				DEV70001,
 				3306606A090F08DB9738BB61 /* LibRawDecoder.swift */,
+				5C00000000000000000000B2 /* SuperCullMode.swift */,
 				08E14C428BAFD2D3415B7133 /* TierManager.swift */,
 				C7EC4578BE740398D02CF9E7 /* FeatureGate.swift */,
 			);
@@ -1035,6 +1038,7 @@
 				DEV60002,
 				DEV70002,
 				16DDFAAB68A755A85E023264 /* LibRawDecoder.swift in Sources */,
+				5C00000000000000000000B1 /* SuperCullMode.swift in Sources */,
 				DF99447AAE1A372ECB576E66 /* TierManager.swift in Sources */,
 				BBB7444388D8D9D77764F8A9 /* FeatureGate.swift in Sources */,
 				3D4849339C1FA00A46DA6B52 /* ProLockModal.swift in Sources */,

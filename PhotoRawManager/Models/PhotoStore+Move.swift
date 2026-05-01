@@ -434,6 +434,16 @@ extension PhotoStore {
         var fileMoveRecords: [FileMove] = []
         let total = fileURLs.count
 
+        // v9.1 진단: 하위폴더 모드 이동 실패 추적용
+        fputs("[MOVE] start: \(total) URLs → \(destination.path)\n", stderr)
+        if total == 0 {
+            fputs("[MOVE] WARN: fileURLs empty (selection / filter mismatch?)\n", stderr)
+        }
+        if !fm.fileExists(atPath: destination.path) {
+            fputs("[MOVE] WARN: destination does not exist before move: \(destination.path)\n", stderr)
+            try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
+        }
+
         DispatchQueue.main.async {
             self.fileMoveActive = true
             self.fileMoveDone = 0
@@ -447,8 +457,14 @@ extension PhotoStore {
             for (index, srcURL) in fileURLs.enumerated() {
                 let destURL = destination.appendingPathComponent(srcURL.lastPathComponent)
                 do {
+                    if !fm.fileExists(atPath: srcURL.path) {
+                        // 원본이 없음 (이미 다른 항목 이동 시 RAW 페어로 함께 이동된 케이스)
+                        fputs("[MOVE] SKIP src missing: \(srcURL.lastPathComponent)\n", stderr)
+                        continue
+                    }
                     if fm.fileExists(atPath: destURL.path) {
                         // 같은 이름 파일 존재 → 스킵
+                        fputs("[MOVE] SKIP name collision at dest: \(destURL.lastPathComponent)\n", stderr)
                         failed += 1
                         continue
                     }
@@ -479,6 +495,7 @@ extension PhotoStore {
                     }
                 } catch {
                     failed += 1
+                    fputs("[MOVE] FAIL \(srcURL.lastPathComponent) → \(destURL.path): \(error)\n", stderr)
                     AppLogger.log(.general, "File move failed: \(srcURL.lastPathComponent) → \(error.localizedDescription)")
                 }
                 // 진행률 업데이트
@@ -502,6 +519,7 @@ extension PhotoStore {
                     self.removePhotosFromList(ids: movedIDs)
                 }
                 let msg = "\(moved)장 이동 완료 (Cmd+Z 되돌리기)" + (failed > 0 ? " (\(failed)장 실패)" : "")
+                fputs("[MOVE] done: moved=\(moved) failed=\(failed) records=\(fileMoveRecords.count) → \(destination.path)\n", stderr)
                 self.showToastMessage(msg)
                 AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
                 // 폴더 프리뷰 캐시 무효화 (이동 원본 + 대상 폴더)

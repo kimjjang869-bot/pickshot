@@ -434,6 +434,11 @@ extension PhotoStore {
                 }
                 return false
             },
+            onProgress: { [weak self] done, total in
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else { return }
+                self.loadingProgress = total > 0 ? Double(done) / Double(total) : 0
+                self.loadingStatus = "하위 폴더 스캔 중... (\(done)/\(total))"
+            },
             onBatch: { [weak self] batch in
                 guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
                     fputs("[REC] batch dropped (gen/url mismatch)\n", stderr)
@@ -533,6 +538,10 @@ extension PhotoStore {
         // 목록 갱신만 주기적으로 발행하고, 비싼 정리는 완료 시 한 번만 수행한다.
         invalidateFilterCache()
         rebuildIndex()
+        // v9.1: 재귀 스캔 중에도 매 flush 마다 별점/SP/컬러 복원 — batch 스트리밍 경로에서
+        //   누락돼 사진 모두 rating=0 으로 표시되던 버그 수정. (applySavedRatings 는 폴더별 dict
+        //   를 1회만 읽어 in-memory 캐시 후 photo 루프 → O(n), 5000장 ~5ms.)
+        applySavedRatings()
         if final {
             updateFolderSizeCache()
             pruneStaleSelections()

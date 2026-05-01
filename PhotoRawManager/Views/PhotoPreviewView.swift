@@ -792,16 +792,16 @@ struct PhotoPreviewView: View {
     /// 선택 직후부터 실제 프리뷰 소스의 표시 크기를 고정해야 썸네일 -> 고화질
     /// 단계 전환에서 프리뷰 박스가 흔들리지 않는다.
     /// RAW+JPG 페어는 카메라 색감을 유지하기 위해 JPG를 기본 소스로 쓴다.
-    private func stablePreviewSize(for photo: PhotoItem) -> CGSize? {
-        let sourceURL = PreviewLoadingPolicy.stableSizeURL(for: photo)
-        if sourceURL != photo.jpgURL,
-           let sourceSize = Self.readImageDimensions(url: sourceURL) {
-            return sourceSize
-        }
+    private func stablePreviewSize(for photo: PhotoItem, allowSynchronousRead: Bool = true) -> CGSize? {
         if let w = photo.exifData?.imageWidth, let h = photo.exifData?.imageHeight, w > 0, h > 0 {
             return CGSize(width: w, height: h)
         }
-        return Self.readImageDimensions(url: photo.jpgURL)
+        let sourceURL = PreviewLoadingPolicy.stableSizeURL(for: photo)
+        if sourceURL != photo.jpgURL,
+           let sourceSize = Self.cachedImageDimensions(url: sourceURL) ?? (allowSynchronousRead ? Self.readImageDimensions(url: sourceURL) : nil) {
+            return sourceSize
+        }
+        return Self.cachedImageDimensions(url: photo.jpgURL) ?? (allowSynchronousRead ? Self.readImageDimensions(url: photo.jpgURL) : nil)
     }
 
     private func usesRAWPreviewSource(_ photo: PhotoItem) -> Bool {
@@ -1485,7 +1485,9 @@ struct PhotoPreviewView: View {
             let _t0 = CFAbsoluteTimeGetCurrent()
             defer {
                 let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
-                if ms > 1 { fputs("[PV-ONCHANGE] \(String(format: "%.0f", ms))ms\n", stderr) }
+                if KeyCaptureView.verboseNavigationLog && ms > 1 {
+                    fputs("[PV-ONCHANGE] \(String(format: "%.0f", ms))ms\n", stderr)
+                }
             }
             guard let newID = newID else { return }
             // v8.9.7+: SwiftUI 가 중간 transient 값으로 onChange 를 늦게 firing → stale newID drop.
@@ -1495,7 +1497,9 @@ struct PhotoPreviewView: View {
                 if let current = store.selectedPhotoID {
                     pendingPhotoID = current
                 }
-                fputs("[ONCHANGE-STALE] dropped newID=\(newID.uuidString.prefix(8)) → pendingPhotoID synced to \(store.selectedPhotoID?.uuidString.prefix(8) ?? "nil")\n", stderr)
+                if KeyCaptureView.verboseNavigationLog {
+                    fputs("[ONCHANGE-STALE] dropped newID=\(newID.uuidString.prefix(8)) → pendingPhotoID synced to \(store.selectedPhotoID?.uuidString.prefix(8) ?? "nil")\n", stderr)
+                }
                 return
             }
             let currentGeneration = beginPreviewGeneration(for: newID, reason: "selection")
@@ -1592,7 +1596,7 @@ struct PhotoPreviewView: View {
 
             // v8.6.2: stableImageSize 를 가장 먼저 업데이트 — 이미지 표시 전에 layout aspect 고정
             // RAW+JPG 페어는 RAW 표시 크기를 기준으로 잡아 JPG placeholder 와 RAW preview 전환 깜빡임을 줄인다.
-            viewState.stableImageSize = stablePreviewSize(for: selected)
+            viewState.stableImageSize = stablePreviewSize(for: selected, allowSynchronousRead: !isFastNavigation) ?? viewState.stableImageSize
 
             // Fast path: cache hit → show immediately
             let res = store.previewResolution
@@ -1612,15 +1616,15 @@ struct PhotoPreviewView: View {
                 previewCacheHit = false
             }
 
-            // v8.8.2 fix: 프리뷰 캐시 히트면 고화질 이미지가 이미 표시 중 → 썸네일로 덮어쓰지 않음.
-            //   이전엔 무조건 ThumbnailCache.get → image 에 140px 썸네일 덮어써서
-            //   캐시 100% 완료 상태에서도 네비게이션 시 저화질로 보이던 치명적 버그.
-            if !previewCacheHit, !usesRAWPreviewSource(selected) {
-                // Show thumbnail instantly while full image loads
-                if let thumb = ThumbnailCache.shared.get(url) {
-                    _ = setImageGuarded(thumb, source: "selection.memoryThumb", sourceURL: url)
-                } else {
-                    // v8.9.3 perf: 디스크 I/O + 800px 디코드는 항상 백그라운드 (키 반복 외에도).
+                // v8.8.2 fix: 프리뷰 캐시 히트면 고화질 이미지가 이미 표시 중 → 썸네일로 덮어쓰지 않음.
+                //   이전엔 무조건 ThumbnailCache.get → image 에 140px 썸네일 덮어써서
+                //   캐시 100% 완료 상태에서도 네비게이션 시 저화질로 보이던 치명적 버그.
+                if !previewCacheHit, !usesRAWPreviewSource(selected), !isFastNavigation {
+                    // Show thumbnail instantly while full image loads
+                    if let thumb = ThumbnailCache.shared.get(url) {
+                        _ = setImageGuarded(thumb, source: "selection.memoryThumb", sourceURL: url)
+                    } else {
+                        // v8.9.3 perf: 디스크 I/O + 800px 디코드는 항상 백그라운드 (키 반복 외에도).
                     //   이전엔 단일 이동 시 main 에서 5~15ms (디스크 fetch) + 5~30ms (CGImageSource 800px decode)
                     //   소비 → 화살표 1회 클릭 인터벌 50ms+ 가산. 빠른 이동 중 누적 지연 큼.
                     let targetURL = url
@@ -1668,41 +1672,31 @@ struct PhotoPreviewView: View {
                 // v8.9.7+: 우선순위 (1) hiResCache full → (2) NSCache thumb → (3) DiskThumbnailCache disk.
                 //   pendingPhotoID 재확인 — burst 중 빠르게 변하면 set 시점에 이미 stale 할 수 있음.
                 guard pendingPhotoID == newID else {
-                    fputs("[LD] STALE \(url.lastPathComponent) (newID changed, skip gen=\(currentGeneration))\n", stderr)
+                    if KeyCaptureView.verboseNavigationLog {
+                        fputs("[LD] STALE \(url.lastPathComponent) (newID changed, skip gen=\(currentGeneration))\n", stderr)
+                    }
                     return
                 }
-                let hiResURL = PreviewLoadingPolicy.hiResURL(for: selected)
-                if let hi = Self.hiResCache.object(forKey: hiResURL as NSURL) {
-                    if setImageGuarded(hi, source: "selection.HIT-HIRES-KR", sourceURL: url) {
-                        hiResImage = hi
-                        isHiResLoaded = true
+                let thumb: NSImage? = {
+                    if let mem = ThumbnailCache.shared.get(url) { return mem }
+                    if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
+                        ThumbnailCache.shared.set(url, image: disk)
+                        return disk
                     }
-                    fputs("[SYNC] HIT-HIRES-KR src=\(url.lastPathComponent) ✓\n", stderr)
+                    return nil
+                }()
+                if let thumb {
+                    let thumbMaxDim = max(Int(thumb.size.width), Int(thumb.size.height))
+                    let didSet = setImageGuarded(thumb, source: "selection.HIT-THUMB-KR", sourceURL: url)
+                    if didSet {
+                        lowResImage = thumb
+                        isHiResLoaded = false
+                    }
+                    if KeyCaptureView.verboseNavigationLog {
+                        fputs("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px ✓\n", stderr)
+                    }
                 } else {
-                    let thumb: NSImage? = {
-                        if let mem = ThumbnailCache.shared.get(url) { return mem }
-                        if let disk = DiskThumbnailCache.shared.getByPath(url: url) {
-                            ThumbnailCache.shared.set(url, image: disk)
-                            return disk
-                        }
-                        return nil
-                    }()
-                    if let thumb {
-                        let thumbMaxDim = max(Int(thumb.size.width), Int(thumb.size.height))
-                        if thumbMaxDim >= 800 {
-                            let didSet = setImageGuarded(thumb, source: "selection.HIT-THUMB-KR", sourceURL: url)
-                            // v8.9.7+: 진짜 hi-res (≥3000) 만 hiResCache 저장 + isHiResLoaded=true.
-                            //   1616 은 hi-res 아님 → Stage 2 업그레이드 자동 트리거 가능하도록 두기.
-                            if didSet && thumbMaxDim >= 3000 {
-                                hiResImage = thumb
-                                isHiResLoaded = true
-                                Self.hiResCache.setObject(thumb, forKey: hiResURL as NSURL)
-                            }
-                            fputs("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px \(thumbMaxDim >= 3000 ? "(hi)" : "(low)") ✓\n", stderr)
-                        } else {
-                            fputs("[LD] SKIP-SMALL-THUMB \(url.lastPathComponent) \(thumbMaxDim)px\n", stderr)
-                        }
-                    } else {
+                    if KeyCaptureView.verboseNavigationLog {
                         fputs("[LD] SKIP-MISS \(url.lastPathComponent)\n", stderr)
                     }
                 }
@@ -1767,7 +1761,9 @@ struct PhotoPreviewView: View {
                 let sinceLastNavMs = (CFAbsoluteTimeGetCurrent() - KeyCaptureView.lastNavTime) * 1000
                 // v8.9.7+: idle 가드 200ms → 80ms 로 단축. 키 멈춤 후 hi-res 표시 평균 1s→500ms 목표.
                 if sinceLastNavMs < 80 {
-                    fputs("[HIRES] BLOCKED sinceLastNav=\(Int(sinceLastNavMs))ms < 80ms\n", stderr)
+                    if KeyCaptureView.verboseNavigationLog {
+                        fputs("[HIRES] BLOCKED sinceLastNav=\(Int(sinceLastNavMs))ms < 80ms\n", stderr)
+                    }
                     return
                 }
                 if wasKeyRepeat && self.store.isFastNavigation { return }
@@ -2955,8 +2951,10 @@ struct PhotoPreviewView: View {
         pendingPhotoID = photoID
         lastHiResDisplayMs = nil
         #if DEBUG
-        let fileName = store.photos.first(where: { $0.id == photoID })?.fileName ?? "nil"
-        fputs("[PREVIEW-GEN] \(previewGeneration) \(reason) \(fileName) id=\(photoID.uuidString.prefix(8))\n", stderr)
+        if KeyCaptureView.verboseNavigationLog {
+            let fileName = store.photos.first(where: { $0.id == photoID })?.fileName ?? "nil"
+            fputs("[PREVIEW-GEN] \(previewGeneration) \(reason) \(fileName) id=\(photoID.uuidString.prefix(8))\n", stderr)
+        }
         #endif
         return previewGeneration
     }
@@ -2973,7 +2971,9 @@ struct PhotoPreviewView: View {
         guard generation == previewGeneration,
               pendingPhotoID == photoID,
               store.selectedPhotoID == photoID else {
-            fputs("[PREVIEW-DROP] \(source) src=\(sourceURL.lastPathComponent) gen=\(generation)/\(previewGeneration)\n", stderr)
+            if KeyCaptureView.verboseNavigationLog {
+                fputs("[PREVIEW-DROP] \(source) src=\(sourceURL.lastPathComponent) gen=\(generation)/\(previewGeneration)\n", stderr)
+            }
             return false
         }
         guard let img else {
@@ -3001,7 +3001,9 @@ struct PhotoPreviewView: View {
             sourceURL == $0.rawURL ||
             sourceURL == PreviewLoadingPolicy.hiResURL(for: $0)
         } ?? false
-        fputs("[PREVIEW-CHECK] \(okSource ? "OK" : "MISMATCH") sel=\(selectedName) view=\(sourceURL.lastPathComponent) q=\(quality) gen=\(generation)\n", stderr)
+        if KeyCaptureView.verboseNavigationLog || !okSource {
+            fputs("[PREVIEW-CHECK] \(okSource ? "OK" : "MISMATCH") sel=\(selectedName) view=\(sourceURL.lastPathComponent) q=\(quality) gen=\(generation)\n", stderr)
+        }
         // v8.9.7+: HUD 직접 publish — generation 은 사진 전환 시에만 증가하므로 stage 전환은 onChange 미발화.
         //   여기서 직접 호출해 stage 1 → 2 → 3 변화가 HUD 에 즉시 반영되도록 한다.
         publishDebugHUD(frame: newFrame)
@@ -3067,7 +3069,9 @@ struct PhotoPreviewView: View {
         imageSourceURL = nil
         imagePhotoID = nil
         previewFrame = nil
-        fputs("[IMG-CLEAR] \(source)\n", stderr)
+        if KeyCaptureView.verboseNavigationLog {
+            fputs("[IMG-CLEAR] \(source)\n", stderr)
+        }
     }
 
     /// v8.9.7+: burst 종료 시 현재 selectedPhoto 와 image 의 일치성 재확인.
@@ -3081,7 +3085,9 @@ struct PhotoPreviewView: View {
         let dim = max(Int(thumb.size.width), Int(thumb.size.height))
         guard dim >= 800 else { return }
         _ = setImageGuarded(thumb, source: "BURST-END", sourceURL: url)
-        fputs("[LD] BURST-END \(url.lastPathComponent) \(dim)px (재정렬)\n", stderr)
+        if KeyCaptureView.verboseNavigationLog {
+            fputs("[LD] BURST-END \(url.lastPathComponent) \(dim)px (재정렬)\n", stderr)
+        }
     }
 
     private func switchToLowRes() {
@@ -3258,7 +3264,9 @@ struct PhotoPreviewView: View {
         let work = DispatchWorkItem {
             let sinceLastNav = (CFAbsoluteTimeGetCurrent() - KeyCaptureView.lastNavTime) * 1000
             if sinceLastNav < 150 {
-                fputs("[PREFETCH-KR] DEBOUNCE-SKIP sinceLastNav=\(Int(sinceLastNav))ms\n", stderr)
+                if KeyCaptureView.verboseNavigationLog {
+                    fputs("[PREFETCH-KR] DEBOUNCE-SKIP sinceLastNav=\(Int(sinceLastNav))ms\n", stderr)
+                }
                 return
             }
             prefetchEmbeddedNeighbors(
@@ -3270,6 +3278,7 @@ struct PhotoPreviewView: View {
         prefetchDebounceWork = work
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2, execute: work)
     }
+
     private static func prefetchEmbeddedNeighbors(store: PhotoStore, currentURL: URL, range: Int) {
         let photos = store.filteredPhotos
         // v8.6.2: 방향키 꾹 누르기 중 매 호출마다 O(n) 선형 탐색이면 10k 폴더에서 눈에 띄게 느려짐.
@@ -3407,6 +3416,8 @@ struct PhotoPreviewView: View {
     private func loadHiResForZoom(forceDeepScan: Bool = false) {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
+        // v9.1: 슈퍼 셀렉 모드 — 자동 hi-res 차단. 사용자 명시 줌 (forceDeepScan) 만 통과.
+        if SuperCullMode.isActive && !forceDeepScan { return }
         // v8.9.6: fastCullingMode 가드 제거 — PreviewLoadingPolicy.shouldAutoLoadHiRes
         //   가 항상 true 로 hi-res 를 허용. fastCullingMode 는 hiResDelay 로만 늦춤.
         //   key repeat 중에는 여전히 막아야 (디코드 burst 방지).
@@ -3838,7 +3849,13 @@ struct PhotoPreviewView: View {
     }
     private static var _dimensionCache: [URL: ImageDimensionInfo] = [:]
     private static let _dimensionCacheLock = NSLock()
-    private static let maxDimensionCacheSize = 2000
+    private static let maxDimensionCacheSize = 25000
+    private static func cachedImageDimensions(url: URL) -> CGSize? {
+        _dimensionCacheLock.lock()
+        let cached = _dimensionCache[url]?.size
+        _dimensionCacheLock.unlock()
+        return cached
+    }
     static func readImageDimensionInfo(url: URL) -> ImageDimensionInfo? {
         _dimensionCacheLock.lock()
         if let cached = _dimensionCache[url] {

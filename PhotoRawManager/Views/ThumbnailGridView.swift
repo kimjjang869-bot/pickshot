@@ -266,7 +266,7 @@ struct ThumbnailGridView: View {
             // v8.6.3: 러버밴드 (marquee) 선택 — 빈 영역에서 드래그 시작하면 사각형 그리고 교차 셀 선택
             MarqueeSelectionBackground(
                 coordinateSpaceName: "pickshotGrid",
-                allPhotoIDs: photos.filter { !$0.isFolder && !$0.isParentFolder }.map(\.id),
+                allPhotoIDs: store.nonFolderPhotoIDs,
                 store: store
             )
         )
@@ -2747,7 +2747,9 @@ class ThumbnailLoader {
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
-            AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
+            if KeyCaptureView.verboseNavigationLog {
+                AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
+            }
             completion(cached)
             return
         }
@@ -2809,7 +2811,9 @@ class ThumbnailLoader {
                 ? DiskThumbnailCache.shared.getByPath(url: url)
                 : DiskThumbnailCache.shared.get(url: url, modDate: modDate)
             if let diskCached = diskCached {
-                AppLogger.log(.cache, "disk cache HIT: \(url.lastPathComponent)")
+                if KeyCaptureView.verboseNavigationLog {
+                    AppLogger.log(.cache, "disk cache HIT: \(url.lastPathComponent)")
+                }
                 ThumbnailCache.shared.set(url, image: diskCached)
 
                 self?.lock.lock()

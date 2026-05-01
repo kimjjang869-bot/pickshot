@@ -943,6 +943,14 @@ class PhotoStore: ObservableObject {
     /// v8.9 perf: status bar 렌더 때마다 O(n) 순회를 피하기 위한 파생 캐시.
     var _cachedPhotoCount: Int = 0
     var _cachedSpacePickCount: Int = 0
+    var _cachedRatingCounts: [Int: Int] = [:]
+    var _cachedColorLabelCounts: [ColorLabel: Int] = [:]
+    var _cachedAIPickCount: Int = 0
+    var _cachedSceneTags: [String] = []
+    var _cachedAICategories: [String] = []
+    var _cachedAICategoryCounts: [String: Int] = [:]
+    var _cachedAIUsabilityStats: [String: Int] = [:]
+    var _cachedNonFolderPhotoIDs: [UUID] = []
     var _derivedCountsKey: String = ""
 
     func invalidateCache() {
@@ -965,16 +973,81 @@ class PhotoStore: ObservableObject {
         return _cachedSpacePickCount
     }
 
+    /// 별점별 개수 — toolbar 렌더마다 16K+ photos 를 순회하지 않도록 photosVersion 기준 캐시.
+    func ratingCount(_ rating: Int) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedRatingCounts[rating, default: 0]
+    }
+
+    /// 컬러 라벨별 개수 — toolbar 렌더마다 16K+ photos 를 순회하지 않도록 photosVersion 기준 캐시.
+    func colorLabelCount(_ label: ColorLabel) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedColorLabelCounts[label, default: 0]
+    }
+
+    var aiPickCount: Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedAIPickCount
+    }
+
+    func aiCategoryCount(_ category: String) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedAICategoryCounts[category, default: 0]
+    }
+
+    var nonFolderPhotoIDs: [UUID] {
+        refreshDerivedCountsIfNeeded()
+        return _cachedNonFolderPhotoIDs
+    }
+
     private func refreshDerivedCountsIfNeeded() {
         let key = "\(photosVersion)"
         if _derivedCountsKey == key { return }
         var pc = 0, sp = 0
+        var aiPickCount = 0
+        var ratingCounts: [Int: Int] = [:]
+        var colorCounts: [ColorLabel: Int] = [:]
+        var sceneTags = Set<String>()
+        var aiCategories = Set<String>()
+        var aiCategoryCounts: [String: Int] = [:]
+        var aiUsabilityStats: [String: Int] = [:]
+        var nonFolderPhotoIDs: [UUID] = []
         for p in photos {
-            if !p.isFolder && !p.isParentFolder { pc += 1 }
+            if !p.isFolder && !p.isParentFolder {
+                pc += 1
+                nonFolderPhotoIDs.append(p.id)
+                if p.isAIPick {
+                    aiPickCount += 1
+                }
+                if p.rating > 0 {
+                    ratingCounts[p.rating, default: 0] += 1
+                }
+                if p.colorLabel != .none {
+                    colorCounts[p.colorLabel, default: 0] += 1
+                }
+                if let sceneTag = p.sceneTag {
+                    sceneTags.insert(sceneTag)
+                }
+                if let aiCategory = p.aiCategory {
+                    aiCategories.insert(aiCategory)
+                    aiCategoryCounts[aiCategory, default: 0] += 1
+                }
+                if let usability = p.aiUsability {
+                    aiUsabilityStats[usability, default: 0] += 1
+                }
+            }
             if p.isSpacePicked { sp += 1 }
         }
         _cachedPhotoCount = pc
         _cachedSpacePickCount = sp
+        _cachedRatingCounts = ratingCounts
+        _cachedColorLabelCounts = colorCounts
+        _cachedAIPickCount = aiPickCount
+        _cachedSceneTags = sceneTags.sorted()
+        _cachedAICategories = aiCategories.sorted()
+        _cachedAICategoryCounts = aiCategoryCounts
+        _cachedAIUsabilityStats = aiUsabilityStats
+        _cachedNonFolderPhotoIDs = nonFolderPhotoIDs
         _derivedCountsKey = key
     }
 
@@ -1311,8 +1384,8 @@ class PhotoStore: ObservableObject {
 
     /// All unique scene tags currently assigned
     var availableSceneTags: [String] {
-        let tags = Set(photos.compactMap { $0.sceneTag })
-        return tags.sorted()
+        refreshDerivedCountsIfNeeded()
+        return _cachedSceneTags
     }
 
     /// All unique keywords currently assigned across all photos
@@ -1507,19 +1580,14 @@ class PhotoStore: ObservableObject {
 
     /// AI 분류 결과로 폴더 정리 — 카테고리별 하위 폴더 생성 + 파일 이동
     var availableAICategories: [String] {
-        let categories = Set(photos.compactMap { $0.aiCategory })
-        return Array(categories).sorted()
+        refreshDerivedCountsIfNeeded()
+        return _cachedAICategories
     }
 
     /// AI usability statistics
     var aiUsabilityStats: [String: Int] {
-        var stats: [String: Int] = [:]
-        for photo in photos {
-            if let usability = photo.aiUsability {
-                stats[usability, default: 0] += 1
-            }
-        }
-        return stats
+        refreshDerivedCountsIfNeeded()
+        return _cachedAIUsabilityStats
     }
 
     // MARK: - Batch Rename

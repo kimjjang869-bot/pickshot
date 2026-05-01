@@ -21,6 +21,7 @@ struct PerformanceOptimizeTab: View {
     @State private var applied = false
     @State private var selectedProfile: String = ""
 
+    @AppStorage("superCullModeActive") private var superCullActive: Bool = false
     @AppStorage("previewMaxResolution") private var previewMaxResolution = "1000"  // v8.6.2 기본값 통일
     @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
@@ -37,6 +38,25 @@ struct PerformanceOptimizeTab: View {
                 }
 
                 Divider()
+
+                // 슈퍼 셀렉 모드 (테스트) — Stage 3 hi-res 자동 디코드 차단
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $superCullActive) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "bolt.shield.fill")
+                                    .foregroundColor(superCullActive ? .orange : .secondary)
+                                Text("슈퍼 셀렉 모드")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                        }
+                        .toggleStyle(.switch)
+                        Text("Stage 3 자동 hi-res 디코드를 차단합니다. 썸네일/미리보기 응답성이 최우선이며, 줌·100% 보기는 정상 동작합니다.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(4)
+                }
 
                 // 시스템 정보
                 GroupBox("시스템 정보") {

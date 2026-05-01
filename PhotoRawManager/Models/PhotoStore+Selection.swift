@@ -141,7 +141,7 @@ extension PhotoStore {
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
         let t3 = CFAbsoluteTimeGetCurrent()
         let totalMs = (t3 - t0) * 1000
-        if totalMs > 5 {
+        if UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") && totalMs > 5 {
             fputs("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n", stderr)
         }
     }
@@ -231,9 +231,11 @@ extension PhotoStore {
         }
 
         #if DEBUG
-        let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
-        let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
-        fputs("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n", stderr)
+        if measuring || UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") {
+            let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
+            let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
+            fputs("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n", stderr)
+        }
         #endif
         selectedPhotoID = result.focusedID
         // v8.9.7+: 진짜 병목은 TouchBarProvider 의 매-nav RAW 디코드였음. scrollTrigger 증가는

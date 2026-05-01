@@ -460,7 +460,7 @@ extension ContentView {
     // MARK: - Quality Filter Menu
 
     var qualityFilterMenu: some View {
-        let aiCount = store.photos.filter { $0.isAIPick }.count
+        let aiCount = store.aiPickCount
 
         let groups = store.availableFaceGroups
         let hasGroups = !groups.isEmpty
@@ -936,7 +936,7 @@ extension ContentView {
                     // Category filters
                     Section("📂 카테고리") {
                         ForEach(categories, id: \.self) { cat in
-                            let count = store.photos.filter { $0.aiCategory == cat }.count
+                            let count = store.aiCategoryCount(cat)
                             let icon = aiCategoryIcon(cat)
                             Button(action: { store.aiCategoryFilter = cat }) {
                                 Label("\(icon) \(cat) (\(count)장)",
@@ -1137,7 +1137,7 @@ extension ContentView {
                 let isExactlyActive = activeRatings.contains(rating)
                 // 누적 칠하기: 단일 선택 모드일 때 rating <= cumulativeMax 면 fill
                 let shouldFill = isMulti ? isExactlyActive : (rating <= cumulativeMax)
-                let count = store.photos.filter { $0.rating == rating && !$0.isFolder && !$0.isParentFolder }.count
+                let count = store.ratingCount(rating)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)
@@ -1191,9 +1191,7 @@ extension ContentView {
         return HStack(spacing: 3) {
             ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
                 let isActive = activeLabels.contains(label)
-                let count = store.photos.filter {
-                    $0.colorLabel == label && !$0.isFolder && !$0.isParentFolder
-                }.count
+                let count = store.colorLabelCount(label)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)

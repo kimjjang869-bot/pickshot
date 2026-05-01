@@ -160,36 +160,60 @@ extension PhotoStore {
         guard let folderPath = folderURL?.path else { return }
 
         // 1) 메인 스레드에서 스냅샷 (photos는 @Published이므로 메인에서만 읽기)
-        var ratings: [String: Int] = [:]
-        var spPicks: [String: Bool] = [:]
-        var colorLabels: [String: String] = [:]
-        // v8.6.1: SP 상태도 XMP 에 반영 (이전엔 spacePicked: false 하드코딩으로 XMP 에 안 나감)
+        // v9.1: 하위폴더 모드에서 별점/SP/컬러를 각 사진의 *실제 소속 폴더* 별로 그룹화하여
+        //   저장한다. 이전엔 모두 `folderURL.path` (= 부모 root) 한 곳에 저장되어, 사용자가
+        //   서브폴더를 직접 열면 ratings 가 모두 사라지는 버그가 있었음.
+        struct FolderGroup {
+            var ratings: [String: Int] = [:]
+            var spPicks: [String: Bool] = [:]
+            var colorLabels: [String: String] = [:]
+        }
+        var groups: [String: FolderGroup] = [:]
+        // 현재 열린 root 도 빈 그룹으로 시드 — 별점이 모두 지워졌을 때도 빈 dict 로 덮어써야 함.
+        groups[folderPath] = FolderGroup()
+
         var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel, sp: Bool)] = []
         xmpSnapshot.reserveCapacity(photos.count)
         for photo in photos {
-            if photo.rating > 0 { ratings[photo.fileName] = photo.rating }
-            if photo.isSpacePicked { spPicks[photo.fileName] = true }
-            if photo.colorLabel != .none { colorLabels[photo.fileName] = photo.colorLabel.rawValue }
+            if photo.isFolder || photo.isParentFolder { continue }
+            let containingFolder = photo.jpgURL.deletingLastPathComponent().path
+            if groups[containingFolder] == nil { groups[containingFolder] = FolderGroup() }
+            if photo.rating > 0 { groups[containingFolder]!.ratings[photo.fileName] = photo.rating }
+            if photo.isSpacePicked { groups[containingFolder]!.spPicks[photo.fileName] = true }
+            if photo.colorLabel != .none {
+                groups[containingFolder]!.colorLabels[photo.fileName] = photo.colorLabel.rawValue
+            }
             if photo.rating > 0 || photo.colorLabel != .none || photo.isSpacePicked {
                 xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel, photo.isSpacePicked))
             }
         }
 
+        // 하위 호환: 전역 ratingsKey 에는 root 그룹의 ratings 만 (단일 폴더 시 기존 동작 보존)
+        let rootRatings = groups[folderPath]?.ratings ?? [:]
+
         // 2) UserDefaults + XMP 쓰기는 유틸 큐에서 (메인 스레드 블록 해제)
+        let groupsCopy = groups
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
             let d = self.defaults
 
-            // 전역 (하위 호환)
-            d.set(ratings, forKey: self.ratingsKey)
+            // 전역 (하위 호환) — 단일 폴더 모드의 root ratings 만
+            d.set(rootRatings, forKey: self.ratingsKey)
 
-            // 폴더별 SP + 컬러라벨
+            // 폴더별 SP + 컬러라벨 — 각 실제 소속 폴더 키로 저장
             var allSP = d.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
             var allColors = d.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
-            allSP[folderPath] = spPicks
-            allColors[folderPath] = colorLabels
+            // v9.1: 폴더별 ratings 도 저장 (이전엔 전역 ratingsKey 에만)
+            var allRatings = d.dictionary(forKey: "folderRatings") as? [String: [String: Int]] ?? [:]
+
+            for (path, g) in groupsCopy {
+                allSP[path] = g.spPicks
+                allColors[path] = g.colorLabels
+                allRatings[path] = g.ratings
+            }
             d.set(allSP, forKey: "folderSpacePicks")
             d.set(allColors, forKey: "folderColorLabels")
+            d.set(allRatings, forKey: "folderRatings")
 
             // XMP 사이드카
             for item in xmpSnapshot {
@@ -198,25 +222,30 @@ extension PhotoStore {
             }
 
             // v8.9.7+: 폴더에 직접 JSON 백업 — UserDefaults 손상/마이그레이션 대비 2중 백업.
-            //   .pickshot_selection.json 으로 폴더 안에 저장. 셀렉 변경 시마다 갱신.
-            let backupURL = URL(fileURLWithPath: folderPath).appendingPathComponent(".pickshot_selection.json")
-            let payload: [String: Any] = [
-                "version": 1,
-                "savedAt": ISO8601DateFormatter().string(from: Date()),
-                "folder": folderPath,
-                "ratings": ratings,
-                "spPicks": spPicks,
-                "colorLabels": colorLabels
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: backupURL, options: .atomic)
-                // Finder/iCloud 백업 제외 + macOS 자동 정리 대상
-                var url = backupURL
-                var rv = URLResourceValues()
-                rv.isExcludedFromBackup = true
-                try? url.setResourceValues(rv)
-                fputs("[BACKUP] selection saved \(ratings.count) ratings, \(spPicks.count) SP, \(colorLabels.count) colors → \(backupURL.lastPathComponent)\n", stderr)
+            //   v9.1: 각 실제 소속 폴더별로 백업 파일 작성.
+            let fmt = ISO8601DateFormatter()
+            for (path, g) in groupsCopy {
+                let backupURL = URL(fileURLWithPath: path).appendingPathComponent(".pickshot_selection.json")
+                // 빈 그룹 + 기존 백업 없는 경우는 스킵 (불필요한 빈 파일 양산 방지)
+                if g.ratings.isEmpty && g.spPicks.isEmpty && g.colorLabels.isEmpty
+                    && !FileManager.default.fileExists(atPath: backupURL.path) { continue }
+                let payload: [String: Any] = [
+                    "version": 1,
+                    "savedAt": fmt.string(from: Date()),
+                    "folder": path,
+                    "ratings": g.ratings,
+                    "spPicks": g.spPicks,
+                    "colorLabels": g.colorLabels
+                ]
+                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                    try? data.write(to: backupURL, options: .atomic)
+                    var url = backupURL
+                    var rv = URLResourceValues()
+                    rv.isExcludedFromBackup = true
+                    try? url.setResourceValues(rv)
+                }
             }
+            fputs("[BACKUP] selection saved across \(groupsCopy.count) folder(s)\n", stderr)
         }
     }
 
@@ -236,8 +265,13 @@ extension PhotoStore {
     }
 
     func applySavedRatings() {
-        var savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
         let folderPath = folderURL?.path ?? ""
+        // v9.1: 폴더별 ratings 우선, 없으면 전역 ratingsKey (단일 폴더 하위 호환)
+        let allRatings = defaults.dictionary(forKey: "folderRatings") as? [String: [String: Int]]
+        var savedRatings = allRatings?[folderPath]
+        if savedRatings == nil || savedRatings!.isEmpty {
+            savedRatings = defaults.dictionary(forKey: ratingsKey) as? [String: Int]
+        }
         let allSP = defaults.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]]
         let allColors = defaults.dictionary(forKey: "folderColorLabels") as? [String: [String: String]]
         var savedSP = allSP?[folderPath]
@@ -257,24 +291,73 @@ extension PhotoStore {
 
         var restoredSP = 0
         var restoredRating = 0
+        // v9.1: 하위폴더 모드에서는 각 사진의 *실제 소속 폴더* 별 dict 도 룩업.
+        //   root 키 dict (위에서 로드한 savedRatings/SP/Colors) 는 root 직속 사진만 커버.
+        //   퍼포먼스: 폴더별 JSON 백업은 1회만 일괄 읽기 (이전엔 photo 마다 disk read → 수천 장 = 수초 hang).
+        let needsPerFolderLookup = isRecursiveMode
+        struct FolderCache {
+            var ratings: [String: Int] = [:]
+            var sp: [String: Bool] = [:]
+            var colors: [String: String] = [:]
+        }
+        var perFolderCache: [String: FolderCache] = [:]
+        if needsPerFolderLookup {
+            // 1) 등장하는 소속 폴더 수집 (중복 제거)
+            var folderSet = Set<String>()
+            for p in photos where !p.isFolder && !p.isParentFolder {
+                let f = p.jpgURL.deletingLastPathComponent().path
+                if f != folderPath { folderSet.insert(f) }
+            }
+            // 2) 각 폴더에 대해 UserDefaults 결과 + JSON 백업 1회 로드
+            for f in folderSet {
+                var fc = FolderCache()
+                fc.ratings = allRatings?[f] ?? [:]
+                fc.sp = allSP?[f] ?? [:]
+                fc.colors = allColors?[f] ?? [:]
+                if fc.ratings.isEmpty && fc.sp.isEmpty && fc.colors.isEmpty {
+                    let bu = URL(fileURLWithPath: f).appendingPathComponent(".pickshot_selection.json")
+                    if let data = try? Data(contentsOf: bu),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        fc.ratings = (json["ratings"] as? [String: Int]) ?? [:]
+                        fc.sp = (json["spPicks"] as? [String: Bool]) ?? [:]
+                        fc.colors = (json["colorLabels"] as? [String: String]) ?? [:]
+                    }
+                }
+                perFolderCache[f] = fc
+            }
+            fputs("[RESTORE] 폴더별 백업 \(perFolderCache.count)개 일괄 로드\n", stderr)
+        }
+
         for i in 0..<photos.count {
             let fileName = photos[i].fileName
+            let containingFolder = photos[i].jpgURL.deletingLastPathComponent().path
 
-            // 저장된 별점
-            if let saved = savedRatings?[fileName] {
-                photos[i].rating = saved
+            // 폴더별 dict 우선 조회 (재귀 모드)
+            var rating: Int? = nil
+            var sp: Bool = false
+            var colorStr: String? = nil
+            if needsPerFolderLookup, containingFolder != folderPath, let fc = perFolderCache[containingFolder] {
+                rating = fc.ratings[fileName]
+                sp = fc.sp[fileName] ?? false
+                colorStr = fc.colors[fileName]
+            }
+            // root 폴더 dict (기존 경로)
+            if rating == nil { rating = savedRatings?[fileName] }
+            if !sp { sp = savedSP?[fileName] == true }
+            if colorStr == nil { colorStr = savedColors?[fileName] }
+
+            if let r = rating, r > 0 {
+                photos[i].rating = r
                 restoredRating += 1
             }
-            // 저장된 SP 셀렉
-            if savedSP?[fileName] == true {
+            if sp {
                 photos[i].isSpacePicked = true
                 restoredSP += 1
             }
-            // 저장된 컬러라벨 (하위 호환: "주황" → .red)
-            if let colorStr = savedColors?[fileName] {
-                if let color = ColorLabel(rawValue: colorStr) {
+            if let cs = colorStr {
+                if let color = ColorLabel(rawValue: cs) {
                     photos[i].colorLabel = color
-                } else if colorStr == "주황" {
+                } else if cs == "주황" {
                     photos[i].colorLabel = .red
                 }
             }

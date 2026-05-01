@@ -904,6 +904,16 @@ class KeyCaptureView: NSView {
     /// v8.9.7: 키 리피트 시 실제 이동 간격(ms) 측정용.
     static var lastNavTime: CFAbsoluteTime = 0
     static var navIntervalSamples: [Double] = []
+    /// 빠른 탐색 중 기본 이동 간격. 16K+ 하위폴더 포함 폴더에서도 FRV처럼 즉시성이 살아야 해서
+    /// 기존 30ms(≈33fps)에서 16ms(≈60fps)로 낮춘다. 디코드/프리패치는 별도 throttle 로 보호한다.
+    static let burstMoveMinInterval: CFAbsoluteTime = 0.016
+    static var verboseNavigationLog: Bool {
+        UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog")
+    }
+    static var navSpeedLog: Bool {
+        UserDefaults.standard.bool(forKey: "pickshotNavSpeedLog")
+    }
+
     var store: PhotoStore? {
         didSet { touchBarProvider.store = store }
     }
@@ -1375,13 +1385,11 @@ class KeyCaptureView: NSView {
                 // 새 방향 바뀐 지 100ms 안 됐는데 다른 방향의 repeat → drop
                 return
             }
-            // v8.6.2: 행 이동 (↑/↓) 최소 간격 강제.
-            //   한 번 점프에 ±cols 장 (보통 6~10장) 씩 건너뛰어 preview 로드가 따라오지 못함.
-            // v8.9.7: 열 이동 (←/→) 도 30ms 강제 — 너무 빨라서 (60-70ms 간격) PREFETCH-KR 가
-            //   serial 로 못 따라가고 캐시 hit 이 떨어지는 문제. ARW 썸네일 추출 ~50ms × 직렬 →
-            //   nav 가 30ms 보다 빠르면 영원히 따라잡지 못함.
+            // 행/열 이동 최소 간격 강제.
+            // v9.1: 사용자가 느끼는 버스트 즉시성을 위해 30ms → 20ms. 프리뷰/hi-res는
+            //   key-repeat 중 지연되고, 현재 셀 썸네일만 즉시 보여주는 구조라 50fps 목표가 가능하다.
             if event.isARepeat {
-                let minInterval: CFAbsoluteTime = 0.03  // 30ms (≈33 fps)
+                let minInterval = Self.burstMoveMinInterval
                 if now - Self.lastRowMoveTime < minInterval {
                     return  // drop 이 repeat — 너무 빠름
                 }
@@ -1398,7 +1406,8 @@ class KeyCaptureView: NSView {
         let arrowSet: Set<UInt16> = [123, 124, 125, 126]
         if arrowSet.contains(keyCode) {
             let now = CFAbsoluteTimeGetCurrent()
-            if event.isARepeat && Self.lastNavTime > 0 {
+            let shouldSampleNav = event.isARepeat || Self.navSpeedLog
+            if shouldSampleNav && Self.lastNavTime > 0 {
                 let deltaMs = (now - Self.lastNavTime) * 1000
                 Self.navIntervalSamples.append(deltaMs)
                 let arrow: String = {
@@ -1408,16 +1417,18 @@ class KeyCaptureView: NSView {
                     default: return "?"
                     }
                 }()
-                fputs("[NAV] \(arrow) \(String(format: "%.0f", deltaMs))ms (sample #\(Self.navIntervalSamples.count))\n", stderr)
+                if Self.verboseNavigationLog || Self.navSpeedLog {
+                    fputs("[NAV] \(arrow) \(String(format: "%.0f", deltaMs))ms (sample #\(Self.navIntervalSamples.count))\n", stderr)
+                }
                 // 매 20개마다 요약: avg / min / max / p50 / p90
-                if Self.navIntervalSamples.count % 20 == 0 {
+                if (Self.verboseNavigationLog || Self.navSpeedLog) && Self.navIntervalSamples.count % 20 == 0 {
                     let s = Self.navIntervalSamples.suffix(20).sorted()
                     let avg = s.reduce(0,+) / Double(s.count)
                     let p50 = s[s.count/2]
                     let p90 = s[Int(Double(s.count) * 0.9)]
                     fputs("[NAV-SUMMARY] last 20: avg=\(String(format: "%.0f", avg))ms min=\(String(format: "%.0f", s.first ?? 0))ms p50=\(String(format: "%.0f", p50))ms p90=\(String(format: "%.0f", p90))ms max=\(String(format: "%.0f", s.last ?? 0))ms\n", stderr)
                 }
-            } else if !event.isARepeat {
+            } else if !event.isARepeat && !Self.navSpeedLog {
                 // 새 burst 시작 → 샘플 리셋
                 Self.navIntervalSamples.removeAll()
             }
@@ -1429,7 +1440,9 @@ class KeyCaptureView: NSView {
         defer {
             if arrowSet.contains(keyCode) {
                 let kdMs = (CFAbsoluteTimeGetCurrent() - _kdT0) * 1000
-                if kdMs > 5 { fputs("[KEYDOWN-SYNC] \(String(format: "%.0f", kdMs))ms key=\(keyCode)\n", stderr) }
+                if Self.verboseNavigationLog && kdMs > 5 {
+                    fputs("[KEYDOWN-SYNC] \(String(format: "%.0f", kdMs))ms key=\(keyCode)\n", stderr)
+                }
             }
         }
         switch keyCode {
