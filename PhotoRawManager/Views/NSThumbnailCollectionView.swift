@@ -6,6 +6,9 @@ import AppKit
 struct NSThumbnailCollectionView: NSViewRepresentable {
     /// v8.9.4: 가장 최근에 만들어진 Coordinator 참조 — CacheSweeper 가 isScrollingNow 폴링용
     static weak var activeCoordinator: Coordinator?
+    /// v9.1.3: 방향 prefetch throttle 상태
+    static var lastPrefetchAt: CFAbsoluteTime = 0
+    static var lastPrefetchDirection: Int = 0
     @EnvironmentObject var store: PhotoStore
 
     func makeCoordinator() -> Coordinator {
@@ -246,6 +249,10 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         let oldFocusedID = coordinator.lastSyncedFocusedID
         coordinator.lastSyncedSelection = storeSelection
         coordinator.lastSyncedFocusedID = focusedID
+
+        // v9.1.3 회귀: 방향 prefetch 제거 — ThumbnailLoader 큐를 점유해서
+        //   풀스크린 PhotoPreviewView 의 hi-res 로드가 양보 못받는 문제 발생.
+        //   기존 syncViewportToLoader (스크롤 이벤트 기반) 만 사용.
 
         let visiblePaths = collectionView.indexPathsForVisibleItems()
         let pathsToRefresh: Set<IndexPath>

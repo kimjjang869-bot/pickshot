@@ -3399,9 +3399,22 @@ struct AsyncThumbnailView: View {
             return
         }
 
-        // v9.1.3: 디코드 SKIP 제거 — 사용자가 빈 칸 보다 느린 갱신을 더 싫어함.
-        //   백그라운드 큐 + semaphore(4) 가 이미 I/O throttle 함. SKIP 은 main thread 보호엔
-        //   불필요. 캐시 미스 시 그냥 백그라운드 디코드 발사.
+        // v9.1.2: 키 이동 burst OR 빠른 스크롤 (필름스트립 마우스휠) 중엔 디코드 SKIP.
+        //   - PhotoStore.navigationBusy: 키 이동 중
+        //   - Self.detectRapidScroll(): 200ms 내 8셀 이상 onAppear → scroll 중으로 판정
+        //   nav/scroll 끝나면 자동 재시도 (캐시 hit 가능성 높음).
+        //   v9.1.3 회귀: 풀스크린 burst 시 못따라가는 문제로 SKIP 로직 복원.
+        if PhotoStore.navigationBusy || Self.detectRapidScroll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                guard self.loadedURL == currentURL, self.image == nil else { return }
+                if !PhotoStore.navigationBusy && !Self.isRapidScrollActive() {
+                    self.loadThumbnail()
+                } else {
+                    self.retryCount += 1
+                }
+            }
+            return
+        }
 
         // 3~4. 임베디드 + 생성 — 백그라운드 (semaphore 로 동시성 4개 제한 → I/O 스파이크 방지)
         Self.thumbConcurrentQueue.async {

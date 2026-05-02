@@ -115,6 +115,10 @@ struct FilmstripView: View {
     /// 휠 누적 (정밀 트랙패드용 — 작은 delta 가 누적되어 셀 1개 이동 트리거).
     private static var scrollAccum: CGFloat = 0
 
+    /// v9.1.3: 방향 prefetch throttle 상태
+    private static var lastFilmstripPrefetchAt: CFAbsoluteTime = 0
+    private static var lastFilmstripPrefetchDir: Int = 0
+
     /// NSClipView 의 postsBoundsChangedNotifications 활성화 (재귀).
     private static func enableBoundsObserving(in view: NSView?) {
         guard let view = view else { return }
@@ -195,6 +199,9 @@ struct FilmstripView: View {
                     setupVerticalToHorizontalScroll()
                     dragMonitor.install(store: store)
                 }
+                // v9.1.3 회귀: 필름스트립 방향 prefetch 제거 — ThumbnailLoader 큐 점유로
+                //   풀스크린 hi-res 로드가 못 따라가는 문제 발생.
+                //   AsyncThumbnailView 가 onAppear 시 자체 디코드 발사 — 그것에 맡김.
                 .onDisappear {
                     if let monitor = scrollMonitor {
                         NSEvent.removeMonitor(monitor)
