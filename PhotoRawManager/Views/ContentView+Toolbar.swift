@@ -45,17 +45,8 @@ extension ContentView {
                         }
                         .buttonStyle(.plain)
                     }
-                    // v8.9.7+: 캐시 진행률 게이지 제거 — 미리보기 토글로 통합 표시.
-                    // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
-                    AggressiveCacheToggle(store: store)
-                    // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
-                    FastCullingToggle(store: store)
-                    // v9.0: 초기 미리보기 토글 일시 비활성화 (응답없음 발생 — Phase 3 RAW 디코드 큐 backpressure 문제).
-                    //   Debug 에서만 노출해 추후 fix 후 v9.1+ 에서 다시 활성화.
-                    #if DEBUG
-                    InitialPreviewToggle()
-                        .fixedSize(horizontal: true, vertical: true)
-                    #endif
+                    // v9.1: 4개 토글 → 1개 segmented picker (표준 / 빠른 셀렉 / 사전 생성)
+                    PerformanceProfilePicker(store: store)
                     // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
                     activeFilterBadge
                 }

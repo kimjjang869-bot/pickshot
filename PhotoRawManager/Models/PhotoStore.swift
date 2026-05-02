@@ -331,6 +331,71 @@ class PhotoStore: ObservableObject {
         }
     }
 
+    // MARK: - v9.1 성능 프로파일 (단일 소스, 4개 토글 통합)
+    //   기존 fastCullingMode / aggressiveCache / SuperCullMode / autoInitialPreview 를
+    //   하나의 enum 으로 묶어 사용자가 명확히 선택. 호환성: didSet 이 기존 플래그를 동기화.
+
+    enum PerformanceProfile: String, CaseIterable, Identifiable {
+        case standard      // 표준 — 모두 기본 동작
+        case fastCull      // 빠른 셀렉 — Stage 3 차단, AI/Stage2 prefetch OFF (셀렉 작업용)
+        case prewarm       // 사전 생성 — 폴더 진입 즉시 병렬 prewarm (작은 폴더, 즉답)
+
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .standard: return "표준"
+            case .fastCull: return "빠른 셀렉"
+            case .prewarm:  return "사전 생성"
+            }
+        }
+        var iconName: String {
+            switch self {
+            case .standard: return "tortoise"
+            case .fastCull: return "hare.fill"
+            case .prewarm:  return "bolt.fill"
+            }
+        }
+        var helpText: String {
+            switch self {
+            case .standard: return "표준 — Stage 3 까지 자동 승격, AI 분석/풀 미리보기 모두 동작"
+            case .fastCull: return "빠른 셀렉 — Stage 3 차단, AI/Stage 2 prefetch OFF (FRV 식, 셀렉 최우선)"
+            case .prewarm:  return "사전 생성 — 폴더 진입 즉시 병렬 prewarm (Pro, 5000장 이상 자동 OFF)"
+            }
+        }
+    }
+
+    @Published var performanceProfile: PerformanceProfile = {
+        let raw = UserDefaults.standard.string(forKey: "performanceProfile") ?? ""
+        if let p = PerformanceProfile(rawValue: raw) { return p }
+        // 마이그레이션: 기존 키 조합 → 가장 가까운 프로파일 추론
+        let aggressive = UserDefaults.standard.bool(forKey: "aggressiveCachePreload")
+        let fastCull = UserDefaults.standard.bool(forKey: "fastCullingMode")
+        let superCull = UserDefaults.standard.bool(forKey: "superCullModeActive")
+        if aggressive { return .prewarm }
+        if fastCull || superCull { return .fastCull }
+        return .standard
+    }() {
+        didSet {
+            UserDefaults.standard.set(performanceProfile.rawValue, forKey: "performanceProfile")
+            applyPerformanceProfile()
+        }
+    }
+
+    /// 프로파일 → 하위 플래그 동기화. didSet 에서 호출되며, init 후 1회 동기화하려면 별도 호출.
+    /// v9.1.1: autoInitialPreview 자동 ON 제거 — 앱 재시작 시 phase3 무한 발사 hang 원인.
+    ///   사전 생성 발사는 picker 옆 ▶︎ 버튼 명시 클릭 시에만.
+    func applyPerformanceProfile() {
+        let p = performanceProfile
+        let newFastCulling = (p == .fastCull)
+        let newAggressive  = (p == .prewarm)
+        let newSuperCull   = (p == .fastCull)
+        if fastCullingMode != newFastCulling { fastCullingMode = newFastCulling }
+        if aggressiveCache != newAggressive  { aggressiveCache = newAggressive }
+        UserDefaults.standard.set(newSuperCull, forKey: "superCullModeActive")
+        // autoInitialPreview 는 더 이상 프로파일이 직접 켜지 않음 — 안전상 항상 false 로 유지.
+        UserDefaults.standard.set(false, forKey: "autoInitialPreview")
+    }
+
     // v8.9.4: 하위폴더 포함 열기 — generation 토큰 + 진행 중 플래그.
     //   generation 은 새 recursive scan 시작마다 +1 → 옛 onBatch callback 폐기.
     //   isRecursiveScanInProgress 는 sweep/preload/exif 작업 차단용.

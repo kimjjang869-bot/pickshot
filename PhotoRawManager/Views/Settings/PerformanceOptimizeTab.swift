@@ -10,6 +10,7 @@ import Metal
 import CryptoKit
 
 struct PerformanceOptimizeTab: View {
+    @EnvironmentObject var store: PhotoStore
     @State private var isBenchmarking = false
     @State private var benchmarkDone = false
     @State private var cpuLabel: String = "—"
@@ -39,19 +40,11 @@ struct PerformanceOptimizeTab: View {
 
                 Divider()
 
-                // 슈퍼 셀렉 모드 (테스트) — Stage 3 hi-res 자동 디코드 차단
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle(isOn: $superCullActive) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "bolt.shield.fill")
-                                    .foregroundColor(superCullActive ? .orange : .secondary)
-                                Text("슈퍼 셀렉 모드")
-                                    .font(.system(size: 13, weight: .semibold))
-                            }
-                        }
-                        .toggleStyle(.switch)
-                        Text("Stage 3 자동 hi-res 디코드를 차단합니다. 썸네일/미리보기 응답성이 최우선이며, 줌·100% 보기는 정상 동작합니다.")
+                // v9.1: 성능 프로파일 (4개 토글 통합) — 툴바와 동기화
+                GroupBox("성능 프로파일") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PerformanceProfilePicker(store: store)
+                        Text(store.performanceProfile.helpText)
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

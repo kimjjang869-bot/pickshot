@@ -154,6 +154,13 @@ enum PreviewPipeline {
             return
         }
 
+        // v9.1: Stage 2 가 Stage 1 과 동일 결과를 반환하는 RAW (임베디드 max 도달) URL 캐시.
+        //   같은 폴더 재진입 시 매번 무용한 디코드 + onDisplayImage 재발사 (~100ms STALL) 누적 방지.
+        if Self.noStage2Upgrade.contains(context.url) {
+            PreviewImageCache.shared.set(context.cacheKey, image: fast)
+            return
+        }
+
         guard stagePlan.needsStage2,
               let hr = PreviewImageCache.loadOptimized(url: context.decodeURL, maxPixel: stagePlan.finalMaxPixel) else {
             PreviewImageCache.shared.set(context.cacheKey, image: fast)
@@ -166,6 +173,17 @@ enum PreviewPipeline {
             url: context.url,
             stage1Portrait: fast.size.height > fast.size.width
         )
+
+        // Stage 2 결과가 Stage 1 과 사실상 동일하면 (임베디드 max) → URL 마킹 + onDisplayImage 스킵 (재렌더 STALL 회피).
+        let s1Max = max(fast.size.width, fast.size.height)
+        let s2Max = max(finalHR.size.width, finalHR.size.height)
+        if s2Max <= s1Max * 1.05 {
+            Self.noStage2Upgrade.insert(context.url)
+            fputs("[LD] RAW-S2 NO-UPGRADE \(context.fileName) (\(Int(s2Max))px ≤ S1 \(Int(s1Max))px) — 재발사 차단\n", stderr)
+            PreviewImageCache.shared.set(context.cacheKey, image: fast)
+            return
+        }
+
         fputs("[LD] RAW-S2 \(context.fileName) loaded=\(Int(hr.size.width))x\(Int(hr.size.height)) → \(Int(finalHR.size.width))x\(Int(finalHR.size.height)) stage2Px=\(Int(stagePlan.finalMaxPixel))\n", stderr)
         PreviewImageCache.shared.set(context.cacheKey, image: finalHR)
         DispatchQueue.main.async {
@@ -173,4 +191,8 @@ enum PreviewPipeline {
             context.onDisplayImage(finalHR)
         }
     }
+
+    /// v9.1: Stage 2 가 Stage 1 과 동일 크기를 반환하는 RAW URL 추적.
+    ///   thread-safe: PreviewImageCache 처럼 단순 Set 사용 — race 시 중복 insert 만 발생 (영향 없음).
+    private static var noStage2Upgrade = Set<URL>()
 }

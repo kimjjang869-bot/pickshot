@@ -125,6 +125,55 @@ extension PhotoStore {
 
     // MARK: - Folder Loading
 
+    /// v9.1: 다중 폴더 일괄 열기. 각 폴더를 비재귀로 스캔해 합쳐 photos 에 표시.
+    /// folderURL 은 첫 폴더로 설정 (별점 root 키 호환). 각 사진은 자기 소속 폴더의 별점/SP/컬러 복원.
+    func loadFoldersAggregated(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let representative = urls.first!
+        startupMode = .viewer
+        isLoading = true
+        loadingStatus = "\(urls.count)개 폴더 일괄 열기..."
+        loadingProgress = 0
+        let total = urls.count
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            var aggregate: [PhotoItem] = []
+            for (idx, url) in urls.enumerated() {
+                let items = FileMatchingService.scanAndMatch(folderURL: url, recursive: false)
+                    .filter { !$0.isFolder && !$0.isParentFolder }
+                aggregate.append(contentsOf: items)
+                let progress = Double(idx + 1) / Double(total)
+                DispatchQueue.main.async { [weak self] in
+                    self?.loadingProgress = progress
+                    self?.loadingStatus = "\(idx + 1)/\(total) 폴더 — \(aggregate.count)장"
+                }
+            }
+            // 정렬은 메인에서 sortMode 따라 별도 로직. 우선 fileModDate desc 기본.
+            let sorted = aggregate.sorted { $0.fileModDate > $1.fileModDate }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.folderURL = representative
+                self.isRecursiveMode = false
+                self._suppressDidSet = true
+                self.photos = sorted
+                self._suppressDidSet = false
+                self.rebuildIndex()
+                self.invalidateFilterCache()
+                self.applySavedRatings()
+                self.isLoading = false
+                self.loadingStatus = ""
+                self.loadingProgress = 0
+                self.showToastMessage("📂 \(urls.count)개 폴더 합쳐 \(sorted.count)장 표시")
+                if let first = sorted.first {
+                    self.selectedPhotoID = first.id
+                    self.selectedPhotoIDs = [first.id]
+                    self.scrollTrigger += 1
+                }
+            }
+        }
+    }
+
     func loadFolder(_ url: URL, restoreRatings: Bool = false) {
         // Sandbox: 1) 직접 접근 가능? 2) bookmark 으로 접근? 3) NSOpenPanel
         let canAccess = FileManager.default.isReadableFile(atPath: url.path)
@@ -301,21 +350,8 @@ extension PhotoStore {
                     guard self?.folderURL == url, self?.isRecursiveMode == false else { return }
                     self?.preloadAllThumbnails()
                 }
-                // v8.9.7+: Lightroom 식 초기 미리보기 사전 생성 (옵트인). burst 100% cache hit 목표.
-                //   대용량 폴더 (>10000) 또는 재귀 모드는 스파이크 위험 → SKIP.
-                let autoInit = UserDefaults.standard.bool(forKey: "autoInitialPreview")
-                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay + 0.5) { [weak self] in
-                    guard let self,
-                          self.folderURL == url,
-                          autoInit,
-                          !self.isRecursiveMode,
-                          self.photos.count <= 10000
-                    else { return }
-                    let urls = self.photos.compactMap { p -> URL? in
-                        (p.isFolder || p.isParentFolder) ? nil : p.jpgURL
-                    }
-                    InitialPreviewGenerator.shared.start(urls: urls)
-                }
+                // v9.1.1: 폴더 진입 시 autoInitialPreview 자동 발사 제거 — 재시작 / 잦은 folder reload 시
+                //   phase3 가 11번 발사되어 응답없음 hang 원인. 사전 생성은 picker 옆 ▶︎ 버튼 명시 클릭만.
                 // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     guard self?.folderURL == url,
@@ -538,11 +574,10 @@ extension PhotoStore {
         // 목록 갱신만 주기적으로 발행하고, 비싼 정리는 완료 시 한 번만 수행한다.
         invalidateFilterCache()
         rebuildIndex()
-        // v9.1: 재귀 스캔 중에도 매 flush 마다 별점/SP/컬러 복원 — batch 스트리밍 경로에서
-        //   누락돼 사진 모두 rating=0 으로 표시되던 버그 수정. (applySavedRatings 는 폴더별 dict
-        //   를 1회만 읽어 in-memory 캐시 후 photo 루프 → O(n), 5000장 ~5ms.)
-        applySavedRatings()
+        // v9.1.2: applySavedRatings 는 final flush 에서만 호출 — 매 batch 마다 호출하면
+        //   17000장 × 5 batches = O(n²) 누적 → 40초 STALL 유발했던 문제 수정.
         if final {
+            applySavedRatings()
             updateFolderSizeCache()
             pruneStaleSelections()
         }

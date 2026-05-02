@@ -116,25 +116,7 @@ struct FullscreenView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Divider
-                Rectangle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 24)
-                    .padding(.horizontal, 4)
-
-                // SP button
-                Button(action: { toggleSP() }) {
-                    Text("SP")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(isSPActive ? .white : .white.opacity(0.8))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(isSPActive ? Color.red : Color.white.opacity(0.15))
-                        )
-                }
-                .buttonStyle(.plain)
+                // v9.1.3: SP 버튼 제거
             }
 
             Spacer()
@@ -180,10 +162,6 @@ struct FullscreenView: View {
                             } else {
                                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
                             }
-                            if photo.isSpacePicked {
-                                RoundedRectangle(cornerRadius: 2).strokeBorder(Color.red, lineWidth: 2)
-                                    .frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
-                            }
                         }
                         .cornerRadius(3)
                         .opacity(isCurrent ? 1.0 : 0.5)
@@ -202,10 +180,6 @@ struct FullscreenView: View {
         currentPhoto?.rating == rating
     }
 
-    private var isSPActive: Bool {
-        currentPhoto?.isSpacePicked == true
-    }
-
     private func setRating(_ rating: Int) {
         guard let id = store.selectedPhotoID,
               let idx = store._photoIndex[id],
@@ -213,14 +187,6 @@ struct FullscreenView: View {
               !store.photos[idx].isFolder else { return }
         // Toggle off if same rating tapped again
         store.photos[idx].rating = store.photos[idx].rating == rating ? 0 : rating
-    }
-
-    private func toggleSP() {
-        guard let id = store.selectedPhotoID,
-              let idx = store._photoIndex[id],
-              idx < store.photos.count,
-              !store.photos[idx].isFolder else { return }
-        store.photos[idx].isSpacePicked.toggle()
     }
 
     private func flashInfo() {

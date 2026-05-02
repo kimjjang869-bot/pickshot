@@ -904,6 +904,8 @@ class KeyCaptureView: NSView {
     /// v8.9.7: 키 리피트 시 실제 이동 간격(ms) 측정용.
     static var lastNavTime: CFAbsoluteTime = 0
     static var navIntervalSamples: [Double] = []
+    /// v9.1.2: 자동 캐시 reset 마지막 시각 (5초 쿨다운).
+    static var lastAutoResetTime: CFAbsoluteTime = 0
     /// 빠른 탐색 중 기본 이동 간격. 16K+ 하위폴더 포함 폴더에서도 FRV처럼 즉시성이 살아야 해서
     /// 기존 30ms(≈33fps)에서 16ms(≈60fps)로 낮춘다. 디코드/프리패치는 별도 throttle 로 보호한다.
     static let burstMoveMinInterval: CFAbsoluteTime = 0.016
@@ -1366,6 +1368,8 @@ class KeyCaptureView: NSView {
         let nowForBurst = CFAbsoluteTimeGetCurrent()
         let isContinuingBurst = !event.isARepeat && (nowForBurst - Self.lastNavTime) < 1.0
         store.isKeyRepeat = event.isARepeat || isContinuingBurst
+        // v9.1.2: 키 이동 시 CacheSweeper 즉시 중단 + idle 타이머 리셋 (sweep + nav 충돌로 100ms+ STALL 차단).
+        if store.isKeyRepeat { CacheSweeper.shared.notifyActivity() }
 
         // v8.6.2: 방향 전환 직후 이전 방향의 stale repeat 이벤트 drop.
         //   "↓ 꾹 누른 상태로 ← 눌렀을 때 대각선으로 한 칸 튀는" + "멈추는" 현상 해결.
@@ -1407,9 +1411,15 @@ class KeyCaptureView: NSView {
         if arrowSet.contains(keyCode) {
             let now = CFAbsoluteTimeGetCurrent()
             let shouldSampleNav = event.isARepeat || Self.navSpeedLog
-            if shouldSampleNav && Self.lastNavTime > 0 {
+            // v9.1.2: 자동 reset 을 위해 항상 샘플링 (verboseLog/navSpeedLog 무관).
+            //   isARepeat 인 경우만 — 단일 클릭은 노이즈.
+            let alwaysSampleForReset = event.isARepeat
+            if (shouldSampleNav || alwaysSampleForReset) && Self.lastNavTime > 0 {
                 let deltaMs = (now - Self.lastNavTime) * 1000
                 Self.navIntervalSamples.append(deltaMs)
+                if Self.navIntervalSamples.count > 30 {
+                    Self.navIntervalSamples.removeFirst(Self.navIntervalSamples.count - 30)
+                }
                 let arrow: String = {
                     switch keyCode {
                     case 123: return "←"; case 124: return "→"
@@ -1427,6 +1437,20 @@ class KeyCaptureView: NSView {
                     let p50 = s[s.count/2]
                     let p90 = s[Int(Double(s.count) * 0.9)]
                     fputs("[NAV-SUMMARY] last 20: avg=\(String(format: "%.0f", avg))ms min=\(String(format: "%.0f", s.first ?? 0))ms p50=\(String(format: "%.0f", p50))ms p90=\(String(format: "%.0f", p90))ms max=\(String(format: "%.0f", s.last ?? 0))ms\n", stderr)
+                }
+                // v9.1.2: 자동 reset — 최근 15개 평균이 130ms 초과 시 캐시 강제 해제.
+                //   80-100ms 목표 보장. 5초 쿨다운으로 폭주 방지.
+                if Self.navIntervalSamples.count >= 15 {
+                    let recent = Array(Self.navIntervalSamples.suffix(15))
+                    let avgRecent = recent.reduce(0,+) / Double(recent.count)
+                    if avgRecent > 130 && (now - Self.lastAutoResetTime) > 5.0 {
+                        Self.lastAutoResetTime = now
+                        fputs("[AUTO-RESET] avg \(Int(avgRecent))ms > 130ms — cache flush + viewport-only\n", stderr)
+                        Task { @MainActor in
+                            _ = NavigationPerformanceMonitor.shared.forceFlushAllCaches()
+                        }
+                        Self.navIntervalSamples.removeAll()
+                    }
                 }
             } else if !event.isARepeat && !Self.navSpeedLog {
                 // 새 burst 시작 → 샘플 리셋

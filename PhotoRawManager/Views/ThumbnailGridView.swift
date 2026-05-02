@@ -3318,6 +3318,30 @@ struct AsyncThumbnailView: View {
     ///   빠른 필름스트립 스크롤 시 20+ 셀 동시 로드 → 디스크 스파이크 현상 억제.
     static let thumbIOSemaphore = DispatchSemaphore(value: 4)
 
+    /// v9.1.2: 빠른 스크롤 감지 — 200ms 윈도우에 8셀 이상 onAppear → scroll 중.
+    ///   필름스트립 마우스휠 스크롤 시 디코드 SKIP 트리거.
+    private static var rapidAppearWindowStart: CFAbsoluteTime = 0
+    private static var rapidAppearCount: Int = 0
+    private static let rapidScrollLock = NSLock()
+
+    static func detectRapidScroll() -> Bool {
+        rapidScrollLock.lock(); defer { rapidScrollLock.unlock() }
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - rapidAppearWindowStart > 0.2 {
+            rapidAppearWindowStart = now
+            rapidAppearCount = 1
+            return false
+        }
+        rapidAppearCount += 1
+        return rapidAppearCount > 8
+    }
+
+    static func isRapidScrollActive() -> Bool {
+        rapidScrollLock.lock(); defer { rapidScrollLock.unlock() }
+        let now = CFAbsoluteTimeGetCurrent()
+        return (now - rapidAppearWindowStart < 0.2) && rapidAppearCount > 8
+    }
+
     var body: some View {
         Group {
             if let image = image {
@@ -3374,6 +3398,10 @@ struct AsyncThumbnailView: View {
             self.image = disk
             return
         }
+
+        // v9.1.3: 디코드 SKIP 제거 — 사용자가 빈 칸 보다 느린 갱신을 더 싫어함.
+        //   백그라운드 큐 + semaphore(4) 가 이미 I/O throttle 함. SKIP 은 main thread 보호엔
+        //   불필요. 캐시 미스 시 그냥 백그라운드 디코드 발사.
 
         // 3~4. 임베디드 + 생성 — 백그라운드 (semaphore 로 동시성 4개 제한 → I/O 스파이크 방지)
         Self.thumbConcurrentQueue.async {
@@ -3844,6 +3872,14 @@ class TileDocumentView: NSView {
     @objc func scrollChanged() {
         updateVisibleTiles()
 
+        // 스크롤은 대량 폴더에서 가장 쉽게 썸네일 I/O backlog 를 만든다.
+        // 현재 viewport 주변만 살리고 이전 스크롤 위치의 작업은 callback 단계에서 버린다.
+        let isHugeFolder = photos.count > 10_000
+        let keepURLs = thumbnailURLsAroundVisible(marginRows: isHugeFolder ? 2 : 3)
+        ThumbnailLoader.shared.cancelPending(keeping: keepURLs)
+        ThumbnailLoader.shared.throttle()
+        PhotoStore.scheduleUnthrottle()
+
         // 스크롤 멈춤 감지 debounce → visible 주변만 prefetch
         // 대량 재귀 폴더는 스크롤/선택 즉시성을 위해 더 늦고 작게 채운다.
         scrollPrefetchWork?.cancel()
@@ -3851,8 +3887,31 @@ class TileDocumentView: NSView {
             self?.prefetchAroundVisible()
         }
         scrollPrefetchWork = work
-        let delay: TimeInterval = photos.count > 10_000 ? 0.18 : 0.08
+        let delay: TimeInterval = isHugeFolder ? 0.35 : 0.14
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func thumbnailURLsAroundVisible(marginRows: Int) -> Set<URL> {
+        guard let scrollView = enclosingScrollView, !photos.isEmpty, cols > 0 else { return [] }
+        let visibleRect = scrollView.documentVisibleRect
+        let rowHeight = cellH + lineSpacing
+        guard rowHeight > 0 else { return [] }
+
+        let totalRows = (photos.count + cols - 1) / cols
+        let startRow = max(0, Int((visibleRect.minY - inset) / rowHeight) - marginRows)
+        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / rowHeight) + marginRows + 1)
+        let startIdx = max(0, startRow * cols)
+        let endIdx = min(photos.count, endRow * cols)
+        guard startIdx < endIdx else { return [] }
+
+        var urls = Set<URL>()
+        urls.reserveCapacity(endIdx - startIdx)
+        for idx in startIdx..<endIdx {
+            let photo = photos[idx]
+            if photo.isFolder || photo.isParentFolder { continue }
+            urls.insert(photo.jpgURL)
+        }
+        return urls
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3860,11 +3919,13 @@ class TileDocumentView: NSView {
     /// Slow disk(HDD/SD)에서는 범위를 ±2행으로 축소 (queue 폭주 방지).
     private func prefetchAroundVisible() {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
+        guard !PhotoStore.navigationBusy else { return }
         let visibleRect = scrollView.documentVisibleRect
 
         // 대량 재귀 폴더에서는 보이는 범위를 벗어난 디코드를 최소화한다.
         let isHugeFolder = photos.count > 10_000
-        let margin = isHugeFolder ? 1 : (ThumbnailLoader.shared.isSlowDisk ? 4 : 5)
+        guard !isHugeFolder else { return }
+        let margin = ThumbnailLoader.shared.isSlowDisk ? 1 : 2
         let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
         let totalRows = (photos.count + cols - 1) / cols
         let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)

@@ -16,86 +16,145 @@ private struct FilmstripResizeHandleFrameKey: PreferenceKey {
     }
 }
 
+/// v9.1.2: 스크롤 위치 추적 — 사용자 드래그/마우스휠 스크롤 시 윈도우 슬라이드용.
+private struct FilmstripScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct FilmstripView: View {
     @EnvironmentObject var store: PhotoStore
     @AppStorage("filmstripHeight") private var filmstripHeight: Double = 120
     @State private var scrollMonitor: Any?
+    @State private var boundsObserver: NSObjectProtocol?
     /// v8.6.2: Filmstrip scrollTo 쓰로틀용 (빠른 이동 시 썸네일 스크롤이 못따라오는 문제 해결)
     @State private var scrollThrottleLastFire: Date = .distantPast
     @State private var scrollTrailingWork: DispatchWorkItem?
     @State private var isResizingFilmstrip = false
     @State private var suppressFilmstripSelectionUntil: Date = .distantPast
+    /// v9.1.2: 스크롤 드래그 위치 (0 = 맨 왼쪽). 윈도우 중심 계산 입력.
+    @State private var filmstripScrollOffset: CGFloat = 0
+    @State private var filmstripVisibleWidth: CGFloat = 800
+    /// v9.1.2: selection 변경 시점 추적 — 변경 직후 600ms 동안은 selectedIdx 우선 (useSelected 강제).
+    @State private var lastSelectionChangeAt: Date = .distantPast
+    /// v9.1.3: 시각 스크롤 위치 — selectedPhotoID 와 분리. nil 이면 selection 따라감.
+    ///   다중 선택 시 스크롤은 이 값만 바꾸고 selection 은 건드리지 않음.
+    @State private var viewportCenterIdx: Int? = nil
 
     // v8.7: Finder 로 멀티 파일 드래그 — NSView 오버레이 대신 글로벌 이벤트 모니터 방식.
     //   SwiftUI 의 탭/선택을 방해하지 않으면서 드래그 임계값 초과 시 NSDraggingSession 개시.
     @StateObject private var dragMonitor = FilmstripDragMonitor()
 
-    /// Convert vertical mouse wheel to horizontal scroll in filmstrip
+    /// v9.1.3: 슬롯 패턴 필름스트립용 스크롤 휠 → selection 이동.
+    ///   기존 NSScrollView 기반 스크롤 로직은 슬롯 패턴엔 맞지 않음 (실제 ScrollView 없음).
+    ///   커서가 필름스트립 영역에 있을 때 휠 deltaY → selectedPhotoID 좌우 이동.
     private func setupVerticalToHorizontalScroll() {
         if let existing = scrollMonitor { NSEvent.removeMonitor(existing); scrollMonitor = nil }
-        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            guard let window = event.window,
-                  let contentView = window.contentView else { return event }
-            let pt = event.locationInWindow
+        if let observer = boundsObserver {
+            NotificationCenter.default.removeObserver(observer)
+            boundsObserver = nil
+        }
 
-            // 커서 아래의 뷰에서 상위로 올라가며 가로 스크롤뷰 탐색
-            guard let hit = contentView.hitTest(pt) else { return event }
-            var v: NSView? = hit
-            var scrollView: NSScrollView? = nil
-            while let cur = v {
-                if let sv = cur as? NSScrollView {
-                    // 가로 문서인지 확인 (documentView가 contentView보다 넓음)
-                    let docWidth = sv.documentView?.frame.width ?? 0
-                    let docHeight = sv.documentView?.frame.height ?? 0
-                    let clipWidth = sv.contentView.bounds.width
-                    let clipHeight = sv.contentView.bounds.height
-                    if docWidth > clipWidth + 1 && docHeight <= clipHeight + 4 {
-                        scrollView = sv
-                        break
-                    }
-                }
-                v = cur.superview
-            }
-            guard let scrollView = scrollView else { return event }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard let window = event.window else { return event }
+
+            // 커서가 필름스트립 영역 안인지 확인.
+            // macOS 윈도우 좌표: 좌하단 원점, Y가 위로 증가. 필름스트립은 시각적 하단 = 낮은 Y값.
+            // 필름스트립 영역: 0 ≤ pt.y ≤ filmstripHeight + 16 (resize handle 8pt + scrollbar 8pt 여유).
+            let pt = event.locationInWindow
+            guard pt.y >= 0,
+                  pt.y <= CGFloat(self.filmstripHeight) + 24
+            else { return event }
 
             let deltaY = event.scrollingDeltaY
             let deltaX = event.scrollingDeltaX
-            // 트랙패드 가로 스와이프는 그대로 통과
-            if abs(deltaX) > abs(deltaY) { return event }
-            guard abs(deltaY) > 0.01 else { return event }
+            // 가로/세로 둘 다 누적 (가로 휠도 지원).
+            let primary = abs(deltaX) > abs(deltaY) ? deltaX : -deltaY
+            guard abs(primary) > 0.01 else { return nil }
 
-            // 휠 위로(deltaY > 0) → 왼쪽 (origin.x 감소)
-            // 휠 아래로(deltaY < 0) → 오른쪽 (origin.x 증가)
-            let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 30.0
-            let dx = -deltaY * multiplier
-            var origin = scrollView.contentView.bounds.origin
-            origin.x += dx
-            let docWidth = scrollView.documentView?.frame.width ?? scrollView.contentView.bounds.width
-            let maxX = max(0, docWidth - scrollView.contentView.bounds.width)
-            origin.x = min(max(0, origin.x), maxX)
-            scrollView.contentView.scroll(to: origin)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            return nil  // Consume
+            // 정밀 트랙패드: 누적 픽셀 → 셀 단위(약 80px) 변환. 일반 휠: 한 노치당 1셀.
+            let stepPx: CGFloat = event.hasPreciseScrollingDeltas ? 80 : 1
+            Self.scrollAccum += event.hasPreciseScrollingDeltas ? primary : (primary > 0 ? stepPx : -stepPx)
+            let stepCount = Int(Self.scrollAccum / stepPx)
+            guard stepCount != 0 else { return nil }
+            Self.scrollAccum -= CGFloat(stepCount) * stepPx
+
+            let allPhotos = self.store.filteredPhotos
+            guard !allPhotos.isEmpty else { return nil }
+            let selIDs = self.store.selectedPhotoIDs
+
+            // v9.1.3: 다중 선택 활성 → 시각 스크롤만 (viewportCenterIdx) 변경, selection 보존.
+            //   단일 선택 → 기존 동작 (스크롤이 selection 이동).
+            if selIDs.count > 1 {
+                let curViewport = self.viewportCenterIdx ?? self.store.selectedPhotoID.flatMap { id in
+                    allPhotos.firstIndex(where: { $0.id == id })
+                } ?? 0
+                let newViewport = max(0, min(allPhotos.count - 1, curViewport + stepCount))
+                if newViewport != curViewport {
+                    DispatchQueue.main.async {
+                        self.viewportCenterIdx = newViewport
+                    }
+                }
+            } else {
+                let curIdx = self.store.selectedPhotoID.flatMap { id in
+                    allPhotos.firstIndex(where: { $0.id == id })
+                } ?? 0
+                let newIdx = max(0, min(allPhotos.count - 1, curIdx + stepCount))
+                if newIdx != curIdx {
+                    let newID = allPhotos[newIdx].id
+                    DispatchQueue.main.async {
+                        self.store.selectedPhotoID = newID
+                        self.store.selectedPhotoIDs = [newID]
+                        self.viewportCenterIdx = nil  // selection 따라감
+                    }
+                }
+            }
+            return nil
         }
+    }
+
+    /// 휠 누적 (정밀 트랙패드용 — 작은 delta 가 누적되어 셀 1개 이동 트리거).
+    private static var scrollAccum: CGFloat = 0
+
+    /// NSClipView 의 postsBoundsChangedNotifications 활성화 (재귀).
+    private static func enableBoundsObserving(in view: NSView?) {
+        guard let view = view else { return }
+        if let clip = view as? NSClipView, let sv = clip.enclosingScrollView,
+           let doc = sv.documentView,
+           doc.frame.width > clip.bounds.width + 1 && doc.frame.height <= clip.bounds.height + 4 {
+            clip.postsBoundsChangedNotifications = true
+        }
+        for sub in view.subviews { enableBoundsObserving(in: sub) }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // v8.9.7+: 단일 resize handle — 8pt 높이 (이전 4pt 너무 얇아 잡기 힘들었음).
-            //   별도 24pt overlay 중복 핸들 제거 (cells 와 레이어 충돌 → 폭조절 시 썸네일 선택 버그).
+            // v9.1.3: 핸들 시각 두께 6pt (얇게) + hit-buffer 포함 18pt 영역.
+            //   셀과의 분리감을 위해 hit area 안에서 핸들은 위쪽에, 아래는 빈공간 (셀과의 간격 역할).
             ZStack {
-                Color.gray.opacity(0.3)
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.gray.opacity(0.6))
-                    .frame(width: 40, height: 3)
+                Color.clear
+                // 시각 핸들 — 사각형, 위쪽에 배치.
+                VStack(spacing: 0) {
+                    ZStack {
+                        Color.gray.opacity(0.4)
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.75))
+                            .frame(width: 50, height: 2)
+                    }
+                    .frame(height: 6)
+                    Spacer(minLength: 0)  // 핸들과 셀 사이 빈공간 (분리감)
+                }
             }
-            .frame(height: 8)
+            .frame(height: 18)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     beginFilmstripResize()
-                    filmstripHeight = max(80, min(300, filmstripHeight - value.translation.height))
+                    // v9.1.3: 상한 300 → 800 으로 확대 (큰 디스플레이에서 충분한 폭조절).
+                    filmstripHeight = max(80, min(800, filmstripHeight - value.translation.height))
                 }
                 .onEnded { _ in
                     endFilmstripResize()
@@ -114,34 +173,12 @@ struct FilmstripView: View {
                 else { NSCursor.pop() }
             }
 
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: true) {
-                    LazyHStack(spacing: 4) {
-                        ForEach(store.filteredPhotos) { photo in
-                            cellRow(for: photo)
-                                .id(photo.id)
-                                .background(
-                                    // v8.9.7+: burst 중엔 cellFrames 수집 SKIP — GeometryReader 의 매-selection-변경
-                                    //   layout 재계산 + onPreferenceChange 폭주 차단 → 20→30fps+.
-                                    //   burst 끝나면 다음 frame 에 자동 재수집.
-                                    Group {
-                                        if !store.isFastNavigation {
-                                            GeometryReader { geo in
-                                                Color.clear.preference(
-                                                    key: FilmstripCellFrameKey.self,
-                                                    value: [photo.id: geo.frame(in: .global)]
-                                                )
-                                            }
-                                        } else {
-                                            Color.clear
-                                        }
-                                    }
-                                )
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                }
+            // v9.1.2: 풀스크린 패턴 채택 — LazyHStack(17000) ForEach + scrollTo 제거.
+            //   슬라이딩 윈도우 (selectedIdx ± 30, 총 ~61장) 만 렌더링.
+            //   결과: SwiftUI diff 17000 → 61, scrollTo 부담 0, burst 끊김 없음.
+            //   미리보기는 selectedPhotoID 변화에 따라 PhotoPreviewView 가 자동 추적.
+            //   캐시 미스는 placeholder (회색) — 디코드 트리거 없음 (필름스트립은 표시만).
+            windowedFilmstrip
                 .frame(height: filmstripHeight)
                 .background(
                     Color(nsColor: .windowBackgroundColor).opacity(0.95)
@@ -153,9 +190,6 @@ struct FilmstripView: View {
                         }
                 )
                 .allowsHitTesting(!isResizingFilmstrip)
-                // v8.9.7+: 중복 24pt overlay 드래그 핸들 제거 — cells 위에 레이어돼 폭조절 중 썸네일 선택 충돌 유발.
-                //   resize 는 위쪽 8pt 핸들만 사용.
-                .scrollIndicators(.visible)
                 .focusable()
                 .onKeyPress { press in
                     handleKeyPress(press)
@@ -169,39 +203,12 @@ struct FilmstripView: View {
                         NSEvent.removeMonitor(monitor)
                         scrollMonitor = nil
                     }
+                    if let observer = boundsObserver {
+                        NotificationCenter.default.removeObserver(observer)
+                        boundsObserver = nil
+                    }
                     dragMonitor.uninstall()
                 }
-                .onPreferenceChange(FilmstripCellFrameKey.self) { frames in
-                    dragMonitor.cellFrames = frames
-                }
-                // v8.6.2: 빠른 이동 시 썸네일 스크롤 못따라옴 해결 — throttle 패턴 + 애니메이션 제거.
-                //   이전: withAnimation(0.2) 가 매 키마다 200ms 블록 → 다음 스크롤 지연 누적
-                //   지금: 200ms 애니메이션 삭제, throttle 80ms 간격 + trailing 보장
-                // v8.6.2: scrollTrigger 기반 — moveSelection (방향키) 에만 증가, 클릭에선 증가 X.
-                //   쓰로틀 제거 → 매 키 입력마다 scrollTo 즉시 발동 → 선택이 속도 따라옴.
-                //   필름스트립은 LazyHStack 이라 scrollTo 비용 작음 (LazyVGrid 10k 와 달리 빠름).
-                .onChange(of: store.scrollTrigger) { _, _ in
-                    guard let id = store.selectedPhotoID else { return }
-                    // v8.9.7+: scrollTo 30fps cap — 매 nav 발사 시 LazyHStack 5000장 layout 재계산 누적 → 20fps 정체.
-                    //   33ms throttle 로 30fps 보장. trailing fire 로 마지막 위치 보장.
-                    let now = Date()
-                    if now.timeIntervalSince(scrollThrottleLastFire) >= 0.033 {
-                        scrollThrottleLastFire = now
-                        proxy.scrollTo(id, anchor: .center)
-                        scrollTrailingWork?.cancel()
-                    } else {
-                        scrollTrailingWork?.cancel()
-                        let work = DispatchWorkItem {
-                            if let lastID = store.selectedPhotoID {
-                                proxy.scrollTo(lastID, anchor: .center)
-                                scrollThrottleLastFire = Date()
-                            }
-                        }
-                        scrollTrailingWork = work
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
-                    }
-                }
-            }
         }
         .onPreferenceChange(FilmstripResizeHandleFrameKey.self) { frame in
             dragMonitor.resizeHandleFrame = frame
@@ -223,6 +230,114 @@ struct FilmstripView: View {
 
     // MARK: - Cell row (썸네일뷰 PhotoCellWrapper 와 동일한 드래그/드롭/컨텍스트 메뉴)
 
+    /// v9.1.2: 라이트룸 스타일 — 슬롯 고정, 사진 swap. 선택 보더는 항상 중앙 슬롯에서 움직이지 않음.
+    ///   슬롯 위치는 화면에 고정 / 각 슬롯의 사진만 currentIdx 기준으로 swap.
+    ///   하단에 시각 스크롤바 — 드래그로 선택 변경.
+    private var windowedFilmstrip: some View {
+        let allPhotos = store.filteredPhotos
+        let selIdx = store.selectedPhotoID.flatMap { id in
+            allPhotos.firstIndex(where: { $0.id == id })
+        } ?? 0
+        // v9.1.3: viewportCenterIdx 가 있으면 시각 위치는 그것을 사용 (selection 과 분리).
+        //   nil 이면 selection 따라감 — 키 이동/클릭은 자동으로 viewport 동기화.
+        let currentIdx = viewportCenterIdx ?? selIdx
+        // v9.1.3: 스크롤바 9pt + 위쪽 간격 + 하단 패딩 14pt(스크롤바를 위로 올림).
+        //   라벨 영역 32pt (bold 12pt + 별점). 폭은 (cellHeight - 32) * 1.3.
+        let scrollbarH: CGFloat = 9
+        let scrollbarBottomPad: CGFloat = 14
+        let cellH = filmstripHeight - 20
+        let cellW = (cellH - 44) * 1.3 + 4
+
+        return GeometryReader { geo in
+            let visibleW = geo.size.width
+            // 화면 폭 안에 들어가는 슬롯 수 (홀수로 → 중앙 슬롯 명확).
+            let rawSlots = max(3, Int(visibleW / cellW))
+            let slotCount = rawSlots % 2 == 0 ? rawSlots - 1 : rawSlots
+            let centerSlot = slotCount / 2
+            // v9.1.3: 라이트룸식 — 시작/끝 근처에선 startIdx clamp 해서 leading/trailing 빈 슬롯 제거.
+            //   가운데 영역에선 selected 가 중앙 슬롯에 오도록 유지.
+            //   결과: 좌측 큰 빈 공간 사라짐, 셀이 자연스럽게 가장자리부터 채워짐.
+            let rawStart = currentIdx - centerSlot
+            let maxStart = max(0, allPhotos.count - slotCount)
+            let startIdx = max(0, min(rawStart, maxStart))
+
+            VStack(spacing: 6) {
+                // v9.1.3: 셀 위쪽 보더 잘림 방지 — 상단 4pt 여유.
+                Color.clear.frame(height: 4)
+
+                // 슬롯 — currentIdx 기준 사진 swap. 시작/끝 근처에선 selected 가 중앙 아닌 가장자리쪽으로 이동.
+                HStack(spacing: 4) {
+                    ForEach(0..<slotCount, id: \.self) { slot in
+                        let actualIdx = startIdx + slot
+                        if actualIdx >= 0 && actualIdx < allPhotos.count {
+                            cellRow(for: allPhotos[actualIdx])
+                                .id(allPhotos[actualIdx].id)
+                        } else {
+                            Color.clear.frame(width: cellW, height: cellH)
+                        }
+                    }
+                }
+                .frame(maxWidth: visibleW, alignment: .leading)
+                // v9.1.3: 내부 .clipped() 제거 — 셀 보더가 위/아래 잘리던 문제 해결.
+                //   가로 오버플로는 외곽 .clipped() 가 처리.
+
+                Spacer(minLength: 0)  // 셀 위쪽으로 몰고 스크롤바 하단으로
+
+                // v9.1.3: 시각 스크롤바 — 18pt 두께 (이전 8pt → 너무 얇아 잡기 힘듦), 하단에 배치.
+                //   드래그로 선택 변경. 트랙 클릭으로도 점프 가능.
+                if allPhotos.count > 1 {
+                    GeometryReader { sbGeo in
+                        let trackW = sbGeo.size.width
+                        let thumbW = max(60, trackW * CGFloat(slotCount) / CGFloat(allPhotos.count))
+                        let progress = CGFloat(currentIdx) / CGFloat(allPhotos.count - 1)
+                        let thumbX = (trackW - thumbW) * progress
+                        ZStack(alignment: .leading) {
+                            // v9.1.3: 사각형으로 통일.
+                            Rectangle()
+                                .fill(Color.white.opacity(0.08))
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            let p = max(0, min(1, value.location.x / trackW))
+                                            let newIdx = min(allPhotos.count - 1, max(0, Int(p * CGFloat(allPhotos.count - 1))))
+
+                                            if store.selectedPhotoIDs.count > 1 {
+                                                viewportCenterIdx = newIdx
+                                            } else {
+                                                let newID = allPhotos[newIdx].id
+                                                if store.selectedPhotoID != newID {
+                                                    store.selectedPhotoID = newID
+                                                    store.selectedPhotoIDs = [newID]
+                                                    viewportCenterIdx = nil
+                                                }
+                                            }
+                                        }
+                                )
+                            Rectangle()
+                                .fill(Color.white.opacity(0.55))
+                                .overlay(
+                                    Rectangle()
+                                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                                )
+                                .frame(width: thumbW)
+                                .offset(x: thumbX)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(height: scrollbarH)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, scrollbarBottomPad)  // v9.1.3: 스크롤바 하단에서 14pt 위로 올려 잡기 쉬움
+                }
+            }
+            .frame(width: visibleW, height: geo.size.height, alignment: .center)
+            .clipped()
+            .onAppear { filmstripVisibleWidth = geo.size.width }
+            .onChange(of: geo.size.width) { _, newW in filmstripVisibleWidth = newW }
+        }
+        .clipped()
+    }
+
     @ViewBuilder
     private func cellRow(for photo: PhotoItem) -> some View {
         // 공통 탭 핸들러 — overlay 뒤에 적용해야 NSView MultiFileDragView 와 충돌하지 않음
@@ -240,8 +355,17 @@ struct FilmstripView: View {
                 store.selectedPhotoID = photo.id
                 store.selectedPhotoIDs = [photo.id]
             } else {
-                store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
+                // v9.1.3: 다중 선택된 셀을 modifier 없이 클릭하면 선택 보존 (드래그 직전 클릭으로 인한 선택 손실 방지).
+                //   라이트룸/Finder 표준 동작 — 선택된 항목 클릭은 포커스만 옮김.
+                let noMod = !flags.contains(.command) && !flags.contains(.shift)
+                if noMod && store.selectedPhotoIDs.count > 1 && store.selectedPhotoIDs.contains(photo.id) {
+                    store.selectedPhotoID = photo.id  // 포커스만 이동, 다중 선택 유지
+                } else {
+                    store.selectPhoto(photo.id, cmdKey: flags.contains(.command), shiftKey: flags.contains(.shift))
+                }
             }
+            // v9.1.3: 클릭 시 viewport 재동기화 (스크롤로 viewport 가 selection 과 어긋난 경우 복구).
+            viewportCenterIdx = nil
         }
 
         let base = FilmstripCell(
@@ -301,7 +425,7 @@ struct FilmstripView: View {
             //   에서 처리하여 멀티 파일 동시 Finder 복사 지원. .onDrag 가 있으면 SwiftUI 가 먼저
             //   단일 파일 드래그 세션을 시작해서 multi-item drag 이 불가능.
             //   내부 셀 재정렬(PhotoReorderDropDelegate) 은 유지.
-            base
+            let photoCell = base
                 .overlay(DropIndicatorOverlay(photoID: photo.id))
                 .onTapGesture(perform: tap)
                 .onDrop(of: [.utf8PlainText], delegate: PhotoReorderDropDelegate(
@@ -313,9 +437,17 @@ struct FilmstripView: View {
                         store.selectPhoto(photo.id, cmdKey: false, shiftKey: false)
                     }
                 })
-                .contextMenu {
-                    PhotoContextMenu(photo: photo, store: store)
-                }
+
+            // 빠른 키 이동 중에는 셀마다 PhotoContextMenu 를 재구성하는 비용이 누적된다.
+            // 메뉴는 키를 놓은 뒤 다시 붙여서 우클릭 동작은 유지한다.
+            if store.isFastNavigation {
+                photoCell
+            } else {
+                photoCell
+                    .contextMenu {
+                        PhotoContextMenu(photo: photo, store: store)
+                    }
+            }
         }
     }
 
@@ -481,62 +613,51 @@ struct FilmstripCell: View {
     var cellHeight: CGFloat = 100
     @State private var isHovered = false
 
-    private var cellWidth: CGFloat { cellHeight * 1.3 }
-    private var imgHeight: CGFloat { cellHeight * 0.7 }
+    // v9.1.3: 라벨(12pt bold) + 별점 + padding(6*2) + spacing = 44pt 예약. 나머지는 이미지.
+    private var labelAreaH: CGFloat { 44 }
+    private var imgHeight: CGFloat { max(40, cellHeight - labelAreaH) }
+    private var cellWidth: CGFloat { imgHeight * 1.3 }
 
     private var hasStateBorder: Bool {
-        isSpacePicked || colorLabel != .none || rating > 0
+        colorLabel != .none || rating > 0
     }
     private var borderColor: Color {
-        if isSpacePicked { return .red }
         if colorLabel != .none, let c = colorLabel.color { return c }
         if rating > 0 { return AppTheme.starGold }
         if isFocused { return AppTheme.accent }
-        if isSelected { return AppTheme.accent.opacity(0.7) }
+        if isSelected { return AppTheme.accent.opacity(0.85) }
         return .clear
     }
+    // v9.1.3: 보더 두께 강화 — 선택/포커스가 명확히 보이도록.
     private var borderWidth: CGFloat {
-        if isSpacePicked { return 3 }
-        if colorLabel != .none || rating > 0 { return 2.5 }
-        if isFocused { return 2.5 }
-        if isSelected { return 1.5 }
+        if colorLabel != .none || rating > 0 { return 4 }
+        if isFocused { return 5 }
+        if isSelected { return 4 }
         return 0
     }
 
     var body: some View {
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
-                // v8.6.2: 폴더/상위폴더 는 시스템 기본 썸네일 대신 SwiftUI 폴더 아이콘 사용 (깨짐 방지)
+                // v9.1.3: 사각형으로 통일 — RoundedRectangle/cornerRadius 제거.
                 if photo.isFolder || photo.isParentFolder {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 4)
+                        Rectangle()
                             .fill(Color.gray.opacity(0.1))
                         Image(systemName: photo.isParentFolder ? "arrow.up.circle.fill" : "folder.fill")
                             .font(.system(size: imgHeight * 0.45, weight: .regular))
                             .foregroundColor(.blue.opacity(0.85))
                     }
                     .frame(width: cellWidth, height: imgHeight)
-                    .cornerRadius(4)
                 } else {
                     AsyncThumbnailView(url: photo.displayURL)
                         .frame(width: cellWidth, height: imgHeight)
                         .clipped()
-                        .cornerRadius(4)
                 }
 
-                // SP badge (red, prominent)
-                if isSpacePicked {
-                    Text("SP")
-                        .font(.system(size: 8, weight: .black))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.red.opacity(0.9))
-                        .cornerRadius(3)
-                        .padding(3)
-                }
+                // v9.1.3: SP 뱃지 제거
 
-                // RAW/format badge (top-left)
+                // RAW/format badge (top-left) — 사각 배경.
                 if photo.hasRAW, let rawURL = photo.rawURL {
                     Text(rawURL.pathExtension.uppercased())
                         .font(.system(size: 7, weight: .bold))
@@ -544,12 +665,11 @@ struct FilmstripCell: View {
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
                         .background(AppTheme.rawBadge.opacity(0.85))
-                        .cornerRadius(2)
                         .padding(3)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
 
-                // G select badge
+                // G select badge — 사각 배경.
                 if isGSelected {
                     Text("G")
                         .font(.system(size: 8, weight: .black))
@@ -557,26 +677,27 @@ struct FilmstripCell: View {
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
                         .background(Color.green.opacity(0.9))
-                        .cornerRadius(3)
                         .padding(3)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
             }
 
-            // v8.6.2: 확장자 표시 — RAW/JPG 구분
+            // v9.1.3: 파일명 — 크기 9→12 + bold + 썸네일 폭 안에서 가운데 정렬.
             Text(photo.fileNameWithExtension)
-                .font(.system(size: 9))
+                .font(.system(size: 12, weight: .bold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundColor(isSelected ? .white : AppTheme.textSecondary)
-                .frame(width: cellWidth)
+                .foregroundColor(isSelected ? .white : .white.opacity(0.9))
+                .frame(width: cellWidth, alignment: .center)
+                .multilineTextAlignment(.center)
 
             // Star rating — 빈 별 포함해서 항상 5개 표시 (높이 일관성)
             StarDisplayView(rating: rating, size: 7, compact: false)
         }
-        .padding(4)
+        // v9.1.3: 보더가 위쪽이 잘려 보이는 문제 해결 — padding 4→6 으로 안쪽 여유 확보 + Rectangle 로 사각형 보더.
+        .padding(6)
         .background(
-            RoundedRectangle(cornerRadius: 5)
+            Rectangle()
                 .fill(
                     isFocused ? AppTheme.accent.opacity(0.40) :
                     isSelected ? AppTheme.accent.opacity(0.22) :
@@ -585,19 +706,20 @@ struct FilmstripCell: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 5)
-                .stroke(borderColor, lineWidth: borderWidth)
+            // v9.1.3: 사각형 보더 (RoundedRectangle 제거). strokeBorder 로 안쪽 그려서 잘림 방지.
+            Rectangle()
+                .strokeBorder(borderColor, lineWidth: borderWidth)
         )
         .overlay(
-            // 별점/라벨/SP 상태 보더가 있을 때 포커스/선택은 내부 링으로 별도 표시
+            // 별점/라벨 상태 보더가 있을 때 포커스/선택은 내부 링으로 별도 표시 (사각형).
             Group {
                 if hasStateBorder && (isFocused || isSelected) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(
+                    Rectangle()
+                        .strokeBorder(
                             isFocused ? AppTheme.accent : AppTheme.accent.opacity(0.85),
-                            lineWidth: isFocused ? 2 : 1.5
+                            lineWidth: isFocused ? 3 : 2.5
                         )
-                        .padding(3)
+                        .padding(4)
                 }
             }
         )

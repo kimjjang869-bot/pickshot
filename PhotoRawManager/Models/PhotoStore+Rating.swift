@@ -137,15 +137,22 @@ extension PhotoStore {
         showToastMessage("\(last.action) 되돌리기 완료")
     }
 
-    /// 별점/SP/컬러라벨 저장 — 400ms debounce로 연속 변경을 1회 쓰기로 축소.
-    /// UI 클릭 즉시 반응을 위해 동기 I/O를 제거.
+    /// 별점/SP/컬러라벨 저장 — debounce 로 연속 변경을 1회 쓰기로 축소.
+    /// v9.1.2: 400ms → 2000ms (스크롤 중 18초 STALL 발생 → 폭주 방지).
+    /// v9.1.2: 키 이동 중이면 추가 1초 더 늦춤 (이동 평균 80-100ms 보장).
     func saveRatings() {
         saveRatingsWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            self?.performSaveRatings()
+            guard let self = self else { return }
+            // 이동 중이면 한 번 더 미룸 — 누른 채 이동 중 디스크 I/O 차단.
+            if self.isFastNavigation {
+                self.saveRatings()
+                return
+            }
+            self.performSaveRatings()
         }
         saveRatingsWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: item)
     }
 
     /// 즉시 저장 (폴더 변경·앱 종료 직전 등).
@@ -156,24 +163,28 @@ extension PhotoStore {
     }
 
     /// 실제 저장 로직 — 메인에서 스냅샷 후 백그라운드에서 UserDefaults + XMP 쓰기.
+    /// v9.1.2: 18초 main STALL 원인 수정 — inflight guard, UserDefaults 통합, XMP/JSON diff.
     func performSaveRatings() {
         guard let folderPath = folderURL?.path else { return }
 
+        // ── 0) 재진입 가드 — 진행 중이면 새 호출 무시 (debounce 가 다음 cycle 처리)
+        if Self.saveInflight {
+            fputs("[BACKUP] skip — save inflight\n", stderr)
+            return
+        }
+        Self.saveInflight = true
+
         // 1) 메인 스레드에서 스냅샷 (photos는 @Published이므로 메인에서만 읽기)
-        // v9.1: 하위폴더 모드에서 별점/SP/컬러를 각 사진의 *실제 소속 폴더* 별로 그룹화하여
-        //   저장한다. 이전엔 모두 `folderURL.path` (= 부모 root) 한 곳에 저장되어, 사용자가
-        //   서브폴더를 직접 열면 ratings 가 모두 사라지는 버그가 있었음.
         struct FolderGroup {
             var ratings: [String: Int] = [:]
             var spPicks: [String: Bool] = [:]
             var colorLabels: [String: String] = [:]
         }
         var groups: [String: FolderGroup] = [:]
-        // 현재 열린 root 도 빈 그룹으로 시드 — 별점이 모두 지워졌을 때도 빈 dict 로 덮어써야 함.
-        groups[folderPath] = FolderGroup()
+        groups[folderPath] = FolderGroup()  // root 시드 (모두 지워졌을 때도 빈 dict 덮어쓰기)
 
-        var xmpSnapshot: [(url: URL, rating: Int, label: ColorLabel, sp: Bool)] = []
-        xmpSnapshot.reserveCapacity(photos.count)
+        // XMP 후보를 (url → 현재 상태) 로 모음 — diff 위해 dict 사용.
+        var xmpCurrent: [URL: (rating: Int, label: ColorLabel, sp: Bool)] = [:]
         for photo in photos {
             if photo.isFolder || photo.isParentFolder { continue }
             let containingFolder = photo.jpgURL.deletingLastPathComponent().path
@@ -184,49 +195,63 @@ extension PhotoStore {
                 groups[containingFolder]!.colorLabels[photo.fileName] = photo.colorLabel.rawValue
             }
             if photo.rating > 0 || photo.colorLabel != .none || photo.isSpacePicked {
-                xmpSnapshot.append((photo.jpgURL, photo.rating, photo.colorLabel, photo.isSpacePicked))
+                xmpCurrent[photo.jpgURL] = (photo.rating, photo.colorLabel, photo.isSpacePicked)
             }
         }
 
-        // 하위 호환: 전역 ratingsKey 에는 root 그룹의 ratings 만 (단일 폴더 시 기존 동작 보존)
         let rootRatings = groups[folderPath]?.ratings ?? [:]
-
-        // 2) UserDefaults + XMP 쓰기는 유틸 큐에서 (메인 스레드 블록 해제)
         let groupsCopy = groups
+
+        // 2) 백그라운드 — UserDefaults 1회 통합 쓰기 + XMP diff + JSON 변경 폴더만
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            defer { Self.saveInflight = false }
             guard let self = self else { return }
             let d = self.defaults
+            let t0 = CFAbsoluteTimeGetCurrent()
 
-            // 전역 (하위 호환) — 단일 폴더 모드의 root ratings 만
+            // 전역 ratingsKey (단일 폴더 호환) — root 만
             d.set(rootRatings, forKey: self.ratingsKey)
 
-            // 폴더별 SP + 컬러라벨 — 각 실제 소속 폴더 키로 저장
-            var allSP = d.dictionary(forKey: "folderSpacePicks") as? [String: [String: Bool]] ?? [:]
-            var allColors = d.dictionary(forKey: "folderColorLabels") as? [String: [String: String]] ?? [:]
-            // v9.1: 폴더별 ratings 도 저장 (이전엔 전역 ratingsKey 에만)
-            var allRatings = d.dictionary(forKey: "folderRatings") as? [String: [String: Int]] ?? [:]
-
+            // ── UserDefaults 통합: folderSelections 단일 dict 로 모음 (3 dict → 1 dict, read 1회/write 1회).
+            //   기존 키 (folderRatings/folderSpacePicks/folderColorLabels) 는 마이그레이션 fallback 용으로 유지.
+            var combined = d.dictionary(forKey: "folderSelections") as? [String: [String: Any]] ?? [:]
             for (path, g) in groupsCopy {
-                allSP[path] = g.spPicks
-                allColors[path] = g.colorLabels
-                allRatings[path] = g.ratings
+                combined[path] = [
+                    "ratings": g.ratings,
+                    "spPicks": g.spPicks,
+                    "colorLabels": g.colorLabels,
+                ]
             }
-            d.set(allSP, forKey: "folderSpacePicks")
-            d.set(allColors, forKey: "folderColorLabels")
-            d.set(allRatings, forKey: "folderRatings")
+            d.set(combined, forKey: "folderSelections")
 
-            // XMP 사이드카
-            for item in xmpSnapshot {
-                let xmpLabel = item.label.xmpName.isEmpty ? nil : item.label.xmpName
-                XMPService.writeRating(for: item.url, rating: item.rating, label: xmpLabel, spacePicked: item.sp)
+            // ── XMP diff: 마지막 저장 스냅샷과 비교해 변경된 파일만 쓴다.
+            var xmpChanges: [(URL, Int, ColorLabel, Bool)] = []
+            for (url, cur) in xmpCurrent {
+                let prev = Self.lastXMPSnapshot[url]
+                if prev == nil || prev!.0 != cur.rating || prev!.1 != cur.label.rawValue || prev!.2 != cur.sp {
+                    xmpChanges.append((url, cur.rating, cur.label, cur.sp))
+                }
+            }
+            for (url, rating, label, sp) in xmpChanges {
+                let xmpLabel = label.xmpName.isEmpty ? nil : label.xmpName
+                XMPService.writeRating(for: url, rating: rating, label: xmpLabel, spacePicked: sp)
+                Self.lastXMPSnapshot[url] = (rating, label.rawValue, sp)
+            }
+            // 사라진 항목 (rating 모두 0 됨) 도 lastSnapshot 에서 제거 — 다음 변경 시 다시 재평가.
+            for url in Self.lastXMPSnapshot.keys where xmpCurrent[url] == nil {
+                Self.lastXMPSnapshot.removeValue(forKey: url)
             }
 
-            // v8.9.7+: 폴더에 직접 JSON 백업 — UserDefaults 손상/마이그레이션 대비 2중 백업.
-            //   v9.1: 각 실제 소속 폴더별로 백업 파일 작성.
+            // ── JSON 백업: 변경된 폴더만 다시 쓴다 (해시로 비교).
+            var jsonWrites = 0
             let fmt = ISO8601DateFormatter()
             for (path, g) in groupsCopy {
+                let key = "\(g.ratings.count):\(g.spPicks.count):\(g.colorLabels.count):" +
+                          (g.ratings.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ","))
+                if Self.lastJSONHash[path] == key { continue }
+                Self.lastJSONHash[path] = key
+
                 let backupURL = URL(fileURLWithPath: path).appendingPathComponent(".pickshot_selection.json")
-                // 빈 그룹 + 기존 백업 없는 경우는 스킵 (불필요한 빈 파일 양산 방지)
                 if g.ratings.isEmpty && g.spPicks.isEmpty && g.colorLabels.isEmpty
                     && !FileManager.default.fileExists(atPath: backupURL.path) { continue }
                 let payload: [String: Any] = [
@@ -237,17 +262,24 @@ extension PhotoStore {
                     "spPicks": g.spPicks,
                     "colorLabels": g.colorLabels
                 ]
-                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) {
                     try? data.write(to: backupURL, options: .atomic)
                     var url = backupURL
                     var rv = URLResourceValues()
                     rv.isExcludedFromBackup = true
                     try? url.setResourceValues(rv)
+                    jsonWrites += 1
                 }
             }
-            fputs("[BACKUP] selection saved across \(groupsCopy.count) folder(s)\n", stderr)
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            fputs("[BACKUP] saved folders=\(groupsCopy.count) xmp=\(xmpChanges.count) json=\(jsonWrites) in \(elapsed)ms\n", stderr)
         }
     }
+
+    /// v9.1.2: save 재진입 가드 + diff 캐시.
+    static var saveInflight = false
+    static var lastXMPSnapshot: [URL: (Int, String, Bool)] = [:]
+    static var lastJSONHash: [String: String] = [:]
 
     /// v8.9.7+: 폴더의 .pickshot_selection.json 백업에서 셀렉 정보 복구.
     ///   UserDefaults 가 비어있을 때만 fallback 으로 사용. 우선순위: UserDefaults > JSON 백업.
@@ -328,6 +360,10 @@ extension PhotoStore {
             fputs("[RESTORE] 폴더별 백업 \(perFolderCache.count)개 일괄 로드\n", stderr)
         }
 
+        // v9.1.2: didSet 폭주 방지 — 17000장 중 800장에 rating 적용 시 매번 didSet 발생하면
+        //   filteredCache invalidate / SwiftUI grid 재렌더 누적되어 22초 STALL 발생.
+        //   _suppressDidSet=true 로 묶어 일괄 처리 후 마지막에 invalidateFilterCache 1회만.
+        _suppressDidSet = true
         for i in 0..<photos.count {
             let fileName = photos[i].fileName
             let containingFolder = photos[i].jpgURL.deletingLastPathComponent().path
@@ -362,6 +398,8 @@ extension PhotoStore {
                 }
             }
         }
+        _suppressDidSet = false
+        invalidateFilterCache()
         fputs("[RESTORE] 적용: rating \(restoredRating)장, SP \(restoredSP)장\n", stderr)
 
         // 백그라운드: XMP sidecar + EXIF Rating 읽기 (저장된 별점 없는 사진만)

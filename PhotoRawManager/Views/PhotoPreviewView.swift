@@ -776,14 +776,12 @@ struct PhotoPreviewView: View {
     }
     private var previewBorderColor: Color {
         let p = livePhoto
-        if p.isSpacePicked { return .red }
         if p.colorLabel != .none, let c = p.colorLabel.color { return c }
         if p.rating > 0 { return AppTheme.starGold }
         return .clear
     }
     private var previewBorderWidth: CGFloat {
         let p = livePhoto
-        if p.isSpacePicked { return 4 }
         if p.colorLabel != .none && p.colorLabel.color != nil { return 3 }
         if p.rating > 0 { return 3 }
         return 0
@@ -1209,9 +1207,9 @@ struct PhotoPreviewView: View {
                     }
                     .contextMenu { previewBgMenu }
                 } else {
-                    // v9.0.2: 빠른 네비 중 검은 화면 방지 — placeholder 로 이전 프레임 흐릿하게.
-                    //   큰 이미지(8192px 등)를 그대로 렌더하면 main thread 디코드 75ms+ → 키씹힘.
-                    //   .interpolation(.none) + 작은 frame 캡으로 GPU rasterize 비용 최소화.
+                    // v9.1.3: 빠른 네비 중 placeholder — 풀사이즈로 표시 (이전엔 1200px 캡 + 55% opacity 로
+                    //   사용자에게 "미리보기가 작아짐" 으로 보였음). .interpolation(.none) 만 유지하여
+                    //   GPU rasterize 비용 최소화. 어두운 dimming 도 제거 — 풀톤 그대로 보여줌.
                     ZStack {
                         store.previewBackgroundColor
                         if let placeholder = previewFrame?.image ?? image {
@@ -1220,8 +1218,7 @@ struct PhotoPreviewView: View {
                                 .interpolation(.none)
                                 .antialiased(false)
                                 .aspectRatio(contentMode: .fit)
-                                .frame(maxWidth: min(vSize.width, 1200), maxHeight: min(vSize.height, 1200))
-                                .opacity(0.55)
+                                .frame(width: vSize.width, height: vSize.height)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -3187,6 +3184,16 @@ struct PhotoPreviewView: View {
         hiResCacheOrder.append(url)
     }
 
+    private static func hiResCost(for image: NSImage) -> Int {
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil), cg.height > 0 {
+            return max(1, cg.bytesPerRow * cg.height)
+        }
+        if let rep = image.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            return rep.pixelsWide * rep.pixelsHigh * 4
+        }
+        return 10 * 1024 * 1024
+    }
+
     /// 현재 사진을 제외한 모든 hi-res 캐시를 즉시 해제 (사진 전환 시 사전 예방용).
     /// 사후 memory pressure 대응이 아니라 사진이 바뀔 때마다 선제적으로 정리.
     private static func purgeHiResCacheExcept(currentURL: NSURL?) {
@@ -3230,6 +3237,7 @@ struct PhotoPreviewView: View {
     private static var lastPrefetchFireTime: Date = .distantPast
     private static var lastPrefetchIdx: Int = -1
     private static var lastFireIdx: Int = -1
+    private static var lastBurstThrottleTime: Date = .distantPast
 
     // v8.9.7+: 메모리 압박 자동 throttle (8GB 시스템 대응).
     //   .warning: 큐 cap 10 → 3 (디스크/메모리 부하 75% 감소)
@@ -3280,6 +3288,13 @@ struct PhotoPreviewView: View {
     }
 
     private static func prefetchEmbeddedNeighbors(store: PhotoStore, currentURL: URL, range: Int) {
+        // v9.1.2: 키 리피트 중 hard throttle — 250ms 당 최대 1회 (이전 throttle 이 dir=0 으로 매 키마다
+        //   발사되어 14.8초 STALL 유발). nav 끝나면 바로 풀 prefetch.
+        if store.isFastNavigation {
+            let now = Date()
+            if now.timeIntervalSince(lastBurstThrottleTime) < 0.25 { return }
+            lastBurstThrottleTime = now
+        }
         let photos = store.filteredPhotos
         // v8.6.2: 방향키 꾹 누르기 중 매 호출마다 O(n) 선형 탐색이면 10k 폴더에서 눈에 띄게 느려짐.
         //   selectedPhoto 와 currentURL 이 일치하면 _filteredIndex 에서 O(1) 로, 아니면 폴백으로 선형.
@@ -3472,7 +3487,7 @@ struct PhotoPreviewView: View {
                     hiResImage = diskBig
                     isHiResLoaded = true
                 }
-                Self.hiResCache.setObject(diskBig, forKey: hiResURL as NSURL)
+                Self.insertHiRes(diskBig, forKey: hiResURL as NSURL, cost: Self.hiResCost(for: diskBig))
                 let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
                 fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) DISK-PHASE2 \(pixelMax)px → shown in \(navMs)ms\n", stderr)
                 prefetchHiResNeighbors()
@@ -3539,15 +3554,7 @@ struct PhotoPreviewView: View {
                     }
                     // v8.9: NSBitmapImageRep pixelsWide/pixelsHigh 가 lazy decode 상태에서 0 반환 → cost=1 이 되어
                     //   NSCache 의 totalCostLimit 을 무력화시키던 버그 수정. cgImage 직접 읽어 bytesPerRow * height 사용.
-                    let cost: Int = {
-                        if let cg = hi.cgImage(forProposedRect: nil, context: nil, hints: nil), cg.height > 0 {
-                            return max(1, cg.bytesPerRow * cg.height)
-                        }
-                        if let rep = hi.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
-                            return rep.pixelsWide * rep.pixelsHigh * 4
-                        }
-                        return 10 * 1024 * 1024  // 최소 10MB 로 보수적 추정 (cost=1 방지)
-                    }()
+                    let cost = Self.hiResCost(for: hi)
                     // 명시적 LRU 사전 purge 후 삽입 (NSCache 자동 evict 타이밍 보완)
                     Self.insertHiRes(hi, forKey: url as NSURL, cost: cost)
                     // v8.9.7+: 디스크 영구 저장 — 같은 사진 재방문 시 NSCache LRU evict 됐어도 disk fast-path

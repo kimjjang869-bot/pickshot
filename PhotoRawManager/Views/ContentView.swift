@@ -192,13 +192,6 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             if let photo = store.selectedPhoto {
                                 PhotoPreviewView(photo: photo)
-                                    .overlay(
-                                        photo.isSpacePicked ?
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.red, lineWidth: 4)
-                                            .allowsHitTesting(false)
-                                        : nil
-                                    )
                             } else {
                                 Text("사진을 선택하세요")
                                     .font(.title3)
@@ -312,13 +305,6 @@ struct ContentView: View {
                                     } else if let photo = store.selectedPhoto {
                                         // v8.9.4: 미리보기 꽉차게 — 하단 메타 영역/DragHandle/frame 제거
                                         PhotoPreviewView(photo: photo)
-                                            .overlay(
-                                                photo.isSpacePicked ?
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.red, lineWidth: 4)
-                                                    .allowsHitTesting(false)
-                                                : nil
-                                            )
                                     } else {
                                         Text("사진을 선택하세요")
                                             .font(.title3)

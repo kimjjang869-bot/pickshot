@@ -169,6 +169,7 @@ struct PhotoRawManagerApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(store)
         }
     }
 }
