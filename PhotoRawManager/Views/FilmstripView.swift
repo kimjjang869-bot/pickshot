@@ -85,30 +85,27 @@ struct FilmstripView: View {
             guard !allPhotos.isEmpty else { return nil }
             let selIDs = self.store.selectedPhotoIDs
 
-            // v9.1.3: 다중 선택 활성 → 시각 스크롤만 (viewportCenterIdx) 변경, selection 보존.
-            //   단일 선택 → 기존 동작 (스크롤이 selection 이동).
+            // v9.1.3: O(1) 인덱스 캐시 — firstIndex(where:) 제거.
+            self.store.ensureFilteredIndex()
+
+            // v9.1.3: NSEvent monitor 는 이미 main thread 에서 호출 — async dispatch 제거.
+            //   매 휠 픽셀마다 main 큐에 dispatch 하면 한 프레임 지연 + 큐 누적 부하.
             if selIDs.count > 1 {
-                let curViewport = self.viewportCenterIdx ?? self.store.selectedPhotoID.flatMap { id in
-                    allPhotos.firstIndex(where: { $0.id == id })
-                } ?? 0
+                let curViewport = self.viewportCenterIdx
+                    ?? self.store.selectedPhotoID.flatMap { self.store._filteredIndex[$0] }
+                    ?? 0
                 let newViewport = max(0, min(allPhotos.count - 1, curViewport + stepCount))
                 if newViewport != curViewport {
-                    DispatchQueue.main.async {
-                        self.viewportCenterIdx = newViewport
-                    }
+                    self.viewportCenterIdx = newViewport
                 }
             } else {
-                let curIdx = self.store.selectedPhotoID.flatMap { id in
-                    allPhotos.firstIndex(where: { $0.id == id })
-                } ?? 0
+                let curIdx = self.store.selectedPhotoID.flatMap { self.store._filteredIndex[$0] } ?? 0
                 let newIdx = max(0, min(allPhotos.count - 1, curIdx + stepCount))
                 if newIdx != curIdx {
                     let newID = allPhotos[newIdx].id
-                    DispatchQueue.main.async {
-                        self.store.selectedPhotoID = newID
-                        self.store.selectedPhotoIDs = [newID]
-                        self.viewportCenterIdx = nil  // selection 따라감
-                    }
+                    self.store.selectedPhotoID = newID
+                    self.store.selectedPhotoIDs = [newID]
+                    self.viewportCenterIdx = nil
                 }
             }
             return nil
@@ -235,14 +232,11 @@ struct FilmstripView: View {
     ///   하단에 시각 스크롤바 — 드래그로 선택 변경.
     private var windowedFilmstrip: some View {
         let allPhotos = store.filteredPhotos
-        let selIdx = store.selectedPhotoID.flatMap { id in
-            allPhotos.firstIndex(where: { $0.id == id })
-        } ?? 0
-        // v9.1.3: viewportCenterIdx 가 있으면 시각 위치는 그것을 사용 (selection 과 분리).
-        //   nil 이면 selection 따라감 — 키 이동/클릭은 자동으로 viewport 동기화.
+        // v9.1.3: O(1) 인덱스 캐시 사용 — firstIndex(where:) 의 O(n) 제거.
+        //   17000장 끝쪽으로 갈수록 느려지던 문제 해결.
+        store.ensureFilteredIndex()
+        let selIdx = store.selectedPhotoID.flatMap { store._filteredIndex[$0] } ?? 0
         let currentIdx = viewportCenterIdx ?? selIdx
-        // v9.1.3: 스크롤바 9pt + 위쪽 간격 + 하단 패딩 14pt(스크롤바를 위로 올림).
-        //   라벨 영역 32pt (bold 12pt + 별점). 폭은 (cellHeight - 32) * 1.3.
         let scrollbarH: CGFloat = 9
         let scrollbarBottomPad: CGFloat = 14
         let cellH = filmstripHeight - 20
@@ -250,7 +244,8 @@ struct FilmstripView: View {
 
         return GeometryReader { geo in
             let visibleW = geo.size.width
-            // 화면 폭 안에 들어가는 슬롯 수 (홀수로 → 중앙 슬롯 명확).
+            // v9.1.3: 슬롯 수 상한 제거 — O(1) 인덱스로 이미 무거움 해결됨.
+            //   화면 폭에 맞게 셀이 가득 차도록 (이전 cap 11 → 우측 빈공간 생기던 문제 해결).
             let rawSlots = max(3, Int(visibleW / cellW))
             let slotCount = rawSlots % 2 == 0 ? rawSlots - 1 : rawSlots
             let centerSlot = slotCount / 2
@@ -270,8 +265,11 @@ struct FilmstripView: View {
                     ForEach(0..<slotCount, id: \.self) { slot in
                         let actualIdx = startIdx + slot
                         if actualIdx >= 0 && actualIdx < allPhotos.count {
+                            // v9.1.3: .id() 제거 — 이전엔 photo 변경 시 SwiftUI 가 view 를 destroy/recreate
+                            //   하여 modifier 전부 재생성 (contextMenu, onDrop, RightClickSelector 등 무거운 것 포함).
+                            //   AsyncThumbnailView 의 onChange(of: url) 가 자동으로 썸네일 reload 해주므로
+                            //   .id 없어도 정상 작동. 효과: 스크롤 시 SwiftUI diff cost 대폭 감소.
                             cellRow(for: allPhotos[actualIdx])
-                                .id(allPhotos[actualIdx].id)
                         } else {
                             Color.clear.frame(width: cellW, height: cellH)
                         }
