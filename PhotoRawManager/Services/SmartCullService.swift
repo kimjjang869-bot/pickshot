@@ -151,7 +151,7 @@ class SmartCullService: ObservableObject {
             case .general:  timeGap = 300
             }
             let timeGroups = self.groupByTime(photos: photoList, gap: timeGap)
-            fputs("[CULL] 시간 그룹: \(timeGroups.count)개 (간격 \(Int(timeGap))초)\n", stderr)
+            plog("[CULL] 시간 그룹: \(timeGroups.count)개 (간격 \(Int(timeGap))초)\n")
 
             // Step 3: 각 그룹 내 유사도 클러스터링
             self.updateStatus("유사 사진 클러스터링 중...")
@@ -160,10 +160,10 @@ class SmartCullService: ObservableObject {
             for (groupIdx, group) in timeGroups.enumerated() {
                 guard !self.cancelled else { break }
                 let groupVectors = vectors.filter { v in group.contains(where: { $0.id == v.photoID }) }
-                fputs("[CULL] 그룹 \(groupIdx+1): 벡터 \(groupVectors.count)개\n", stderr)
+                plog("[CULL] 그룹 \(groupIdx+1): 벡터 \(groupVectors.count)개\n")
                 // 자동 threshold: 샘플 거리 기반 (상대적)
                 let autoThreshold = self.calculateAutoThreshold(vectors: groupVectors, genre: self.genre)
-                fputs("[CULL] 자동 threshold: \(String(format: "%.4f", autoThreshold)) (장르: \(self.genre.rawValue))\n", stderr)
+                plog("[CULL] 자동 threshold: \(String(format: "%.4f", autoThreshold)) (장르: \(self.genre.rawValue))\n")
 
                 var clusters = self.clusterBySimilarity(vectors: groupVectors, threshold: autoThreshold)
 
@@ -179,7 +179,7 @@ class SmartCullService: ObservableObject {
                     if cluster.photoIDs.count > maxClusterSize {
                         let subVectors = groupVectors.filter { cluster.photoIDs.contains($0.photoID) }
                         let tighterThreshold = autoThreshold * 0.6  // 40% 더 엄격
-                        fputs("[CULL] 메가 클러스터 재분할: \(cluster.photoIDs.count)장 → threshold \(String(format: "%.4f", tighterThreshold))\n", stderr)
+                        plog("[CULL] 메가 클러스터 재분할: \(cluster.photoIDs.count)장 → threshold \(String(format: "%.4f", tighterThreshold))\n")
                         let subClusters = self.clusterBySimilarity(vectors: subVectors, threshold: tighterThreshold)
                         // 여전히 큰 경우 한번 더 분할
                         var splitAgain: [PhotoCluster] = []
@@ -187,7 +187,7 @@ class SmartCullService: ObservableObject {
                             if sc.photoIDs.count > maxClusterSize {
                                 let sv = subVectors.filter { sc.photoIDs.contains($0.photoID) }
                                 let tighter2 = tighterThreshold * 0.7
-                                fputs("[CULL]   2차 재분할: \(sc.photoIDs.count)장 → threshold \(String(format: "%.4f", tighter2))\n", stderr)
+                                plog("[CULL]   2차 재분할: \(sc.photoIDs.count)장 → threshold \(String(format: "%.4f", tighter2))\n")
                                 splitAgain.append(contentsOf: self.clusterBySimilarity(vectors: sv, threshold: tighter2))
                             } else {
                                 splitAgain.append(sc)
@@ -232,7 +232,7 @@ class SmartCullService: ObservableObject {
             let totalClusters = resultGroups.flatMap(\.clusters).count
             let totalPhotosInClusters = resultGroups.flatMap(\.clusters).flatMap(\.photoIDs).count
             let aCuts = resultGroups.flatMap(\.clusters).compactMap(\.bestPhotoID).count
-            fputs("[CULL] 최종 결과: \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, \(totalPhotosInClusters)장, A컷 \(aCuts)개\n", stderr)
+            plog("[CULL] 최종 결과: \(resultGroups.count)개 그룹, \(totalClusters)개 클러스터, \(totalPhotosInClusters)장, A컷 \(aCuts)개\n")
 
             self.updateStatus("결과 적용 중...")
             let capturedVectors = vectors
@@ -306,7 +306,7 @@ class SmartCullService: ObservableObject {
             }
         }
 
-        fputs("[CULL] 폴더 분류 완료: \(totalMoved)장 → \(baseDir.path)\n", stderr)
+        plog("[CULL] 폴더 분류 완료: \(totalMoved)장 → \(baseDir.path)\n")
 
         // 분류 폴더 열기
         DispatchQueue.main.async {
@@ -324,7 +324,7 @@ class SmartCullService: ObservableObject {
         let lock = NSLock()
         var doneCount = 0
 
-        fputs("[CULL] 특징 벡터 추출 시작: \(total)장 (Phase 1: FeaturePrint만)\n", stderr)
+        plog("[CULL] 특징 벡터 추출 시작: \(total)장 (Phase 1: FeaturePrint만)\n")
         let startTime = CFAbsoluteTimeGetCurrent()
 
         // Phase 1: FeaturePrint만 빠르게 추출 (320px, 품질평가 없음)
@@ -368,7 +368,7 @@ class SmartCullService: ObservableObject {
 
         var vectors = slots.compactMap { $0 }
         let phase1Time = CFAbsoluteTimeGetCurrent() - startTime
-        fputs("[CULL] Phase 1 완료: \(vectors.count)/\(total)장 (\(String(format: "%.1f", phase1Time))초, \(String(format: "%.1f", Double(vectors.count)/phase1Time))장/초)\n", stderr)
+        plog("[CULL] Phase 1 완료: \(vectors.count)/\(total)장 (\(String(format: "%.1f", phase1Time))초, \(String(format: "%.1f", Double(vectors.count)/phase1Time))장/초)\n")
 
         // Phase 2: 품질 평가 (선명도, 눈감김 등) — 480px
         let isLookbook = self.genre == .lookbook
@@ -427,7 +427,7 @@ class SmartCullService: ObservableObject {
         }
 
         let totalTime = CFAbsoluteTimeGetCurrent() - startTime
-        fputs("[CULL] 전체 추출 완료: \(vectors.count)장 (\(String(format: "%.1f", totalTime))초)\n", stderr)
+        plog("[CULL] 전체 추출 완료: \(vectors.count)장 (\(String(format: "%.1f", totalTime))초)\n")
         return vectors
     }
 
@@ -637,7 +637,7 @@ class SmartCullService: ObservableObject {
 
     private func clusterBySimilarity(vectors: [FeatureVector], threshold: Float) -> [PhotoCluster] {
         guard !vectors.isEmpty else {
-            fputs("[CULL] 클러스터링: 벡터 0개 → 빈 결과\n", stderr)
+            plog("[CULL] 클러스터링: 벡터 0개 → 빈 결과\n")
             return []
         }
 
@@ -698,7 +698,7 @@ class SmartCullService: ObservableObject {
             ))
         }
 
-        fputs("[CULL] 클러스터링 결과: \(clusters.count)개 클러스터 (2장 이상: \(clusters.filter { $0.photoIDs.count >= 2 }.count)개)\n", stderr)
+        plog("[CULL] 클러스터링 결과: \(clusters.count)개 클러스터 (2장 이상: \(clusters.filter { $0.photoIDs.count >= 2 }.count)개)\n")
         return clusters
     }
 
@@ -741,7 +741,7 @@ class SmartCullService: ObservableObject {
         let idx = Int(Double(distances.count) * percentile)
         let threshold = distances[min(idx, distances.count - 1)]
 
-        fputs("[CULL] 거리 분포: min=\(String(format: "%.4f", distances.first!)), median=\(String(format: "%.4f", distances[distances.count/2])), max=\(String(format: "%.4f", distances.last!)), P\(Int(percentile*100))=\(String(format: "%.4f", threshold))\n", stderr)
+        plog("[CULL] 거리 분포: min=\(String(format: "%.4f", distances.first!)), median=\(String(format: "%.4f", distances[distances.count/2])), max=\(String(format: "%.4f", distances.last!)), P\(Int(percentile*100))=\(String(format: "%.4f", threshold))\n")
 
         return threshold
     }
@@ -782,7 +782,7 @@ class SmartCullService: ObservableObject {
             }
         }
 
-        fputs("[CULL] 2차 병합: \(clusters.count) → \(merged.count) 클러스터\n", stderr)
+        plog("[CULL] 2차 병합: \(clusters.count) → \(merged.count) 클러스터\n")
         return merged
     }
 
@@ -883,7 +883,7 @@ class SmartCullService: ObservableObject {
             }
         }
         if rejectCount > 0 {
-            fputs("[CULL] 이슈 탈락: \(rejectCount)장 (흔들림/눈감김)\n", stderr)
+            plog("[CULL] 이슈 탈락: \(rejectCount)장 (흔들림/눈감김)\n")
         }
     }
 

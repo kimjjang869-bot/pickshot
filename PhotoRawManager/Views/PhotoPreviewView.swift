@@ -1157,7 +1157,7 @@ struct PhotoPreviewView: View {
                     .coordinateSpace(name: "previewContainer")
                     .onPreferenceChange(PreviewImageFrameKey.self) { newFrame in
                         previewImageFrame = newFrame
-                        fputs("[CROP-FIT] imageFrame=\(newFrame) vSize=\(vSize)\n", stderr)
+                        plog("[CROP-FIT] imageFrame=\(newFrame) vSize=\(vSize)\n")
                     }
                     .overlay(
                         Rectangle()
@@ -1483,7 +1483,7 @@ struct PhotoPreviewView: View {
             defer {
                 let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
                 if KeyCaptureView.verboseNavigationLog && ms > 1 {
-                    fputs("[PV-ONCHANGE] \(String(format: "%.0f", ms))ms\n", stderr)
+                    plog("[PV-ONCHANGE] \(String(format: "%.0f", ms))ms\n")
                 }
             }
             guard let newID = newID else { return }
@@ -1495,7 +1495,7 @@ struct PhotoPreviewView: View {
                     pendingPhotoID = current
                 }
                 if KeyCaptureView.verboseNavigationLog {
-                    fputs("[ONCHANGE-STALE] dropped newID=\(newID.uuidString.prefix(8)) → pendingPhotoID synced to \(store.selectedPhotoID?.uuidString.prefix(8) ?? "nil")\n", stderr)
+                    plog("[ONCHANGE-STALE] dropped newID=\(newID.uuidString.prefix(8)) → pendingPhotoID synced to \(store.selectedPhotoID?.uuidString.prefix(8) ?? "nil")\n")
                 }
                 return
             }
@@ -1670,7 +1670,7 @@ struct PhotoPreviewView: View {
                 //   pendingPhotoID 재확인 — burst 중 빠르게 변하면 set 시점에 이미 stale 할 수 있음.
                 guard pendingPhotoID == newID else {
                     if KeyCaptureView.verboseNavigationLog {
-                        fputs("[LD] STALE \(url.lastPathComponent) (newID changed, skip gen=\(currentGeneration))\n", stderr)
+                        plog("[LD] STALE \(url.lastPathComponent) (newID changed, skip gen=\(currentGeneration))\n")
                     }
                     return
                 }
@@ -1690,11 +1690,11 @@ struct PhotoPreviewView: View {
                         isHiResLoaded = false
                     }
                     if KeyCaptureView.verboseNavigationLog {
-                        fputs("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px ✓\n", stderr)
+                        plog("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px ✓\n")
                     }
                 } else {
                     if KeyCaptureView.verboseNavigationLog {
-                        fputs("[LD] SKIP-MISS \(url.lastPathComponent)\n", stderr)
+                        plog("[LD] SKIP-MISS \(url.lastPathComponent)\n")
                     }
                 }
 
@@ -1715,7 +1715,7 @@ struct PhotoPreviewView: View {
                         hiResImage = hi
                         isHiResLoaded = true
                     }
-                    fputs("[LD] HIT-HIRES-FULL \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height))\n", stderr)
+                    plog("[LD] HIT-HIRES-FULL \(url.lastPathComponent) \(Int(hi.size.width))x\(Int(hi.size.height))\n")
                 } else if let cached = ThumbnailCache.shared.get(url) ?? DiskThumbnailCache.shared.getByPath(url: url),
                           max(Int(cached.size.width), Int(cached.size.height)) >= 1500 {
                     let cachedMax = max(Int(cached.size.width), Int(cached.size.height))
@@ -1732,7 +1732,7 @@ struct PhotoPreviewView: View {
                         }
                     }
                     ThumbnailCache.shared.set(url, image: cached)
-                    fputs("[SYNC] HIT-FAST src=\(url.lastPathComponent) \(cachedMax)px \(cachedMax >= 3000 ? "(hi)" : "(low → upgrade pending)") ✓\n", stderr)
+                    plog("[SYNC] HIT-FAST src=\(url.lastPathComponent) \(cachedMax)px \(cachedMax >= 3000 ? "(hi)" : "(low → upgrade pending)") ✓\n")
                 } else {
                     loadImageDirect(for: url, id: newID)
                 }
@@ -1759,7 +1759,7 @@ struct PhotoPreviewView: View {
                 // v8.9.7+: idle 가드 200ms → 80ms 로 단축. 키 멈춤 후 hi-res 표시 평균 1s→500ms 목표.
                 if sinceLastNavMs < 80 {
                     if KeyCaptureView.verboseNavigationLog {
-                        fputs("[HIRES] BLOCKED sinceLastNav=\(Int(sinceLastNavMs))ms < 80ms\n", stderr)
+                        plog("[HIRES] BLOCKED sinceLastNav=\(Int(sinceLastNavMs))ms < 80ms\n")
                     }
                     return
                 }
@@ -1798,7 +1798,7 @@ struct PhotoPreviewView: View {
                 //   isHiResLoaded=true 라도 zoom 은 더 큰 픽셀 필요 → 가드 해제 후 재발사.
                 let currentMax = max(Int(image?.size.width ?? 0), Int(image?.size.height ?? 0))
                 if currentMax < 3000 {
-                    fputs("[HIRES] zoom triggered (current=\(currentMax)px) → deep scan\n", stderr)
+                    plog("[HIRES] zoom triggered (current=\(currentMax)px) → deep scan\n")
                     isHiResLoaded = false
                     loadHiResForZoom(forceDeepScan: true)
                 }
@@ -1824,7 +1824,7 @@ struct PhotoPreviewView: View {
                 let curMax = max(image?.size.width ?? 0, image?.size.height ?? 0)
                 let hiMax = max(hi.size.width, hi.size.height)
                 if hiMax > curMax * 1.1 {
-                    fputs("[CACHE-DONE] upgrade preview \(url.lastPathComponent) \(Int(curMax)) → \(Int(hiMax))\n", stderr)
+                    plog("[CACHE-DONE] upgrade preview \(url.lastPathComponent) \(Int(curMax)) → \(Int(hiMax))\n")
                     if self.setImageGuarded(hi, source: "CACHE-DONE.upgrade", sourceURL: url) {
                         self.lowResImage = hi
                     }
@@ -2260,7 +2260,7 @@ struct PhotoPreviewView: View {
                 return max(Int(img.size.width), Int(img.size.height))
             }()
             if curMax >= 3000 {
-                fputs("[SETTLE] SKIP — hi-res already displayed (\(curMax)px) \(selected.fileName)\n", stderr)
+                plog("[SETTLE] SKIP — hi-res already displayed (\(curMax)px) \(selected.fileName)\n")
                 return
             }
         }
@@ -2304,13 +2304,13 @@ struct PhotoPreviewView: View {
             allPhotos: store.photos
         )
         if decodeURL != url {
-            fputs("[LD] RAW-pair decode: \(url.lastPathComponent) → \(decodeURL.lastPathComponent)\n", stderr)
+            plog("[LD] RAW-pair decode: \(url.lastPathComponent) → \(decodeURL.lastPathComponent)\n")
         }
 
         // Cache key includes resolution
         let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: resolution, sourceURL: decodeURL)
         if let cached = PreviewImageCache.shared.get(cacheKey) {
-            fputs("[LD] HIT \(fileName) \(Int(cached.size.width))x\(Int(cached.size.height))\n", stderr)
+            plog("[LD] HIT \(fileName) \(Int(cached.size.width))x\(Int(cached.size.height))\n")
             if Thread.isMainThread {
                 if self.setImageGuarded(cached, source: "loadImageDirect.HIT.sync", sourceURL: url) {
                     self.lowResImage = cached
@@ -2379,7 +2379,7 @@ struct PhotoPreviewView: View {
         // v9.0: pendingPhotoID nil 시 random UUID 생성 → isCurrent() 검증 영원히 실패 + stale dispatch 위험.
         //   pendingPhotoID 가 없으면 로드 자체를 skip.
         guard let id = pendingPhotoID else {
-            fputs("[LD] loadImage SKIP — pendingPhotoID nil for \(url.lastPathComponent)\n", stderr)
+            plog("[LD] loadImage SKIP — pendingPhotoID nil for \(url.lastPathComponent)\n")
             return
         }
         loadImageDirect(for: url, id: id)
@@ -2458,7 +2458,7 @@ struct PhotoPreviewView: View {
                 let t0 = CFAbsoluteTimeGetCurrent()
                 let quick = Self.developPipelineShared.renderFast(baseImage: base, settings: settings)
                 let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                fputs("[DEV-FAST] \(url.lastPathComponent) \(quick == nil ? "FAILED" : "OK") \(ms)ms\n", stderr)
+                plog("[DEV-FAST] \(url.lastPathComponent) \(quick == nil ? "FAILED" : "OK") \(ms)ms\n")
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
                     guard self.developRenderGeneration == renderGeneration else { return }
@@ -2479,12 +2479,12 @@ struct PhotoPreviewView: View {
             guard let qualityBase else { return }
             let basePx = qualityBase.representations.first.map { max($0.pixelsWide, $0.pixelsHigh) }
                 ?? max(Int(qualityBase.size.width), Int(qualityBase.size.height))
-            fputs("[DEV-LOOK] refresh — \(url.lastPathComponent) base=\(basePx)px exp=\(settings.exposure) temp=\(settings.temperature)\n", stderr)
+            plog("[DEV-LOOK] refresh — \(url.lastPathComponent) base=\(basePx)px exp=\(settings.exposure) temp=\(settings.temperature)\n")
             let task = Task.detached(priority: .userInitiated) { [url, settings, qualityBase, basePx, renderGeneration] in
                 let t0 = CFAbsoluteTimeGetCurrent()
                 let rendered = Self.developPipelineShared.renderFast(baseImage: qualityBase, settings: settings)
                 let elapsed = CFAbsoluteTimeGetCurrent() - t0
-                fputs("[DEV-LOOK] rendered \(rendered == nil ? "FAILED" : "OK") base=\(basePx)px in \(String(format: "%.2f", elapsed))s\n", stderr)
+                plog("[DEV-LOOK] rendered \(rendered == nil ? "FAILED" : "OK") base=\(basePx)px in \(String(format: "%.2f", elapsed))s\n")
                 await MainActor.run {
                     guard self.photo.id == photoID else { return }
                     guard self.developRenderGeneration == renderGeneration else { return }
@@ -2641,7 +2641,7 @@ struct PhotoPreviewView: View {
             guard applied, angle > 0.2 else {
                 DispatchQueue.main.async {
                     isCorrecting = false
-                    fputs("[Upright] 보정 불필요 — 스킵\n", stderr)
+                    plog("[Upright] 보정 불필요 — 스킵\n")
                 }
                 return
             }
@@ -2950,7 +2950,7 @@ struct PhotoPreviewView: View {
         #if DEBUG
         if KeyCaptureView.verboseNavigationLog {
             let fileName = store.photos.first(where: { $0.id == photoID })?.fileName ?? "nil"
-            fputs("[PREVIEW-GEN] \(previewGeneration) \(reason) \(fileName) id=\(photoID.uuidString.prefix(8))\n", stderr)
+            plog("[PREVIEW-GEN] \(previewGeneration) \(reason) \(fileName) id=\(photoID.uuidString.prefix(8))\n")
         }
         #endif
         return previewGeneration
@@ -2969,7 +2969,7 @@ struct PhotoPreviewView: View {
               pendingPhotoID == photoID,
               store.selectedPhotoID == photoID else {
             if KeyCaptureView.verboseNavigationLog {
-                fputs("[PREVIEW-DROP] \(source) src=\(sourceURL.lastPathComponent) gen=\(generation)/\(previewGeneration)\n", stderr)
+                plog("[PREVIEW-DROP] \(source) src=\(sourceURL.lastPathComponent) gen=\(generation)/\(previewGeneration)\n")
             }
             return false
         }
@@ -2999,7 +2999,7 @@ struct PhotoPreviewView: View {
             sourceURL == PreviewLoadingPolicy.hiResURL(for: $0)
         } ?? false
         if KeyCaptureView.verboseNavigationLog || !okSource {
-            fputs("[PREVIEW-CHECK] \(okSource ? "OK" : "MISMATCH") sel=\(selectedName) view=\(sourceURL.lastPathComponent) q=\(quality) gen=\(generation)\n", stderr)
+            plog("[PREVIEW-CHECK] \(okSource ? "OK" : "MISMATCH") sel=\(selectedName) view=\(sourceURL.lastPathComponent) q=\(quality) gen=\(generation)\n")
         }
         // v8.9.7+: HUD 직접 publish — generation 은 사진 전환 시에만 증가하므로 stage 전환은 onChange 미발화.
         //   여기서 직접 호출해 stage 1 → 2 → 3 변화가 HUD 에 즉시 반영되도록 한다.
@@ -3020,12 +3020,12 @@ struct PhotoPreviewView: View {
             return true
         }
         guard let sel = store.selectedPhoto else {
-            fputs("[IMG-MISMATCH] \(source) src=\(sourceURL?.lastPathComponent ?? "nil") selected=nil — REJECTED\n", stderr)
+            plog("[IMG-MISMATCH] \(source) src=\(sourceURL?.lastPathComponent ?? "nil") selected=nil — REJECTED\n")
             return false
         }
         if let src = sourceURL,
            src != sel.jpgURL && src != sel.rawURL {
-            fputs("[IMG-MISMATCH] \(source) src=\(src.lastPathComponent) selected=\(sel.jpgURL.lastPathComponent) — REJECTED\n", stderr)
+            plog("[IMG-MISMATCH] \(source) src=\(src.lastPathComponent) selected=\(sel.jpgURL.lastPathComponent) — REJECTED\n")
             return false
         }
         return commitPreviewFrame(
@@ -3067,7 +3067,7 @@ struct PhotoPreviewView: View {
         imagePhotoID = nil
         previewFrame = nil
         if KeyCaptureView.verboseNavigationLog {
-            fputs("[IMG-CLEAR] \(source)\n", stderr)
+            plog("[IMG-CLEAR] \(source)\n")
         }
     }
 
@@ -3083,7 +3083,7 @@ struct PhotoPreviewView: View {
         guard dim >= 800 else { return }
         _ = setImageGuarded(thumb, source: "BURST-END", sourceURL: url)
         if KeyCaptureView.verboseNavigationLog {
-            fputs("[LD] BURST-END \(url.lastPathComponent) \(dim)px (재정렬)\n", stderr)
+            plog("[LD] BURST-END \(url.lastPathComponent) \(dim)px (재정렬)\n")
         }
     }
 
@@ -3158,7 +3158,7 @@ struct PhotoPreviewView: View {
             return max(Int(image.size.width), Int(image.size.height))
         }()
         guard pixelMax >= 3000 else {
-            fputs("[HIRES-CACHE] SKIP insert — \(url.lastPathComponent ?? "?") only \(pixelMax)px (<3000 not hi-res)\n", stderr)
+            plog("[HIRES-CACHE] SKIP insert — \(url.lastPathComponent ?? "?") only \(pixelMax)px (<3000 not hi-res)\n")
             return
         }
         hiResCacheLock.lock()
@@ -3250,15 +3250,15 @@ struct PhotoPreviewView: View {
             let event = src.data
             if event.contains(.critical) {
                 currentQueueCap = 0
-                fputs("[MEM-PRESSURE] CRITICAL — prefetch 일시정지 (cap=0)\n", stderr)
+                plog("[MEM-PRESSURE] CRITICAL — prefetch 일시정지 (cap=0)\n")
                 // 큐 비우기
                 prefetchOpQueue.cancelAllOperations()
             } else if event.contains(.warning) {
                 currentQueueCap = 3
-                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=3)\n", stderr)
+                plog("[MEM-PRESSURE] WARNING — prefetch throttle (cap=3)\n")
             } else {
                 currentQueueCap = 10
-                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=10)\n", stderr)
+                plog("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=10)\n")
             }
         }
         src.activate()
@@ -3273,7 +3273,7 @@ struct PhotoPreviewView: View {
             let sinceLastNav = (CFAbsoluteTimeGetCurrent() - KeyCaptureView.lastNavTime) * 1000
             if sinceLastNav < 150 {
                 if KeyCaptureView.verboseNavigationLog {
-                    fputs("[PREFETCH-KR] DEBOUNCE-SKIP sinceLastNav=\(Int(sinceLastNav))ms\n", stderr)
+                    plog("[PREFETCH-KR] DEBOUNCE-SKIP sinceLastNav=\(Int(sinceLastNav))ms\n")
                 }
                 return
             }
@@ -3374,20 +3374,20 @@ struct PhotoPreviewView: View {
         }
 
         let tag = isNewBurst ? "BURST-START" : "CATCH-UP"
-        fputs("[PREFETCH-KR] \(tag) idx=\(curIdx) dir=\(dir) f=\(forwardN) b=\(backwardN) targets=\(targets.count)\n", stderr)
+        plog("[PREFETCH-KR] \(tag) idx=\(curIdx) dir=\(dir) f=\(forwardN) b=\(backwardN) targets=\(targets.count)\n")
 
         // v8.9.7+: 큐 cap 은 메모리 압박에 따라 동적 (10 / 3 / 0). memoryPressureSource 가 갱신.
         _ = memoryPressureSource  // 첫 접근 시 활성화
         let maxQueuedPrefetch = currentQueueCap
         if maxQueuedPrefetch == 0 {
-            fputs("[PREFETCH-KR] PAUSED (memory critical)\n", stderr)
+            plog("[PREFETCH-KR] PAUSED (memory critical)\n")
             return
         }
         for target in targets {
             prefetchInflightLock.lock()
             if prefetchInflight.count >= maxQueuedPrefetch {
                 prefetchInflightLock.unlock()
-                fputs("[PREFETCH-KR] QUEUE-FULL inflight=\(prefetchInflight.count) cap=\(maxQueuedPrefetch) — 추가 SKIP\n", stderr)
+                plog("[PREFETCH-KR] QUEUE-FULL inflight=\(prefetchInflight.count) cap=\(maxQueuedPrefetch) — 추가 SKIP\n")
                 break
             }
             if prefetchInflight.contains(target.url) {
@@ -3422,7 +3422,7 @@ struct PhotoPreviewView: View {
                     let raw = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
                     let img = PhotoPreviewView.correctThumbnailOrientationIfNeeded(raw, source: source)
                     ThumbnailCache.shared.set(target.url, image: img)
-                    fputs("[PREFETCH-KR] THUMB \(target.url.lastPathComponent) src=\(target.decodeURL.lastPathComponent) \(cgThumb.width)x\(cgThumb.height)\n", stderr)
+                    plog("[PREFETCH-KR] THUMB \(target.url.lastPathComponent) src=\(target.decodeURL.lastPathComponent) \(cgThumb.width)x\(cgThumb.height)\n")
                 }
             }
         }
@@ -3456,7 +3456,7 @@ struct PhotoPreviewView: View {
 
         if let cached = Self.hiResCache.object(forKey: hiResURL as NSURL) {
             guard stillCurrent() else {
-                fputs("[HIRES] CACHED ABORT — selection moved away from \(hiResURL.lastPathComponent)\n", stderr)
+                plog("[HIRES] CACHED ABORT — selection moved away from \(hiResURL.lastPathComponent)\n")
                 return
             }
             if setImageGuarded(cached, source: "loadHiResForZoom.CACHED", sourceURL: hiResURL) {
@@ -3464,7 +3464,7 @@ struct PhotoPreviewView: View {
                 isHiResLoaded = true
             }
             let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
-            fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) CACHED → shown in \(navMs)ms from nav start\n", stderr)
+            plog("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) CACHED → shown in \(navMs)ms from nav start\n")
             prefetchHiResNeighbors()
             return
         }
@@ -3480,7 +3480,7 @@ struct PhotoPreviewView: View {
             }()
             if pixelMax >= 3000 {
                 guard stillCurrent() else {
-                    fputs("[HIRES] DISK-PHASE2 ABORT — selection moved away from \(hiResURL.lastPathComponent)\n", stderr)
+                    plog("[HIRES] DISK-PHASE2 ABORT — selection moved away from \(hiResURL.lastPathComponent)\n")
                     return
                 }
                 if setImageGuarded(diskBig, source: "loadHiResForZoom.DISK-PHASE2", sourceURL: hiResURL) {
@@ -3489,7 +3489,7 @@ struct PhotoPreviewView: View {
                 }
                 Self.insertHiRes(diskBig, forKey: hiResURL as NSURL, cost: Self.hiResCost(for: diskBig))
                 let navMs = Int((CFAbsoluteTimeGetCurrent() - navStartTime) * 1000)
-                fputs("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) DISK-PHASE2 \(pixelMax)px → shown in \(navMs)ms\n", stderr)
+                plog("[HIRES-DISPLAY] \(hiResURL.lastPathComponent) DISK-PHASE2 \(pixelMax)px → shown in \(navMs)ms\n")
                 prefetchHiResNeighbors()
                 return
             }
@@ -3507,10 +3507,10 @@ struct PhotoPreviewView: View {
         let photoID = selected.id
         // v8.9.7: dedupe — 같은 URL 디코드가 진행 중이면 무시.
         if hiResInflightURL == url {
-            fputs("[HIRES] dedupe — \(url.lastPathComponent) already in-flight, skip\n", stderr)
+            plog("[HIRES] dedupe — \(url.lastPathComponent) already in-flight, skip\n")
             return
         }
-        fputs("[HIRES] url=\(url.lastPathComponent) jpgURL=\(selected.jpgURL.lastPathComponent) rawURL=\(selected.rawURL?.lastPathComponent ?? "nil")\n", stderr)
+        plog("[HIRES] url=\(url.lastPathComponent) jpgURL=\(selected.jpgURL.lastPathComponent) rawURL=\(selected.rawURL?.lastPathComponent ?? "nil")\n")
 
         hiResLoadWork?.cancel()
         hiResInflightURL = url
@@ -3540,7 +3540,7 @@ struct PhotoPreviewView: View {
                     let hi = Self.enforceAspectOfStage1(rawHi, url: url, stage1Portrait: self.firstLoadIsPortrait)
                     let pxW = hi.representations.first?.pixelsWide ?? 0
                     let pxH = hi.representations.first?.pixelsHigh ?? 0
-                    fputs("[HIRES] loaded \(url.lastPathComponent) size=\(Int(rawHi.size.width))x\(Int(rawHi.size.height)) px=\(rawPxW)x\(rawPxH) → size=\(Int(hi.size.width))x\(Int(hi.size.height)) px=\(pxW)x\(pxH) in \(String(format: "%.0f", elapsed))ms\n", stderr)
+                    plog("[HIRES] loaded \(url.lastPathComponent) size=\(Int(rawHi.size.width))x\(Int(rawHi.size.height)) px=\(rawPxW)x\(rawPxH) → size=\(Int(hi.size.width))x\(Int(hi.size.height)) px=\(pxW)x\(pxH) in \(String(format: "%.0f", elapsed))ms\n")
                     // v8.8.2: LOGICAL size 비교 대신 PIXEL 비교 — JPG DPI 메타로 size 가 scale 달라짐.
                     let currentPxW = self.image?.representations.first?.pixelsWide ?? Int(self.image?.size.width ?? 0)
                     let currentPxH = self.image?.representations.first?.pixelsHigh ?? Int(self.image?.size.height ?? 0)
@@ -3549,7 +3549,7 @@ struct PhotoPreviewView: View {
                     let hiPxH = hi.representations.first?.pixelsHigh ?? Int(hi.size.height)
                     let hiResPx = max(hiPxW, hiPxH)
                     guard hiResPx > currentPx else {
-                        fputs("[HIRES] ⚠️ skip — hi-res \(hiResPx)px < current \(currentPx)px\n", stderr)
+                        plog("[HIRES] ⚠️ skip — hi-res \(hiResPx)px < current \(currentPx)px\n")
                         return
                     }
                     // v8.9: NSBitmapImageRep pixelsWide/pixelsHigh 가 lazy decode 상태에서 0 반환 → cost=1 이 되어
@@ -3569,7 +3569,7 @@ struct PhotoPreviewView: View {
                     let curSel = self.store.selectedPhoto
                     let curURL = curSel.map { PreviewLoadingPolicy.hiResURL(for: $0) }
                     guard curURL == url else {
-                        fputs("[HIRES] FRESH ABORT — selection moved \(url.lastPathComponent) → \(curURL?.lastPathComponent ?? "nil")\n", stderr)
+                        plog("[HIRES] FRESH ABORT — selection moved \(url.lastPathComponent) → \(curURL?.lastPathComponent ?? "nil")\n")
                         return
                     }
                     self.hiResImage = hi
@@ -3577,11 +3577,11 @@ struct PhotoPreviewView: View {
                         self.isHiResLoaded = true
                     }
                     let navMs = Int((CFAbsoluteTimeGetCurrent() - self.navStartTime) * 1000)
-                    fputs("[HIRES-DISPLAY] \(url.lastPathComponent) FRESH → shown in \(navMs)ms from nav start (decode \(String(format: "%.0f", elapsed))ms)\n", stderr)
+                    plog("[HIRES-DISPLAY] \(url.lastPathComponent) FRESH → shown in \(navMs)ms from nav start (decode \(String(format: "%.0f", elapsed))ms)\n")
                     // v8.8.2: 네비게이션 settle 이후에 이웃 HiRes 프리페치 (다음 이동 즉시 HiRes 표시)
                     self.prefetchHiResNeighbors()
                 } else {
-                    fputs("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n", stderr)
+                    plog("[HIRES] FAILED \(url.lastPathComponent) in \(String(format: "%.0f", elapsed))ms\n")
                     self.isHiResLoaded = true  // 실패해도 재시도 방지
                 }
             }
@@ -3608,7 +3608,7 @@ struct PhotoPreviewView: View {
 
         let start = max(0, currentIdx - range)
         let end = min(list.count - 1, currentIdx + range)
-        fputs("[HIRES-PREFETCH] start idx=\(currentIdx) range=±\(range) window=\(start)..\(end)\n", stderr)
+        plog("[HIRES-PREFETCH] start idx=\(currentIdx) range=±\(range) window=\(start)..\(end)\n")
 
         // v8.8.2 메모리 안전성: 직렬 큐 사용 (동시 N개 디코드 → 메모리 스파이크 25GB 방지).
         //   또 메모리 사용률이 높으면 조기 중단.
@@ -3622,7 +3622,7 @@ struct PhotoPreviewView: View {
                 let memMB = Double(ProcessInfo.processInfo.physicalMemory) / 1024 / 1024
                 let usedMB = Self.currentMemMB()
                 if usedMB / memMB > 0.55 {
-                    fputs("[HIRES-PREFETCH] abort: mem \(Int(usedMB))MB/\(Int(memMB))MB > 55%\n", stderr)
+                    plog("[HIRES-PREFETCH] abort: mem \(Int(usedMB))MB/\(Int(memMB))MB > 55%\n")
                     break
                 }
 
@@ -3650,7 +3650,7 @@ struct PhotoPreviewView: View {
                     }
                 }
             }
-            fputs("[HIRES-PREFETCH] done prefetched=\(prefetched) skipped(cached)=\(skipped)\n", stderr)
+            plog("[HIRES-PREFETCH] done prefetched=\(prefetched) skipped(cached)=\(skipped)\n")
         }
     }
 
@@ -3729,9 +3729,9 @@ struct PhotoPreviewView: View {
                     parentEmbedded = correctThumbnailOrientationIfNeeded(raw, source: parentSrc)
                     parentEmbeddedPixels = cg.width * cg.height
                     parentEmbeddedMaxDim = max(cg.width, cg.height)
-                    fputs("[HIRES] parent embedded candidate \(url.lastPathComponent) \(cg.width)x\(cg.height)\n", stderr)
+                    plog("[HIRES] parent embedded candidate \(url.lastPathComponent) \(cg.width)x\(cg.height)\n")
                 } else {
-                    fputs("[HIRES] embedded too small \(url.lastPathComponent) \(cg.width)x\(cg.height) → fallback scan\n", stderr)
+                    plog("[HIRES] embedded too small \(url.lastPathComponent) \(cg.width)x\(cg.height) → fallback scan\n")
                 }
             }
         }
@@ -3745,14 +3745,14 @@ struct PhotoPreviewView: View {
             let target = Int(Double(hiResTargetPx) * 0.8)
             return parentEmbeddedMaxDim < target
         }()
-        fputs("[HIRES] decision \(url.lastPathComponent) parentMax=\(parentEmbeddedMaxDim) target=\(Int(Double(hiResTargetPx) * 0.8)) deepScan=\(needsDeepScan) allowAuto=\(allowAutoDeepScan)\n", stderr)
+        plog("[HIRES] decision \(url.lastPathComponent) parentMax=\(parentEmbeddedMaxDim) target=\(Int(Double(hiResTargetPx) * 0.8)) deepScan=\(needsDeepScan) allowAuto=\(allowAutoDeepScan)\n")
 
         guard needsDeepScan else {
-            fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels) (no deep scan)\n", stderr)
+            plog("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels) (no deep scan)\n")
             return parentEmbedded
         }
         if !allowDeepEmbeddedScan {
-            fputs("[HIRES] parent insufficient (\(parentEmbeddedPixels)px²) → auto deep scan\n", stderr)
+            plog("[HIRES] parent insufficient (\(parentEmbeddedPixels)px²) → auto deep scan\n")
         }
 
         // RAW 안의 embedded JPEG 후보를 스캔. v8.9.7+: 250ms 목표로 16MB 축소.
@@ -3798,10 +3798,10 @@ struct PhotoPreviewView: View {
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) {
                 bestPixels = cgImage.width * cgImage.height
                 bestImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                fputs("[HIRES] scan embedded candidate \(url.lastPathComponent) \(cgImage.width)x\(cgImage.height)\n", stderr)
+                plog("[HIRES] scan embedded candidate \(url.lastPathComponent) \(cgImage.width)x\(cgImage.height)\n")
                 // Early termination: 큰 후보 찾으면 더 스캔 안 함 (속도 우선).
                 if bestPixels >= earlyTerminationPixels {
-                    fputs("[HIRES] early-term at \(bestPixels)px² (target=\(earlyTerminationPixels))\n", stderr)
+                    plog("[HIRES] early-term at \(bestPixels)px² (target=\(earlyTerminationPixels))\n")
                     break scan
                 }
             }
@@ -3814,11 +3814,11 @@ struct PhotoPreviewView: View {
             if let parentSource = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
                 corrected = correctThumbnailOrientationIfNeeded(corrected, source: parentSource)
             }
-            fputs("[HIRES] embedded camera preview selected \(url.lastPathComponent) pixels=\(bestPixels)\n", stderr)
+            plog("[HIRES] embedded camera preview selected \(url.lastPathComponent) pixels=\(bestPixels)\n")
             return corrected
         }
         if parentEmbedded != nil {
-            fputs("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels)\n", stderr)
+            plog("[HIRES] parent embedded camera preview selected \(url.lastPathComponent) pixels=\(parentEmbeddedPixels)\n")
         }
         return parentEmbedded
     }
@@ -4035,7 +4035,7 @@ struct PhotoPreviewView: View {
         // orient 없으면 90° (orient 6) 임시 적용.
         let info = readImageDimensionInfo(url: url)
         let orient = (info?.orientation ?? 6) > 1 ? (info?.orientation ?? 6) : 6
-        fputs("[LD-ENFORCE] \(url.lastPathComponent) aspect mismatch — new=\(newPortrait ? "P" : "L") stage1=\(stage1Portrait ? "P" : "L") → applyOrientation(\(orient))\n", stderr)
+        plog("[LD-ENFORCE] \(url.lastPathComponent) aspect mismatch — new=\(newPortrait ? "P" : "L") stage1=\(stage1Portrait ? "P" : "L") → applyOrientation(\(orient))\n")
         return applyOrientation(new, orientation: orient)
     }
 
@@ -5154,7 +5154,7 @@ final class ProgressiveLoadStats {
             let p50 = sorted[sorted.count / 2]
             let p95 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
             let avg = arr.reduce(0, +) / Double(arr.count)
-            fputs("[LD-STATS] \(bucket) n=\(arr.count) avg=\(Int(avg))ms p50=\(Int(p50))ms p95=\(Int(p95))ms\n", stderr)
+            plog("[LD-STATS] \(bucket) n=\(arr.count) avg=\(Int(avg))ms p50=\(Int(p50))ms p95=\(Int(p95))ms\n")
         }
     }
 }

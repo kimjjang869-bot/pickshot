@@ -755,7 +755,7 @@ struct ContentView: View {
         let url = URL(fileURLWithPath: path)
         store.startupMode = .viewer
         store.loadPhotosRecursive(from: url)
-        fputs("[DEBUG-OPEN] recursive path=\(path)\n", stderr)
+        plog("[DEBUG-OPEN] recursive path=\(path)\n")
     }
 
     private func startDebugStressDriverIfRequested() {
@@ -830,7 +830,7 @@ struct ContentView: View {
                 if step % logEvery == 0 {
                     let rss = Int(PhotoStore.currentAppMemoryMB())
                     let selectedName = store.selectedPhoto?.fileName ?? "-"
-                    fputs("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n", stderr)
+                    plog("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n")
                 }
             }
         }
@@ -842,12 +842,12 @@ struct ContentView: View {
                 }
                 debugStressTimer = nil
                 let rss = Int(PhotoStore.currentAppMemoryMB())
-                fputs("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n", stderr)
+                plog("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n")
             }
         }
         debugStressTimer = timer
         timer.resume()
-        fputs("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n", stderr)
+        plog("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n")
     }
     #endif
 

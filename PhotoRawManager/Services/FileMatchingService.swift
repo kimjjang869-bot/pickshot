@@ -271,7 +271,7 @@ struct FileMatchingService {
             let group = DispatchGroup()
             let scanQueue = DispatchQueue(label: "com.pickshot.scan.parallel", qos: .utility, attributes: .concurrent)
 
-            fputs("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n", stderr)
+            plog("[SCAN] subfolders=\(topFolders.count) parallel=\(maxConcurrent) slow=\(isSlowDisk)\n")
 
             // v9.1: 진행률 — top-level 서브폴더 완료 카운터.
             //   top-level 1개에 nested 폴더가 들어있을 수 있으나, 사용자에게 "움직이고 있다" 시각 피드백
@@ -291,7 +291,7 @@ struct FileMatchingService {
                         let elapsed = (CFAbsoluteTimeGetCurrent() - subStart) * 1000
                         // 5초 이상 걸린 서브폴더는 stall 후보 — 로그 남김
                         if elapsed > 5000 {
-                            fputs("[SCAN] SLOW subfolder \(sub.lastPathComponent) took \(Int(elapsed))ms\n", stderr)
+                            plog("[SCAN] SLOW subfolder \(sub.lastPathComponent) took \(Int(elapsed))ms\n")
                         }
                         progressLock.lock()
                         completedFolders += 1
@@ -328,7 +328,7 @@ struct FileMatchingService {
                     let final = state.totalCount
                     DispatchQueue.main.async {
                         let elapsed = (CFAbsoluteTimeGetCurrent() - overallStart) * 1000
-                        fputs("[SCAN] streaming total \(final) photos in \(Int(elapsed))ms (parallel=\(maxConcurrent))\n", stderr)
+                        plog("[SCAN] streaming total \(final) photos in \(Int(elapsed))ms (parallel=\(maxConcurrent))\n")
                         onComplete(isCancelled() ? 0 : final)
                     }
                 }

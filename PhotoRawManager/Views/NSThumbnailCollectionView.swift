@@ -53,7 +53,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         coordinator.rebuildIndexMap()
         coordinator.photosVersion = store.photosVersion
         collectionView.reloadData()
-        fputs("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n", stderr)
+        plog("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n")
         coordinator.thumbnailSize = store.thumbnailSize
         coordinator.showFileExtension = store.showFileExtension
         coordinator.showFileTypeBadge = store.showFileTypeBadge
@@ -73,7 +73,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         defer {
             let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
             if ms > 1 {
-                fputs("[GRID-UPDATE] \(String(format: "%.0f", ms))ms (photos=\(self.store.filteredPhotos.count))\n", stderr)
+                plog("[GRID-UPDATE] \(String(format: "%.0f", ms))ms (photos=\(self.store.filteredPhotos.count))\n")
             }
         }
         let coordinator = context.coordinator
@@ -545,7 +545,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             guard !photo.isParentFolder else { return }
             let beforeCount = store.selectedPhotoIDs.count
             if !store.selectedPhotoIDs.contains(photo.id) {
-                fputs("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n", stderr)
+                plog("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n")
                 store.selectedPhotoIDs = [photo.id]
                 store.selectedPhotoID = photo.id
                 // v8.9.7+: 메뉴가 main runloop 을 잡고 있는 동안 SwiftUI 재렌더가 지연되어 파란 선택 표시가
@@ -571,7 +571,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                     CATransaction.flush()
                 }
             } else {
-                fputs("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n", stderr)
+                plog("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n")
             }
         }
 
@@ -822,7 +822,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 let newDir = folderURL.appendingPathComponent(name)
                 try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
                 let selectionAtMove = store.selectedPhotoIDs
-                fputs("[MOVE-NEW] selection count at move=\(selectionAtMove.count)\n", stderr)
+                plog("[MOVE-NEW] selection count at move=\(selectionAtMove.count)\n")
                 var fileURLs: [URL] = []
                 var skippedNoIndex = 0
                 var skippedFolder = 0
@@ -839,7 +839,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                     fileURLs.append(photo.jpgURL)
                     if let raw = photo.rawURL, raw != photo.jpgURL { fileURLs.append(raw) }
                 }
-                fputs("[MOVE-NEW] fileURLs=\(fileURLs.count) (skipped: noIndex=\(skippedNoIndex), folder=\(skippedFolder))\n", stderr)
+                plog("[MOVE-NEW] fileURLs=\(fileURLs.count) (skipped: noIndex=\(skippedNoIndex), folder=\(skippedFolder))\n")
                 store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
             }
         }

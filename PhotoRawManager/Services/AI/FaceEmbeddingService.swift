@@ -271,10 +271,10 @@ final class FaceEmbeddingService {
     /// v8.9: AdaFace R18 모델이 있으면 512-dim 고정밀 엔진, 없으면 FeaturePrint fallback.
     private(set) var provider: FaceEmbeddingProvider = {
         if AdaFaceService.isAvailable {
-            fputs("[FACE-EMB] AdaFace R18 (512-dim) 엔진 사용\n", stderr)
+            plog("[FACE-EMB] AdaFace R18 (512-dim) 엔진 사용\n")
             return AdaFaceEmbeddingProvider()
         }
-        fputs("[FACE-EMB] AdaFace 없음 — VNFeaturePrint (768-dim) fallback\n", stderr)
+        plog("[FACE-EMB] AdaFace 없음 — VNFeaturePrint (768-dim) fallback\n")
         return FaceFeaturePrintProvider()
     }()
 

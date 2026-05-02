@@ -68,7 +68,7 @@ func copySelectionToPasteboard(store: PhotoStore) {
     // cut 마커 있던 것 clear (copy 후엔 이전 cut 무효화)
     store.pendingCutPhotoIDs = []
 
-    fputs("📋 [COPY] \(selectedIDs.count)개 아이템 (\(urls.count)파일) 클립보드에 복사됨\n", stderr)
+    plog("📋 [COPY] \(selectedIDs.count)개 아이템 (\(urls.count)파일) 클립보드에 복사됨\n")
 }
 
 /// Cut selected photos/folders (Cmd+X). Paste 시 move 동작.
@@ -83,7 +83,7 @@ func cutSelectionToPasteboard(store: PhotoStore) {
 
     store.pendingCutPhotoIDs = selectedIDs
 
-    fputs("✂️ [CUT] \(selectedIDs.count)개 아이템 (\(urls.count)파일) 잘라내기 대기\n", stderr)
+    plog("✂️ [CUT] \(selectedIDs.count)개 아이템 (\(urls.count)파일) 잘라내기 대기\n")
 }
 
 // 기존 이름 호환 (내부 호출 유지)
@@ -95,7 +95,7 @@ func copyURLToPasteboard(_ url: URL) {
     let pb = NSPasteboard.general
     pb.clearContents()
     pb.writeObjects([url as NSURL])
-    fputs("📋 [COPY] \(url.lastPathComponent) 클립보드에 복사됨\n", stderr)
+    plog("📋 [COPY] \(url.lastPathComponent) 클립보드에 복사됨\n")
 }
 
 /// 단일 URL 잘라내기.
@@ -104,7 +104,7 @@ func cutURLToPasteboard(_ url: URL) {
     pb.clearContents()
     pb.writeObjects([url as NSURL])
     pb.setData(Data([1]), forType: pickshotCutPasteboardType)
-    fputs("✂️ [CUT] \(url.lastPathComponent) 잘라내기 대기\n", stderr)
+    plog("✂️ [CUT] \(url.lastPathComponent) 잘라내기 대기\n")
 }
 
 /// 클립보드 파일을 지정 폴더에 붙여넣기 (폴더 트리에서 사용).
@@ -112,7 +112,7 @@ func pasteFilesToFolder(_ destFolder: URL, store: PhotoStore) {
     let pasteboard = NSPasteboard.general
     guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
           !urls.isEmpty else {
-        fputs("📋 [PASTE] 클립보드에 파일 없음\n", stderr)
+        plog("📋 [PASTE] 클립보드에 파일 없음\n")
         return
     }
     let isCut = pasteboard.data(forType: pickshotCutPasteboardType) != nil
@@ -139,7 +139,7 @@ func performFileTransferToFolder(
     if !conflicts.isEmpty {
         strategy = FileConflictResolver.promptUser(conflicts: conflicts)
         if strategy == .cancel {
-            fputs("📋 [TRANSFER] 사용자 취소 (충돌 다이얼로그)\n", stderr)
+            plog("📋 [TRANSFER] 사용자 취소 (충돌 다이얼로그)\n")
             return
         }
     }
@@ -331,7 +331,7 @@ func performFileTransferToFolder(
                     successCount += 1
                     completed.append((srcURL, finalDest))
                 } catch {
-                    fputs("📋 [PASTE] 실패: \(fname) — \(error.localizedDescription)\n", stderr)
+                    plog("📋 [PASTE] 실패: \(fname) — \(error.localizedDescription)\n")
                 }
                 accumulatedBytes += fileSize
             }
@@ -460,7 +460,7 @@ func findSimilar(to photo: PhotoItem, store: PhotoStore) {
             matchedIDs.insert(photo.id)  // 쿼리 사진도 포함
             store.selectedPhotoIDs = matchedIDs
             store.showOnlySelected = true
-            fputs("[SEMANTIC] 유사 \(results.count)장 선택 (쿼리 \(queryURL.lastPathComponent))\n", stderr)
+            plog("[SEMANTIC] 유사 \(results.count)장 선택 (쿼리 \(queryURL.lastPathComponent))\n")
             store.showToastMessage("🔍 비슷한 사진 \(results.count)장 찾음")
         }
     }
@@ -470,19 +470,19 @@ func findSimilar(to photo: PhotoItem, store: PhotoStore) {
 /// Cut 마커가 있으면 move (원본 삭제), 없으면 copy. 파일/폴더 둘 다 지원.
 func pasteFilesFromPasteboard(store: PhotoStore) {
     guard let destFolder = store.folderURL else {
-        fputs("📋 [PASTE] 대상 폴더 없음\n", stderr)
+        plog("📋 [PASTE] 대상 폴더 없음\n")
         return
     }
     let pasteboard = NSPasteboard.general
     guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
           !urls.isEmpty else {
-        fputs("📋 [PASTE] 클립보드에 파일 없음\n", stderr)
+        plog("📋 [PASTE] 클립보드에 파일 없음\n")
         return
     }
 
     let isCut = pasteboard.data(forType: pickshotCutPasteboardType) != nil
     let op = isCut ? "MOVE" : "COPY"
-    fputs("📋 [PASTE] \(op) \(urls.count)개 파일 → \(destFolder.lastPathComponent)\n", stderr)
+    plog("📋 [PASTE] \(op) \(urls.count)개 파일 → \(destFolder.lastPathComponent)\n")
 
     // 충돌 검사 + 전략 선택 (메인 스레드)
     let conflicts = FileConflictResolver.detectConflicts(sources: urls, destFolder: destFolder)
@@ -490,7 +490,7 @@ func pasteFilesFromPasteboard(store: PhotoStore) {
     if !conflicts.isEmpty {
         strategy = FileConflictResolver.promptUser(conflicts: conflicts)
         if strategy == .cancel {
-            fputs("📋 [PASTE] 사용자 취소\n", stderr)
+            plog("📋 [PASTE] 사용자 취소\n")
             return
         }
     }
@@ -740,7 +740,7 @@ func pasteFilesFromPasteboard(store: PhotoStore) {
                     transferOK = true
                 } catch {
                     failedFiles.append(fname)
-                    fputs("📋 [PASTE] 실패: \(fname) — \(error.localizedDescription)\n", stderr)
+                    plog("📋 [PASTE] 실패: \(fname) — \(error.localizedDescription)\n")
                 }
                 if transferOK {
                     completedLock.lock()
@@ -819,7 +819,7 @@ func pasteFilesFromPasteboard(store: PhotoStore) {
                     try? fm.removeItem(at: destURL)
                 }
             }
-            fputs("📋 [PASTE CANCELLED] 복구: \(toRollback.count)개 파일 원위치\n", stderr)
+            plog("📋 [PASTE CANCELLED] 복구: \(toRollback.count)개 파일 원위치\n")
         }
 
         let completedSnapshot = completedTransfers
@@ -872,7 +872,7 @@ func pasteFilesFromPasteboard(store: PhotoStore) {
             }
 
             store.loadFolder(destFolder, restoreRatings: true)
-            fputs("📋 [PASTE] \(wasCancelled ? "취소" : "완료") — \(finalSuccess)/\(finalTotal) 성공, \(finalFailedCount) 실패\n", stderr)
+            plog("📋 [PASTE] \(wasCancelled ? "취소" : "완료") — \(finalSuccess)/\(finalTotal) 성공, \(finalFailedCount) 실패\n")
         }
     }
 }
@@ -1428,7 +1428,7 @@ class KeyCaptureView: NSView {
                     }
                 }()
                 if Self.verboseNavigationLog || Self.navSpeedLog {
-                    fputs("[NAV] \(arrow) \(String(format: "%.0f", deltaMs))ms (sample #\(Self.navIntervalSamples.count))\n", stderr)
+                    plog("[NAV] \(arrow) \(String(format: "%.0f", deltaMs))ms (sample #\(Self.navIntervalSamples.count))\n")
                 }
                 // 매 20개마다 요약: avg / min / max / p50 / p90
                 if (Self.verboseNavigationLog || Self.navSpeedLog) && Self.navIntervalSamples.count % 20 == 0 {
@@ -1436,7 +1436,7 @@ class KeyCaptureView: NSView {
                     let avg = s.reduce(0,+) / Double(s.count)
                     let p50 = s[s.count/2]
                     let p90 = s[Int(Double(s.count) * 0.9)]
-                    fputs("[NAV-SUMMARY] last 20: avg=\(String(format: "%.0f", avg))ms min=\(String(format: "%.0f", s.first ?? 0))ms p50=\(String(format: "%.0f", p50))ms p90=\(String(format: "%.0f", p90))ms max=\(String(format: "%.0f", s.last ?? 0))ms\n", stderr)
+                    plog("[NAV-SUMMARY] last 20: avg=\(String(format: "%.0f", avg))ms min=\(String(format: "%.0f", s.first ?? 0))ms p50=\(String(format: "%.0f", p50))ms p90=\(String(format: "%.0f", p90))ms max=\(String(format: "%.0f", s.last ?? 0))ms\n")
                 }
                 // v9.1.2: 자동 reset — 최근 15개 평균이 130ms 초과 시 캐시 강제 해제.
                 //   80-100ms 목표 보장. 5초 쿨다운으로 폭주 방지.
@@ -1445,7 +1445,7 @@ class KeyCaptureView: NSView {
                     let avgRecent = recent.reduce(0,+) / Double(recent.count)
                     if avgRecent > 130 && (now - Self.lastAutoResetTime) > 5.0 {
                         Self.lastAutoResetTime = now
-                        fputs("[AUTO-RESET] avg \(Int(avgRecent))ms > 130ms — cache flush + viewport-only\n", stderr)
+                        plog("[AUTO-RESET] avg \(Int(avgRecent))ms > 130ms — cache flush + viewport-only\n")
                         Task { @MainActor in
                             _ = NavigationPerformanceMonitor.shared.forceFlushAllCaches()
                         }
@@ -1465,7 +1465,7 @@ class KeyCaptureView: NSView {
             if arrowSet.contains(keyCode) {
                 let kdMs = (CFAbsoluteTimeGetCurrent() - _kdT0) * 1000
                 if Self.verboseNavigationLog && kdMs > 5 {
-                    fputs("[KEYDOWN-SYNC] \(String(format: "%.0f", kdMs))ms key=\(keyCode)\n", stderr)
+                    plog("[KEYDOWN-SYNC] \(String(format: "%.0f", kdMs))ms key=\(keyCode)\n")
                 }
             }
         }

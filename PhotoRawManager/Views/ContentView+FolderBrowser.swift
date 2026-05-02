@@ -1347,10 +1347,10 @@ struct FolderRowView: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 do {
                                     try NSWorkspace.shared.unmountAndEjectDevice(at: item.url)
-                                    fputs("[EJECT] NSWorkspace eject success: \(item.name)\n", stderr)
+                                    plog("[EJECT] NSWorkspace eject success: \(item.name)\n")
                                     ejectResult = "'\(item.name)' 추출 완료"
                                 } catch {
-                                    fputs("[EJECT] NSWorkspace eject error: \(error)\n", stderr)
+                                    plog("[EJECT] NSWorkspace eject error: \(error)\n")
                                     ejectResult = "'\(item.name)' 추출 실패: \(error.localizedDescription)"
                                 }
                             }

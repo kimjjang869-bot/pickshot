@@ -249,7 +249,7 @@ final class InitialPreviewGenerator: ObservableObject {
         }
         // Phase 2/3 후보 = 모든 url (각 Phase 시점에 또 체크)
         allURLs = urls
-        fputs("[INITIAL-PREVIEW] start total=\(urls.count) phase1=\(phase1Targets.count) cached=\(alreadyCached)\n", stderr)
+        plog("[INITIAL-PREVIEW] start total=\(urls.count) phase1=\(phase1Targets.count) cached=\(alreadyCached)\n")
 
         if phase1Targets.isEmpty {
             // Phase 1 이미 완료 상태 → Phase 2 바로 시작
@@ -277,11 +277,11 @@ final class InitialPreviewGenerator: ObservableObject {
             return true
         }
         if phase2Targets.isEmpty {
-            fputs("[INITIAL-PREVIEW] phase2 skip (all cached) → phase3\n", stderr)
+            plog("[INITIAL-PREVIEW] phase2 skip (all cached) → phase3\n")
             startPhase3()
             return
         }
-        fputs("[INITIAL-PREVIEW] phase2 start \(phase2Targets.count) photos (embedded 1800px)\n", stderr)
+        plog("[INITIAL-PREVIEW] phase2 start \(phase2Targets.count) photos (embedded 1800px)\n")
         DispatchQueue.main.async { [weak self] in
             self?.total = phase2Targets.count
             self?.current = 0
@@ -311,10 +311,10 @@ final class InitialPreviewGenerator: ObservableObject {
                 self?.total = 0
             }
             allURLs = []
-            fputs("[INITIAL-PREVIEW] phase3 skip (all cached) — all done\n", stderr)
+            plog("[INITIAL-PREVIEW] phase3 skip (all cached) — all done\n")
             return
         }
-        fputs("[INITIAL-PREVIEW] phase3 start \(phase3Targets.count) photos (deep embedded 4096px)\n", stderr)
+        plog("[INITIAL-PREVIEW] phase3 start \(phase3Targets.count) photos (deep embedded 4096px)\n")
         DispatchQueue.main.async { [weak self] in
             self?.total = phase3Targets.count
             self?.current = 0
@@ -396,7 +396,7 @@ final class InitialPreviewGenerator: ObservableObject {
         current += 1
         if current >= total {
             let completedPhase = phase
-            fputs("[INITIAL-PREVIEW] phase\(completedPhase) complete \(total) photos\n", stderr)
+            plog("[INITIAL-PREVIEW] phase\(completedPhase) complete \(total) photos\n")
             if completedPhase == 1 {
                 // Phase 1 끝 → Phase 2 시작
                 DispatchQueue.main.async { [weak self] in
@@ -440,9 +440,9 @@ struct InitialPreviewToggle: View {
                     let isRecursive = store.isRecursiveMode
                     let total = store.photos.count
                     if isRecursive {
-                        fputs("[INITIAL-PREVIEW] BLOCKED (recursive mode, \(total) photos) — 단일 폴더에서 재시도\n", stderr)
+                        plog("[INITIAL-PREVIEW] BLOCKED (recursive mode, \(total) photos) — 단일 폴더에서 재시도\n")
                     } else if total > 10000 {
-                        fputs("[INITIAL-PREVIEW] BLOCKED (\(total)장 > 10000)\n", stderr)
+                        plog("[INITIAL-PREVIEW] BLOCKED (\(total)장 > 10000)\n")
                     } else {
                         let urls = store.photos.compactMap { p -> URL? in
                             (p.isFolder || p.isParentFolder) ? nil : p.jpgURL

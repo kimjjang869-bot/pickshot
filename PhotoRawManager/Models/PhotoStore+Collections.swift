@@ -91,7 +91,7 @@ extension PhotoStore {
         }
 
         UserDefaults.standard.set(true, forKey: key)
-        fputs("[OPT] 첫 실행 자동 최적화 완료 — tier: \(spec.effectiveTier.rawValue), RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n", stderr)
+        plog("[OPT] 첫 실행 자동 최적화 완료 — tier: \(spec.effectiveTier.rawValue), RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n")
     }
 
     /// v8.6.2: 기존 사용자가 구 tier-기반 기본값 그대로 쓰고 있으면 새 기본값으로 업데이트.
@@ -124,7 +124,7 @@ extension PhotoStore {
             d.set(0.0, forKey: "thumbnailCacheMaxGB")
         }
         d.set(true, forKey: migrationKey)
-        fputs("[OPT] v8.6.2 기본값 마이그레이션 완료 — 디스크 캐시는 macOS 자동 관리로 전환\n", stderr)
+        plog("[OPT] v8.6.2 기본값 마이그레이션 완료 — 디스크 캐시는 macOS 자동 관리로 전환\n")
     }
 
     /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화

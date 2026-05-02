@@ -17,14 +17,14 @@ final class SleepPreventer {
             options: [.idleSystemSleepDisabled, .userInitiated],
             reason: reason
         )
-        fputs("[SLEEP-GUARD] begin: \(reason)\n", stderr)
+        plog("[SLEEP-GUARD] begin: \(reason)\n")
     }
 
     func end() {
         if let t = token {
             ProcessInfo.processInfo.endActivity(t)
             token = nil
-            fputs("[SLEEP-GUARD] end: \(reason)\n", stderr)
+            plog("[SLEEP-GUARD] end: \(reason)\n")
         }
     }
 
@@ -133,7 +133,7 @@ class MemoryCardBackupService: ObservableObject {
             guard let self = self else { return }
             guard let path = notification.userInfo?["NSDevicePath"] as? String else { return }
             let url = URL(fileURLWithPath: path)
-            fputs("[CARD] 언마운트: \(url.lastPathComponent)\n", stderr)
+            plog("[CARD] 언마운트: \(url.lastPathComponent)\n")
             // 현재 감지된 볼륨이 제거되면 정리
             if self.detectedVolumeURL == url {
                 self.detectedVolumeURL = nil
@@ -166,12 +166,12 @@ class MemoryCardBackupService: ObservableObject {
         // 이미 이 볼륨 백업 중이거나 방금 시작했으면 스킵
         let alreadyBacking = sessions.contains { $0.volumeURL == url && !$0.isComplete }
         let justStarted = (lastStartedVolume == url)
-        fputs("[CARD] check \(url.lastPathComponent) DCIM=\(hasDCIM) waiting=\(waitingForNextCard) already=\(alreadyBacking) justStarted=\(justStarted)\n", stderr)
+        plog("[CARD] check \(url.lastPathComponent) DCIM=\(hasDCIM) waiting=\(waitingForNextCard) already=\(alreadyBacking) justStarted=\(justStarted)\n")
         guard hasDCIM, !alreadyBacking, !justStarted else { return }
 
         detectedVolumeURL = url
         detectedVolumeName = url.lastPathComponent
-        fputs("[CARD] ✅ Memory card detected: \(url.lastPathComponent)\n", stderr)
+        plog("[CARD] ✅ Memory card detected: \(url.lastPathComponent)\n")
 
         DispatchQueue.main.async {
             if self.waitingForNextCard, let dest = self.destinationURL {
@@ -181,7 +181,7 @@ class MemoryCardBackupService: ObservableObject {
                 self.waitingForNextCard = false
                 self.sessions.removeAll { $0.isComplete }  // 완료된 이전 세션 제거
                 self.lastStartedVolume = url
-                fputs("[CARD] 자동 복사 시작 → \(dest.lastPathComponent)\n", stderr)
+                plog("[CARD] 자동 복사 시작 → \(dest.lastPathComponent)\n")
                 self.startBackup(from: url, to: dest)
             } else if !self.showBackupPrompt && !self.isBackingUp && self.lastStartedVolume != url {
                 // 첫 카드 → 폴더 선택 팝업 (백업 중 아닐 때만)
@@ -240,7 +240,7 @@ class MemoryCardBackupService: ObservableObject {
             self.objectWillChange.send()
         }
 
-        fputs("[BACKUP] 시작: \(sourceVolume.lastPathComponent) → \(destination.lastPathComponent) (\(photos.count)장)\n", stderr)
+        plog("[BACKUP] 시작: \(sourceVolume.lastPathComponent) → \(destination.lastPathComponent) (\(photos.count)장)\n")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -296,7 +296,7 @@ class MemoryCardBackupService: ObservableObject {
                     } else {
                         try? fm.removeItem(at: destURL)
                         if retry == 2 {
-                            fputs("[BACKUP] 실패: \(sourceURL.lastPathComponent)\n", stderr)
+                            plog("[BACKUP] 실패: \(sourceURL.lastPathComponent)\n")
                         }
                     }
                 }
@@ -332,13 +332,13 @@ class MemoryCardBackupService: ObservableObject {
                 let elapsed = CFAbsoluteTimeGetCurrent() - backupStartTime
                 let totalMB = Double(session.bytesCopied) / 1_048_576.0
                 let speed = elapsed > 0 ? totalMB / elapsed : 0
-                fputs("[BACKUP] 완료: \(result.success)/\(result.total), 실패: \(failedFiles.count), \(String(format: "%.1f", totalMB))MB, \(String(format: "%.1f", elapsed))초, \(String(format: "%.1f", speed))MB/s\n", stderr)
+                plog("[BACKUP] 완료: \(result.success)/\(result.total), 실패: \(failedFiles.count), \(String(format: "%.1f", totalMB))MB, \(String(format: "%.1f", elapsed))초, \(String(format: "%.1f", speed))MB/s\n")
 
                 if allSuccess {
                     // 완료된 세션 제거
                     self.sessions.removeAll { $0.id == session.id }
                     // 자동 eject 안 함 — 사용자가 "다음 카드"(eject) or "종료"(eject 안 함) 선택
-                    fputs("[CARD] 백업 완료 → 사용자 선택 대기 (다음 카드/종료)\n", stderr)
+                    plog("[CARD] 백업 완료 → 사용자 선택 대기 (다음 카드/종료)\n")
                 }
             }
         }
@@ -375,7 +375,7 @@ class MemoryCardBackupService: ObservableObject {
             try FileManager.default.copyItem(at: src, to: dst)
             return true
         } catch {
-            fputs("[BACKUP] copyItem도 실패: \(src.lastPathComponent) → \(error.localizedDescription)\n", stderr)
+            plog("[BACKUP] copyItem도 실패: \(src.lastPathComponent) → \(error.localizedDescription)\n")
             return false
         }
     }
@@ -427,9 +427,9 @@ class MemoryCardBackupService: ObservableObject {
                 try NSWorkspace.shared.unmountAndEjectDevice(at: url)
                 success = true
             } catch {
-                fputs("[BACKUP] eject error: \(error)\n", stderr)
+                plog("[BACKUP] eject error: \(error)\n")
             }
-            fputs("[BACKUP] eject \(url.lastPathComponent): \(success ? "성공" : "실패")\n", stderr)
+            plog("[BACKUP] eject \(url.lastPathComponent): \(success ? "성공" : "실패")\n")
             completion?()
         }
     }
@@ -446,7 +446,7 @@ class MemoryCardBackupService: ObservableObject {
                     self?.detectedVolumeName = ""
                     self?.lastStartedVolume = nil  // 같은 마운트포인트에 새 카드 감지 허용
                     self?.waitingForNextCard = true
-                    fputs("[CARD] 추출 완료 → 다음 카드 대기 중\n", stderr)
+                    plog("[CARD] 추출 완료 → 다음 카드 대기 중\n")
                 }
             }
         } else {
@@ -460,7 +460,7 @@ class MemoryCardBackupService: ObservableObject {
         if let vol = detectedVolumeURL {
             ejectVolume(vol) { [weak self] in
                 DispatchQueue.main.async {
-                    fputs("[CARD] 꺼내기 완료: \(vol.lastPathComponent)\n", stderr)
+                    plog("[CARD] 꺼내기 완료: \(vol.lastPathComponent)\n")
                     self?.finishBackup()
                 }
             }

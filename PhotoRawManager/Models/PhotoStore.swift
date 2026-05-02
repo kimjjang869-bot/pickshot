@@ -138,7 +138,7 @@ class PhotoStore: ObservableObject {
         let query = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return }
         guard TextEncoderService.shared.isAvailable else {
-            fputs("[SEM-TXT] TextEncoder 사용 불가\n", stderr)
+            plog("[SEM-TXT] TextEncoder 사용 불가\n")
             return
         }
         // 백그라운드 실행
@@ -267,7 +267,7 @@ class PhotoStore: ObservableObject {
 
         if !ratingFilters.isEmpty {
             let stars = ratingFilters.sorted().map { "★\($0)" }.joined(separator: " ")
-            fputs("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n", stderr)
+            plog("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n")
             ratingFilters = []
             // v8.9 perf: didSet 체인에서 SwiftUI 가 토스트 트랜지션을 못 잡는 경우 방지 — 다음 runloop 으로.
             DispatchQueue.main.async { [weak self] in
@@ -277,7 +277,7 @@ class PhotoStore: ObservableObject {
         }
         if minimumRatingFilter > 0 {
             let prev = minimumRatingFilter
-            fputs("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n", stderr)
+            plog("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n")
             minimumRatingFilter = 0
             DispatchQueue.main.async { [weak self] in
                 self?.showToastMessage("이 폴더에 ★\(prev) 이상 사진이 없습니다 — 전체 보기로 전환")
@@ -285,7 +285,7 @@ class PhotoStore: ObservableObject {
             return
         }
         if !colorLabelFilters.isEmpty {
-            fputs("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n", stderr)
+            plog("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n")
             colorLabelFilters = []
             DispatchQueue.main.async { [weak self] in
                 self?.showToastMessage("이 폴더에 해당 컬러 라벨 사진이 없습니다 — 전체 보기로 전환")
@@ -528,7 +528,7 @@ class PhotoStore: ObservableObject {
         // v8.8.2: 완료 상태만 표시, 실제 HiRes 업그레이드 패스는 미구현 (성능 리스크로 보류).
         cacheUpgradeState = .complete
         cacheUpgradeDone = total
-        fputs("[CACHE-COMPLETE] all \(total) previews cached\n", stderr)
+        plog("[CACHE-COMPLETE] all \(total) previews cached\n")
     }
 
     /// 업그레이드 패스 진행 1건 완료 알림.
@@ -539,7 +539,7 @@ class PhotoStore: ObservableObject {
             let total = self.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
             if self.cacheUpgradeDone >= total {
                 self.cacheUpgradeState = .complete
-                fputs("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n", stderr)
+                plog("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n")
             }
         }
     }
@@ -898,7 +898,7 @@ class PhotoStore: ObservableObject {
             }
             self.invalidateFilterCache()
             self.saveRatings()
-            fputs("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n", stderr)
+            plog("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n")
         }
 
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제

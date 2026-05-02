@@ -39,7 +39,7 @@ final class DebugHUDState: ObservableObject {
         let url = URL(fileURLWithPath: hudLogPath)
         let header = "[HUD-LOG] start \(ISO8601DateFormatter().string(from: Date())) path=\(hudLogPath)\n"
         _ = try? header.data(using: .utf8)?.write(to: url)
-        fputs("[HUD-LOG] path=\(hudLogPath)\n", stderr)
+        plog("[HUD-LOG] path=\(hudLogPath)\n")
         return try? FileHandle(forWritingTo: url)
     }()
 

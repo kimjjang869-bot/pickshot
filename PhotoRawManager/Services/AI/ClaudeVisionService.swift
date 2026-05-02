@@ -506,7 +506,7 @@ struct ClaudeVisionService {
 
             guard let data = cleaned.data(using: .utf8) else {
                 if attempt == 0 { continue }
-                fputs("[API] parse fail (no data): \(response.prefix(100))\n", stderr)
+                plog("[API] parse fail (no data): \(response.prefix(100))\n")
                 throw ClaudeVisionError.invalidResponse
             }
             do {
@@ -514,10 +514,10 @@ struct ClaudeVisionService {
                 return classification
             } catch {
                 if attempt == 0 {
-                    fputs("[API] parse retry: \(error)\n", stderr)
+                    plog("[API] parse retry: \(error)\n")
                     continue  // 재시도
                 }
-                fputs("[API] parse fail: \(error) — \(cleaned.prefix(150))\n", stderr)
+                plog("[API] parse fail: \(error) — \(cleaned.prefix(150))\n")
                 throw ClaudeVisionError.invalidResponse
             }
         }
@@ -572,7 +572,7 @@ struct ClaudeVisionService {
                             let classification = try await classifyPhoto(url: photo.jpgURL, customPrompt: customPrompt)
                             return (photo.id, classification, nil)
                         } catch {
-                            fputs("[API] ERROR \(photo.jpgURL.lastPathComponent): \(error.localizedDescription)\n", stderr)
+                            plog("[API] ERROR \(photo.jpgURL.lastPathComponent): \(error.localizedDescription)\n")
                             return (photo.id, nil, error.localizedDescription)
                         }
                     }
@@ -580,13 +580,13 @@ struct ClaudeVisionService {
                 for await (id, classification, errorMsg) in group {
                     if let c = classification {
                         results[id] = c
-                        fputs("[API] classified \(id.uuidString.prefix(6)) cat=\(c.category)\n", stderr)
+                        plog("[API] classified \(id.uuidString.prefix(6)) cat=\(c.category)\n")
                         // 분류 즉시 콜백 (폴더 이동 등)
                         if let photo = batch.first(where: { $0.id == id }) {
                             onClassified?(photo, c)
                         }
                     } else {
-                        fputs("[API] FAILED \(id.uuidString.prefix(6))\n", stderr)
+                        plog("[API] FAILED \(id.uuidString.prefix(6))\n")
                         // 에러 콜백 호출
                         if let photo = batch.first(where: { $0.id == id }) {
                             onError?(photo, errorMsg ?? "알 수 없는 오류")

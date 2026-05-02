@@ -48,7 +48,7 @@ extension PhotoStore {
                     }
                 }
             }
-            fputs("[UNDO] Paste \(pasteRecord.kind): \(restored)/\(pasteRecord.items.count)개 원위치\n", stderr)
+            plog("[UNDO] Paste \(pasteRecord.kind): \(restored)/\(pasteRecord.items.count)개 원위치\n")
             // 대상 폴더 리로드
             if folderURL == pasteRecord.destFolder {
                 loadFolder(pasteRecord.destFolder, restoreRatings: true)
@@ -79,7 +79,7 @@ extension PhotoStore {
                         AppLogger.log(.general, "Undo trash failed: \(move.destURL.lastPathComponent) → \(error)")
                     }
                 }
-                fputs("[UNDO] 휴지통 복원: \(restored)/\(last.fileMoves.count)개 파일\n", stderr)
+                plog("[UNDO] 휴지통 복원: \(restored)/\(last.fileMoves.count)개 파일\n")
             }
 
             // 목록에 사진 복원 (원래 위치에 삽입)
@@ -169,7 +169,7 @@ extension PhotoStore {
 
         // ── 0) 재진입 가드 — 진행 중이면 새 호출 무시 (debounce 가 다음 cycle 처리)
         if Self.saveInflight {
-            fputs("[BACKUP] skip — save inflight\n", stderr)
+            plog("[BACKUP] skip — save inflight\n")
             return
         }
         Self.saveInflight = true
@@ -272,7 +272,7 @@ extension PhotoStore {
                 }
             }
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-            fputs("[BACKUP] saved folders=\(groupsCopy.count) xmp=\(xmpChanges.count) json=\(jsonWrites) in \(elapsed)ms\n", stderr)
+            plog("[BACKUP] saved folders=\(groupsCopy.count) xmp=\(xmpChanges.count) json=\(jsonWrites) in \(elapsed)ms\n")
         }
     }
 
@@ -292,7 +292,7 @@ extension PhotoStore {
         let ratings = (json["ratings"] as? [String: Int]) ?? [:]
         let spPicks = (json["spPicks"] as? [String: Bool]) ?? [:]
         let colors = (json["colorLabels"] as? [String: String]) ?? [:]
-        fputs("[BACKUP] loaded from JSON \(ratings.count) ratings, \(spPicks.count) SP, \(colors.count) colors\n", stderr)
+        plog("[BACKUP] loaded from JSON \(ratings.count) ratings, \(spPicks.count) SP, \(colors.count) colors\n")
         return (ratings, spPicks, colors)
     }
 
@@ -315,11 +315,11 @@ extension PhotoStore {
                 if !backup.ratings.isEmpty { savedRatings = backup.ratings }
                 if !backup.spPicks.isEmpty { savedSP = backup.spPicks }
                 if !backup.colors.isEmpty { savedColors = backup.colors }
-                fputs("[RESTORE] UserDefaults 비어있음 → JSON 백업에서 복구\n", stderr)
+                plog("[RESTORE] UserDefaults 비어있음 → JSON 백업에서 복구\n")
             }
         }
 
-        fputs("[RESTORE] folder=\(folderURL?.lastPathComponent ?? "nil"), ratings=\(savedRatings?.count ?? 0), SP=\(savedSP?.count ?? 0), colors=\(savedColors?.count ?? 0)\n", stderr)
+        plog("[RESTORE] folder=\(folderURL?.lastPathComponent ?? "nil"), ratings=\(savedRatings?.count ?? 0), SP=\(savedSP?.count ?? 0), colors=\(savedColors?.count ?? 0)\n")
 
         var restoredSP = 0
         var restoredRating = 0
@@ -357,7 +357,7 @@ extension PhotoStore {
                 }
                 perFolderCache[f] = fc
             }
-            fputs("[RESTORE] 폴더별 백업 \(perFolderCache.count)개 일괄 로드\n", stderr)
+            plog("[RESTORE] 폴더별 백업 \(perFolderCache.count)개 일괄 로드\n")
         }
 
         // v9.1.2: didSet 폭주 방지 — 17000장 중 800장에 rating 적용 시 매번 didSet 발생하면
@@ -400,7 +400,7 @@ extension PhotoStore {
         }
         _suppressDidSet = false
         invalidateFilterCache()
-        fputs("[RESTORE] 적용: rating \(restoredRating)장, SP \(restoredSP)장\n", stderr)
+        plog("[RESTORE] 적용: rating \(restoredRating)장, SP \(restoredSP)장\n")
 
         // 백그라운드: XMP sidecar + EXIF Rating 읽기 (저장된 별점 없는 사진만)
         let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }

@@ -69,7 +69,7 @@ final class MemoryGuardService {
         let emergency = min(Int(Double(ramMB) * 0.30), 16384)
         self.emergencyMB = max(emergency, self.warningMB + 512)
 
-        fputs("[MemGuard] 초기화 — RAM \(ramGB)GB / soft \(softTargetMB)MB / warn \(warningMB)MB / emerg \(emergencyMB)MB\n", stderr)
+        plog("[MemGuard] 초기화 — RAM \(ramGB)GB / soft \(softTargetMB)MB / warn \(warningMB)MB / emerg \(emergencyMB)MB\n")
     }
 
     // MARK: - Public API
@@ -77,7 +77,7 @@ final class MemoryGuardService {
     /// 앱 시작 시 호출
     func start() {
         baselineRamMB = currentRamMB()
-        fputs("[MemGuard] 시작 — baseline \(baselineRamMB)MB\n", stderr)
+        plog("[MemGuard] 시작 — baseline \(baselineRamMB)MB\n")
 
         // 1) 주기적 타이머 체크 (utility 큐 — main 간섭 최소)
         timer?.cancel()
@@ -99,10 +99,10 @@ final class MemoryGuardService {
             guard let self = self, let src = src else { return }
             let ev = src.mask
             if ev.contains(.critical) {
-                fputs("[MemGuard] 🔴 OS memorypressure CRITICAL → Layer 3 강제\n", stderr)
+                plog("[MemGuard] 🔴 OS memorypressure CRITICAL → Layer 3 강제\n")
                 DispatchQueue.main.async { self.executeLayer3(reason: "OS CRITICAL") }
             } else if ev.contains(.warning) {
-                fputs("[MemGuard] 🟡 OS memorypressure WARNING → Layer 2\n", stderr)
+                plog("[MemGuard] 🟡 OS memorypressure WARNING → Layer 2\n")
                 DispatchQueue.main.async { self.executeLayer2(reason: "OS WARNING") }
             }
         }
@@ -113,7 +113,7 @@ final class MemoryGuardService {
     /// 기준점 리셋 (새 폴더 열 때 등)
     func resetBaseline() {
         baselineRamMB = currentRamMB()
-        fputs("[MemGuard] baseline reset → \(baselineRamMB)MB\n", stderr)
+        plog("[MemGuard] baseline reset → \(baselineRamMB)MB\n")
     }
 
     /// 외부에서 강제 flush 호출 (기존 API 유지)
@@ -145,7 +145,7 @@ final class MemoryGuardService {
             if t - lastEmergencyTime >= emergencyCooldown {
                 lastEmergencyTime = t
                 let why = now >= emergencyMB ? "abs cap" : "baseline+4GB"
-                fputs("[MemGuard] 🔴 \(now)MB ≥ \(why) — Layer 3 발동 (baseline=\(baselineRamMB)MB)\n", stderr)
+                plog("[MemGuard] 🔴 \(now)MB ≥ \(why) — Layer 3 발동 (baseline=\(baselineRamMB)MB)\n")
                 DispatchQueue.main.async { [weak self] in self?.executeLayer3(reason: "self-monitored") }
             }
             lastLayer = 3
@@ -154,7 +154,7 @@ final class MemoryGuardService {
             if t - lastWarningTime >= warningCooldown {
                 lastWarningTime = t
                 let why = now >= warningMB ? "abs cap" : "baseline+2GB"
-                fputs("[MemGuard] 🟡 \(now)MB ≥ \(why) — Layer 2 (HiRes trim, baseline=\(baselineRamMB)MB)\n", stderr)
+                plog("[MemGuard] 🟡 \(now)MB ≥ \(why) — Layer 2 (HiRes trim, baseline=\(baselineRamMB)MB)\n")
                 DispatchQueue.main.async { [weak self] in self?.executeLayer2(reason: "self-monitored") }
             }
             lastLayer = 2
@@ -176,7 +176,7 @@ final class MemoryGuardService {
         // autorelease pool drain 힌트
         DispatchQueue.global(qos: .utility).async { autoreleasepool { } }
         let after = currentRamMB()
-        fputs("[MemGuard] Layer 2 (\(reason)) 완료: \(before)MB → \(after)MB\n", stderr)
+        plog("[MemGuard] Layer 2 (\(reason)) 완료: \(before)MB → \(after)MB\n")
     }
 
     // MARK: - 액션: Layer 3 (비상 — 전체 옵션 캐시 해제)
@@ -192,7 +192,7 @@ final class MemoryGuardService {
         EmbeddingIndex.shared.close()  // 다음 쿼리 시 재오픈 + 메모리 캐시도 리셋
         DispatchQueue.global(qos: .utility).async { autoreleasepool { } }
         let after = currentRamMB()
-        fputs("[MemGuard] Layer 3 (\(reason)) 완료: \(before)MB → \(after)MB (감소 \(before - after)MB)\n", stderr)
+        plog("[MemGuard] Layer 3 (\(reason)) 완료: \(before)MB → \(after)MB (감소 \(before - after)MB)\n")
     }
 
     // MARK: - RAM 측정

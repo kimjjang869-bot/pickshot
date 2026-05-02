@@ -376,7 +376,7 @@ struct FileCopyService {
 
         let copyElapsed = CFAbsoluteTimeGetCurrent() - copyStart
         let totalCopied = result.copiedJPG + result.copiedRAW
-        fputs("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초\n", stderr)
+        plog("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초\n")
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)
         return result

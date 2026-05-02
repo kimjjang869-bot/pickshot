@@ -59,7 +59,7 @@ enum PreviewPipeline {
             let ms1 = Int(ms1Double)
             let sizeMB = Double(s1Trace.fileSizeBytes) / 1_048_576.0
             let stratDesc = s1Trace.strategy == "subsample" ? "subsample=\(s1Trace.subsample)" : s1Trace.strategy
-            fputs("[LD] JPG-S1 \(context.fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms size=\(String(format: "%.1f", sizeMB))MB strat=\(stratDesc) orig=\(s1Trace.origPx)px\n", stderr)
+            plog("[LD] JPG-S1 \(context.fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms size=\(String(format: "%.1f", sizeMB))MB strat=\(stratDesc) orig=\(s1Trace.origPx)px\n")
             ProgressiveLoadStats.shared.record(bucket: "JPG-S1-\(s1Trace.strategy)", ms: ms1Double)
 
             ThumbnailCache.shared.set(context.url, image: fast)
@@ -105,7 +105,7 @@ enum PreviewPipeline {
         let totalMs = (CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000
         let s2OnlyMs = (CFAbsoluteTimeGetCurrent() - s2Start) * 1000
         let s2Strat = s2Trace.strategy == "subsample" ? "subsample=\(s2Trace.subsample)" : s2Trace.strategy
-        fputs("[LD] JPG-S2 \(context.fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) total=\(Int(totalMs))ms s2only=\(Int(s2OnlyMs))ms strat=\(s2Strat)\n", stderr)
+        plog("[LD] JPG-S2 \(context.fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) total=\(Int(totalMs))ms s2only=\(Int(s2OnlyMs))ms strat=\(s2Strat)\n")
         ProgressiveLoadStats.shared.record(bucket: "JPG-S2-\(s2Trace.strategy)", ms: s2OnlyMs)
         ProgressiveLoadStats.shared.record(bucket: "JPG-total", ms: totalMs)
 
@@ -126,7 +126,7 @@ enum PreviewPipeline {
         ) else {
             // v9.0: RAW 디코드 실패 (손상/지원 안되는 포맷/권한 등) — 무음 return 대신 로그.
             //   notePreviewLoaded 호출해 카운터는 진행하고 (deadlock 방지) stderr 로그 남김.
-            fputs("[LD] RAW-FAIL \(context.fileName) — decode failed (corrupted/unsupported)\n", stderr)
+            plog("[LD] RAW-FAIL \(context.fileName) — decode failed (corrupted/unsupported)\n")
             DispatchQueue.main.async {
                 context.notePreviewLoaded(context.url)
             }
@@ -136,7 +136,7 @@ enum PreviewPipeline {
 
         let ms1 = Int((CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000)
         let dinfo = PhotoPreviewView.readImageDimensionInfo(url: context.url)
-        fputs("[LD] RAW-S1 \(context.fileName) loaded=\(Int(fast.size.width))x\(Int(fast.size.height)) raw=\(Int(dinfo?.size.width ?? 0))x\(Int(dinfo?.size.height ?? 0)) orient=\(dinfo?.orientation ?? -1) \(ms1)ms\n", stderr)
+        plog("[LD] RAW-S1 \(context.fileName) loaded=\(Int(fast.size.width))x\(Int(fast.size.height)) raw=\(Int(dinfo?.size.width ?? 0))x\(Int(dinfo?.size.height ?? 0)) orient=\(dinfo?.orientation ?? -1) \(ms1)ms\n")
 
         DispatchQueue.main.async {
             guard context.isCurrent() else { return }
@@ -149,7 +149,7 @@ enum PreviewPipeline {
 
         guard context.isCurrent() else { return }
         if context.isKeyRepeat {
-            fputs("[LD] RAW-S2 SKIP (key repeat) \(context.fileName)\n", stderr)
+            plog("[LD] RAW-S2 SKIP (key repeat) \(context.fileName)\n")
             PreviewImageCache.shared.set(context.cacheKey, image: fast)
             return
         }
@@ -179,12 +179,12 @@ enum PreviewPipeline {
         let s2Max = max(finalHR.size.width, finalHR.size.height)
         if s2Max <= s1Max * 1.05 {
             Self.noStage2Upgrade.insert(context.url)
-            fputs("[LD] RAW-S2 NO-UPGRADE \(context.fileName) (\(Int(s2Max))px ≤ S1 \(Int(s1Max))px) — 재발사 차단\n", stderr)
+            plog("[LD] RAW-S2 NO-UPGRADE \(context.fileName) (\(Int(s2Max))px ≤ S1 \(Int(s1Max))px) — 재발사 차단\n")
             PreviewImageCache.shared.set(context.cacheKey, image: fast)
             return
         }
 
-        fputs("[LD] RAW-S2 \(context.fileName) loaded=\(Int(hr.size.width))x\(Int(hr.size.height)) → \(Int(finalHR.size.width))x\(Int(finalHR.size.height)) stage2Px=\(Int(stagePlan.finalMaxPixel))\n", stderr)
+        plog("[LD] RAW-S2 \(context.fileName) loaded=\(Int(hr.size.width))x\(Int(hr.size.height)) → \(Int(finalHR.size.width))x\(Int(finalHR.size.height)) stage2Px=\(Int(stagePlan.finalMaxPixel))\n")
         PreviewImageCache.shared.set(context.cacheKey, image: finalHR)
         DispatchQueue.main.async {
             guard context.isCurrent() else { return }

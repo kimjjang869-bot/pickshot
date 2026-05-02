@@ -136,7 +136,7 @@ final class DevelopPipeline {
                        orient > 1,
                        let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orient)) {
                         rawOut = rawOut.oriented(cgOri)
-                        fputs("[RAW-DIAG] \(url.lastPathComponent) sensor=\(Int(sensorExtent.width))x\(Int(sensorExtent.height)) orient=\(orient) → display=\(Int(rawOut.extent.width))x\(Int(rawOut.extent.height))\n", stderr)
+                        plog("[RAW-DIAG] \(url.lastPathComponent) sensor=\(Int(sensorExtent.width))x\(Int(sensorExtent.height)) orient=\(orient) → display=\(Int(rawOut.extent.width))x\(Int(rawOut.extent.height))\n")
                     }
                     // v8.6.2: demosaic 결과를 CGImage 로 baking 해서 캐싱 (non-RAW 필터 드래그 고속화)
                     if let cg = DevelopPipeline.sharedContext.createCGImage(rawOut, from: rawOut.extent) {
@@ -147,10 +147,10 @@ final class DevelopPipeline {
                     }
                     return LoadResult(image: rawOut, usedRAWPath: true)
                 } else {
-                    fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter.outputImage nil → CIImage fallback (\(url.lastPathComponent))\n", stderr)
+                    plog("[DEV-PIPELINE] ⚠️ CIRAWFilter.outputImage nil → CIImage fallback (\(url.lastPathComponent))\n")
                 }
             } else {
-                fputs("[DEV-PIPELINE] ⚠️ CIRAWFilter(imageURL:) init 실패 → CIImage fallback (\(url.lastPathComponent))\n", stderr)
+                plog("[DEV-PIPELINE] ⚠️ CIRAWFilter(imageURL:) init 실패 → CIImage fallback (\(url.lastPathComponent))\n")
             }
             // 2nd try: CIImage 로 직접 (macOS 의 RAW 디코딩 fallback)
             if let ciImage = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) {
@@ -196,23 +196,23 @@ final class DevelopPipeline {
 
         if isRAW {
             guard let raw = CIRAWFilter(imageURL: url) else {
-                fputs("[DEV-PIPELINE] ❌ CIRAWFilter(imageURL:) 실패 — \(url.lastPathComponent)\n", stderr)
+                plog("[DEV-PIPELINE] ❌ CIRAWFilter(imageURL:) 실패 — \(url.lastPathComponent)\n")
                 // RAW 필터 실패 시 일반 CIImage 시도 (macOS 가 RAW 를 JPG 로 디코딩 가능하면)
                 return CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
             }
             // RAW 파이프라인에서 직접 처리 가능한 값들은 여기서 먼저 (품질 더 좋음)
             raw.exposure = Float(settings.exposure)
-            fputs("[DEV-PIPELINE] RAW exposure=\(settings.exposure) → CIRAWFilter\n", stderr)
+            plog("[DEV-PIPELINE] RAW exposure=\(settings.exposure) → CIRAWFilter\n")
             // RAW 의 수동 WB — temperature/tint 는 절대값(K/G-M) 이 필요
             if !settings.wbAuto && (settings.temperature != 0 || settings.tint != 0) {
                 // -100~+100 를 5000K 기준 ±4500K 범위로 매핑
                 let rawWB = rawWhiteBalanceValues(for: settings)
                 raw.neutralTemperature = Float(rawWB.temperature)
                 raw.neutralTint = Float(rawWB.tint)
-                fputs("[DEV-PIPELINE] RAW WB temp=\(rawWB.temperature)K tint=\(rawWB.tint)\n", stderr)
+                plog("[DEV-PIPELINE] RAW WB temp=\(rawWB.temperature)K tint=\(rawWB.tint)\n")
             }
             guard var image = raw.outputImage else {
-                fputs("[DEV-PIPELINE] ❌ raw.outputImage 가 nil — \(url.lastPathComponent)\n", stderr)
+                plog("[DEV-PIPELINE] ❌ raw.outputImage 가 nil — \(url.lastPathComponent)\n")
                 return nil
             }
             // v8.6.2 fix: CIRAWFilter.outputImage 는 sensor raw (orient 태그 미적용).
@@ -224,7 +224,7 @@ final class DevelopPipeline {
                orient > 1,
                let cgOri = CGImagePropertyOrientation(rawValue: UInt32(orient)) {
                 image = image.oriented(cgOri)
-                fputs("[DEV-PIPELINE] RAW orient=\(orient) 적용 (CIRAWFilter 후)\n", stderr)
+                plog("[DEV-PIPELINE] RAW orient=\(orient) 적용 (CIRAWFilter 후)\n")
             }
             if targetSize != .zero {
                 image = fitScale(image, to: targetSize)

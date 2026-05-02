@@ -50,10 +50,10 @@ extension PhotoStore {
             let photo = photos[idx]
             // 무결성 검증: id 불일치 감지
             if photo.id != id {
-                fputs("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n", stderr)
+                plog("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n")
             }
         } else {
-            fputs("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n", stderr)
+            plog("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n")
         }
         if shiftKey {
             // Shift+Click: range selection from anchor
@@ -142,7 +142,7 @@ extension PhotoStore {
         let t3 = CFAbsoluteTimeGetCurrent()
         let totalMs = (t3 - t0) * 1000
         if UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") && totalMs > 5 {
-            fputs("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n", stderr)
+            plog("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n")
         }
     }
 
@@ -234,7 +234,7 @@ extension PhotoStore {
         if measuring || UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") {
             let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
             let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
-            fputs("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n", stderr)
+            plog("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n")
         }
         #endif
         selectedPhotoID = result.focusedID

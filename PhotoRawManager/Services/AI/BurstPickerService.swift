@@ -142,7 +142,7 @@ final class BurstPickerService {
                        let bestPhoto = group.first(where: { $0.id == winner.photoID }) {
                         results.append((group: group, best: bestPhoto, scores: groupScores))
                     } else if let winner = groupScores.max(by: { $0.overall < $1.overall }) {
-                        fputs("[BURST-SKIP] 그룹 (\(group.count)장) 최고 점수 \(String(format: "%.2f", winner.overall)) < 엄격도 바닥 \(String(format: "%.2f", minOverall))\n", stderr)
+                        plog("[BURST-SKIP] 그룹 (\(group.count)장) 최고 점수 \(String(format: "%.2f", winner.overall)) < 엄격도 바닥 \(String(format: "%.2f", minOverall))\n")
                     }
                 }
             }

@@ -53,7 +53,7 @@ struct XMPService {
             try (mutableData as Data).write(to: url, options: .atomic)
             return true
         } catch {
-            fputs("[XMP] JPG EXIF 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] JPG EXIF 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -289,7 +289,7 @@ struct XMPService {
             _ = writeIPTCToXMPSidecar(for: url, metadata: metadata)
             return true
         } catch {
-            fputs("[XMP] IPTC 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] IPTC 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -349,7 +349,7 @@ struct XMPService {
             try xml.data(using: .utf8)?.write(to: url, options: .atomic)
             return true
         } catch {
-            fputs("[XMP] 사이드카 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] 사이드카 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }

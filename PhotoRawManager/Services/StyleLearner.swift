@@ -42,7 +42,7 @@ class StyleLearner: ObservableObject {
                 self?.sessionCount += 1
                 UserDefaults.standard.set(self?.sessionCount ?? 0, forKey: "styleSessionCount")
                 self?.saveProfile()
-                fputs("[STYLE] 학습 완료: 선택 \(selVectors.count)장, 탈락 \(rejVectors.count)장, 세션 \(self?.sessionCount ?? 0)\n", stderr)
+                plog("[STYLE] 학습 완료: 선택 \(selVectors.count)장, 탈락 \(rejVectors.count)장, 세션 \(self?.sessionCount ?? 0)\n")
             }
         }
     }
@@ -101,7 +101,7 @@ class StyleLearner: ObservableObject {
                 }
             }
 
-            fputs("[STYLE] 점수 범위: raw \(String(format: "%.4f", minScore))~\(String(format: "%.4f", maxScore)), 정규화 20~95\n", stderr)
+            plog("[STYLE] 점수 범위: raw \(String(format: "%.4f", minScore))~\(String(format: "%.4f", maxScore)), 정규화 20~95\n")
 
             DispatchQueue.main.async { completion(normalizedScores) }
         }

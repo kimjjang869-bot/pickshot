@@ -60,7 +60,7 @@ final class CLIPTokenizer {
               let gzData = try? Data(contentsOf: url),
               let rawData = Self.gunzip(gzData),
               let text = String(data: rawData, encoding: .utf8) else {
-            fputs("[CLIP-TOK] bpe_simple_vocab_16e6.txt.gz 로드 실패\n", stderr)
+            plog("[CLIP-TOK] bpe_simple_vocab_16e6.txt.gz 로드 실패\n")
             return
         }
 
@@ -102,7 +102,7 @@ final class CLIPTokenizer {
         startToken = enc["<|startoftext|>"] ?? 49406
         endToken = enc["<|endoftext|>"] ?? 49407
         isLoaded = true
-        fputs("[CLIP-TOK] loaded vocab=\(encoder.count) merges=\(bpeRanks.count)\n", stderr)
+        plog("[CLIP-TOK] loaded vocab=\(encoder.count) merges=\(bpeRanks.count)\n")
     }
 
     /// 주어진 텍스트 → CLIP 토큰 ID 배열 (길이 = contextLength, 뒤는 0 패딩).

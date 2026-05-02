@@ -46,7 +46,7 @@ final class EmbeddingIndex {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         let status = sqlite3_open_v2(dbPath, &handle, flags, nil)
         guard status == SQLITE_OK else {
-            fputs("[EMB-IDX] open 실패: \(dbPath) status=\(status)\n", stderr)
+            plog("[EMB-IDX] open 실패: \(dbPath) status=\(status)\n")
             return
         }
         db = handle
@@ -70,7 +70,7 @@ final class EmbeddingIndex {
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_mtime ON embeddings(mtime);")
 
-        fputs("[EMB-IDX] opened \(dbPath) for \(folderURL.lastPathComponent)\n", stderr)
+        plog("[EMB-IDX] opened \(dbPath) for \(folderURL.lastPathComponent)\n")
     }
 
     func close() {
@@ -267,7 +267,7 @@ final class EmbeddingIndex {
         }
         sqlite3_finalize(delStmt)
         exec("COMMIT;")
-        fputs("[EMB-IDX] stale 정리: \(toDelete.count)건\n", stderr)
+        plog("[EMB-IDX] stale 정리: \(toDelete.count)건\n")
         return toDelete.count
     }
 
@@ -291,7 +291,7 @@ final class EmbeddingIndex {
         var err: UnsafeMutablePointer<CChar>?
         sqlite3_exec(db, sql, nil, nil, &err)
         if let err = err {
-            fputs("[EMB-IDX] SQL error: \(String(cString: err))\n", stderr)
+            plog("[EMB-IDX] SQL error: \(String(cString: err))\n")
             sqlite3_free(err)
         }
     }

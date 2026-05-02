@@ -609,7 +609,7 @@ struct NativeListView: View {
                     //   onChanged 가 여러 번 호출되므로 한 번만 drag session 개시.
                     guard !Self.listDragInProgress else { return }
                     Self.listDragInProgress = true
-                    fputs("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n", stderr)
+                    plog("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n")
                     initiateListDrag(anchor: photo)
                 }
                 .onEnded { _ in
@@ -630,7 +630,7 @@ struct NativeListView: View {
     /// 드래그 시작 — 선택된 모든 파일로 NSDraggingSession 개시
     private func initiateListDrag(anchor: PhotoItem) {
         guard let event = NSApp.currentEvent else {
-            fputs("[ListDrag] ❌ no current event\n", stderr)
+            plog("[ListDrag] ❌ no current event\n")
             return
         }
         // 선택에 anchor 포함 안 되면 단독 드래그
@@ -693,11 +693,11 @@ struct NativeListView: View {
         }
 
         guard let contentView = event.window?.contentView else {
-            fputs("[ListDrag] ❌ no contentView\n", stderr)
+            plog("[ListDrag] ❌ no contentView\n")
             return
         }
         _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
-        fputs("[ListDrag] ✅ session started with \(urls.count) items\n", stderr)
+        plog("[ListDrag] ✅ session started with \(urls.count) items\n")
     }
 
     /// 리스트뷰 우클릭 컨텍스트 메뉴 — 썸네일뷰 PhotoContextMenu 재사용.
@@ -1809,9 +1809,9 @@ func openInCameraRaw(ids: Set<UUID>, store: PhotoStore) {
             photoshop = candidates.sorted { $0.lastPathComponent > $1.lastPathComponent }.first
         }
         if let ps = photoshop {
-            fputs("[RAW] Camera Raw 대상 앱: \(ps.path)\n", stderr)
+            plog("[RAW] Camera Raw 대상 앱: \(ps.path)\n")
         } else {
-            fputs("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n", stderr)
+            plog("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n")
         }
 
         if let ps = photoshop {
@@ -2355,7 +2355,7 @@ class ThumbnailCache {
             if event.contains(.critical) {
                 let currentLimit = self.cache.countLimit
                 self.cache.countLimit = max(200, currentLimit / 4)
-                fputs("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(max(200, currentLimit/4)) (부분 해제)\n", stderr)
+                plog("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(max(200, currentLimit/4)) (부분 해제)\n")
                 // 5초 후 복원 (기존 1초 → OS가 안정될 시간 확보)
                 let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
@@ -2365,7 +2365,7 @@ class ThumbnailCache {
             } else {
                 let currentLimit = self.cache.countLimit
                 self.cache.countLimit = max(500, currentLimit / 2)
-                fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(max(500, currentLimit/2))\n", stderr)
+                plog("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(max(500, currentLimit/2))\n")
                 // 8초 후 복원
                 let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
@@ -2541,7 +2541,7 @@ class ThumbnailLoader {
     func dumpStats() {
         let pending = pendingCount
         let ops = queue.operationCount
-        fputs("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n", stderr)
+        plog("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n")
     }
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
@@ -2639,7 +2639,7 @@ class ThumbnailLoader {
             "g-drive", "lacie", "hdd", "hard drive"
         ]
         if hddHints.contains(where: { volumeName.contains($0) }) {
-            fputs("[STORAGE] External HDD detected via hint: \(volumeName)\n", stderr)
+            plog("[STORAGE] External HDD detected via hint: \(volumeName)\n")
             return .externalHDD
         }
 
@@ -2661,7 +2661,7 @@ class ThumbnailLoader {
 
         // 5. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
         //    (실제 HDD 라면 위 힌트에서 잡혔어야 함. 여기로 오는 건 불명의 외장 SSD 가능성 높음.)
-        fputs("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n", stderr)
+        plog("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n")
         return .externalSSD
     }
 
@@ -2687,7 +2687,7 @@ class ThumbnailLoader {
             // 볼륨 이름으로 추가 SD카드 힌트 확인
             let volName = (resourceValues.volumeName ?? volumeName).lowercased()
             if sdHints.contains(where: { volName.contains($0) }) {
-                fputs("[STORAGE] SD Card detected via volumeName: \(volumeName)\n", stderr)
+                plog("[STORAGE] SD Card detected via volumeName: \(volumeName)\n")
                 return .sdCard
             }
 
@@ -2696,7 +2696,7 @@ class ThumbnailLoader {
             if let totalBytes = resourceValues.volumeTotalCapacity {
                 let gb = Double(totalBytes) / 1_000_000_000
                 if gb <= 64 {
-                    fputs("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n", stderr)
+                    plog("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n")
                     return .sdCard
                 }
                 // 65GB~ → nil (외장 SSD 가능성 → caller 가 SSD 힌트 검사)
@@ -2849,7 +2849,7 @@ class ThumbnailLoader {
 
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
             if extractElapsed > 5 {
-                fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
+                plog("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n")
             }
 
             // v8.6.2: 사용자 회전 override 적용
@@ -3012,12 +3012,12 @@ class ThumbnailLoader {
                         let lrOrient = lr.exifOrientation
                         if lrOrient != 1 {
                             resolvedOrientation = lrOrient
-                            fputs("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n", stderr)
+                            plog("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n")
                         }
                     }
                     #if DEBUG
                     if isRAW && ProcessInfo.processInfo.environment["PICKSHOT_THUMB_ORIENT_LOG"] == "1" {
-                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
+                        plog("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n")
                     }
                     #endif
 
@@ -4505,7 +4505,7 @@ struct FolderPreviewGrid: View {
             do {
                 items = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
             } catch {
-                fputs("[FolderPreview] contentsOfDirectory 실패: \(url.path) — \(error.localizedDescription)\n", stderr)
+                plog("[FolderPreview] contentsOfDirectory 실패: \(url.path) — \(error.localizedDescription)\n")
                 DispatchQueue.main.async { loaded = true }
                 return
             }
@@ -4514,9 +4514,9 @@ struct FolderPreviewGrid: View {
             let imageFiles = items.filter { mediaExts.contains($0.pathExtension.lowercased()) }
             let count = imageFiles.count
             if count == 0 {
-                fputs("[FolderPreview] 미디어 파일 0개: \(url.path) (전체 \(items.count)개 항목)\n", stderr)
+                plog("[FolderPreview] 미디어 파일 0개: \(url.path) (전체 \(items.count)개 항목)\n")
                 for item in items.prefix(5) {
-                    fputs("[FolderPreview]   - \(item.lastPathComponent) (ext: \(item.pathExtension))\n", stderr)
+                    plog("[FolderPreview]   - \(item.lastPathComponent) (ext: \(item.pathExtension))\n")
                 }
             }
 
@@ -4762,7 +4762,7 @@ final class ListViewDragMonitor: ObservableObject {
             self?.handle(event)
             return event
         }
-        fputs("[ListDrag] monitor installed\n", stderr)
+        plog("[ListDrag] monitor installed\n")
     }
 
     func uninstall() {
@@ -4780,7 +4780,7 @@ final class ListViewDragMonitor: ObservableObject {
             let inBounds = isInTableBounds(event: event)
             downLocation = inBounds ? event.locationInWindow : nil
             didStartDrag = false
-            fputs("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n", stderr)
+            plog("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n")
 
         case .leftMouseDragged:
             let hasStart = downLocation != nil
@@ -4791,12 +4791,12 @@ final class ListViewDragMonitor: ObservableObject {
                                  event.locationInWindow.y - downLocation!.y)
                 if dist > threshold {
                     didStartDrag = true
-                    fputs("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n", stderr)
+                    plog("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n")
                     initiateDrag(event: event, store: store!)
                 }
             } else if !didStartDrag {
                 // 드래그 실패 이유 로깅 (한 번만)
-                fputs("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n", stderr)
+                plog("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n")
             }
 
         case .leftMouseUp:
@@ -4903,6 +4903,6 @@ final class ListViewDragSource: NSObject, NSDraggingSource {
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
         NativeListView.listDragInProgress = false
-        fputs("[ListDrag] session ended — flag reset\n", stderr)
+        plog("[ListDrag] session ended — flag reset\n")
     }
 }

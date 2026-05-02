@@ -85,7 +85,7 @@ class DiskThumbnailCache {
                 return max(Int(existing.size.width), Int(existing.size.height))
             }()
             if existingMax > newMax {
-                fputs("[DiskThumbCache] SKIP write — existing \(existingMax)px > new \(newMax)px\n", stderr)
+                plog("[DiskThumbCache] SKIP write — existing \(existingMax)px > new \(newMax)px\n")
                 return
             }
         }
@@ -137,7 +137,7 @@ class DiskThumbnailCache {
 
         let fm = FileManager.default
         if (try? fm.removeItem(at: dir)) == nil {
-            fputs("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n", stderr)
+            plog("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n")
         }
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
     }

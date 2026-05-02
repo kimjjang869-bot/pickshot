@@ -122,7 +122,7 @@ class VideoPlayerManager: ObservableObject {
     func loadVideo(url: URL) {
         guard url != currentURL else { return }
         let t0 = CFAbsoluteTimeGetCurrent()
-        fputs("[Video] ▶️ loadVideo \(url.lastPathComponent)\n", stderr)
+        plog("[Video] ▶️ loadVideo \(url.lastPathComponent)\n")
         cleanup()
         currentURL = url
 
@@ -147,14 +147,14 @@ class VideoPlayerManager: ObservableObject {
                     self.duration = CMTimeGetSeconds(item.duration)
                     self.durationText = Self.formatTime(CMTimeGetSeconds(item.duration))
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    fputs("[Video] ✅ readyToPlay \(url.lastPathComponent) dur=\(String(format: "%.1f", self.duration))s loadTime=\(ms)ms\n", stderr)
+                    plog("[Video] ✅ readyToPlay \(url.lastPathComponent) dur=\(String(format: "%.1f", self.duration))s loadTime=\(ms)ms\n")
                 case .failed:
                     self.isReady = false
                     let err = item.error?.localizedDescription ?? "unknown"
                     let code = (item.error as NSError?)?.code ?? 0
-                    fputs("[Video] ❌ 로드 실패 \(url.lastPathComponent) err=\(err) code=\(code)\n", stderr)
+                    plog("[Video] ❌ 로드 실패 \(url.lastPathComponent) err=\(err) code=\(code)\n")
                 case .unknown:
-                    fputs("[Video] ⏳ unknown status \(url.lastPathComponent)\n", stderr)
+                    plog("[Video] ⏳ unknown status \(url.lastPathComponent)\n")
                 @unknown default: break
                 }
             }
@@ -166,19 +166,19 @@ class VideoPlayerManager: ObservableObject {
             forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
         ) { notification in
             let err = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            fputs("[Video] ❌ 재생 중 실패: \(err?.localizedDescription ?? "unknown")\n", stderr)
+            plog("[Video] ❌ 재생 중 실패: \(err?.localizedDescription ?? "unknown")\n")
         }
         stalledObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
         ) { _ in
-            fputs("[Video] ⚠️ 재생 정체 (버퍼 고갈 또는 디코딩 지연)\n", stderr)
+            plog("[Video] ⚠️ 재생 정체 (버퍼 고갈 또는 디코딩 지연)\n")
         }
         errorLogObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemNewErrorLogEntry, object: item, queue: .main
         ) { [weak self] _ in
             guard let self, let log = self.player.currentItem?.errorLog(),
                   let entry = log.events.last else { return }
-            fputs("[Video] ⚠️ errorLog: \(entry.errorStatusCode) \(entry.errorComment ?? "")\n", stderr)
+            plog("[Video] ⚠️ errorLog: \(entry.errorStatusCode) \(entry.errorComment ?? "")\n")
         }
 
         // 재생 끝 감지 → 처음으로 리와인드
@@ -437,9 +437,9 @@ class VideoPlayerManager: ObservableObject {
                           let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else { return }
                     try data.write(to: saveURL)
                 }
-                fputs("[Video] 프레임 저장 완료: \(saveURL.lastPathComponent)\n", stderr)
+                plog("[Video] 프레임 저장 완료: \(saveURL.lastPathComponent)\n")
             } catch {
-                fputs("[Video] 프레임 저장 실패: \(error.localizedDescription)\n", stderr)
+                plog("[Video] 프레임 저장 실패: \(error.localizedDescription)\n")
             }
         }
     }
@@ -648,7 +648,7 @@ class VideoPlayerManager: ObservableObject {
         _jklSuspendedLUT = activeLUT
         item.videoComposition = nil
         // lutApplied 는 UI 상 false 로 반영하지 않음 — 사용자 관점에서 계속 적용 상태
-        fputs("[Video] LUT suspended (JKL reverse)\n", stderr)
+        plog("[Video] LUT suspended (JKL reverse)\n")
     }
 
     /// 역재생 끝나면 LUT composition 복원
@@ -657,7 +657,7 @@ class VideoPlayerManager: ObservableObject {
         item.videoComposition = comp
         _jklSuspendedComposition = nil
         _jklSuspendedLUT = nil
-        fputs("[Video] LUT restored\n", stderr)
+        plog("[Video] LUT restored\n")
     }
 
     /// LUT 켜기/끄기 토글 (마지막 적용 LUT 기억)
@@ -823,12 +823,12 @@ class VideoPlayerManager: ObservableObject {
         if autoApplyLUT {
             if isLOGish, let lut = activeLUT {
                 if !lutApplied {
-                    fputs("[LUT] LOG 영상 감지 → LUT 자동 적용: \(lut.name)\n", stderr)
+                    plog("[LUT] LOG 영상 감지 → LUT 자동 적용: \(lut.name)\n")
                     applyLUT(lut.data, dimension: lut.dimension)
                 }
             } else if !isLOGish && lutApplied {
                 // 일반 영상으로 전환 → composition 만 끄고 activeLUT 은 유지 (다음 LOG 영상 재적용 위해).
-                fputs("[LUT] 일반 영상 감지 → LUT 자동 해제 (activeLUT 유지)\n", stderr)
+                plog("[LUT] 일반 영상 감지 → LUT 자동 해제 (activeLUT 유지)\n")
                 removeLUTCompositionOnly()
             }
         }

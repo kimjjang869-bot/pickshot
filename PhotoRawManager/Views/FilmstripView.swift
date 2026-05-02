@@ -759,7 +759,7 @@ final class FilmstripDragMonitor: ObservableObject {
             self?.handle(event)
             return event  // 항상 pass-through — SwiftUI 가 탭/선택을 계속 처리
         }
-        fputs("[FilmDrag] monitor installed (store=\(store.photos.count) photos)\n", stderr)
+        plog("[FilmDrag] monitor installed (store=\(store.photos.count) photos)\n")
     }
 
     func uninstall() {
@@ -786,7 +786,7 @@ final class FilmstripDragMonitor: ObservableObject {
             downLocation = event.locationInWindow
             downPhotoID = photoAt(event: event)
             didStartDrag = false
-            fputs("[FilmDrag] mouseDown frames=\(cellFrames.count) hit=\(downPhotoID != nil ? "YES" : "no")\n", stderr)
+            plog("[FilmDrag] mouseDown frames=\(cellFrames.count) hit=\(downPhotoID != nil ? "YES" : "no")\n")
 
         case .leftMouseDragged:
             guard !suppressUntilMouseUp, !isResizeActive else { return }
@@ -799,7 +799,7 @@ final class FilmstripDragMonitor: ObservableObject {
             let dist = hypot(dx, dy)
             guard dist > threshold else { return }
             didStartDrag = true
-            fputs("[FilmDrag] 🚀 initiate drag — sel=\(store.selectedPhotoIDs.count) anchor=\(id.uuidString.prefix(8))\n", stderr)
+            plog("[FilmDrag] 🚀 initiate drag — sel=\(store.selectedPhotoIDs.count) anchor=\(id.uuidString.prefix(8))\n")
             initiateDrag(event: event, anchorPhotoID: id, store: store)
 
         case .leftMouseUp:

@@ -138,7 +138,7 @@ class GoogleDriveService {
             return
         }
 
-        fputs("[GDRIVE] upload \(fileName) (\(fileSize / 1024)KB) → folder=\(folderId ?? "ROOT")\n", stderr)
+        plog("[GDRIVE] upload \(fileName) (\(fileSize / 1024)KB) → folder=\(folderId ?? "ROOT")\n")
 
         if fileSize >= resumableThreshold {
             // 대용량: resumable upload (스트리밍, 메모리 절약)
@@ -230,12 +230,12 @@ class GoogleDriveService {
                 return
             }
 
-            fputs("[GDRIVE] resumable session started: \(fileName)\n", stderr)
+            plog("[GDRIVE] resumable session started: \(fileName)\n")
 
             // Step 2: 파일 데이터 PUT (uploadTask로 스트리밍 — 메모리에 전체 로드 안 함)
             // v9.0: 서버 응답 URL 파싱 실패 시 force unwrap 크래시 방지.
             guard let putURL = URL(string: uploadURL) else {
-                fputs("[GDRIVE] invalid upload URL from server: \(uploadURL)\n", stderr)
+                plog("[GDRIVE] invalid upload URL from server: \(uploadURL)\n")
                 completion(nil, NSError(domain: "GoogleDrive", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"]))
                 return
             }
@@ -378,14 +378,14 @@ class GoogleDriveService {
             }
 
             if let httpResponse = response as? HTTPURLResponse {
-                fputs("[GDRIVE] createFolder HTTP \(httpResponse.statusCode)\n", stderr)
+                plog("[GDRIVE] createFolder HTTP \(httpResponse.statusCode)\n")
             }
             guard let data = data else {
                 completion(nil, APIError(message: "응답 데이터 없음"))
                 return
             }
             let responseStr = String(data: data, encoding: .utf8) ?? ""
-            fputs("[GDRIVE] createFolder response: \(responseStr)\n", stderr)
+            plog("[GDRIVE] createFolder response: \(responseStr)\n")
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let folderId = json["id"] as? String else {
                 completion(nil, APIError(message: "폴더 생성 실패: \(responseStr.prefix(200))"))
@@ -680,7 +680,7 @@ class GoogleDriveService {
 
             if let errorMsg = json["error"] as? String {
                 let desc = json["error_description"] as? String ?? ""
-                fputs("[GDRIVE] Token error: \(errorMsg) - \(desc)\n", stderr)
+                plog("[GDRIVE] Token error: \(errorMsg) - \(desc)\n")
                 completion(nil, APIError(message: "Google 오류: \(errorMsg)\n\(desc)"))
                 return
             }

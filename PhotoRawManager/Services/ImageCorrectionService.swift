@@ -85,7 +85,7 @@ struct ImageCorrectionService {
             if m > maxSide {
                 let scale = maxSide / m
                 originalImage = originalImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                fputs("[CORRECT] low tier 다운샘플 \(Int(w))x\(Int(h)) → \(Int(w*scale))x\(Int(h*scale))\n", stderr)
+                plog("[CORRECT] low tier 다운샘플 \(Int(w))x\(Int(h)) → \(Int(w*scale))x\(Int(h*scale))\n")
             }
         }
 

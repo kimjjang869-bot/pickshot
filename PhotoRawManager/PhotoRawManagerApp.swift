@@ -1,6 +1,38 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - v9.1.3 통합 로그 (Release 빌드에서 컴파일 단계 제거 → 성능 영향 0)
+@inlinable
+public func plog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    if Log.enabled { Log.write(message()) }
+    #endif
+}
+
+public enum Log {
+    public static var enabled: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "pickshotLogsEnabled") == nil {
+            return true  // Debug 기본 ON
+        }
+        return UserDefaults.standard.bool(forKey: "pickshotLogsEnabled")
+        #else
+        return false
+        #endif
+    }()
+
+    public static func setEnabled(_ on: Bool) {
+        enabled = on
+        UserDefaults.standard.set(on, forKey: "pickshotLogsEnabled")
+    }
+
+    @usableFromInline
+    static func write(_ msg: String) {
+        let line = msg.hasSuffix("\n") ? msg : msg + "\n"
+        line.withCString { _ = fwrite($0, 1, strlen($0), stderr) }
+    }
+}
+
 @main
 struct PhotoRawManagerApp: App {
     #if DEBUG
@@ -15,7 +47,7 @@ struct PhotoRawManagerApp: App {
             let gapMs = (now - stallLastFire) * 1000
             stallLastFire = now
             if gapMs > 30 {
-                fputs("[STALL] main runloop blocked \(String(format: "%.0f", gapMs))ms\n", stderr)
+                plog("[STALL] main runloop blocked \(String(format: "%.0f", gapMs))ms\n")
             }
         }
         t.resume()
@@ -37,7 +69,7 @@ struct PhotoRawManagerApp: App {
                 if let existing = runningApps.first(where: { $0 != .current }) {
                     existing.activate()
                 }
-                fputs("[APP] 중복 실행 감지 → 즉시 종료\n", stderr)
+                plog("[APP] 중복 실행 감지 → 즉시 종료\n")
                 exit(0)
             }
         }
@@ -88,7 +120,7 @@ struct PhotoRawManagerApp: App {
                     if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
                         DiskThumbnailCache.shared.clearAll()
                         UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
-                        fputs("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n", stderr)
+                        plog("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n")
                     }
 
                     SubscriptionManager.shared.checkTrialStatus()

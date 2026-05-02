@@ -37,7 +37,7 @@ extension PhotoStore {
         for url in urls {
             DiskThumbnailCache.shared.invalidate(url: url)
         }
-        fputs("[CACHE-INVALIDATE] \(urls.count) URLs 캐시 정리 완료\n", stderr)
+        plog("[CACHE-INVALIDATE] \(urls.count) URLs 캐시 정리 완료\n")
     }
 
     // MARK: - Remove / Delete
@@ -166,10 +166,10 @@ extension PhotoStore {
             if let idx = _photoIndex[id], idx < photos.count, photos[idx].id == id {
                 photo = photos[idx]
             } else if let fallback = photos.first(where: { $0.id == id }) {
-                fputs("[DELETE] WARN: _photoIndex 스테일 감지 — id=\(id.uuidString.prefix(8)), 선형 탐색으로 폴백: \(fallback.fileName)\n", stderr)
+                plog("[DELETE] WARN: _photoIndex 스테일 감지 — id=\(id.uuidString.prefix(8)), 선형 탐색으로 폴백: \(fallback.fileName)\n")
                 photo = fallback
             } else {
-                fputs("[DELETE] ERROR: photo를 찾을 수 없음 — id=\(id.uuidString.prefix(8))\n", stderr)
+                plog("[DELETE] ERROR: photo를 찾을 수 없음 — id=\(id.uuidString.prefix(8))\n")
                 continue
             }
             guard !photo.isFolder && !photo.isParentFolder else { continue }
@@ -182,7 +182,7 @@ extension PhotoStore {
 
             // 무엇을 삭제하는지 명시 로그 (디버깅 용)
             let rawLog = photo.rawURL.map { $0.lastPathComponent } ?? "nil"
-            fputs("[DELETE] 삭제 대상: jpgURL=\(photo.jpgURL.lastPathComponent), rawURL=\(rawLog)\n", stderr)
+            plog("[DELETE] 삭제 대상: jpgURL=\(photo.jpgURL.lastPathComponent), rawURL=\(rawLog)\n")
 
             // Delete JPG → 휴지통 (복원 경로 기록)
             // v8.6.1: JPG 삭제 실패 시 RAW 도 건드리지 않음 (반쪽 삭제로 페어 깨짐 방지)
@@ -254,9 +254,9 @@ extension PhotoStore {
             do {
                 try fm.trashItem(at: photo.jpgURL, resultingItemURL: nil)
                 deleted += 1
-                fputs("[DELETE] 폴더 휴지통 이동: \(photo.jpgURL.lastPathComponent)\n", stderr)
+                plog("[DELETE] 폴더 휴지통 이동: \(photo.jpgURL.lastPathComponent)\n")
             } catch {
-                fputs("[DELETE] 폴더 삭제 실패: \(error.localizedDescription)\n", stderr)
+                plog("[DELETE] 폴더 삭제 실패: \(error.localizedDescription)\n")
             }
         }
         if deleted > 0 {
@@ -435,12 +435,12 @@ extension PhotoStore {
         let total = fileURLs.count
 
         // v9.1 진단: 하위폴더 모드 이동 실패 추적용
-        fputs("[MOVE] start: \(total) URLs → \(destination.path)\n", stderr)
+        plog("[MOVE] start: \(total) URLs → \(destination.path)\n")
         if total == 0 {
-            fputs("[MOVE] WARN: fileURLs empty (selection / filter mismatch?)\n", stderr)
+            plog("[MOVE] WARN: fileURLs empty (selection / filter mismatch?)\n")
         }
         if !fm.fileExists(atPath: destination.path) {
-            fputs("[MOVE] WARN: destination does not exist before move: \(destination.path)\n", stderr)
+            plog("[MOVE] WARN: destination does not exist before move: \(destination.path)\n")
             try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
         }
 
@@ -459,12 +459,12 @@ extension PhotoStore {
                 do {
                     if !fm.fileExists(atPath: srcURL.path) {
                         // 원본이 없음 (이미 다른 항목 이동 시 RAW 페어로 함께 이동된 케이스)
-                        fputs("[MOVE] SKIP src missing: \(srcURL.lastPathComponent)\n", stderr)
+                        plog("[MOVE] SKIP src missing: \(srcURL.lastPathComponent)\n")
                         continue
                     }
                     if fm.fileExists(atPath: destURL.path) {
                         // 같은 이름 파일 존재 → 스킵
-                        fputs("[MOVE] SKIP name collision at dest: \(destURL.lastPathComponent)\n", stderr)
+                        plog("[MOVE] SKIP name collision at dest: \(destURL.lastPathComponent)\n")
                         failed += 1
                         continue
                     }
@@ -495,7 +495,7 @@ extension PhotoStore {
                     }
                 } catch {
                     failed += 1
-                    fputs("[MOVE] FAIL \(srcURL.lastPathComponent) → \(destURL.path): \(error)\n", stderr)
+                    plog("[MOVE] FAIL \(srcURL.lastPathComponent) → \(destURL.path): \(error)\n")
                     AppLogger.log(.general, "File move failed: \(srcURL.lastPathComponent) → \(error.localizedDescription)")
                 }
                 // 진행률 업데이트
@@ -519,7 +519,7 @@ extension PhotoStore {
                     self.removePhotosFromList(ids: movedIDs)
                 }
                 let msg = "\(moved)장 이동 완료 (Cmd+Z 되돌리기)" + (failed > 0 ? " (\(failed)장 실패)" : "")
-                fputs("[MOVE] done: moved=\(moved) failed=\(failed) records=\(fileMoveRecords.count) → \(destination.path)\n", stderr)
+                plog("[MOVE] done: moved=\(moved) failed=\(failed) records=\(fileMoveRecords.count) → \(destination.path)\n")
                 self.showToastMessage(msg)
                 AppLogger.log(.export, "Moved \(moved) files to \(destination.lastPathComponent) (\(failed) failed)")
                 // 폴더 프리뷰 캐시 무효화 (이동 원본 + 대상 폴더)
@@ -595,7 +595,7 @@ extension PhotoStore {
         }
         invalidateFilterCache()
         objectWillChange.send()
-        fputs("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n", stderr)
+        plog("[REORDER] \(sourceID.uuidString.prefix(8)) → \(targetID.uuidString.prefix(8))\n")
     }
 
     /// 여러 사진을 한 번에 target 위치로 이동 (다중 선택 드래그 리오더).
@@ -631,7 +631,7 @@ extension PhotoStore {
         }
         invalidateFilterCache()
         // photosVersion @Published 변경으로 충분 — objectWillChange.send() 중복 호출 제거
-        fputs("[REORDER MULTI] \(sourceIDs.count)장 → \(targetID.uuidString.prefix(8)) (before=\(insertBefore))\n", stderr)
+        plog("[REORDER MULTI] \(sourceIDs.count)장 → \(targetID.uuidString.prefix(8)) (before=\(insertBefore))\n")
     }
 
     // MARK: - Batch Rename
@@ -762,7 +762,7 @@ extension PhotoStore {
         lastRenameMap = renameMap
         lastRenameNameMap = nameMap
         lastRenameFolderPath = folderPathKey
-        fputs("[RENAME] 완료: \(successCount)개 성공, \(errors.count)개 실패, undo \(renameMap.count)개 기록\n", stderr)
+        plog("[RENAME] 완료: \(successCount)개 성공, \(errors.count)개 실패, undo \(renameMap.count)개 기록\n")
 
         // 폴더 리로드
         if successCount > 0, let url = folderURL {
@@ -785,7 +785,7 @@ extension PhotoStore {
                     try fm.moveItem(at: entry.newURL, to: entry.oldURL)
                 }
             } catch {
-                fputs("[RENAME] Undo 파일 복원 실패: \(error.localizedDescription)\n", stderr)
+                plog("[RENAME] Undo 파일 복원 실패: \(error.localizedDescription)\n")
                 success = false
             }
         }
@@ -839,7 +839,7 @@ extension PhotoStore {
             loadFolder(url, restoreRatings: true)
         }
 
-        fputs("[RENAME] Undo 완료: \(success)\n", stderr)
+        plog("[RENAME] Undo 완료: \(success)\n")
         return success
     }
 }

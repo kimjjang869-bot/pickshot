@@ -26,10 +26,10 @@ struct AdaFaceService {
                 let config = MLModelConfiguration()
                 config.computeUnits = .all  // ANE + GPU + CPU
                 _model = try MLModel(contentsOf: url, configuration: config)
-                fputs("[ADAFACE] 모델 로딩 성공 (mlmodelc)\n", stderr)
+                plog("[ADAFACE] 모델 로딩 성공 (mlmodelc)\n")
                 return _model
             } catch {
-                fputs("[ADAFACE] mlmodelc 로딩 실패: \(error)\n", stderr)
+                plog("[ADAFACE] mlmodelc 로딩 실패: \(error)\n")
             }
         }
 
@@ -40,14 +40,14 @@ struct AdaFaceService {
                 let config = MLModelConfiguration()
                 config.computeUnits = .all
                 _model = try MLModel(contentsOf: compiled, configuration: config)
-                fputs("[ADAFACE] 모델 로딩 성공 (mlpackage 컴파일)\n", stderr)
+                plog("[ADAFACE] 모델 로딩 성공 (mlpackage 컴파일)\n")
                 return _model
             } catch {
-                fputs("[ADAFACE] mlpackage 컴파일 실패: \(error)\n", stderr)
+                plog("[ADAFACE] mlpackage 컴파일 실패: \(error)\n")
             }
         }
 
-        fputs("[ADAFACE] 모델 파일 없음\n", stderr)
+        plog("[ADAFACE] 모델 파일 없음\n")
         return nil
     }
 
@@ -64,20 +64,20 @@ struct AdaFaceService {
     /// - Returns: 512차원 Float 배열 (L2 정규화됨)
     static func embedding(from faceCrop: CGImage) -> [Float]? {
         guard let model = loadModel() else {
-            fputs("[ADAFACE] 모델 로드 실패\n", stderr)
+            plog("[ADAFACE] 모델 로드 실패\n")
             return nil
         }
 
         // 112x112로 리사이즈
         guard let resized = resizeTo112(faceCrop) else {
-            fputs("[ADAFACE] 리사이즈 실패 (원본: \(faceCrop.width)x\(faceCrop.height))\n", stderr)
+            plog("[ADAFACE] 리사이즈 실패 (원본: \(faceCrop.width)x\(faceCrop.height))\n")
             return nil
         }
 
         // CoreML 입력 생성
         let pixelBuffer = createPixelBuffer(from: resized)
         guard let pb = pixelBuffer else {
-            fputs("[ADAFACE] PixelBuffer 생성 실패\n", stderr)
+            plog("[ADAFACE] PixelBuffer 생성 실패\n")
             return nil
         }
 
@@ -97,13 +97,13 @@ struct AdaFaceService {
                         return extractAndNormalize(arr)
                     }
                 }
-                fputs("[ADAFACE] 임베딩 출력을 찾을 수 없음. 출력 이름: \(Array(output.featureNames))\n", stderr)
+                plog("[ADAFACE] 임베딩 출력을 찾을 수 없음. 출력 이름: \(Array(output.featureNames))\n")
                 return nil
             }
 
             return extractAndNormalize(embeddingArray)
         } catch {
-            fputs("[ADAFACE] 추론 실패: \(error)\n", stderr)
+            plog("[ADAFACE] 추론 실패: \(error)\n")
             return nil
         }
     }
@@ -145,7 +145,7 @@ struct AdaFaceService {
         if _debugEmbeddingCount == 0 {
             let minVal = vec.min() ?? 0
             let maxVal = vec.max() ?? 0
-            fputs("[ADAFACE] 첫 임베딩 통계 - shape: \(arr.shape), dtype: \(arr.dataType.rawValue), min: \(minVal), max: \(maxVal), norm: \(norm)\n", stderr)
+            plog("[ADAFACE] 첫 임베딩 통계 - shape: \(arr.shape), dtype: \(arr.dataType.rawValue), min: \(minVal), max: \(maxVal), norm: \(norm)\n")
         }
         _debugEmbeddingCount += 1
 

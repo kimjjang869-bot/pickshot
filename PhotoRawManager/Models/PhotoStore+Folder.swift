@@ -38,7 +38,7 @@ extension PhotoStore {
             self.folderReloadWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self = self, let url = self.folderURL else { return }
-                fputs("[WATCH] 폴더 구조 변경 감지 → 리로드\n", stderr)
+                plog("[WATCH] 폴더 구조 변경 감지 → 리로드\n")
                 self.loadFolder(url, restoreRatings: true)
             }
             self.folderReloadWork = work
@@ -256,7 +256,7 @@ extension PhotoStore {
                 guard let self = self, self.folderURL?.path == folderPath else { return }
                 self.currentFolderIsSlowDisk = isSlow
                 if isSlow {
-                    fputs("[STORAGE] 느린 디스크 감지 — stage2 미리보기 스킵 (\(folderPath))\n", stderr)
+                    plog("[STORAGE] 느린 디스크 감지 — stage2 미리보기 스킵 (\(folderPath))\n")
                 }
             }
         }
@@ -449,7 +449,7 @@ extension PhotoStore {
 
         var firstSelectionMade = false
 
-        fputs("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n", stderr)
+        plog("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n")
         FileMatchingService.scanAndMatchStreaming(
             folderURL: url,
             recursive: true,
@@ -457,15 +457,15 @@ extension PhotoStore {
             isCancelled: { [weak self] in
                 // 폴더 변경되거나 generation 바뀌면 옛 batch 폐기
                 guard let self = self else {
-                    fputs("[REC] cancel: self released\n", stderr)
+                    plog("[REC] cancel: self released\n")
                     return true
                 }
                 if self.folderURL != url {
-                    fputs("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n", stderr)
+                    plog("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n")
                     return true
                 }
                 if self.recursiveScanGeneration != myGen {
-                    fputs("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n", stderr)
+                    plog("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n")
                     return true
                 }
                 return false
@@ -477,10 +477,10 @@ extension PhotoStore {
             },
             onBatch: { [weak self] batch in
                 guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
-                    fputs("[REC] batch dropped (gen/url mismatch)\n", stderr)
+                    plog("[REC] batch dropped (gen/url mismatch)\n")
                     return
                 }
-                fputs("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n", stderr)
+                plog("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n")
                 self.appendRecursiveScanBatch(batch, forceFlush: !firstSelectionMade)
                 // 첫 배치 직후 첫 사진 자동 선택 (1회만)
                 if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
@@ -491,9 +491,9 @@ extension PhotoStore {
                 }
             },
             onComplete: { [weak self] photoCount in
-                fputs("[REC] onComplete photoCount=\(photoCount)\n", stderr)
+                plog("[REC] onComplete photoCount=\(photoCount)\n")
                 guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
-                    fputs("[REC] onComplete dropped (gen/url mismatch)\n", stderr)
+                    plog("[REC] onComplete dropped (gen/url mismatch)\n")
                     return
                 }
                 let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
@@ -607,21 +607,21 @@ extension PhotoStore {
                     options: [],
                     permissions: FilePermissions(rawValue: 0o644)
                 ) else {
-                    fputs("[ZIP] 파일 스트림 열기 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 파일 스트림 열기 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
                 defer { try? fileStream.close() }
 
                 guard let decompressStream = ArchiveByteStream.decompressionStream(readingFrom: fileStream) else {
-                    fputs("[ZIP] 압축 해제 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 압축 해제 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
                 defer { try? decompressStream.close() }
 
                 guard let decodeStream = ArchiveStream.decodeStream(readingFrom: decompressStream) else {
-                    fputs("[ZIP] 디코드 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 디코드 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
@@ -631,7 +631,7 @@ extension PhotoStore {
                     extractingTo: FilePath(tempDir.path),
                     flags: [.ignoreOperationNotPermitted]
                 ) else {
-                    fputs("[ZIP] 추출 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 추출 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
@@ -639,7 +639,7 @@ extension PhotoStore {
 
                 _ = try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
             } else {
-                fputs("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n", stderr)
+                plog("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n")
                 try? FileManager.default.removeItem(at: tempDir)
                 return
             }
@@ -648,12 +648,12 @@ extension PhotoStore {
             cleanupZipTemp()
 
             zipTempDir = tempDir
-            fputs("[ZIP] 열기: \(zipURL.lastPathComponent) → \(tempDir.path)\n", stderr)
+            plog("[ZIP] 열기: \(zipURL.lastPathComponent) → \(tempDir.path)\n")
 
             // 임시 폴더를 폴더로 로딩
             loadFolder(tempDir, restoreRatings: false)
         } catch {
-            fputs("[ZIP] 오류: \(error.localizedDescription)\n", stderr)
+            plog("[ZIP] 오류: \(error.localizedDescription)\n")
         }
     }
 

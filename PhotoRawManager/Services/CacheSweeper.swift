@@ -113,7 +113,7 @@ final class CacheSweeper: ObservableObject {
             pendingPreviews.removeAll()
             sweepLock.unlock()
             cancel()
-            fputs("[SWEEP] skipped recursive folder \(url.lastPathComponent): viewport-only loading\n", stderr)
+            plog("[SWEEP] skipped recursive folder \(url.lastPathComponent): viewport-only loading\n")
             return
         }
         sweepLock.lock()
@@ -124,7 +124,7 @@ final class CacheSweeper: ObservableObject {
         }
         pendingPreviews = photos
         sweepLock.unlock()
-        fputs("[SWEEP] prepared folder \(url.lastPathComponent): \(pendingThumbnails.count) thumbs / \(pendingPreviews.count) previews pending\n", stderr)
+        plog("[SWEEP] prepared folder \(url.lastPathComponent): \(pendingThumbnails.count) thumbs / \(pendingPreviews.count) previews pending\n")
         rescheduleIdleTimer()
     }
 
@@ -244,7 +244,7 @@ final class CacheSweeper: ObservableObject {
                     }
                     let done = counter.increment()
                     if done % 20 == 0 {
-                        fputs("[SWEEP-AGG] thumbs +\(done)/\(total)\n", stderr)
+                        plog("[SWEEP-AGG] thumbs +\(done)/\(total)\n")
                     }
                 }
             }
@@ -261,7 +261,7 @@ final class CacheSweeper: ObservableObject {
             // 기본 모드: 기존 순차 처리
             while true {
                 guard let work = sweepWork, !work.isCancelled else {
-                    fputs("[SWEEP] 중단 — thumbs=\(thumbsDone) previews=\(previewsDone)\n", stderr)
+                    plog("[SWEEP] 중단 — thumbs=\(thumbsDone) previews=\(previewsDone)\n")
                     break
                 }
                 sweepLock.lock()
@@ -274,7 +274,7 @@ final class CacheSweeper: ObservableObject {
                     sweepLock.lock()
                     pendingThumbnails.insert(url, at: 0)  // 되돌려 넣기
                     sweepLock.unlock()
-                    fputs("[SWEEP] 양보 (busy) — thumbs 남음=\(pendingThumbnails.count)\n", stderr)
+                    plog("[SWEEP] 양보 (busy) — thumbs 남음=\(pendingThumbnails.count)\n")
                     break
                 }
 
@@ -283,7 +283,7 @@ final class CacheSweeper: ObservableObject {
                 }
                 thumbsDone += 1
                 if thumbsDone % 20 == 0 {
-                    fputs("[SWEEP] thumbs +\(thumbsDone) (남음=\(pendingThumbnails.count))\n", stderr)
+                    plog("[SWEEP] thumbs +\(thumbsDone) (남음=\(pendingThumbnails.count))\n")
                 }
                 if perItemDelay > 0 { Thread.sleep(forTimeInterval: perItemDelay) }
             }
@@ -369,7 +369,7 @@ final class CacheSweeper: ObservableObject {
                 if perItemDelay > 0 { Thread.sleep(forTimeInterval: perItemDelay) }
             }
             if previewsSkipped > 0 {
-                fputs("[SWEEP] previews already cached (skipped): \(previewsSkipped)\n", stderr)
+                plog("[SWEEP] previews already cached (skipped): \(previewsSkipped)\n")
             }
             // 대기 — 모든 op 완료 or 취소
             while opQueue.operationCount > 0 {
@@ -387,7 +387,7 @@ final class CacheSweeper: ObservableObject {
                 sweepLock.lock()
                 pendingPreviews.removeAll()
                 sweepLock.unlock()
-                fputs("[SWEEP] all previews cached — pending 비움 (무한 루프 차단)\n", stderr)
+                plog("[SWEEP] all previews cached — pending 비움 (무한 루프 차단)\n")
             }
         }
 
@@ -395,7 +395,7 @@ final class CacheSweeper: ObservableObject {
             self?.isSweeping = false
             self?.sweepWork = nil  // v8.8.1 fix: 다음 sweep 재진입 가능하도록 정리
             self?.sweepMessage = "sweep 완료 thumbs=\(thumbsDone) previews=\(previewsDone)"
-            fputs("[SWEEP] 완료 thumbs=\(thumbsDone) previews=\(previewsDone)\n", stderr)
+            plog("[SWEEP] 완료 thumbs=\(thumbsDone) previews=\(previewsDone)\n")
         }
     }
 }

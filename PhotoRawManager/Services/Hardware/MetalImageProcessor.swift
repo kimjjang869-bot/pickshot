@@ -138,7 +138,7 @@ struct MetalImageProcessor {
         commandBuffer.commit()
         let waitResult = sem.wait(timeout: .now() + 5)  // 보안: GPU 무응답 시 데드락 방지
         guard waitResult == .success else {
-            fputs("[GPU] histogram 타임아웃\n", stderr)
+            plog("[GPU] histogram 타임아웃\n")
             return nil
         }
 

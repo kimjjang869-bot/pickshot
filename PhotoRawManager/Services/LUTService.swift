@@ -25,7 +25,7 @@ struct LUTService {
         // 보안: 파일 크기 제한 (100MB 이상은 악의적 파일로 간주)
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let size = attrs[.size] as? Int, size > 100_000_000 {
-            fputs("[LUT] 파일 크기 초과: \(size) bytes (최대 100MB)\n", stderr)
+            plog("[LUT] 파일 크기 초과: \(size) bytes (최대 100MB)\n")
             return nil
         }
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
@@ -71,12 +71,12 @@ struct LUTService {
         }
 
         guard dimension > 0, dimension <= 128 else {
-            fputs("[LUT] 유효하지 않은 dimension: \(dimension) (최대 128)\n", stderr)
+            plog("[LUT] 유효하지 않은 dimension: \(dimension) (최대 128)\n")
             return nil
         }
         let expectedCount = dimension * dimension * dimension
         guard rgbValues.count == expectedCount else {
-            fputs("[LUT] 데이터 수 불일치: 예상 \(expectedCount), 실제 \(rgbValues.count)\n", stderr)
+            plog("[LUT] 데이터 수 불일치: 예상 \(expectedCount), 실제 \(rgbValues.count)\n")
             return nil
         }
 
@@ -101,7 +101,7 @@ struct LUTService {
         // 보안: 파일 크기 제한
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let size = attrs[.size] as? Int, size > 100_000_000 {
-            fputs("[LUT] 파일 크기 초과: \(size) bytes (최대 100MB)\n", stderr)
+            plog("[LUT] 파일 크기 초과: \(size) bytes (최대 100MB)\n")
             return nil
         }
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
