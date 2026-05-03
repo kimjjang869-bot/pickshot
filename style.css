@@ -555,6 +555,61 @@ strong { color: var(--ink); font-weight: 600; }
    G-SELECT
 ============================================================ */
 .section-gselect { background: rgba(10,12,31,0.4); }
+
+/* v9.1.4 mini variant — 클라이언트 뷰어 보조 sub-feature */
+.section-gselect-mini {
+  background: rgba(10,12,31,0.35);
+  padding: 60px 0;
+}
+.gs-mini {
+  display: flex; align-items: center; gap: 32px;
+  max-width: 920px; margin: 0 auto;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(168,130,255,0.05), rgba(96,168,255,0.03));
+  border: 1px solid rgba(168,130,255,0.15);
+  border-radius: 18px;
+}
+@media (max-width: 720px) {
+  .gs-mini { flex-direction: column; text-align: center; gap: 20px; padding: 24px; }
+}
+.gs-mini-icon {
+  flex-shrink: 0;
+  width: 64px; height: 64px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(168,130,255,0.25);
+}
+.gs-mini-g {
+  font-family: var(--font-display, inherit);
+  font-size: 28px; font-weight: 800; color: #fff;
+  letter-spacing: -0.5px;
+}
+.gs-mini-body { flex: 1; }
+.gs-mini-title {
+  margin: 6px 0 10px;
+  font-size: 22px; font-weight: 700; color: var(--ink-1);
+  line-height: 1.4;
+}
+.gs-mini-title .italic {
+  font-style: italic;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gs-mini-desc {
+  font-size: 14px; color: var(--ink-2); line-height: 1.65;
+  margin: 0;
+}
+.gs-mini-desc kbd {
+  display: inline-block; padding: 1px 6px; margin: 0 2px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+}
 .gs-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 64px;
   align-items: center;
@@ -837,6 +892,22 @@ strong { color: var(--ink); font-weight: 600; }
   background: var(--accent-2);
   border-radius: 50%;
   box-shadow: 0 0 10px var(--accent-2);
+}
+.cv-quote {
+  margin-top: 32px;
+  padding: 20px 24px;
+  border-left: 3px solid var(--accent-2);
+  background: linear-gradient(135deg, rgba(168, 130, 255, 0.06), rgba(96, 168, 255, 0.04));
+  border-radius: 0 12px 12px 0;
+  font-size: 14px;
+  color: var(--ink-2);
+  line-height: 1.65;
+  font-style: italic;
+}
+.cv-quote strong {
+  color: var(--accent-2);
+  font-style: normal;
+  font-weight: 700;
 }
 
 .cv-phone {
