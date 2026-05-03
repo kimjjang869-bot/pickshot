@@ -15,7 +15,11 @@ class StyleLearner: ObservableObject {
     private var selectedVectors: [[Float]] = []
     private var rejectedVectors: [[Float]] = []
     // 벡터 캐시 (동일 사진 재추출 방지)
+    // v9.1.4: LRU 상한 추가 — 대용량 폴더 (10000+) 에서 무제한 메모리 누적 방지.
+    //   각 벡터 ~2KB (VNFeaturePrint 512×Float32) → 1500 항목 ≒ 3MB 캡.
     private var vectorCache: [URL: [Float]] = [:]
+    private var vectorCacheOrder: [URL] = []  // LRU 순서 (앞이 오래됨)
+    private static let vectorCacheCap: Int = 1500
 
     private let profileURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pickshot")
@@ -42,7 +46,7 @@ class StyleLearner: ObservableObject {
                 self?.sessionCount += 1
                 UserDefaults.standard.set(self?.sessionCount ?? 0, forKey: "styleSessionCount")
                 self?.saveProfile()
-                fputs("[STYLE] 학습 완료: 선택 \(selVectors.count)장, 탈락 \(rejVectors.count)장, 세션 \(self?.sessionCount ?? 0)\n", stderr)
+                plog("[STYLE] 학습 완료: 선택 \(selVectors.count)장, 탈락 \(rejVectors.count)장, 세션 \(self?.sessionCount ?? 0)\n")
             }
         }
     }
@@ -58,13 +62,24 @@ class StyleLearner: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
-            // 1. 모든 사진의 벡터 추출 (캐시 활용)
+            // 1. 모든 사진의 벡터 추출 (캐시 활용 + LRU)
             var photoVectors: [(UUID, [Float])] = []
             for photo in photos {
                 if let cached = self.vectorCache[photo.jpgURL] {
                     photoVectors.append((photo.id, cached))
+                    // LRU touch — 최근 사용으로 이동.
+                    if let i = self.vectorCacheOrder.firstIndex(of: photo.jpgURL) {
+                        self.vectorCacheOrder.remove(at: i)
+                    }
+                    self.vectorCacheOrder.append(photo.jpgURL)
                 } else if let vector = Self.extractFeatureVector(url: photo.jpgURL) {
                     self.vectorCache[photo.jpgURL] = vector
+                    self.vectorCacheOrder.append(photo.jpgURL)
+                    // 상한 초과 시 가장 오래된 항목 제거.
+                    while self.vectorCacheOrder.count > Self.vectorCacheCap {
+                        let evict = self.vectorCacheOrder.removeFirst()
+                        self.vectorCache.removeValue(forKey: evict)
+                    }
                     photoVectors.append((photo.id, vector))
                 }
             }
@@ -101,7 +116,7 @@ class StyleLearner: ObservableObject {
                 }
             }
 
-            fputs("[STYLE] 점수 범위: raw \(String(format: "%.4f", minScore))~\(String(format: "%.4f", maxScore)), 정규화 20~95\n", stderr)
+            plog("[STYLE] 점수 범위: raw \(String(format: "%.4f", minScore))~\(String(format: "%.4f", maxScore)), 정규화 20~95\n")
 
             DispatchQueue.main.async { completion(normalizedScores) }
         }

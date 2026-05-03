@@ -187,18 +187,18 @@ extension PhotoStore {
         guard photos[idx].exifData == nil else { return }
         guard !photos[idx].isFolder && !photos[idx].isParentFolder else { return }
         guard !exifLoadingIDs.contains(photoID) else { return }
-        fputs("[EXIF] loadIfNeeded: \(photos[idx].fileName)\n", stderr)
+        plog("[EXIF] loadIfNeeded: \(photos[idx].fileName)\n")
 
         exifLoadingIDs.insert(photoID)
         let url = photos[idx].jpgURL
         let fileName = url.lastPathComponent
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let exif = ExifService.extractExif(from: url) else {
-                fputs("[EXIF] FAIL \(fileName)\n", stderr)
+                plog("[EXIF] FAIL \(fileName)\n")
                 DispatchQueue.main.async { self?.exifLoadingIDs.remove(photoID) }
                 return
             }
-            fputs("[EXIF] OK \(fileName) lens=\(exif.lensModel ?? "nil") w=\(exif.imageWidth ?? 0)\n", stderr)
+            plog("[EXIF] OK \(fileName) lens=\(exif.lensModel ?? "nil") w=\(exif.imageWidth ?? 0)\n")
             DispatchQueue.main.async {
                 guard let self = self,
                       let i = self._photoIndex[photoID], i < self.photos.count else { return }
@@ -221,7 +221,7 @@ extension PhotoStore {
     func triggerListExifLoad() {
         guard !isRecursiveMode else { return }
         let needExif = photos.filter { !$0.isFolder && !$0.isParentFolder && $0.exifData == nil }.count
-        fputs("[EXIF] triggerListExifLoad: need=\(needExif), version=\(photosVersion), last=\(lastExifLoadVersion)\n", stderr)
+        plog("[EXIF] triggerListExifLoad: need=\(needExif), version=\(photosVersion), last=\(lastExifLoadVersion)\n")
         guard lastExifLoadVersion != photosVersion else { return }
         lastExifLoadVersion = photosVersion
         guard needExif > 0 else { return }

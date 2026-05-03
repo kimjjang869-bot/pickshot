@@ -138,7 +138,7 @@ class PhotoStore: ObservableObject {
         let query = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return }
         guard TextEncoderService.shared.isAvailable else {
-            fputs("[SEM-TXT] TextEncoder 사용 불가\n", stderr)
+            plog("[SEM-TXT] TextEncoder 사용 불가\n")
             return
         }
         // 백그라운드 실행
@@ -156,13 +156,17 @@ class PhotoStore: ObservableObject {
     /// v8.8.3: selectedPhotoIDs 에서 현재 photos 에 없는 유령 ID 제거.
     ///   폴더 이동/재로드 후 UI에는 선택 하이라이트가 없는데 데이터엔 남아있어
     ///   키 입력(rating/color) 이 보이지 않는 선택에 적용되는 버그 차단.
+    /// v9.1.4 (perf): O(N) Set 신규 생성 → _photoIndex.keys 직접 사용 (O(selCount)).
+    ///   selectedPhotoIDs 평균 1개 → 사실상 O(1). 폴더 로드마다 16K 할당 제거.
     func pruneStaleSelections() {
-        let validIDs = Set(photos.map { $0.id })
-        let stale = selectedPhotoIDs.subtracting(validIDs)
+        var stale = Set<UUID>()
+        for sid in selectedPhotoIDs where _photoIndex[sid] == nil {
+            stale.insert(sid)
+        }
         if !stale.isEmpty {
             selectedPhotoIDs.subtract(stale)
         }
-        if let sid = selectedPhotoID, !validIDs.contains(sid) {
+        if let sid = selectedPhotoID, _photoIndex[sid] == nil {
             selectedPhotoID = nil
         }
     }
@@ -170,13 +174,27 @@ class PhotoStore: ObservableObject {
     /// v8.8.3: 현재 filteredPhotos 에 보이지 않는 선택 ID 제거.
     ///   별점/컬러 필터로 선택된 사진이 화면에서 가려지면 "보이지 않는 선택" 이 되어
     ///   키 입력이 예측 불가능하게 작동하는 버그 차단.
+    /// v9.1.4 (C-1): O(N) 16K 순회 + Set 신규 생성 → O(selCount) _filteredIndex Set check.
+    ///   selectedPhotoIDs 가 평균 1개라 사실상 O(1). 필터 변경 1회당 30-80ms 메인 차단 → ~µs.
     func pruneHiddenSelections() {
-        let visibleIDs = Set(filteredPhotos.filter { !$0.isFolder && !$0.isParentFolder }.map { $0.id })
-        let hidden = selectedPhotoIDs.subtracting(visibleIDs)
+        ensureFilteredIndex()
+        // selectedPhotoIDs 중 _filteredIndex 에 없거나 folder/parentFolder 인 것만 제거.
+        var hidden = Set<UUID>()
+        for sid in selectedPhotoIDs {
+            guard let idx = _filteredIndex[sid] else {
+                hidden.insert(sid)
+                continue
+            }
+            // bounds check + folder 체크 (filteredPhotos cached value 사용)
+            let list = _cachedFiltered ?? []
+            if idx >= list.count || list[idx].isFolder || list[idx].isParentFolder {
+                hidden.insert(sid)
+            }
+        }
         if !hidden.isEmpty {
             selectedPhotoIDs.subtract(hidden)
         }
-        if let sid = selectedPhotoID, !visibleIDs.contains(sid) {
+        if let sid = selectedPhotoID, _filteredIndex[sid] == nil {
             selectedPhotoID = nil
         }
     }
@@ -267,7 +285,7 @@ class PhotoStore: ObservableObject {
 
         if !ratingFilters.isEmpty {
             let stars = ratingFilters.sorted().map { "★\($0)" }.joined(separator: " ")
-            fputs("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n", stderr)
+            plog("[FILTER] 별점 \(ratingFilters.sorted()) 결과 0장 → All 로 리셋\n")
             ratingFilters = []
             // v8.9 perf: didSet 체인에서 SwiftUI 가 토스트 트랜지션을 못 잡는 경우 방지 — 다음 runloop 으로.
             DispatchQueue.main.async { [weak self] in
@@ -277,7 +295,7 @@ class PhotoStore: ObservableObject {
         }
         if minimumRatingFilter > 0 {
             let prev = minimumRatingFilter
-            fputs("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n", stderr)
+            plog("[FILTER] 최소별점 \(minimumRatingFilter) 이상 결과 0장 → 리셋\n")
             minimumRatingFilter = 0
             DispatchQueue.main.async { [weak self] in
                 self?.showToastMessage("이 폴더에 ★\(prev) 이상 사진이 없습니다 — 전체 보기로 전환")
@@ -285,7 +303,7 @@ class PhotoStore: ObservableObject {
             return
         }
         if !colorLabelFilters.isEmpty {
-            fputs("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n", stderr)
+            plog("[FILTER] 컬러 \(colorLabelFilters) 결과 0장 → 리셋\n")
             colorLabelFilters = []
             DispatchQueue.main.async { [weak self] in
                 self?.showToastMessage("이 폴더에 해당 컬러 라벨 사진이 없습니다 — 전체 보기로 전환")
@@ -329,6 +347,71 @@ class PhotoStore: ObservableObject {
             UserDefaults.standard.set(fastCullingMode, forKey: "fastCullingMode")
             CacheSweeper.shared.notifyActivity()
         }
+    }
+
+    // MARK: - v9.1 성능 프로파일 (단일 소스, 4개 토글 통합)
+    //   기존 fastCullingMode / aggressiveCache / SuperCullMode / autoInitialPreview 를
+    //   하나의 enum 으로 묶어 사용자가 명확히 선택. 호환성: didSet 이 기존 플래그를 동기화.
+
+    enum PerformanceProfile: String, CaseIterable, Identifiable {
+        case standard      // 표준 — 모두 기본 동작
+        case fastCull      // 빠른 셀렉 — Stage 3 차단, AI/Stage2 prefetch OFF (셀렉 작업용)
+        case prewarm       // 사전 생성 — 폴더 진입 즉시 병렬 prewarm (작은 폴더, 즉답)
+
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .standard: return "표준"
+            case .fastCull: return "빠른 셀렉"
+            case .prewarm:  return "사전 생성"
+            }
+        }
+        var iconName: String {
+            switch self {
+            case .standard: return "tortoise"
+            case .fastCull: return "hare.fill"
+            case .prewarm:  return "bolt.fill"
+            }
+        }
+        var helpText: String {
+            switch self {
+            case .standard: return "표준 — Stage 3 까지 자동 승격, AI 분석/풀 미리보기 모두 동작"
+            case .fastCull: return "빠른 셀렉 — Stage 3 차단, AI/Stage 2 prefetch OFF (FRV 식, 셀렉 최우선)"
+            case .prewarm:  return "사전 생성 — 폴더 진입 즉시 병렬 prewarm (Pro, 5000장 이상 자동 OFF)"
+            }
+        }
+    }
+
+    @Published var performanceProfile: PerformanceProfile = {
+        let raw = UserDefaults.standard.string(forKey: "performanceProfile") ?? ""
+        if let p = PerformanceProfile(rawValue: raw) { return p }
+        // 마이그레이션: 기존 키 조합 → 가장 가까운 프로파일 추론
+        let aggressive = UserDefaults.standard.bool(forKey: "aggressiveCachePreload")
+        let fastCull = UserDefaults.standard.bool(forKey: "fastCullingMode")
+        let superCull = UserDefaults.standard.bool(forKey: "superCullModeActive")
+        if aggressive { return .prewarm }
+        if fastCull || superCull { return .fastCull }
+        return .standard
+    }() {
+        didSet {
+            UserDefaults.standard.set(performanceProfile.rawValue, forKey: "performanceProfile")
+            applyPerformanceProfile()
+        }
+    }
+
+    /// 프로파일 → 하위 플래그 동기화. didSet 에서 호출되며, init 후 1회 동기화하려면 별도 호출.
+    /// v9.1.1: autoInitialPreview 자동 ON 제거 — 앱 재시작 시 phase3 무한 발사 hang 원인.
+    ///   사전 생성 발사는 picker 옆 ▶︎ 버튼 명시 클릭 시에만.
+    func applyPerformanceProfile() {
+        let p = performanceProfile
+        let newFastCulling = (p == .fastCull)
+        let newAggressive  = (p == .prewarm)
+        let newSuperCull   = (p == .fastCull)
+        if fastCullingMode != newFastCulling { fastCullingMode = newFastCulling }
+        if aggressiveCache != newAggressive  { aggressiveCache = newAggressive }
+        UserDefaults.standard.set(newSuperCull, forKey: "superCullModeActive")
+        // autoInitialPreview 는 더 이상 프로파일이 직접 켜지 않음 — 안전상 항상 false 로 유지.
+        UserDefaults.standard.set(false, forKey: "autoInitialPreview")
     }
 
     // v8.9.4: 하위폴더 포함 열기 — generation 토큰 + 진행 중 플래그.
@@ -455,7 +538,7 @@ class PhotoStore: ObservableObject {
     /// v8.8.2: 1차 캐시 (Stage 2) 100% → HiRes 업그레이드 패스 시작.
     ///   썸네일 + 미리보기 모두 완료됐을 때만 발동. 폴더 전환 시 자동 리셋.
     private func checkCacheCompleteAndUpgrade() {
-        let total = photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+        let total = photoCount  // v9.1.4 (perf P6): O(N) reduce → O(1) 캐시
         guard total > 0,
               thumbCacheCount >= total,
               previewsLoaded >= total,
@@ -463,7 +546,7 @@ class PhotoStore: ObservableObject {
         // v8.8.2: 완료 상태만 표시, 실제 HiRes 업그레이드 패스는 미구현 (성능 리스크로 보류).
         cacheUpgradeState = .complete
         cacheUpgradeDone = total
-        fputs("[CACHE-COMPLETE] all \(total) previews cached\n", stderr)
+        plog("[CACHE-COMPLETE] all \(total) previews cached\n")
     }
 
     /// 업그레이드 패스 진행 1건 완료 알림.
@@ -471,10 +554,11 @@ class PhotoStore: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.cacheUpgradeDone += 1
-            let total = self.photos.reduce(0) { $0 + (($1.isFolder || $1.isParentFolder) ? 0 : 1) }
+            // v9.1.4 (C-2): O(N) reduce → O(1) photoCount 캐시.
+            let total = self.photoCount
             if self.cacheUpgradeDone >= total {
                 self.cacheUpgradeState = .complete
-                fputs("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n", stderr)
+                plog("[CACHE-UPGRADE] ✅ complete — all \(total) previews at HiRes\n")
             }
         }
     }
@@ -833,7 +917,7 @@ class PhotoStore: ObservableObject {
             }
             self.invalidateFilterCache()
             self.saveRatings()
-            fputs("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n", stderr)
+            plog("[BACKUP] imported applied: ratings=\(applied.rating) SP=\(applied.sp) color=\(applied.color)\n")
         }
 
         // 상시 메모리 감시 — 세션 시작 대비 +2GB 초과 시 자동 캐시 해제
@@ -931,8 +1015,9 @@ class PhotoStore: ObservableObject {
     var shiftClickAnchorIndex: Int?
 
 
+    /// v9.1.4 (perf P6): O(N) lazy.filter.count → _cachedSpacePickCount 캐시 사용 (refreshDerivedCountsIfNeeded 가 photosVersion 키로 갱신).
     var spacePickedCount: Int {
-        photos.lazy.filter { $0.isSpacePicked }.count
+        spacePickCount  // refreshDerivedCountsIfNeeded 자동 호출
     }
 
     // Cached filtered results - invalidated when inputs change
@@ -943,6 +1028,14 @@ class PhotoStore: ObservableObject {
     /// v8.9 perf: status bar 렌더 때마다 O(n) 순회를 피하기 위한 파생 캐시.
     var _cachedPhotoCount: Int = 0
     var _cachedSpacePickCount: Int = 0
+    var _cachedRatingCounts: [Int: Int] = [:]
+    var _cachedColorLabelCounts: [ColorLabel: Int] = [:]
+    var _cachedAIPickCount: Int = 0
+    var _cachedSceneTags: [String] = []
+    var _cachedAICategories: [String] = []
+    var _cachedAICategoryCounts: [String: Int] = [:]
+    var _cachedAIUsabilityStats: [String: Int] = [:]
+    var _cachedNonFolderPhotoIDs: [UUID] = []
     var _derivedCountsKey: String = ""
 
     func invalidateCache() {
@@ -965,16 +1058,81 @@ class PhotoStore: ObservableObject {
         return _cachedSpacePickCount
     }
 
+    /// 별점별 개수 — toolbar 렌더마다 16K+ photos 를 순회하지 않도록 photosVersion 기준 캐시.
+    func ratingCount(_ rating: Int) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedRatingCounts[rating, default: 0]
+    }
+
+    /// 컬러 라벨별 개수 — toolbar 렌더마다 16K+ photos 를 순회하지 않도록 photosVersion 기준 캐시.
+    func colorLabelCount(_ label: ColorLabel) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedColorLabelCounts[label, default: 0]
+    }
+
+    var aiPickCount: Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedAIPickCount
+    }
+
+    func aiCategoryCount(_ category: String) -> Int {
+        refreshDerivedCountsIfNeeded()
+        return _cachedAICategoryCounts[category, default: 0]
+    }
+
+    var nonFolderPhotoIDs: [UUID] {
+        refreshDerivedCountsIfNeeded()
+        return _cachedNonFolderPhotoIDs
+    }
+
     private func refreshDerivedCountsIfNeeded() {
         let key = "\(photosVersion)"
         if _derivedCountsKey == key { return }
         var pc = 0, sp = 0
+        var aiPickCount = 0
+        var ratingCounts: [Int: Int] = [:]
+        var colorCounts: [ColorLabel: Int] = [:]
+        var sceneTags = Set<String>()
+        var aiCategories = Set<String>()
+        var aiCategoryCounts: [String: Int] = [:]
+        var aiUsabilityStats: [String: Int] = [:]
+        var nonFolderPhotoIDs: [UUID] = []
         for p in photos {
-            if !p.isFolder && !p.isParentFolder { pc += 1 }
+            if !p.isFolder && !p.isParentFolder {
+                pc += 1
+                nonFolderPhotoIDs.append(p.id)
+                if p.isAIPick {
+                    aiPickCount += 1
+                }
+                if p.rating > 0 {
+                    ratingCounts[p.rating, default: 0] += 1
+                }
+                if p.colorLabel != .none {
+                    colorCounts[p.colorLabel, default: 0] += 1
+                }
+                if let sceneTag = p.sceneTag {
+                    sceneTags.insert(sceneTag)
+                }
+                if let aiCategory = p.aiCategory {
+                    aiCategories.insert(aiCategory)
+                    aiCategoryCounts[aiCategory, default: 0] += 1
+                }
+                if let usability = p.aiUsability {
+                    aiUsabilityStats[usability, default: 0] += 1
+                }
+            }
             if p.isSpacePicked { sp += 1 }
         }
         _cachedPhotoCount = pc
         _cachedSpacePickCount = sp
+        _cachedRatingCounts = ratingCounts
+        _cachedColorLabelCounts = colorCounts
+        _cachedAIPickCount = aiPickCount
+        _cachedSceneTags = sceneTags.sorted()
+        _cachedAICategories = aiCategories.sorted()
+        _cachedAICategoryCounts = aiCategoryCounts
+        _cachedAIUsabilityStats = aiUsabilityStats
+        _cachedNonFolderPhotoIDs = nonFolderPhotoIDs
         _derivedCountsKey = key
     }
 
@@ -1258,18 +1416,50 @@ class PhotoStore: ObservableObject {
     var moveThrottleWorkItem: DispatchWorkItem?
     var pendingMoveOffset: Int = 0
     var lastMoveTime: CFAbsoluteTime = 0
+    /// v9.1.4: deleteOriginalFiles 가 휴지통 소리 재생 후 removeSelectedFromList 내부 일반 소리 중복 차단.
+    var _suppressSoundOnNextRemove: Bool = false
 
-    /// 삭제 효과음 — macOS 휴지통 비우기 소리(empty trash.aif)를 0.28초로 잘라 재생
-    /// AVAudioPlayer 사용 → NSSound 대비 레이턴시 낮음 (pre-loaded buffer)
-    /// 연타 대비 플레이어 풀 사용 (stop() 간섭 방지)
+    /// 삭제/이동 효과음.
+    /// - playDeleteSound: 목록 제거 등 — 번들 delete.aif (0.28초 컷, 이전 사운드).
+    /// - playTrashSound: 실제 휴지통 이동 (trashItem) — macOS 시스템 휴지통 비우기 소리 (Finder 동일).
     private static let _deleteSoundPool: [AVAudioPlayer] = {
-        // Sandbox에서 /System/Library 직접 접근 불가 → 번들 사운드 또는 NSSound 기반 대체
-        // macOS는 NSSound(named:) 으로 시스템 사운드에 안전하게 접근 가능
-        // AVAudioPlayer 풀은 번들에 사운드 파일이 있을 때만 생성
         var pool: [AVAudioPlayer] = []
-        if let soundURL = Bundle.main.url(forResource: "delete", withExtension: "aif") {
+        // v9.1.4: delete.aif 번들 누락 — macOS 시스템 사운드 직접 사용 (Pop = 가볍고 짧음, 이동 알림에 적합).
+        let candidates = [
+            Bundle.main.url(forResource: "delete", withExtension: "aif"),
+            URL(fileURLWithPath: "/System/Library/Sounds/Pop.aiff"),
+            URL(fileURLWithPath: "/System/Library/Sounds/Tink.aiff")
+        ].compactMap { $0 }
+        for url in candidates where FileManager.default.isReadableFile(atPath: url.path) {
             for _ in 0..<4 {
-                if let p = try? AVAudioPlayer(contentsOf: soundURL) {
+                if let p = try? AVAudioPlayer(contentsOf: url) {
+                    p.prepareToPlay()
+                    pool.append(p)
+                }
+            }
+            if !pool.isEmpty { break }
+        }
+        return pool
+    }()
+    private static var _deleteSoundIndex: Int = 0
+    private static let _deleteSoundDuration: TimeInterval = 0.28
+
+    private static let _trashSoundPool: [AVAudioPlayer] = {
+        var pool: [AVAudioPlayer] = []
+        let systemPaths = [
+            "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/finder/empty trash.aif",
+            "/System/Library/Components/CoreAudio.component/Contents/Resources/SystemSounds/finder/empty trash.aif"
+        ]
+        var url: URL? = nil
+        for path in systemPaths where FileManager.default.isReadableFile(atPath: path) {
+            url = URL(fileURLWithPath: path)
+            break
+        }
+        // 시스템 사운드 접근 실패 시 번들 사운드로 폴백
+        if url == nil { url = Bundle.main.url(forResource: "delete", withExtension: "aif") }
+        if let url {
+            for _ in 0..<4 {
+                if let p = try? AVAudioPlayer(contentsOf: url) {
                     p.prepareToPlay()
                     pool.append(p)
                 }
@@ -1277,26 +1467,34 @@ class PhotoStore: ObservableObject {
         }
         return pool
     }()
-    private static var _deleteSoundIndex: Int = 0
-    private static let _deleteSoundDuration: TimeInterval = 0.28  // 짧게 자르기
+    private static var _trashSoundIndex: Int = 0
 
     static func playDeleteSound() {
         guard !_deleteSoundPool.isEmpty else {
-            // 번들 사운드 없을 때 시스템 사운드 폴백
             NSSound(named: "Funk")?.play()
             return
         }
-        // 라운드 로빈: 다음 가용 플레이어 선택 (연타 시 겹치지 않게)
         _deleteSoundIndex = (_deleteSoundIndex + 1) % _deleteSoundPool.count
         let player = _deleteSoundPool[_deleteSoundIndex]
         player.stop()
         player.currentTime = 0
         player.play()
-        // 0.28초 후 자동 정지 (꼬리 자르기)
-        // 플레이어는 static 풀이 영구 보유 → retain cycle 없음
         DispatchQueue.main.asyncAfter(deadline: .now() + _deleteSoundDuration) {
             player.stop()
         }
+    }
+
+    /// macOS 시스템 휴지통 소리 — 실제 trashItem 호출 시.
+    static func playTrashSound() {
+        guard !_trashSoundPool.isEmpty else {
+            NSSound(named: "Funk")?.play()
+            return
+        }
+        _trashSoundIndex = (_trashSoundIndex + 1) % _trashSoundPool.count
+        let player = _trashSoundPool[_trashSoundIndex]
+        player.stop()
+        player.currentTime = 0
+        player.play()
     }
 
     /// RAW 임베디드 썸네일 프리페치 (이동 방향으로 미리 채움, 병렬 추출)
@@ -1311,8 +1509,8 @@ class PhotoStore: ObservableObject {
 
     /// All unique scene tags currently assigned
     var availableSceneTags: [String] {
-        let tags = Set(photos.compactMap { $0.sceneTag })
-        return tags.sorted()
+        refreshDerivedCountsIfNeeded()
+        return _cachedSceneTags
     }
 
     /// All unique keywords currently assigned across all photos
@@ -1507,19 +1705,14 @@ class PhotoStore: ObservableObject {
 
     /// AI 분류 결과로 폴더 정리 — 카테고리별 하위 폴더 생성 + 파일 이동
     var availableAICategories: [String] {
-        let categories = Set(photos.compactMap { $0.aiCategory })
-        return Array(categories).sorted()
+        refreshDerivedCountsIfNeeded()
+        return _cachedAICategories
     }
 
     /// AI usability statistics
     var aiUsabilityStats: [String: Int] {
-        var stats: [String: Int] = [:]
-        for photo in photos {
-            if let usability = photo.aiUsability {
-                stats[usability, default: 0] += 1
-            }
-        }
-        return stats
+        refreshDerivedCountsIfNeeded()
+        return _cachedAIUsabilityStats
     }
 
     // MARK: - Batch Rename

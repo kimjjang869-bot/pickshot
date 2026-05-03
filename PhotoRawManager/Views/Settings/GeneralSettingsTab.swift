@@ -137,6 +137,21 @@ struct GeneralSettingsTab: View {
                                 Label("셀렉 백업 가져오기...", systemImage: "square.and.arrow.down")
                             }
                         }
+
+                        #if DEBUG
+                        Divider()
+                        // v9.1.3: 디버그 로그 토글 — Debug 빌드에서만 표시.
+                        //   Release 빌드는 plog() 호출이 컴파일 단계에서 제거되므로 토글 자체가 의미 없음.
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("디버그 로그 출력 (stderr)", isOn: Binding(
+                                get: { Log.enabled },
+                                set: { Log.setEnabled($0) }
+                            ))
+                            Text("끄면 stderr 로그 출력이 멈춰 성능이 향상됩니다. HUD (Shift+⌘+D) 는 별개로 작동합니다.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        #endif
                     }
                     .padding(4)
                 }

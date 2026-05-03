@@ -82,10 +82,11 @@ final class TierManager: ObservableObject {
     }
 
     /// "7일 무료 체험 시작" 버튼을 보여줄 수 있는 상태?
-    /// (기존 21일 trial 시스템 사용 — 새 7일 체험은 별도 카운터 안 만들고 trial 만료 여부로 판정)
+    /// v9.1.4: Trial 이 아직 한 번도 시작된 적 없는 경우에만 true.
+    ///   (이전 로직: `isTrialExpired || daysRemaining<=0` → 만료자에게만 true. 신규 사용자에겐 false.
+    ///    원 의도는 "체험 시작 가능 = 아직 안 써봄" 이므로 `peekTrialStartDate() == nil` 로 교정.)
     var canStartTrial: Bool {
-        let sm = SubscriptionManager.shared
-        return sm.isTrialExpired || sm.trialDaysRemaining <= 0
+        return SubscriptionManager.peekTrialStartDate() == nil
     }
 
     /// Pro 7일 체험 시작 — 현재는 Pro 임시 활성화 알림만.

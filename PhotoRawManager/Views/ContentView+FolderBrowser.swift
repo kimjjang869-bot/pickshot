@@ -89,6 +89,39 @@ struct FolderBrowserView: View {
     @State private var iconFolderContents: [FolderItem] = []
     @State private var refreshWork: DispatchWorkItem?
     @State private var volumeObservers: [NSObjectProtocol] = []
+    // v9.1: 폴더 트리 다중 선택. Cmd+클릭 = 토글. Shift+클릭 = anchor 부터 범위 추가.
+    @State var multiFolderSelection: Set<URL> = []
+    @State var folderSelectionAnchor: URL?
+
+    /// 트리에서 현재 *보이는* 폴더 URL 들을 표시 순서대로 평탄화.
+    func flattenVisibleFolders() -> [URL] {
+        var result: [URL] = []
+        func walk(_ items: [FolderItem]) {
+            for it in items {
+                result.append(it.url)
+                if it.isExpanded, let kids = it.children {
+                    walk(kids)
+                }
+            }
+        }
+        walk(rootItems)
+        return result
+    }
+
+    /// Shift+클릭 처리 — anchor (없으면 현재 store.folderURL 또는 클릭한 URL) 부터 target 까지 범위 추가.
+    func handleShiftClick(_ target: URL) {
+        let visible = flattenVisibleFolders()
+        let anchor = folderSelectionAnchor ?? store.folderURL ?? target
+        guard let aIdx = visible.firstIndex(of: anchor),
+              let tIdx = visible.firstIndex(of: target) else {
+            // 범위 계산 불가 → 단일 토글로 폴백
+            multiFolderSelection.insert(target)
+            folderSelectionAnchor = target
+            return
+        }
+        let range = aIdx <= tIdx ? aIdx...tIdx : tIdx...aIdx
+        for i in range { multiFolderSelection.insert(visible[i]) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -562,13 +595,62 @@ struct FolderBrowserView: View {
         LazyVStack(alignment: .leading, spacing: 0) {
             sectionHeader(icon: "folder.fill", title: "로컬 폴더", color: .blue)
 
+            // v9.1: 다중 선택 액션 바 (2개 이상 선택 시)
+            if multiFolderSelection.count >= 2 {
+                multiSelectionBar
+            }
+
             ForEach(rootItems.indices, id: \.self) { i in
-                FolderRowView(item: $rootItems[i], store: store, level: 0, onAddFavorite: { url in
-                    store.addFavoriteFolder(url)
-                    favorites = store.loadFavoriteFolders()
-                })
+                FolderRowView(
+                    item: $rootItems[i],
+                    store: store,
+                    level: 0,
+                    onAddFavorite: { url in
+                        store.addFavoriteFolder(url)
+                        favorites = store.loadFavoriteFolders()
+                    },
+                    multiSelection: $multiFolderSelection,
+                    onShiftClick: { handleShiftClick($0) },
+                    onSetAnchor: { folderSelectionAnchor = $0 }
+                )
             }
         }
+    }
+
+    private var multiSelectionBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.orange)
+            Text("\(multiFolderSelection.count)개 선택")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.orange)
+            Spacer()
+            Button {
+                let urls = Array(multiFolderSelection)
+                multiFolderSelection.removeAll()
+                store.loadFoldersAggregated(urls)
+            } label: {
+                Label("일괄 열기", systemImage: "rectangle.stack.badge.plus")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(.orange)
+            Button {
+                multiFolderSelection.removeAll()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("다중 선택 해제")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.orange.opacity(0.12))
+        .cornerRadius(6)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 4)
     }
 
     // MARK: - Favorites Section
@@ -1072,11 +1154,31 @@ struct FolderRowView: View {
     let store: PhotoStore
     let level: Int
     let onAddFavorite: (URL) -> Void
+    // v9.1: 다중 선택 binding + 액션 콜백
+    @Binding var multiSelection: Set<URL>
+    var onShiftClick: ((URL) -> Void)? = nil
+    var onSetAnchor: ((URL) -> Void)? = nil
     @State private var showEjectConfirm: Bool = false
     @State private var ejectResult: String?
     @State private var isDropTarget: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renamingText: String = ""
+
+    private var isMultiSelected: Bool { multiSelection.contains(item.url) }
+
+    private var rowBackground: Color {
+        if isMultiSelected { return Color.orange.opacity(0.25) }
+        if store.folderURL?.path == item.url.path { return Color.accentColor.opacity(0.15) }
+        return Color.clear
+    }
+
+    @ViewBuilder
+    private var rowOverlay: some View {
+        if isMultiSelected {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.orange.opacity(0.7), lineWidth: 1.5)
+        }
+    }
 
     private var isExternalVolume: Bool {
         item.url.path.hasPrefix("/Volumes") && level == 0
@@ -1182,6 +1284,26 @@ struct FolderRowView: View {
                     let systemPaths = ["/Volumes", "/System", "/Library", "/usr", "/private"]
                     let isSystem = systemPaths.contains(item.url.path) || item.url.path == "/"
 
+                    // v9.1: 모디파이어 분기 — Cmd 토글 / Shift 범위 추가 / 일반 단일 열기
+                    let mods = NSEvent.modifierFlags
+                    if mods.contains(.shift) && !isSystem {
+                        onShiftClick?(item.url)
+                        return
+                    }
+                    if mods.contains(.command) && !isSystem {
+                        if multiSelection.contains(item.url) {
+                            multiSelection.remove(item.url)
+                        } else {
+                            multiSelection.insert(item.url)
+                            onSetAnchor?(item.url)
+                        }
+                        return
+                    }
+
+                    // 일반 클릭: 다중 선택 해제 + 단일 폴더 열기 + anchor 갱신
+                    if !multiSelection.isEmpty { multiSelection.removeAll() }
+                    onSetAnchor?(item.url)
+
                     // 트리 펼치기
                     if item.hasSubfolders && !item.isExpanded { toggleExpand() }
 
@@ -1225,10 +1347,10 @@ struct FolderRowView: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 do {
                                     try NSWorkspace.shared.unmountAndEjectDevice(at: item.url)
-                                    fputs("[EJECT] NSWorkspace eject success: \(item.name)\n", stderr)
+                                    plog("[EJECT] NSWorkspace eject success: \(item.name)\n")
                                     ejectResult = "'\(item.name)' 추출 완료"
                                 } catch {
-                                    fputs("[EJECT] NSWorkspace eject error: \(error)\n", stderr)
+                                    plog("[EJECT] NSWorkspace eject error: \(error)\n")
                                     ejectResult = "'\(item.name)' 추출 실패: \(error.localizedDescription)"
                                 }
                             }
@@ -1242,7 +1364,8 @@ struct FolderRowView: View {
             .padding(.leading, CGFloat(level) * 16 + 8)
             .padding(.vertical, 4)
             .frame(minHeight: AppTheme.buttonHeight)
-            .background(store.folderURL?.path == item.url.path ? Color.accentColor.opacity(0.15) : Color.clear)
+            .background(rowBackground)
+            .overlay(rowOverlay)
             .alert("디스크 추출 결과", isPresented: Binding(get: { ejectResult != nil }, set: { if !$0 { ejectResult = nil } })) {
                 Button("확인") { ejectResult = nil }
             } message: {
@@ -1265,6 +1388,22 @@ struct FolderRowView: View {
             .contextMenu {
                 Button("즐겨찾기에 추가") { onAddFavorite(item.url) }
                 Button("Finder에서 열기") { NSWorkspace.shared.open(item.url) }
+                Divider()
+                // v9.1: 다중 선택 토글 + 일괄 열기
+                Button(isMultiSelected ? "다중 선택에서 제거" : "다중 선택에 추가") {
+                    if isMultiSelected { multiSelection.remove(item.url) }
+                    else { multiSelection.insert(item.url) }
+                }
+                if multiSelection.count >= 2 {
+                    Button {
+                        let urls = Array(multiSelection)
+                        multiSelection.removeAll()
+                        store.loadFoldersAggregated(urls)
+                    } label: {
+                        Label("선택한 \(multiSelection.count)개 폴더 일괄 열기", systemImage: "rectangle.stack.badge.plus")
+                    }
+                    Button("다중 선택 해제") { multiSelection.removeAll() }
+                }
                 Divider()
                 folderTreeCopyCutPasteMenu(item.url, store: store)
                 Divider()
@@ -1308,7 +1447,10 @@ struct FolderRowView: View {
                             ),
                             store: store,
                             level: level + 1,
-                            onAddFavorite: onAddFavorite
+                            onAddFavorite: onAddFavorite,
+                            multiSelection: $multiSelection,
+                            onShiftClick: onShiftClick,
+                            onSetAnchor: onSetAnchor
                         )
                     }
                 }

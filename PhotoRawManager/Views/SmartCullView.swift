@@ -617,7 +617,7 @@ struct SmartCullView: View {
 
                 store.invalidateFilterCache()
                 store.objectWillChange.send()
-                fputs("[STYLE] 추천 적용: \(scores.count)장 분석, \(selectedCount)장 셀렉 (기준 \(Int(threshold))점)\n", stderr)
+                plog("[STYLE] 추천 적용: \(scores.count)장 분석, \(selectedCount)장 셀렉 (기준 \(Int(threshold))점)\n")
             }
         }
     }

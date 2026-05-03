@@ -6,6 +6,9 @@ import AppKit
 struct NSThumbnailCollectionView: NSViewRepresentable {
     /// v8.9.4: 가장 최근에 만들어진 Coordinator 참조 — CacheSweeper 가 isScrollingNow 폴링용
     static weak var activeCoordinator: Coordinator?
+    /// v9.1.3: 방향 prefetch throttle 상태
+    static var lastPrefetchAt: CFAbsoluteTime = 0
+    static var lastPrefetchDirection: Int = 0
     @EnvironmentObject var store: PhotoStore
 
     func makeCoordinator() -> Coordinator {
@@ -53,7 +56,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         coordinator.rebuildIndexMap()
         coordinator.photosVersion = store.photosVersion
         collectionView.reloadData()
-        fputs("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n", stderr)
+        plog("[GRID] makeNSView: \(coordinator.photos.count) photos, reloaded\n")
         coordinator.thumbnailSize = store.thumbnailSize
         coordinator.showFileExtension = store.showFileExtension
         coordinator.showFileTypeBadge = store.showFileTypeBadge
@@ -73,7 +76,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         defer {
             let ms = (CFAbsoluteTimeGetCurrent() - _t0) * 1000
             if ms > 1 {
-                fputs("[GRID-UPDATE] \(String(format: "%.0f", ms))ms (photos=\(self.store.filteredPhotos.count))\n", stderr)
+                plog("[GRID-UPDATE] \(String(format: "%.0f", ms))ms (photos=\(self.store.filteredPhotos.count))\n")
             }
         }
         let coordinator = context.coordinator
@@ -105,10 +108,15 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         // v8.9.7+: 5열 cap 제거 — Bridge 스타일. 썸네일 작으면 컬럼 많이, 크면 적게.
         //   사용자가 패널 폭을 늘리면 컬럼이 자동으로 늘어남 (이전 5열 cap 으로 막혀있던 문제).
         let cols = max(1, Int(gridWidth / cellWidth))
-        if store.actualColumnsPerRow != cols {
-            DispatchQueue.main.async {
-                if store.actualColumnsPerRow != cols {
-                    store.actualColumnsPerRow = cols
+        // v9.1.4 (C-5): Coordinator 에 lastCols 추적 — 같은 cols 면 dispatch 자체 skip.
+        //   이전엔 store.actualColumnsPerRow != cols 체크만 → 매 updateNSView 마다 dispatch 발사.
+        if coordinator.lastDispatchedCols != cols {
+            coordinator.lastDispatchedCols = cols
+            if store.actualColumnsPerRow != cols {
+                DispatchQueue.main.async {
+                    if store.actualColumnsPerRow != cols {
+                        store.actualColumnsPerRow = cols
+                    }
                 }
             }
         }
@@ -120,9 +128,22 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
         // Data changed - full reload (check version + count + IDs)
         // v8.9.4: sizeChanged 도 reload 트리거에 포함 — 셀 내부 subview 좌표 재계산 강제
+        // v9.1.4 (R-2): 썸네일 슬라이더 드래그 중 매 step 마다 17,000셀 reloadData 폭발 방지.
+        //   sizeChanged 만 단독 발생 시 150ms throttle — 슬라이더 멈춘 후 1회만 reloadData.
+        var sizeChangedReloadEffective = sizeChanged
+        if sizeChanged && !optionsChanged
+            && coordinator.photos.count == newPhotos.count
+            && coordinator.photosVersion == store.photosVersion {
+            let now = Date()
+            if now.timeIntervalSince(coordinator.lastSizeReloadAt) < 0.15 {
+                sizeChangedReloadEffective = false  // throttle: layout 만 invalidate, reload skip
+            } else {
+                coordinator.lastSizeReloadAt = now
+            }
+        }
         let photosChanged = coordinator.photos.count != newPhotos.count ||
             coordinator.photosVersion != store.photosVersion ||
-            optionsChanged || sizeChanged
+            optionsChanged || sizeChangedReloadEffective
         // v8.9.4: recursive scan 중에는 reload 를 250ms throttle (batch coalescing 와 정합)
         //   첫 batch 와 sizeChanged/optionsChanged 는 즉시 반영, 그 외는 250ms 누적.
         // v8.9.6: scan 종료 직후 첫 update 는 강제 reload — throttle 윈도우에 묻혀서
@@ -228,6 +249,15 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 }
             }
         }
+
+        // v9.1.4: fast-path — selection 도, focus 도 그대로면 즉시 return.
+        //   updateNSView 는 임의의 @Published (예: thumbCacheCount) 변경에도 호출됨.
+        //   50+ visible cells horizontal nav 시 매 프레임 indexPathsForVisibleItems()/Set 빌드 회피.
+        if storeSelection == coordinator.lastSyncedSelection
+            && focusedID == coordinator.lastSyncedFocusedID {
+            return
+        }
+
         let storeIndexPaths = Set(storeSelection.compactMap { id -> IndexPath? in
             guard let idx = coordinator.indexByID[id] else { return nil }
             return IndexPath(item: idx, section: 0)
@@ -246,6 +276,10 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         let oldFocusedID = coordinator.lastSyncedFocusedID
         coordinator.lastSyncedSelection = storeSelection
         coordinator.lastSyncedFocusedID = focusedID
+
+        // v9.1.3 회귀: 방향 prefetch 제거 — ThumbnailLoader 큐를 점유해서
+        //   풀스크린 PhotoPreviewView 의 hi-res 로드가 양보 못받는 문제 발생.
+        //   기존 syncViewportToLoader (스크롤 이벤트 기반) 만 사용.
 
         let visiblePaths = collectionView.indexPathsForVisibleItems()
         let pathsToRefresh: Set<IndexPath>
@@ -295,6 +329,10 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         var lastScrollTrigger: Int = 0
         // v8.9.4: recursive scan 중 reload throttle 타임스탬프
         var lastRecursiveReloadAt: Date = .distantPast
+        // v9.1.4 (R-2): 썸네일 사이즈 단독 변경 시 reloadData throttle (150ms).
+        var lastSizeReloadAt: Date = .distantPast
+        /// v9.1.4 (C-5): actualColumnsPerRow dedup — 같은 값이면 dispatch 자체 skip.
+        var lastDispatchedCols: Int = -1
         // v8.9.6: 직전 update 시점의 recursive scan 진행 상태 — 종료 직후 first update 강제 reload 용
         var wasRecursiveScanInProgress: Bool = false
         var lastSyncedSelection: Set<UUID> = []
@@ -545,7 +583,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             guard !photo.isParentFolder else { return }
             let beforeCount = store.selectedPhotoIDs.count
             if !store.selectedPhotoIDs.contains(photo.id) {
-                fputs("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n", stderr)
+                plog("[CTX-MENU] right-click on unselected item — reducing selection \(beforeCount) → 1\n")
                 store.selectedPhotoIDs = [photo.id]
                 store.selectedPhotoID = photo.id
                 // v8.9.7+: 메뉴가 main runloop 을 잡고 있는 동안 SwiftUI 재렌더가 지연되어 파란 선택 표시가
@@ -571,7 +609,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                     CATransaction.flush()
                 }
             } else {
-                fputs("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n", stderr)
+                plog("[CTX-MENU] right-click on selected item — keeping multi-selection (\(beforeCount))\n")
             }
         }
 
@@ -581,7 +619,8 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
             let anchor: PhotoItem? = {
                 if let indexPath, indexPath.item < photos.count { return photos[indexPath.item] }
-                if let id = store.selectedPhotoID, let idx = photos.firstIndex(where: { $0.id == id }) { return photos[idx] }
+                // v9.1.4 (perf P2): O(1) indexByID 캐시 사용 — 이전엔 firstIndex(where:) O(N).
+                if let id = store.selectedPhotoID, let idx = indexByID[id], idx < photos.count { return photos[idx] }
                 return nil
             }()
 
@@ -595,16 +634,17 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             let ids = store.selectedPhotoIDs.contains(photo.id) ? store.selectedPhotoIDs : [photo.id]
             let count = max(1, ids.count)
 
+            // v9.1.4: 새 폴더로 이동 — 메뉴 최상단 (사용자 요청).
+            let moveNewFolder = menuItem("새 폴더로 이동", action: #selector(ctxMoveToNewFolder))
+            moveNewFolder.image = NSImage(systemSymbolName: "folder.fill.badge.plus", accessibilityDescription: nil)
+            menu.addItem(moveNewFolder)
+            menu.addItem(.separator())
+
             menu.addItem(menuItem("복사", key: "c", action: #selector(ctxCopy), modifier: [.command]))
             menu.addItem(menuItem("잘라내기", key: "x", action: #selector(ctxCut), modifier: [.command]))
             let paste = menuItem("붙여넣기", key: "v", action: #selector(ctxPaste), modifier: [.command])
             paste.isEnabled = !(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
             menu.addItem(paste)
-            menu.addItem(.separator())
-
-            let moveNewFolder = menuItem("새 폴더로 이동", action: #selector(ctxMoveToNewFolder))
-            moveNewFolder.image = NSImage(systemSymbolName: "folder.fill.badge.plus", accessibilityDescription: nil)
-            menu.addItem(moveNewFolder)
             menu.addItem(.separator())
 
             let ratingSub = NSMenu(title: "별점")
@@ -808,40 +848,78 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
         }
 
         @objc private func ctxMoveToNewFolder() {
+            guard let folderURL = store.folderURL else { return }
+            // 입력 → 중복 체크 → 사용자 선택 → 실행. 새 이름 선택 시 다시 입력 받음.
+            promptMoveToNewFolder(parent: folderURL, suggested: nil)
+        }
+
+        private func promptMoveToNewFolder(parent: URL, suggested: String?) {
             let alert = NSAlert()
             alert.messageText = "새 폴더로 이동"
             alert.informativeText = "폴더 이름을 입력하세요"
             let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            tf.placeholderString = "새 폴더"
+            if let s = suggested { tf.stringValue = s } else { tf.placeholderString = "새 폴더" }
             alert.accessoryView = tf
             alert.addButton(withTitle: "이동")
             alert.addButton(withTitle: "취소")
-            if alert.runModal() == .alertFirstButtonReturn {
-                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty, let folderURL = store.folderURL else { return }
-                let newDir = folderURL.appendingPathComponent(name)
-                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
-                let selectionAtMove = store.selectedPhotoIDs
-                fputs("[MOVE-NEW] selection count at move=\(selectionAtMove.count)\n", stderr)
-                var fileURLs: [URL] = []
-                var skippedNoIndex = 0
-                var skippedFolder = 0
-                for id in selectionAtMove {
-                    guard let idx = store._photoIndex[id], idx < store.photos.count else {
-                        skippedNoIndex += 1
-                        continue
-                    }
-                    let photo = store.photos[idx]
-                    guard !photo.isFolder && !photo.isParentFolder else {
-                        skippedFolder += 1
-                        continue
-                    }
-                    fileURLs.append(photo.jpgURL)
-                    if let raw = photo.rawURL, raw != photo.jpgURL { fileURLs.append(raw) }
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            let newDir = parent.appendingPathComponent(name)
+
+            // v9.1.4: 같은 이름 폴더가 이미 있으면 사용자에게 처리 방식 물음.
+            if FileManager.default.fileExists(atPath: newDir.path) {
+                let dup = NSAlert()
+                dup.messageText = "같은 이름의 폴더가 이미 있습니다"
+                dup.informativeText = "\"\(name)\" 폴더가 이미 존재합니다. 어떻게 할까요?"
+                dup.addButton(withTitle: "기존 폴더에 추가")  // first
+                dup.addButton(withTitle: "이름 다시 정하기")    // second
+                dup.addButton(withTitle: "취소")               // third
+                let resp = dup.runModal()
+                switch resp {
+                case .alertFirstButtonReturn:
+                    break  // 기존 폴더에 추가 — newDir 그대로 사용 (movePhotosToFolder 가 동일 이름 파일은 skip)
+                case .alertSecondButtonReturn:
+                    promptMoveToNewFolder(parent: parent, suggested: nextAvailableName(for: name, in: parent))
+                    return
+                default:
+                    return  // 취소
                 }
-                fputs("[MOVE-NEW] fileURLs=\(fileURLs.count) (skipped: noIndex=\(skippedNoIndex), folder=\(skippedFolder))\n", stderr)
-                store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
+            } else {
+                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
             }
+
+            let selectionAtMove = store.selectedPhotoIDs
+            plog("[MOVE-NEW] selection count at move=\(selectionAtMove.count)\n")
+            var fileURLs: [URL] = []
+            var skippedNoIndex = 0
+            var skippedFolder = 0
+            for id in selectionAtMove {
+                guard let idx = store._photoIndex[id], idx < store.photos.count else {
+                    skippedNoIndex += 1
+                    continue
+                }
+                let photo = store.photos[idx]
+                guard !photo.isFolder && !photo.isParentFolder else {
+                    skippedFolder += 1
+                    continue
+                }
+                fileURLs.append(photo.jpgURL)
+                if let raw = photo.rawURL, raw != photo.jpgURL { fileURLs.append(raw) }
+            }
+            plog("[MOVE-NEW] fileURLs=\(fileURLs.count) (skipped: noIndex=\(skippedNoIndex), folder=\(skippedFolder))\n")
+            store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
+        }
+
+        private func nextAvailableName(for base: String, in parent: URL) -> String {
+            let fm = FileManager.default
+            for i in 2...999 {
+                let candidate = "\(base) \(i)"
+                if !fm.fileExists(atPath: parent.appendingPathComponent(candidate).path) {
+                    return candidate
+                }
+            }
+            return base + " " + UUID().uuidString.prefix(4)
         }
 
         // MARK: Delegate - Selection
@@ -860,6 +938,9 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             let selectedIndexPaths = collectionView.selectionIndexPaths
             let oldIDs = store.selectedPhotoIDs
             let oldFocus = store.selectedPhotoID
+            let mods = NSApp.currentEvent?.modifierFlags ?? []
+            let cmd = mods.contains(.command)
+            let shift = mods.contains(.shift)
             var newIDs = Set<UUID>()
             var focusID: UUID? = nil
 
@@ -869,6 +950,49 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 let id = photos[idx].id
                 newIDs.insert(id)
                 focusID = id  // Last one becomes focus
+            }
+            plog("[SEL] cv=\(selectedIndexPaths.count) old=\(oldIDs.count) new=\(newIDs.count) cmd=\(cmd) shift=\(shift)\n")
+
+            // v9.1.4: Shift+드래그(rubber-band) 시 기존 선택 보존 — NSCollectionView 기본이 reset+select 일 때 대응.
+            //   shift 누른 상태에서 newIDs 가 oldIDs 의 부분집합이 아니면(=새 항목 추가) 또는 줄어들면 union 강제.
+            if shift && !newIDs.isEmpty {
+                if !oldIDs.isSubset(of: newIDs) {
+                    let merged = oldIDs.union(newIDs)
+                    plog("[SEL] shift-merge: old=\(oldIDs.count) new=\(newIDs.count) → \(merged.count)\n")
+                    newIDs = merged
+                    isBatchUpdating = true
+                    let paths = Set(newIDs.compactMap { id -> IndexPath? in
+                        guard let idx = indexByID[id] else { return nil }
+                        return IndexPath(item: idx, section: 0)
+                    })
+                    collectionView.selectionIndexPaths = paths
+                    isBatchUpdating = false
+                }
+            }
+
+            // v9.1.4: Cmd+click 인데 cv selection 이 single 로 줄어든 경우 → AppKit 또는 cell subview 가
+            //   modifier 를 못 받아 toggle add 가 안 된 것. 우리가 직접 보존하여 multi-select 유지.
+            if cmd && newIDs.count == 1 && oldIDs.count >= 1 {
+                let newID = newIDs.first!
+                if oldIDs.contains(newID) {
+                    // 이미 선택된 셀을 Cmd+click → toggle off
+                    newIDs = oldIDs.subtracting([newID])
+                    focusID = newIDs.first ?? oldIDs.subtracting([newID]).first
+                    plog("[SEL] cmd-toggle off: \(newID.uuidString.prefix(4))\n")
+                } else {
+                    // 새 셀을 Cmd+click → 기존에 add
+                    newIDs = oldIDs.union([newID])
+                    focusID = newID
+                    plog("[SEL] cmd-toggle add: \(newID.uuidString.prefix(4)) (total \(newIDs.count))\n")
+                }
+                // NSCollectionView selection 도 동기화 (다음 틱에 cv.selectionIndexPaths 가 store 와 일치해야 함)
+                isBatchUpdating = true
+                let paths = Set(newIDs.compactMap { id -> IndexPath? in
+                    guard let idx = indexByID[id] else { return nil }
+                    return IndexPath(item: idx, section: 0)
+                })
+                collectionView.selectionIndexPaths = paths
+                isBatchUpdating = false
             }
 
             // Update store
@@ -940,12 +1064,54 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
 
 private final class ThumbnailNSCollectionView: NSCollectionView {
     weak var thumbnailCoordinator: NSThumbnailCollectionView.Coordinator?
+    private var rightClickMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        // v9.1.4: 빈 영역 좌클릭 → 선택 해제 (Finder 동작과 일치).
+        //   modifier 없을 때만 (Cmd/Shift+클릭은 rubber-band 등 다른 의도).
+        let point = convert(event.locationInWindow, from: nil)
+        if indexPathForItem(at: point) == nil,
+           !event.modifierFlags.intersection([.command, .shift]).contains(.command),
+           !event.modifierFlags.intersection([.command, .shift]).contains(.shift) {
+            if let store = thumbnailCoordinator?.store, !store.selectedPhotoIDs.isEmpty {
+                thumbnailCoordinator?.isBatchUpdating = true
+                selectionIndexPaths = []
+                thumbnailCoordinator?.isBatchUpdating = false
+                store.selectedPhotoIDs = []
+                store.selectedPhotoID = nil
+            }
+        }
         super.mouseDown(with: event)
+    }
+
+    // v9.1.4: cell 내부 NSImageView/NSTextField 가 rightMouseDown 흡수해서
+    //   우클릭이 collection view 까지 도달 못 하는 케이스 (특히 multi-selection).
+    //   local monitor 로 우리 view 영역 우클릭을 직접 가로챔.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil, rightClickMonitor == nil {
+            rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                guard let self, let win = self.window, event.window === win else { return event }
+                let pt = self.convert(event.locationInWindow, from: nil)
+                if self.bounds.contains(pt) {
+                    self.rightMouseDown(with: event)
+                    return nil  // 이벤트 소비 (cell subview 로 전달 안 됨)
+                }
+                return event
+            }
+        } else if window == nil, let m = rightClickMonitor {
+            NSEvent.removeMonitor(m)
+            rightClickMonitor = nil
+        }
+    }
+
+    deinit {
+        if let m = rightClickMonitor {
+            NSEvent.removeMonitor(m)
+        }
     }
 
     // v8.9.6 fix: 다중 선택 후 우클릭하면 NSCollectionView 기본 동작이 우클릭한 셀로 단일 선택을
@@ -958,21 +1124,35 @@ private final class ThumbnailNSCollectionView: NSCollectionView {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         let indexPath = indexPathForItem(at: point)
+        let storeCount = thumbnailCoordinator?.store.selectedPhotoIDs.count ?? -1
+        plog("[CTX-MENU] rightMouseDown ip=\(indexPath.map { "\($0.item)" } ?? "nil") cvSel=\(selectionIndexPaths.count) storeSel=\(storeCount)\n")
 
-        // Multi-selection 안의 셀 우클릭 → 선택 유지
-        if let ip = indexPath, selectionIndexPaths.contains(ip), selectionIndexPaths.count > 1 {
-            if let menu = thumbnailCoordinator?.buildContextMenu(for: ip) {
-                NSMenu.popUpContextMenu(menu, with: event, for: self)
+        // v9.1.4: 다중 선택 셀 위 우클릭은 store.selectedPhotoIDs 도 함께 검사 (NSCollectionView selection sync 지연 대비).
+        //   이전: cv.selectionIndexPaths 만 검사 → store=2 인데 cv=1 인 sync 지연 시 selectForContextMenu 가
+        //   selection 을 1 로 줄여서 사용자 의도 깨짐. 이제 store 기반 photo.id 도 contains 체크.
+        if let ip = indexPath, ip.item < (thumbnailCoordinator?.photos.count ?? 0) {
+            let photoID = thumbnailCoordinator!.photos[ip.item].id
+            let inStoreMulti = (storeCount > 1) && thumbnailCoordinator!.store.selectedPhotoIDs.contains(photoID)
+            let inCVMulti = selectionIndexPaths.contains(ip) && selectionIndexPaths.count > 1
+            if inStoreMulti || inCVMulti {
+                plog("[CTX-MENU] multi-keep path (storeMulti=\(inStoreMulti) cvMulti=\(inCVMulti))\n")
+                if let menu = thumbnailCoordinator?.buildContextMenu(for: ip), menu.numberOfItems > 0 {
+                    NSMenu.popUpContextMenu(menu, with: event, for: self)
+                } else {
+                    plog("[CTX-MENU] WARN menu empty in multi-keep path\n")
+                }
+                return
             }
-            return
         }
 
         // 단일/비선택 셀 우클릭 → 선택 + 동기 redraw + 메뉴 popup
         if let ip = indexPath {
             thumbnailCoordinator?.selectForContextMenu(at: ip)
         }
-        if let menu = thumbnailCoordinator?.buildContextMenu(for: indexPath) {
+        if let menu = thumbnailCoordinator?.buildContextMenu(for: indexPath), menu.numberOfItems > 0 {
             NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            plog("[CTX-MENU] WARN menu empty in single-path indexPath=\(indexPath.map { "\($0.item)" } ?? "nil")\n")
         }
     }
 
@@ -1449,6 +1629,11 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
 
 private final class ThumbnailCellContentView: NSView {
     override var isFlipped: Bool { true }
+
+    // v9.1.4: cell 영역은 모두 hit-test 통과 — Cmd+click/Shift+click 등 modifier 클릭이
+    //   padding 영역에서 빈 영역으로 잘못 인식되어 selection 전체 해제되던 버그 차단.
+    //   "썸네일 사이 빈 공간 클릭 = 해제" 는 layout 의 minimumInteritemSpacing(12pt) /
+    //   minimumLineSpacing(10pt) / sectionInset(8pt) 영역에서만 동작 (NSCollectionView 기본).
 }
 
 class BadgeLabel: NSView {

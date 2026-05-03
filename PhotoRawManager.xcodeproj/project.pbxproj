@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		069D174038784E019EFEA489 /* ContactSheetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */; };
 		16DDFAAB68A755A85E023264 /* LibRawDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3306606A090F08DB9738BB61 /* LibRawDecoder.swift */; };
+		5C00000000000000000000B1 /* SuperCullMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C00000000000000000000B2 /* SuperCullMode.swift */; };
 		1AFAF8F0102C4E9CB0A41550 /* MetadataEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BB3C9EADBC4817914C49F2 /* MetadataEditorView.swift */; };
 		1F05414884699B73642AF15D /* UpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94AD42C5A52672C7A1DE29F6 /* UpdateView.swift */; };
 		2812FB343C1A4B86BA87ADCF /* ContactSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F2FA4B3F2468FA6426F35 /* ContactSheetView.swift */; };
@@ -81,8 +82,6 @@
 		'BPD30001' = {isa = PBXBuildFile; fileRef = BPD30002; };
 		'BPE30001' = {isa = PBXBuildFile; fileRef = BPE30002; };
 		'BPK30001' = {isa = PBXBuildFile; fileRef = BPK30002; };
-		'CAMCTRL10001' = {isa = PBXBuildFile; fileRef = CAMCTRL10002; };
-		'CANONADPT10001' = {isa = PBXBuildFile; fileRef = CANONADPT10002; };
 		'CFG10001' = {isa = PBXBuildFile; fileRef = CFG10002; };
 		'CL20001' = {isa = PBXBuildFile; fileRef = CL20002; };
 		'CL20003' = {isa = PBXBuildFile; fileRef = CL20004; };
@@ -126,7 +125,6 @@
 		'HW10001' = {isa = PBXBuildFile; fileRef = HW10002; };
 		'HW10003' = {isa = PBXBuildFile; fileRef = HW10004; };
 		'HW10005' = {isa = PBXBuildFile; fileRef = HW10006; };
-		'HW10007' = {isa = PBXBuildFile; fileRef = HW10008; };
 		'IES30001' = {isa = PBXBuildFile; fileRef = IES30002; };
 		'KWT10001' = {isa = PBXBuildFile; fileRef = KWT10002; };
 		'L10001' = {isa = PBXBuildFile; fileRef = L10002; };
@@ -137,7 +135,6 @@
 		'MLH10002' = {isa = PBXBuildFile; fileRef = MLH10001; };
 		'MLT10002' = {isa = PBXBuildFile; fileRef = MLT10001; };
 		'NAV10001' = {isa = PBXBuildFile; fileRef = NAV10002; };
-		'NIKONADPT10001' = {isa = PBXBuildFile; fileRef = NIKONADPT10002; };
 		'NP10001' = {isa = PBXBuildFile; fileRef = NP10002; };
 		'NP10003' = {isa = PBXBuildFile; fileRef = NP10004; };
 		'NR10001' = {isa = PBXBuildFile; fileRef = NR10002; };
@@ -182,7 +179,6 @@
 		'SES30001' = {isa = PBXBuildFile; fileRef = SES30002; };
 		'SMC10001' = {isa = PBXBuildFile; fileRef = SMC10002; };
 		'SMC10003' = {isa = PBXBuildFile; fileRef = SMC10004; };
-		'SONYADPT10001' = {isa = PBXBuildFile; fileRef = SONYADPT10002; };
 		'SSP10001' = {isa = PBXBuildFile; fileRef = SSP10002; };
 		'SSS30001' = {isa = PBXBuildFile; fileRef = SSS30002; };
 		'STL10001' = {isa = PBXBuildFile; fileRef = STL10002; };
@@ -201,7 +197,6 @@
 		'TES30001' = {isa = PBXBuildFile; fileRef = TES30002; };
 		'TET10001' = {isa = PBXBuildFile; fileRef = TET10002; };
 		'TETCMSN10001' = {isa = PBXBuildFile; fileRef = TETCMSN10002; };
-		'TETCOORD10001' = {isa = PBXBuildFile; fileRef = TETCOORD10002; };
 		'TETV10001' = {isa = PBXBuildFile; fileRef = TETV10002; };
 		'TKS10001' = {isa = PBXBuildFile; fileRef = TKS10002; };
 		'UG10001' = {isa = PBXBuildFile; fileRef = UG10002; };
@@ -223,6 +218,7 @@
 		18B9AD88F78788103034A9CD /* NIMAService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIMAService.swift; sourceTree = "<group>"; };
 		1F28915B9DB29857371992AB /* PerspectiveCorrectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrectionService.swift; sourceTree = "<group>"; };
 		3306606A090F08DB9738BB61 /* LibRawDecoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibRawDecoder.swift; sourceTree = "<group>"; };
+		5C00000000000000000000B2 /* SuperCullMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperCullMode.swift; sourceTree = "<group>"; };
 		355C7F48E6B8ADC5DE0EE0E6 /* PickShot-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "PickShot-Bridging-Header.h"; sourceTree = "<group>"; };
 		4789E07AA11E4A87B88B68F3 /* ContactSheetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactSheetService.swift; sourceTree = "<group>"; };
 		4BFF8CC000002001001010A0 /* MobileCLIPImage.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileCLIPImage.mlpackage; sourceTree = "<group>"; };
@@ -294,8 +290,6 @@
 		C1432F55F1D147C6BD5D6B21 /* RAWConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAWConversionService.swift; sourceTree = "<group>"; };
 		C74A91831108ED991CD31ADE /* MemoryCardBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCardBackupService.swift; sourceTree = "<group>"; };
 		C7EC4578BE740398D02CF9E7 /* FeatureGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeatureGate.swift; path = PhotoRawManager/Services/FeatureGate.swift; sourceTree = SOURCE_ROOT; };
-		'CAMCTRL10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
-		'CANONADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanonCameraAdapter.swift; sourceTree = "<group>"; };
 		'CFG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		'CL20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalOAuthServer.swift; sourceTree = "<group>"; };
 		'CL20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveService.swift; sourceTree = "<group>"; };
@@ -339,18 +333,15 @@
 		'HW10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HWJPEGDecoder.swift; sourceTree = "<group>"; };
 		'HW10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalImageProcessor.swift; sourceTree = "<group>"; };
 		'HW10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelFFD8Scanner.swift; sourceTree = "<group>"; };
-		'HW10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggressiveImageCache.swift; sourceTree = "<group>"; };
 		'IES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEmbeddingService.swift; sourceTree = "<group>"; };
 		'KWT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeywordTaggingService.swift; sourceTree = "<group>"; };
 		'L10002' = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		'LUT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LUTService.swift; sourceTree = "<group>"; };
-		'MFXU10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFXUpscaler.swift; sourceTree = "<group>"; };
 		'MG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MemoryGuardService.swift; path = PhotoRawManager/Services/MemoryGuardService.swift; sourceTree = SOURCE_ROOT; };
 		'SDT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlowdownTracker.swift; sourceTree = "<group>"; };
 		'MLH10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakHUD.swift; sourceTree = "<group>"; };
 		'MLT10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLeakTracker.swift; sourceTree = "<group>"; };
 		'NAV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCore.swift; sourceTree = "<group>"; };
-		'NIKONADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NikonCameraAdapter.swift; sourceTree = "<group>"; };
 		'NP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceMonitor.swift; path = PhotoRawManager/Services/NavigationPerformanceMonitor.swift; sourceTree = SOURCE_ROOT; };
 		'NP10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationPerformanceHUD.swift; path = PhotoRawManager/Views/NavigationPerformanceHUD.swift; sourceTree = SOURCE_ROOT; };
 		'NR10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NASOptimizedReader.swift; sourceTree = "<group>"; };
@@ -395,7 +386,6 @@
 		'SES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionEventStore.swift; sourceTree = "<group>"; };
 		'SMC10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullService.swift; sourceTree = "<group>"; };
 		'SMC10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCullView.swift; sourceTree = "<group>"; };
-		'SONYADPT10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonyCameraAdapter.swift; sourceTree = "<group>"; };
 		'SSP10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSpec.swift; sourceTree = "<group>"; };
 		'SSS30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchService.swift; sourceTree = "<group>"; };
 		'STL10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleLearner.swift; sourceTree = "<group>"; };
@@ -414,7 +404,6 @@
 		'TES30002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoderService.swift; sourceTree = "<group>"; };
 		'TET10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherService.swift; sourceTree = "<group>"; };
 		'TETCMSN10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherComingSoonView.swift; sourceTree = "<group>"; };
-		'TETCOORD10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherCoordinator.swift; sourceTree = "<group>"; };
 		'TETV10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TetherView.swift; sourceTree = "<group>"; };
 		'TKS10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TesterKeyService.swift; sourceTree = "<group>"; };
 		'UG10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UprightGuideView.swift; sourceTree = "<group>"; };
@@ -689,6 +678,7 @@
 				DEV60001,
 				DEV70001,
 				3306606A090F08DB9738BB61 /* LibRawDecoder.swift */,
+				5C00000000000000000000B2 /* SuperCullMode.swift */,
 				08E14C428BAFD2D3415B7133 /* TierManager.swift */,
 				C7EC4578BE740398D02CF9E7 /* FeatureGate.swift */,
 			);
@@ -710,7 +700,6 @@
 				HW10004,
 				NR10002,
 				HW10006,
-				HW10008,
 				MFXU10001,
 				CLIP10001,
 				CLIP10003,
@@ -752,11 +741,6 @@
 		'TETHERGROUP' = {
 			isa = PBXGroup;
 			children = (
-				CAMCTRL10002,
-				SONYADPT10002,
-				CANONADPT10002,
-				NIKONADPT10002,
-				TETCOORD10002,
 			);
 			path = Tether;
 			sourceTree = "<group>";
@@ -858,11 +842,6 @@
 				TET10001,
 				TETV10001,
 				TETCMSN10001,
-				CAMCTRL10001,
-				SONYADPT10001,
-				CANONADPT10001,
-				NIKONADPT10001,
-				TETCOORD10001,
 				A10001,
 				A10002,
 				A10003,
@@ -1010,7 +989,6 @@
 				NR10001,
 				HW10003,
 				HW10005,
-				HW10007,
 				MFXU10002,
 				CLIP10002,
 				CLIP10004,
@@ -1035,6 +1013,7 @@
 				DEV60002,
 				DEV70002,
 				16DDFAAB68A755A85E023264 /* LibRawDecoder.swift in Sources */,
+				5C00000000000000000000B1 /* SuperCullMode.swift in Sources */,
 				DF99447AAE1A372ECB576E66 /* TierManager.swift in Sources */,
 				BBB7444388D8D9D77764F8A9 /* FeatureGate.swift in Sources */,
 				3D4849339C1FA00A46DA6B52 /* ProLockModal.swift in Sources */,
@@ -1160,7 +1139,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 43;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1178,7 +1157,7 @@
 					/opt/homebrew/lib,
 					"$(SRCROOT)/PhotoRawManager/Views",
 				);
-				MARKETING_VERSION = 9.0.2;
+				MARKETING_VERSION = 9.1.4;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;
@@ -1198,7 +1177,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 43;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 322DLHS5T8;
 				ENABLE_APP_SANDBOX = YES;
@@ -1216,7 +1195,7 @@
 					/opt/homebrew/lib,
 					"$(SRCROOT)/PhotoRawManager/Views",
 				);
-				MARKETING_VERSION = 9.0.2;
+				MARKETING_VERSION = 9.1.4;
 				OTHER_LDFLAGS = "-lraw";
 				PRODUCT_BUNDLE_IDENTIFIER = com.pickshot.app;
 				PRODUCT_NAME = PickShot;

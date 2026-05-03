@@ -34,15 +34,17 @@ extension PhotoStore {
         }
         folderWatcher.onFolderStructureChanged = { [weak self] in
             guard let self = self, self.isFolderWatchingEnabled else { return }
-            // 디바운스: 2초 내 중복 리로드 방지
+            // v9.1.4: 폴더 구조 변경 debounce 2.0s → 0.3s.
+            //   새 폴더 만들고 파일 이동 후 새 폴더 보이는 시간 단축.
+            //   외부 변경(다른 앱) 폭주 시에도 300ms 모음으로 충분히 합쳐짐.
             self.folderReloadWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self = self, let url = self.folderURL else { return }
-                fputs("[WATCH] 폴더 구조 변경 감지 → 리로드\n", stderr)
+                plog("[WATCH] 폴더 구조 변경 감지 → 리로드\n")
                 self.loadFolder(url, restoreRatings: true)
             }
             self.folderReloadWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
         }
     }
 
@@ -125,7 +127,60 @@ extension PhotoStore {
 
     // MARK: - Folder Loading
 
+    /// v9.1: 다중 폴더 일괄 열기. 각 폴더를 비재귀로 스캔해 합쳐 photos 에 표시.
+    /// folderURL 은 첫 폴더로 설정 (별점 root 키 호환). 각 사진은 자기 소속 폴더의 별점/SP/컬러 복원.
+    func loadFoldersAggregated(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let representative = urls.first!
+        startupMode = .viewer
+        isLoading = true
+        loadingStatus = "\(urls.count)개 폴더 일괄 열기..."
+        loadingProgress = 0
+        let total = urls.count
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            var aggregate: [PhotoItem] = []
+            for (idx, url) in urls.enumerated() {
+                let items = FileMatchingService.scanAndMatch(folderURL: url, recursive: false)
+                    .filter { !$0.isFolder && !$0.isParentFolder }
+                aggregate.append(contentsOf: items)
+                let progress = Double(idx + 1) / Double(total)
+                DispatchQueue.main.async { [weak self] in
+                    self?.loadingProgress = progress
+                    self?.loadingStatus = "\(idx + 1)/\(total) 폴더 — \(aggregate.count)장"
+                }
+            }
+            // 정렬은 메인에서 sortMode 따라 별도 로직. 우선 fileModDate desc 기본.
+            let sorted = aggregate.sorted { $0.fileModDate > $1.fileModDate }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.folderURL = representative
+                self.isRecursiveMode = false
+                self._suppressDidSet = true
+                self.photos = sorted
+                self._suppressDidSet = false
+                self.rebuildIndex()
+                self.invalidateFilterCache()
+                self.applySavedRatings()
+                self.isLoading = false
+                self.loadingStatus = ""
+                self.loadingProgress = 0
+                self.showToastMessage("📂 \(urls.count)개 폴더 합쳐 \(sorted.count)장 표시")
+                if let first = sorted.first {
+                    self.selectedPhotoID = first.id
+                    self.selectedPhotoIDs = [first.id]
+                    self.scrollTrigger += 1
+                }
+            }
+        }
+    }
+
     func loadFolder(_ url: URL, restoreRatings: Bool = false) {
+        // v9.1.4 (P-2): 폴더 변경 시 noStage2Upgrade Set clear — 무한 누적 방지.
+        PreviewPipeline.clearNoStage2Upgrade()
+        // v9.1.4 (C-4): RAW fallback 캐시도 폴더별 — clear.
+        PhotoPreviewView.clearRAWFallbackCache()
         // Sandbox: 1) 직접 접근 가능? 2) bookmark 으로 접근? 3) NSOpenPanel
         let canAccess = FileManager.default.isReadableFile(atPath: url.path)
             || SandboxBookmarkService.startFolderAccess(for: url)
@@ -207,7 +262,7 @@ extension PhotoStore {
                 guard let self = self, self.folderURL?.path == folderPath else { return }
                 self.currentFolderIsSlowDisk = isSlow
                 if isSlow {
-                    fputs("[STORAGE] 느린 디스크 감지 — stage2 미리보기 스킵 (\(folderPath))\n", stderr)
+                    plog("[STORAGE] 느린 디스크 감지 — stage2 미리보기 스킵 (\(folderPath))\n")
                 }
             }
         }
@@ -301,21 +356,8 @@ extension PhotoStore {
                     guard self?.folderURL == url, self?.isRecursiveMode == false else { return }
                     self?.preloadAllThumbnails()
                 }
-                // v8.9.7+: Lightroom 식 초기 미리보기 사전 생성 (옵트인). burst 100% cache hit 목표.
-                //   대용량 폴더 (>10000) 또는 재귀 모드는 스파이크 위험 → SKIP.
-                let autoInit = UserDefaults.standard.bool(forKey: "autoInitialPreview")
-                DispatchQueue.main.asyncAfter(deadline: .now() + prewarmDelay + 0.5) { [weak self] in
-                    guard let self,
-                          self.folderURL == url,
-                          autoInit,
-                          !self.isRecursiveMode,
-                          self.photos.count <= 10000
-                    else { return }
-                    let urls = self.photos.compactMap { p -> URL? in
-                        (p.isFolder || p.isParentFolder) ? nil : p.jpgURL
-                    }
-                    InitialPreviewGenerator.shared.start(urls: urls)
-                }
+                // v9.1.1: 폴더 진입 시 autoInitialPreview 자동 발사 제거 — 재시작 / 잦은 folder reload 시
+                //   phase3 가 11번 발사되어 응답없음 hang 원인. 사전 생성은 picker 옆 ▶︎ 버튼 명시 클릭만.
                 // EXIF 배치 로딩 (목록뷰: 200장, 그리드: 50장)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     guard self?.folderURL == url,
@@ -413,7 +455,7 @@ extension PhotoStore {
 
         var firstSelectionMade = false
 
-        fputs("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n", stderr)
+        plog("[REC] start gen=\(myGen) slow=\(isSlowDisk) path=\(url.path)\n")
         FileMatchingService.scanAndMatchStreaming(
             folderURL: url,
             recursive: true,
@@ -421,25 +463,30 @@ extension PhotoStore {
             isCancelled: { [weak self] in
                 // 폴더 변경되거나 generation 바뀌면 옛 batch 폐기
                 guard let self = self else {
-                    fputs("[REC] cancel: self released\n", stderr)
+                    plog("[REC] cancel: self released\n")
                     return true
                 }
                 if self.folderURL != url {
-                    fputs("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n", stderr)
+                    plog("[REC] cancel: folderURL mismatch (current=\(self.folderURL?.lastPathComponent ?? "nil"), expected=\(url.lastPathComponent))\n")
                     return true
                 }
                 if self.recursiveScanGeneration != myGen {
-                    fputs("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n", stderr)
+                    plog("[REC] cancel: gen mismatch (current=\(self.recursiveScanGeneration), expected=\(myGen))\n")
                     return true
                 }
                 return false
             },
+            onProgress: { [weak self] done, total in
+                guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else { return }
+                self.loadingProgress = total > 0 ? Double(done) / Double(total) : 0
+                self.loadingStatus = "하위 폴더 스캔 중... (\(done)/\(total))"
+            },
             onBatch: { [weak self] batch in
                 guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
-                    fputs("[REC] batch dropped (gen/url mismatch)\n", stderr)
+                    plog("[REC] batch dropped (gen/url mismatch)\n")
                     return
                 }
-                fputs("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n", stderr)
+                plog("[REC] batch +\(batch.count) photos (total now \(self.photos.count + batch.count))\n")
                 self.appendRecursiveScanBatch(batch, forceFlush: !firstSelectionMade)
                 // 첫 배치 직후 첫 사진 자동 선택 (1회만)
                 if !firstSelectionMade, let first = batch.first(where: { !$0.isParentFolder && !$0.isFolder }) {
@@ -450,9 +497,9 @@ extension PhotoStore {
                 }
             },
             onComplete: { [weak self] photoCount in
-                fputs("[REC] onComplete photoCount=\(photoCount)\n", stderr)
+                plog("[REC] onComplete photoCount=\(photoCount)\n")
                 guard let self = self, self.folderURL == url, self.recursiveScanGeneration == myGen else {
-                    fputs("[REC] onComplete dropped (gen/url mismatch)\n", stderr)
+                    plog("[REC] onComplete dropped (gen/url mismatch)\n")
                     return
                 }
                 let phase1Elapsed = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
@@ -533,7 +580,10 @@ extension PhotoStore {
         // 목록 갱신만 주기적으로 발행하고, 비싼 정리는 완료 시 한 번만 수행한다.
         invalidateFilterCache()
         rebuildIndex()
+        // v9.1.2: applySavedRatings 는 final flush 에서만 호출 — 매 batch 마다 호출하면
+        //   17000장 × 5 batches = O(n²) 누적 → 40초 STALL 유발했던 문제 수정.
         if final {
+            applySavedRatings()
             updateFolderSizeCache()
             pruneStaleSelections()
         }
@@ -563,21 +613,21 @@ extension PhotoStore {
                     options: [],
                     permissions: FilePermissions(rawValue: 0o644)
                 ) else {
-                    fputs("[ZIP] 파일 스트림 열기 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 파일 스트림 열기 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
                 defer { try? fileStream.close() }
 
                 guard let decompressStream = ArchiveByteStream.decompressionStream(readingFrom: fileStream) else {
-                    fputs("[ZIP] 압축 해제 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 압축 해제 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
                 defer { try? decompressStream.close() }
 
                 guard let decodeStream = ArchiveStream.decodeStream(readingFrom: decompressStream) else {
-                    fputs("[ZIP] 디코드 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 디코드 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
@@ -587,7 +637,7 @@ extension PhotoStore {
                     extractingTo: FilePath(tempDir.path),
                     flags: [.ignoreOperationNotPermitted]
                 ) else {
-                    fputs("[ZIP] 추출 스트림 실패: \(zipURL.lastPathComponent)\n", stderr)
+                    plog("[ZIP] 추출 스트림 실패: \(zipURL.lastPathComponent)\n")
                     try? FileManager.default.removeItem(at: tempDir)
                     return
                 }
@@ -595,7 +645,7 @@ extension PhotoStore {
 
                 _ = try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
             } else {
-                fputs("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n", stderr)
+                plog("[ZIP] ZIP 열기는 macOS 13 이상에서 지원됩니다\n")
                 try? FileManager.default.removeItem(at: tempDir)
                 return
             }
@@ -604,12 +654,12 @@ extension PhotoStore {
             cleanupZipTemp()
 
             zipTempDir = tempDir
-            fputs("[ZIP] 열기: \(zipURL.lastPathComponent) → \(tempDir.path)\n", stderr)
+            plog("[ZIP] 열기: \(zipURL.lastPathComponent) → \(tempDir.path)\n")
 
             // 임시 폴더를 폴더로 로딩
             loadFolder(tempDir, restoreRatings: false)
         } catch {
-            fputs("[ZIP] 오류: \(error.localizedDescription)\n", stderr)
+            plog("[ZIP] 오류: \(error.localizedDescription)\n")
         }
     }
 

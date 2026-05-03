@@ -22,9 +22,9 @@ final class SlowdownTracker {
     func dumpSnapshot() -> String {
         let lines = collectMetrics()
         let text = lines.joined(separator: "\n")
-        fputs("\n[SLOWDOWN-DIAG] ────────────────────────\n", stderr)
-        fputs(text + "\n", stderr)
-        fputs("[SLOWDOWN-DIAG] ────────────────────────\n\n", stderr)
+        plog("\n[SLOWDOWN-DIAG] ────────────────────────\n")
+        plog(text + "\n")
+        plog("[SLOWDOWN-DIAG] ────────────────────────\n\n")
         return text
     }
 

@@ -733,7 +733,7 @@ extension NativeTableListView {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self = self else { return }
                     self.store.loadFolder(folder, restoreRatings: true)
-                    fputs("[ListDrag] session ended op=\(operation.rawValue) → folder reloaded\n", stderr)
+                    plog("[ListDrag] session ended op=\(operation.rawValue) → folder reloaded\n")
                 }
             }
         }

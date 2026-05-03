@@ -96,21 +96,58 @@ class SubscriptionManager: ObservableObject {
 
     // MARK: - 3주 트라이얼
 
-    private static let trialStartKey = "trialStartDate"
+    // v9.1.4: trialStartDate 를 Keychain 으로 이동 (보안 감사 C-3).
+    //   기존 UserDefaults 는 `defaults write` 한 줄로 무기한 연장 가능했음.
+    //   Keychain 은 일반 사용자 권한으로 직접 수정 불가.
+    private static let trialStartKey = "trialStartDate"           // 레거시 UserDefaults 키
+    private static let trialStartKeychainKey = "trial_start_date" // Keychain 키
     private static let trialDuration: TimeInterval = 21 * 24 * 60 * 60  // 21일
 
-    var trialStartDate: Date {
-        if let saved = UserDefaults.standard.object(forKey: Self.trialStartKey) as? Date {
-            return saved
+    private static func dateFromKeychain() -> Date? {
+        guard let s = KeychainService.read(key: trialStartKeychainKey),
+              let interval = TimeInterval(s) else { return nil }
+        return Date(timeIntervalSince1970: interval)
+    }
+
+    /// v9.1.4: Trial 시작일을 *생성하지 않고* 읽기만 한다 (TierManager.canStartTrial 용).
+    ///   `trialStartDate` getter 는 첫 호출 시 부수효과로 시작일을 기록 → 체험 가능 여부 판정에 사용 불가.
+    static func peekTrialStartDate() -> Date? {
+        if let saved = dateFromKeychain() { return saved }
+        if let legacy = UserDefaults.standard.object(forKey: trialStartKey) as? Date {
+            return legacy
         }
-        // 처음 실행 → 지금부터 시작
+        return nil
+    }
+
+    private static func saveDateToKeychain(_ d: Date) {
+        _ = KeychainService.save(key: trialStartKeychainKey, value: String(d.timeIntervalSince1970))
+    }
+
+    var trialStartDate: Date {
+        // 1) Keychain 우선
+        if let saved = Self.dateFromKeychain() { return saved }
+        // 2) 레거시 UserDefaults 일회 마이그레이션
+        if let legacy = UserDefaults.standard.object(forKey: Self.trialStartKey) as? Date {
+            Self.saveDateToKeychain(legacy)
+            UserDefaults.standard.removeObject(forKey: Self.trialStartKey)
+            return legacy
+        }
+        // 3) 첫 실행 — 지금 시점 기록 (Keychain 만)
         let now = Date()
-        UserDefaults.standard.set(now, forKey: Self.trialStartKey)
+        Self.saveDateToKeychain(now)
         return now
     }
 
     func checkTrialStatus() {
-        let elapsed = Date().timeIntervalSince(trialStartDate)
+        let start = trialStartDate
+        let now = Date()
+        // v9.1.4: 시계 조작 방어선 — 현재 시각이 시작일보다 과거면 만료 처리.
+        if now < start {
+            trialDaysRemaining = 0
+            isTrialExpired = true
+            return
+        }
+        let elapsed = now.timeIntervalSince(start)
         let remaining = Self.trialDuration - elapsed
         trialDaysRemaining = max(0, Int(ceil(remaining / (24 * 60 * 60))))
         isTrialExpired = remaining <= 0

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>피드백 게시판 — PickShot</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* === Layout === */
+  .board-page { max-width: 1100px; margin: 0 auto; padding: 100px 24px 80px; }
+  .board-head { text-align: center; margin-bottom: 28px; }
+  .board-head h1 { font-size: clamp(1.8rem, 3.5vw, 2.6rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .board-head p { color: rgba(255,255,255,0.6); font-size: 0.98rem; margin: 0; }
+
+  /* === Tabs === */
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .tab {
+    padding: 12px 20px; cursor: pointer; font-size: 0.95rem; font-weight: 600;
+    color: rgba(255,255,255,0.45); border-bottom: 2px solid transparent; transition: all 0.15s ease;
+    background: none; border-top: none; border-left: none; border-right: none;
+  }
+  .tab:hover { color: rgba(255,255,255,0.75); }
+  .tab.active { color: #fff; }
+  .tab.bug.active     { border-bottom-color: #ff5a5a; }
+  .tab.feature.active { border-bottom-color: #ffaf3c; }
+
+  /* === Toolbar === */
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
+  .search-input {
+    flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #fff; font-size: 0.9rem; outline: none;
+  }
+  .search-input:focus { border-color: rgba(120,160,255,0.5); }
+  .write-btn {
+    padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 0.9rem; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, #6c8cff, #4d6fdc);
+    transition: transform 0.12s ease;
+  }
+  .write-btn:hover { transform: translateY(-1px); }
+
+  /* === Post list === */
+  .post-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .post-item {
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px; padding: 14px 18px; cursor: pointer; transition: all 0.12s ease;
+  }
+  .post-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.12); }
+  .post-row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .post-title { font-size: 1.0rem; font-weight: 600; color: #fff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .post-comments { color: #ffaf3c; font-size: 0.82rem; font-weight: 600; }
+  .post-row2 { display: flex; gap: 12px; font-size: 0.78rem; color: rgba(255,255,255,0.45); }
+  .post-author { color: rgba(255,255,255,0.65); font-weight: 500; }
+  .post-state { padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
+  .state-open   { background: rgba(80,200,120,0.15); color: #5fcf85; }
+  .state-closed { background: rgba(150,100,200,0.15); color: #a98ad9; }
+  .post-preview { font-size: 0.85rem; color: rgba(255,255,255,0.5); margin-top: 6px; line-height: 1.4; max-height: 2.8em; overflow: hidden; }
+
+  .empty, .loading { text-align: center; padding: 60px 0; color: rgba(255,255,255,0.4); font-size: 0.95rem; }
+  .error { color: #ff7a7a; }
+
+  /* === Modal === */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000;
+    display: none; align-items: flex-start; justify-content: center; padding: 60px 20px; overflow-y: auto;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: #161730; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px; max-width: 700px; width: 100%; padding: 28px; color: #fff;
+  }
+  .modal h2 { margin: 0 0 18px; font-size: 1.4rem; }
+  .modal-close { float: right; background: none; border: none; color: rgba(255,255,255,0.5); font-size: 1.4rem; cursor: pointer; }
+  .modal-close:hover { color: #fff; }
+
+  .form-row { margin-bottom: 14px; }
+  .form-row label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: rgba(255,255,255,0.7); }
+  .form-row input, .form-row textarea, .form-row select {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #fff; font-size: 0.95rem; outline: none; box-sizing: border-box; font-family: inherit;
+  }
+  .form-row input:focus, .form-row textarea:focus, .form-row select:focus { border-color: rgba(120,160,255,0.5); }
+  .form-row textarea { min-height: 180px; resize: vertical; }
+  .form-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .form-actions button {
+    padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+  }
+  .btn-primary { background: linear-gradient(135deg, #6c8cff, #4d6fdc); color: #fff; }
+  .btn-secondary { background: rgba(255,255,255,0.08); color: #fff; }
+  .btn-danger { background: rgba(255,90,90,0.15); color: #ff7a7a; }
+
+  .honeypot { position: absolute; left: -9999px; }
+
+  .detail-meta { display: flex; gap: 12px; align-items: center; font-size: 0.85rem; color: rgba(255,255,255,0.55); margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .detail-body { white-space: pre-wrap; line-height: 1.6; color: rgba(255,255,255,0.92); margin-bottom: 24px; }
+  .detail-actions { margin-bottom: 24px; }
+
+  .comments-section { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; }
+  .comments-section h3 { margin: 0 0 12px; font-size: 1rem; }
+  .comment { padding: 10px 14px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
+  .comment-meta { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-bottom: 4px; display: flex; gap: 10px; }
+  .comment-meta .author { color: rgba(255,255,255,0.7); font-weight: 600; }
+  .comment-body { font-size: 0.9rem; color: rgba(255,255,255,0.88); white-space: pre-wrap; line-height: 1.5; }
+
+  .comment-form { margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+  .comment-form .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .comment-form .row input { flex: 1; }
+  .comment-form textarea { min-height: 70px; }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    padding: 12px 20px; border-radius: 8px; color: #fff; z-index: 2000;
+    font-size: 0.9rem; font-weight: 600; opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast.success { background: rgba(80,200,120,0.9); }
+  .toast.error   { background: rgba(255,90,90,0.9); }
+
+  .config-warning {
+    background: rgba(255,175,60,0.1); border: 1px solid rgba(255,175,60,0.3);
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;
+    font-size: 0.88rem; color: #ffc46b; line-height: 1.5;
+  }
+  .config-warning code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-orb"></span>
+      <span class="logo-text">PickShot</span>
+      <span class="logo-ver">v9.1.0</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html#whatsnew" class="nav-new">새 기능 <span class="nav-dot"></span></a>
+      <a href="index.html#features">기능</a>
+      <a href="index.html#pricing">가격</a>
+      <a href="manual.html">매뉴얼</a>
+      <a href="feedback.html" style="color: #fff;">피드백</a>
+    </div>
+    <a href="index.html#download" class="btn btn-secondary btn-sm">다운로드</a>
+  </div>
+</nav>
+
+<div class="board-page">
+  <div class="board-head">
+    <h1>피드백 게시판</h1>
+    <p>회원가입 없이 자유롭게 작성하실 수 있습니다. 비밀번호로 본인 글 수정·삭제.</p>
+  </div>
+
+  <div id="config-warning" class="config-warning" style="display:none">
+    ⚠️ <strong>관리자 설정 필요:</strong> Cloudflare Worker 가 아직 연결되지 않았습니다.
+    <code>docs/board-worker.js</code> 안내대로 배포 후 <code>feedback.html</code> 의
+    <code>BOARD_API</code> 상수에 워커 URL 을 입력해 주세요.
+  </div>
+
+  <div class="tabs">
+    <button class="tab bug active" data-board="bug">🐛 버그 신고</button>
+    <button class="tab feature" data-board="feature">💡 기능 제안</button>
+  </div>
+
+  <div class="toolbar">
+    <input id="search" class="search-input" placeholder="제목·내용·작성자 검색">
+    <button class="write-btn" onclick="openWriteModal()">＋ 글쓰기</button>
+  </div>
+
+  <ul id="post-list" class="post-list">
+    <li class="loading">불러오는 중...</li>
+  </ul>
+</div>
+
+<!-- Write modal -->
+<div id="write-modal" class="modal-backdrop">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('write-modal')">&times;</button>
+    <h2>새 글 작성</h2>
+    <div class="form-row">
+      <label>게시판</label>
+      <select id="write-board">
+        <option value="bug">🐛 버그 신고</option>
+        <option value="feature">💡 기능 제안</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>제목</label>
+      <input id="write-title" maxlength="120" placeholder="간결하게">
+    </div>
+    <div class="form-row">
+      <label>내용</label>
+      <textarea id="write-body" maxlength="5000" placeholder="자세히 적어주세요"></textarea>
+    </div>
+    <div class="form-row" style="display: flex; gap: 10px;">
+      <div style="flex: 1">
+        <label>작성자 (선택)</label>
+        <input id="write-author" maxlength="30" placeholder="익명">
+      </div>
+      <div style="flex: 1">
+        <label>비밀번호 *</label>
+        <input id="write-password" type="password" maxlength="50" placeholder="수정/삭제 시 필요">
+      </div>
+    </div>
+    <input type="text" class="honeypot" id="write-hp" autocomplete="off" tabindex="-1">
+    <div class="form-actions">
+      <button class="btn-primary" onclick="submitPost()">등록</button>
+      <button class="btn-secondary" onclick="closeModal('write-modal')">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="detail-modal" class="modal-backdrop">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
+    <h2 id="detail-title">제목</h2>
+    <div class="detail-meta">
+      <span id="detail-author"></span>
+      <span>·</span>
+      <span id="detail-date"></span>
+      <span class="post-state state-open" id="detail-state">열림</span>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
+    <div class="detail-actions">
+      <button class="btn-danger" onclick="promptDeletePost()">삭제</button>
+    </div>
+    <div class="comments-section">
+      <h3>댓글 <span id="comment-count">0</span></h3>
+      <div id="comment-list"></div>
+      <div class="comment-form">
+        <div class="row">
+          <input id="comment-author" maxlength="30" placeholder="작성자 (선택)">
+          <input id="comment-password" type="password" maxlength="50" placeholder="비밀번호 (선택)">
+        </div>
+        <textarea id="comment-body" maxlength="1000" placeholder="댓글을 입력하세요"></textarea>
+        <input type="text" class="honeypot" id="comment-hp" autocomplete="off" tabindex="-1">
+        <div class="form-actions">
+          <button class="btn-primary" onclick="submitComment()">댓글 등록</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ============ 설정 ============
+// Cloudflare Worker 배포 후 여기에 URL 붙여넣기 (예: https://pickshot-board.kimjjang.workers.dev)
+const BOARD_API = '';
+// ============================
+
+let currentBoard = 'bug';
+let currentPosts = [];
+let currentPostId = null;
+
+if (!BOARD_API) document.getElementById('config-warning').style.display = 'block';
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentBoard = btn.dataset.board;
+    loadPosts();
+  });
+});
+
+document.getElementById('search').addEventListener('input', (e) => {
+  renderPosts(filterPosts(currentPosts, e.target.value));
+});
+
+async function loadPosts() {
+  const list = document.getElementById('post-list');
+  list.innerHTML = '<li class="loading">불러오는 중...</li>';
+  if (!BOARD_API) {
+    list.innerHTML = '<li class="empty">관리자가 게시판을 설정하면 여기에 글이 표시됩니다.</li>';
+    return;
+  }
+  try {
+    const res = await fetch(`${BOARD_API}/posts?board=${currentBoard}`);
+    const data = await res.json();
+    currentPosts = data.posts || [];
+    renderPosts(currentPosts);
+  } catch (e) {
+    list.innerHTML = `<li class="empty error">불러오기 실패: ${e.message}</li>`;
+  }
+}
+
+function filterPosts(posts, q) {
+  if (!q.trim()) return posts;
+  const lc = q.toLowerCase();
+  return posts.filter(p =>
+    p.title.toLowerCase().includes(lc) ||
+    (p.bodyPreview || '').toLowerCase().includes(lc) ||
+    (p.author || '').toLowerCase().includes(lc)
+  );
+}
+
+function renderPosts(posts) {
+  const list = document.getElementById('post-list');
+  if (!posts.length) {
+    list.innerHTML = '<li class="empty">아직 등록된 글이 없습니다. 첫 번째가 되어주세요!</li>';
+    return;
+  }
+  list.innerHTML = posts.map(p => `
+    <li class="post-item" onclick="openPost('${p.id}')">
+      <div class="post-row1">
+        <span class="post-title">${escapeHtml(p.title)}</span>
+        ${p.commentCount ? `<span class="post-comments">💬 ${p.commentCount}</span>` : ''}
+      </div>
+      <div class="post-row2">
+        <span class="post-author">${escapeHtml(p.author || '익명')}</span>
+        <span>·</span>
+        <span>${formatDate(p.createdAt)}</span>
+        <span class="post-state state-${p.state}">${p.state === 'open' ? '열림' : '해결됨'}</span>
+      </div>
+      ${p.bodyPreview ? `<div class="post-preview">${escapeHtml(p.bodyPreview)}</div>` : ''}
+    </li>
+  `).join('');
+}
+
+function openWriteModal() {
+  document.getElementById('write-board').value = currentBoard;
+  document.getElementById('write-title').value = '';
+  document.getElementById('write-body').value = '';
+  document.getElementById('write-author').value = '';
+  document.getElementById('write-password').value = '';
+  document.getElementById('write-modal').classList.add('show');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function submitPost() {
+  if (!BOARD_API) return showToast('error', '게시판이 아직 설정되지 않았습니다');
+  const board = document.getElementById('write-board').value;
+  const title = document.getElementById('write-title').value.trim();
+  const body = document.getElementById('write-body').value.trim();
+  const author = document.getElementById('write-author').value.trim();
+  const password = document.getElementById('write-password').value;
+  const website = document.getElementById('write-hp').value;
+  if (!title) return showToast('error', '제목을 입력하세요');
+  if (!body) return showToast('error', '내용을 입력하세요');
+  if (!password) return showToast('error', '비밀번호를 입력하세요 (수정/삭제용)');
+  try {
+    const res = await fetch(`${BOARD_API}/post`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board, title, body, author, password, website })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '등록 실패');
+    showToast('success', '등록되었습니다');
+    closeModal('write-modal');
+    if (board !== currentBoard) {
+      document.querySelector(`.tab[data-board="${board}"]`).click();
+    } else {
+      loadPosts();
+    }
+  } catch (e) { showToast('error', e.message); }
+}
+
+async function openPost(id) {
+  if (!BOARD_API) return;
+  currentPostId = id;
+  try {
+    const res = await fetch(`${BOARD_API}/post?id=${encodeURIComponent(id)}`);
+    const post = await res.json();
+    if (!res.ok) throw new Error(post.error || '불러오기 실패');
+    document.getElementById('detail-title').textContent = post.title;
+    document.getElementById('detail-author').textContent = post.author || '익명';
+    document.getElementById('detail-date').textContent = formatDate(post.createdAt);
+    const stateEl = document.getElementById('detail-state');
+    stateEl.textContent = post.state === 'open' ? '열림' : '해결됨';
+    stateEl.className = `post-state state-${post.state}`;
+    document.getElementById('detail-body').textContent = post.body;
+    renderComments(post.comments || []);
+    document.getElementById('comment-author').value = '';
+    document.getElementById('comment-password').value = '';
+    document.getElementById('comment-body').value = '';
+    document.getElementById('detail-modal').classList.add('show');
+  } catch (e) { showToast('error', e.message); }
+}
+
+function renderComments(comments) {
+  document.getElementById('comment-count').textContent = comments.length;
+  const list = document.getElementById('comment-list');
+  list.innerHTML = comments.map(c => `
+    <div class="comment">
+      <div class="comment-meta">
+        <span class="author">${escapeHtml(c.author || '익명')}</span>
+        <span>${formatDate(c.createdAt)}</span>
+      </div>
+      <div class="comment-body">${escapeHtml(c.body)}</div>
+    </div>
+  `).join('') || '<div style="color: rgba(255,255,255,0.4); font-size: 0.85rem; padding: 8px 0;">첫 번째 댓글을 남겨보세요</div>';
+}
+
+async function submitComment() {
+  if (!currentPostId) return;
+  const body = document.getElementById('comment-body').value.trim();
+  const author = document.getElementById('comment-author').value.trim();
+  const password = document.getElementById('comment-password').value;
+  const website = document.getElementById('comment-hp').value;
+  if (!body) return showToast('error', '댓글을 입력하세요');
+  try {
+    const res = await fetch(`${BOARD_API}/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId: currentPostId, body, author, password, website })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '등록 실패');
+    showToast('success', '댓글이 등록되었습니다');
+    openPost(currentPostId);
+    loadPosts();
+  } catch (e) { showToast('error', e.message); }
+}
+
+async function promptDeletePost() {
+  if (!currentPostId) return;
+  const password = prompt('비밀번호를 입력하세요');
+  if (!password) return;
+  try {
+    const res = await fetch(`${BOARD_API}/post?id=${encodeURIComponent(currentPostId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '삭제 실패');
+    showToast('success', '삭제되었습니다');
+    closeModal('detail-modal');
+    loadPosts();
+  } catch (e) { showToast('error', e.message); }
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function formatDate(ts) {
+  const d = new Date(ts);
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return '방금 전';
+  if (diff < 3600) return `${Math.floor(diff/60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}시간 전`;
+  if (diff < 604800) return `${Math.floor(diff/86400)}일 전`;
+  return d.toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
+}
+
+function showToast(kind, msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${kind} show`;
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+document.querySelectorAll('.modal-backdrop').forEach(m => {
+  m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('show'); });
+});
+
+loadPosts();
+</script>
+
+</body>
+</html>

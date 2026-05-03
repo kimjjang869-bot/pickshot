@@ -246,7 +246,7 @@ final class NavigationPerformanceMonitor: ObservableObject {
             // 꾹 누르기 중에도 주기적으로 (자동 방어선)
             let growth = ramMB - sessionStartRam
             if growth > 2000 && ramMB - lastAutoFlushRam > 1000 {
-                fputs("[NAVPERF] RAM 증가 \(growth)MB 초과 → 자동 캐시 해제\n", stderr)
+                plog("[NAVPERF] RAM 증가 \(growth)MB 초과 → 자동 캐시 해제\n")
                 _ = forceFlushAllCaches()
                 lastAutoFlushRam = ramMB
             }
@@ -272,7 +272,7 @@ final class NavigationPerformanceMonitor: ObservableObject {
         previousMoveStartTime = nil
         stats = Stats()
         sessionStartRam = currentRamMB()
-        fputs("[NAVPERF] 세션 시작 — RAM \(sessionStartRam)MB\n", stderr)
+        plog("[NAVPERF] 세션 시작 — RAM \(sessionStartRam)MB\n")
     }
 
     private var sessionStartRam: Int = 0
@@ -283,7 +283,7 @@ final class NavigationPerformanceMonitor: ObservableObject {
         let before = currentRamMB()
         PreviewImageCache.shared.clearCache()
         ThumbnailCache.shared.removeAll()
-        AggressiveImageCache.shared.removeAll()
+        // v9.1.4: AggressiveImageCache 제거됨 (set/get 호출 0건)
         PhotoPreviewView.clearHiResCache()
         // GC 유도: allocation 많이 해제되고 나면 malloc zone 가 OS 에 돌려주도록
         DispatchQueue.global(qos: .utility).async {
@@ -291,7 +291,7 @@ final class NavigationPerformanceMonitor: ObservableObject {
         }
         let after = currentRamMB()
         let msg = "캐시 해제: \(before)MB → \(after)MB (감소 \(before - after)MB)"
-        fputs("[NAVPERF] \(msg)\n", stderr)
+        plog("[NAVPERF] \(msg)\n")
         return msg
     }
 
@@ -303,7 +303,7 @@ final class NavigationPerformanceMonitor: ObservableObject {
             finalizeBurst(current)
         }
         let dur = Date().timeIntervalSince(sess.startedAt)
-        fputs("[NAVPERF] 세션 종료: \(allBursts.count) bursts, \(recentMoves.count) moves in \(String(format: "%.1f", dur))s\n", stderr)
+        plog("[NAVPERF] 세션 종료: \(allBursts.count) bursts, \(recentMoves.count) moves in \(String(format: "%.1f", dur))s\n")
         session = nil
     }
 
@@ -333,11 +333,11 @@ final class NavigationPerformanceMonitor: ObservableObject {
 
         do {
             try csv.write(to: url, atomically: true, encoding: .utf8)
-            fputs("[NAVPERF] 리포트 저장: \(url.path)\n", stderr)
+            plog("[NAVPERF] 리포트 저장: \(url.path)\n")
             NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: "")
             return url
         } catch {
-            fputs("[NAVPERF] 저장 실패: \(error)\n", stderr)
+            plog("[NAVPERF] 저장 실패: \(error)\n")
             return nil
         }
     }

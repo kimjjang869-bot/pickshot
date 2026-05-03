@@ -506,7 +506,7 @@ struct ClaudeVisionService {
 
             guard let data = cleaned.data(using: .utf8) else {
                 if attempt == 0 { continue }
-                fputs("[API] parse fail (no data): \(response.prefix(100))\n", stderr)
+                plog("[API] parse fail (no data): \(response.prefix(100))\n")
                 throw ClaudeVisionError.invalidResponse
             }
             do {
@@ -514,10 +514,10 @@ struct ClaudeVisionService {
                 return classification
             } catch {
                 if attempt == 0 {
-                    fputs("[API] parse retry: \(error)\n", stderr)
+                    plog("[API] parse retry: \(error)\n")
                     continue  // 재시도
                 }
-                fputs("[API] parse fail: \(error) — \(cleaned.prefix(150))\n", stderr)
+                plog("[API] parse fail: \(error) — \(cleaned.prefix(150))\n")
                 throw ClaudeVisionError.invalidResponse
             }
         }
@@ -572,7 +572,7 @@ struct ClaudeVisionService {
                             let classification = try await classifyPhoto(url: photo.jpgURL, customPrompt: customPrompt)
                             return (photo.id, classification, nil)
                         } catch {
-                            fputs("[API] ERROR \(photo.jpgURL.lastPathComponent): \(error.localizedDescription)\n", stderr)
+                            plog("[API] ERROR \(photo.jpgURL.lastPathComponent): \(error.localizedDescription)\n")
                             return (photo.id, nil, error.localizedDescription)
                         }
                     }
@@ -580,13 +580,13 @@ struct ClaudeVisionService {
                 for await (id, classification, errorMsg) in group {
                     if let c = classification {
                         results[id] = c
-                        fputs("[API] classified \(id.uuidString.prefix(6)) cat=\(c.category)\n", stderr)
+                        plog("[API] classified \(id.uuidString.prefix(6)) cat=\(c.category)\n")
                         // 분류 즉시 콜백 (폴더 이동 등)
                         if let photo = batch.first(where: { $0.id == id }) {
                             onClassified?(photo, c)
                         }
                     } else {
-                        fputs("[API] FAILED \(id.uuidString.prefix(6))\n", stderr)
+                        plog("[API] FAILED \(id.uuidString.prefix(6))\n")
                         // 에러 콜백 호출
                         if let photo = batch.first(where: { $0.id == id }) {
                             onError?(photo, errorMsg ?? "알 수 없는 오류")
@@ -691,5 +691,52 @@ struct ClaudeVisionService {
             throw ClaudeVisionError.encodingFailed
         }
         return result
+    }
+}
+
+// MARK: - AI Vision 동의 게이트 (보안 감사 M-5)
+// v9.1.4: 사진 데이터를 외부 AI 서버(Anthropic/Google)로 전송하기 전 1회 명시 동의.
+
+@MainActor
+enum AIConsentGate {
+    private static let consentKey = "aiVisionConsentAccepted_v1"
+
+    /// 동의 여부 확인. 미동의 시 알림 표시, 동의하면 영구 저장.
+    /// - Returns: 사용자 동의 여부
+    @discardableResult
+    static func requireConsent() -> Bool {
+        if UserDefaults.standard.bool(forKey: consentKey) { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "AI 분석 — 사진 외부 전송 동의"
+        alert.informativeText = """
+        이 기능은 선택한 사진 이미지를 다음 중 설정된 서버로 전송합니다:
+
+        • Anthropic (Claude) — api.anthropic.com
+        • Google (Gemini) — generativelanguage.googleapis.com
+
+        전송 전 이미지가 768px 로 리사이즈되며, 본인이 입력한 API 키로 처리됩니다.
+        본 동의는 다음 실행에서도 유지되며, 설정 → AI 엔진에서 언제든 철회할 수 있습니다.
+
+        계속 진행하시겠습니까?
+        """
+        alert.addButton(withTitle: "동의 — 계속")
+        alert.addButton(withTitle: "취소")
+
+        let response = alert.runModal()
+        let consented = (response == .alertFirstButtonReturn)
+        if consented {
+            UserDefaults.standard.set(true, forKey: consentKey)
+        }
+        return consented
+    }
+
+    static func revokeConsent() {
+        UserDefaults.standard.removeObject(forKey: consentKey)
+    }
+
+    static var isConsentGranted: Bool {
+        UserDefaults.standard.bool(forKey: consentKey)
     }
 }

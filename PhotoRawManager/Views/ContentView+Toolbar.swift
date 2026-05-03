@@ -45,17 +45,8 @@ extension ContentView {
                         }
                         .buttonStyle(.plain)
                     }
-                    // v8.9.7+: 캐시 진행률 게이지 제거 — 미리보기 토글로 통합 표시.
-                    // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
-                    AggressiveCacheToggle(store: store)
-                    // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
-                    FastCullingToggle(store: store)
-                    // v9.0: 초기 미리보기 토글 일시 비활성화 (응답없음 발생 — Phase 3 RAW 디코드 큐 backpressure 문제).
-                    //   Debug 에서만 노출해 추후 fix 후 v9.1+ 에서 다시 활성화.
-                    #if DEBUG
-                    InitialPreviewToggle()
-                        .fixedSize(horizontal: true, vertical: true)
-                    #endif
+                    // v9.1: 4개 토글 → 1개 segmented picker (표준 / 빠른 셀렉 / 사전 생성)
+                    PerformanceProfilePicker(store: store)
                     // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
                     activeFilterBadge
                 }
@@ -131,13 +122,17 @@ extension ContentView {
                             Label("Apps Script 프록시 설정", systemImage: "network.badge.shield.half.filled")
                         }
                         Divider()
-                        Button(action: {
-                            if FeatureGate.allows(.pickshotFileImport) { store.importPickshotFile() }
-                            else { store.proLockedFeature = .pickshotFileImport }
-                        }) {
-                            HStack {
-                                Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
-                                if !FeatureGate.allows(.pickshotFileImport) { Spacer(); Image(systemName: "hourglass").font(.system(size: 9)).foregroundColor(.orange) }
+                        // v9.1.4: comingSoon 항목은 메뉴에서 숨김 — 사용자 혼란 방지.
+                        //   Pro 출시 시 FeatureGate.releaseStatus 를 .released 로 바꾸면 자연스럽게 노출됨.
+                        if !FeatureGate.isComingSoon(.pickshotFileImport) {
+                            Button(action: {
+                                if FeatureGate.allows(.pickshotFileImport) { store.importPickshotFile() }
+                                else { store.proLockedFeature = .pickshotFileImport }
+                            }) {
+                                HStack {
+                                    Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                                    if !FeatureGate.allows(.pickshotFileImport) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                                }
                             }
                         }
                         Button(action: {
@@ -460,7 +455,7 @@ extension ContentView {
     // MARK: - Quality Filter Menu
 
     var qualityFilterMenu: some View {
-        let aiCount = store.photos.filter { $0.isAIPick }.count
+        let aiCount = store.aiPickCount
 
         let groups = store.availableFaceGroups
         let hasGroups = !groups.isEmpty
@@ -521,19 +516,21 @@ extension ContentView {
                     Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
                 }
                 .disabled(store.isClassifyingScenes)
-                Button(action: {
-                    // v9.0.2: Pro 기능 게이트 — 무료 사용자는 잠금 모달 표시.
-                    if FeatureGate.allows(.burstBestAuto) {
-                        store.showBurstPickerDialog = true
-                    } else {
-                        store.proLockedFeature = .burstBestAuto
-                    }
-                }) {
-                    HStack {
-                        Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
-                        if !FeatureGate.allows(.burstBestAuto) {
-                            Spacer()
-                            Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple)
+                // v9.1.4: comingSoon 동안은 메뉴에서 숨김 (Pro 출시 시 자동 노출).
+                if !FeatureGate.isComingSoon(.burstBestAuto) {
+                    Button(action: {
+                        if FeatureGate.allows(.burstBestAuto) {
+                            store.showBurstPickerDialog = true
+                        } else {
+                            store.proLockedFeature = .burstBestAuto
+                        }
+                    }) {
+                        HStack {
+                            Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                            if !FeatureGate.allows(.burstBestAuto) {
+                                Spacer()
+                                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple)
+                            }
                         }
                     }
                 }
@@ -936,7 +933,7 @@ extension ContentView {
                     // Category filters
                     Section("📂 카테고리") {
                         ForEach(categories, id: \.self) { cat in
-                            let count = store.photos.filter { $0.aiCategory == cat }.count
+                            let count = store.aiCategoryCount(cat)
                             let icon = aiCategoryIcon(cat)
                             Button(action: { store.aiCategoryFilter = cat }) {
                                 Label("\(icon) \(cat) (\(count)장)",
@@ -1137,7 +1134,7 @@ extension ContentView {
                 let isExactlyActive = activeRatings.contains(rating)
                 // 누적 칠하기: 단일 선택 모드일 때 rating <= cumulativeMax 면 fill
                 let shouldFill = isMulti ? isExactlyActive : (rating <= cumulativeMax)
-                let count = store.photos.filter { $0.rating == rating && !$0.isFolder && !$0.isParentFolder }.count
+                let count = store.ratingCount(rating)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)
@@ -1191,9 +1188,7 @@ extension ContentView {
         return HStack(spacing: 3) {
             ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
                 let isActive = activeLabels.contains(label)
-                let count = store.photos.filter {
-                    $0.colorLabel == label && !$0.isFolder && !$0.isParentFolder
-                }.count
+                let count = store.colorLabelCount(label)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)

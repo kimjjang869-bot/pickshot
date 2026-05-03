@@ -280,11 +280,11 @@ enum FileConflictResolver {
         let srcStd = srcFolder.standardizedFileURL.path
         let dstStd = destFolder.standardizedFileURL.path
         if dstStd == srcStd || dstStd.hasPrefix(srcStd + "/") {
-            fputs("[MERGE] 중단: dest가 src의 하위임 (\(srcStd) → \(dstStd))\n", stderr)
+            plog("[MERGE] 중단: dest가 src의 하위임 (\(srcStd) → \(dstStd))\n")
             return (0, [], 0, 0)
         }
 
-        fputs("[MERGE] 시작 — \(srcStd) → \(dstStd) (isCut=\(isCut), mode=\(subFileMode))\n", stderr)
+        plog("[MERGE] 시작 — \(srcStd) → \(dstStd) (isCut=\(isCut), mode=\(subFileMode))\n")
 
         // dest 폴더 없으면 생성
         if !fm.fileExists(atPath: destFolder.path) {
@@ -343,7 +343,7 @@ enum FileConflictResolver {
                             transferred.append((item, itemDest))
                             onProgress?(item, sz)
                         } catch {
-                            fputs("[MERGE/OW] 실패 \(item.lastPathComponent): \(error.localizedDescription)\n", stderr)
+                            plog("[MERGE/OW] 실패 \(item.lastPathComponent): \(error.localizedDescription)\n")
                         }
                     }
                 }
@@ -375,7 +375,7 @@ enum FileConflictResolver {
                         transferred.append((item, itemDest))
                         onProgress?(item, sz)
                     } catch {
-                        fputs("[MERGE] 실패 \(item.lastPathComponent): \(error.localizedDescription)\n", stderr)
+                        plog("[MERGE] 실패 \(item.lastPathComponent): \(error.localizedDescription)\n")
                     }
                 }
             }

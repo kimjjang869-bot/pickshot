@@ -68,6 +68,18 @@ enum ZoomPreset: String, CaseIterable, Identifiable {
 
 class PreviewImageCache {
     static let shared = PreviewImageCache()
+
+    /// v9.1.4 (C-4): RAW fallback 결과 URL 캐시 — 5초+ STALL 직접 원인 해결.
+    ///   range = best embedded JPEG byte range, width = 추출된 픽셀 width.
+    fileprivate static var fallbackCache: [URL: (range: Range<Int>, width: Int)] = [:]
+    fileprivate static var fallbackNoEmbedded: Set<URL> = []
+    fileprivate static let fallbackCacheLock = NSLock()
+    /// 폴더 변경 시 호출 — 메모리 누적 방지.
+    static func clearRAWFallbackCache() {
+        fallbackCacheLock.lock(); defer { fallbackCacheLock.unlock() }
+        fallbackCache.removeAll(keepingCapacity: false)
+        fallbackNoEmbedded.removeAll(keepingCapacity: false)
+    }
     private var cache: [URL: NSImage] = [:]
     private var accessTime: [URL: Int] = [:]  // LRU tracking (O(1) 업데이트)
     private var accessCounter: Int = 0
@@ -240,7 +252,10 @@ class PreviewImageCache {
                     diskEvictBacklogLock.lock(); diskEvictBacklog -= 1; diskEvictBacklogLock.unlock()
                     continue
                 }
-                // 직렬 큐로 뿌려서 동시 JPEG 인코딩/디스크 쓰기 경합 방지
+                // v9.1.4 (M-A): autoreleasepool + capture 명시화 — backlog 30개 NSImage 가
+                //   동시 alive 시 600-1500MB 피크. autoreleasepool 로 임시 NSBitmapImageRep/Data 즉시 해제.
+                //   `image` strong capture (capturedImg 변수 제거 — backlog 큐 안에서 strong 유지).
+                let image = capturedImg  // 명시적 strong capture
                 diskEvictQueue.async { [weak self] in
                     defer {
                         self?.diskEvictBacklogLock.lock()
@@ -249,15 +264,17 @@ class PreviewImageCache {
                     }
                     // 이미 디스크에 있으면 쓰기 스킵 — 불필요한 I/O 제거
                     if FileManager.default.fileExists(atPath: diskPath.path) { return }
-                    if let cgImage = capturedImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                        let bitmap = NSBitmapImageRep(cgImage: cgImage)
-                        if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                    autoreleasepool {
+                        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                            let bitmap = NSBitmapImageRep(cgImage: cgImage)
+                            if let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                                try? jpegData.write(to: diskPath, options: .atomic)
+                            }
+                        } else if let tiffData = image.tiffRepresentation,
+                                  let bitmap = NSBitmapImageRep(data: tiffData),
+                                  let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
                             try? jpegData.write(to: diskPath, options: .atomic)
                         }
-                    } else if let tiffData = capturedImg.tiffRepresentation,
-                              let bitmap = NSBitmapImageRep(data: tiffData),
-                              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-                        try? jpegData.write(to: diskPath, options: .atomic)
                     }
                 }
             }
@@ -271,13 +288,23 @@ class PreviewImageCache {
         lock.lock()
         let imageBytes = estimateBytes(image)
 
-        // 항목 수 상한 체크
+        // v9.1.4 (P-4): 필요한 총 evict 수를 한 번에 계산해서 evictOldest(count:) 1회만 호출.
+        //   이전엔 while 루프가 항목 1개씩 evict 호출 → 매번 O(n log n) 정렬 누적.
+        var toRemove = 0
+        // 항목 수 상한
         if cache.count >= maxEntries {
-            evictOldest(count: maxEntries / 3)
+            toRemove = max(toRemove, maxEntries / 3)
         }
-        // 바이트 상한 체크
-        while currentBytes + imageBytes > maxBytes && !cache.isEmpty {
-            evictOldest(count: 1)
+        // 바이트 상한 — 평균 entry 크기로 추정 evict 개수 계산
+        let projectedBytes = currentBytes + imageBytes
+        if projectedBytes > maxBytes && !cache.isEmpty {
+            let overflow = projectedBytes - maxBytes
+            let avgBytes = max(1, currentBytes / max(1, cache.count))
+            let needed = Int(ceil(Double(overflow) / Double(avgBytes))) + 1  // 여유 1개
+            toRemove = max(toRemove, min(needed, cache.count))
+        }
+        if toRemove > 0 {
+            evictOldest(count: toRemove)
         }
 
         // 기존 항목 교체 시 이전 크기 빼기
@@ -531,12 +558,43 @@ class PreviewImageCache {
         guard FileMatchingService.rawExtensions.contains(rawExt) else { return nil }
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count > 100 else { return nil }
         let ffd8: [UInt8] = [0xFF, 0xD8]
+
+        // v9.1.4 (C-4): URL 별 best JPEG range 캐싱 — 동일 RAW 재호출 시 2MB 스캔 skip.
+        //   이전엔 매 호출마다 50-200ms 스캔. SKIP-SMALL-THUMB 22 연속 후 5초+ STALL 의 직접 원인.
+        //   "임베디드 JPEG 없음" 마킹도 캐시 — 같은 URL 다시 호출 시 즉시 nil.
+        Self.fallbackCacheLock.lock()
+        let cachedRange = Self.fallbackCache[url]
+        let cachedNoEmbedded = Self.fallbackNoEmbedded.contains(url)
+        Self.fallbackCacheLock.unlock()
+
+        if cachedNoEmbedded { return nil }
+
+        if let info = cachedRange {
+            // 캐시 hit — 스캔 skip, jpegRange 직접 추출
+            return autoreleasepool { () -> NSImage? in
+                guard info.range.upperBound <= data.count else { return nil }
+                let subData = data.subdata(in: info.range)
+                guard let imgSource = CGImageSourceCreateWithData(subData as CFData, nil),
+                      CGImageSourceGetCount(imgSource) > 0 else { return nil }
+                let opts: [NSString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                    kCGImageSourceCreateThumbnailWithTransform: false
+                ]
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(imgSource, 0, opts as CFDictionary) else { return nil }
+                var img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                img = PhotoPreviewView.correctEmbeddedImageOrientationIfNeeded(img, sourceURL: url)
+                return img
+            }
+        }
+
         // Scan first 2MB to find ALL embedded JPEGs, pick the LARGEST one
         let scanLimit = min(data.count - 2, 2_000_000)
         guard scanLimit > 0 else { return nil }
 
         var bestImage: NSImage?
         var bestWidth = 0
+        var bestRange: Range<Int>?
 
         for i in 0..<scanLimit {
             if data[i] == ffd8[0] && data[i + 1] == ffd8[1] {
@@ -566,10 +624,19 @@ class PreviewImageCache {
                        cg.width > bestWidth {
                         bestWidth = cg.width
                         bestImage = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                        bestRange = jpegRange
                     }
                 }
             }
         }
+        // v9.1.4 (C-4): 결과 캐싱
+        Self.fallbackCacheLock.lock()
+        if let r = bestRange {
+            Self.fallbackCache[url] = (range: r, width: bestWidth)
+        } else {
+            Self.fallbackNoEmbedded.insert(url)
+        }
+        Self.fallbackCacheLock.unlock()
         // PR fix: FFD8 subData 추출 embedded JPEG 의 orient 가 소실되거나
         //   Nikon Z8/Z9 NEF 처럼 임베디드 JPEG 에 orient 태그 없는 케이스 모두 대응.
         //   1) 원본 RAW aspect 비교로 회전 보정 (PR 기존 로직)
@@ -776,16 +843,15 @@ struct PhotoPreviewView: View {
     }
     private var previewBorderColor: Color {
         let p = livePhoto
-        if p.isSpacePicked { return .red }
         if p.colorLabel != .none, let c = p.colorLabel.color { return c }
         if p.rating > 0 { return AppTheme.starGold }
         return .clear
     }
+    // v9.1.3: 보더 두께 강화 — 컬러라벨 3→6, 별점 3→6.
     private var previewBorderWidth: CGFloat {
         let p = livePhoto
-        if p.isSpacePicked { return 4 }
-        if p.colorLabel != .none && p.colorLabel.color != nil { return 3 }
-        if p.rating > 0 { return 3 }
+        if p.colorLabel != .none && p.colorLabel.color != nil { return 6 }
+        if p.rating > 0 { return 6 }
         return 0
     }
 
@@ -1123,14 +1189,7 @@ struct PhotoPreviewView: View {
                                             dragStart: $viewState.dragStart
                                         )
                                     }
-                                    // Zoom percentage badge
-                                    Text(isFitMode ? "맞춤" : "\(Int(viewState.customScale * 100))%")
-                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.black.opacity(0.55))
-                                        .cornerRadius(5)
+                                    // v9.1.3: 우상단 "맞춤" zoom badge 제거 — 풀스크린 깔끔하게.
                                 }
                                 .padding(8)
                             }
@@ -1599,6 +1658,9 @@ struct PhotoPreviewView: View {
             let sourceURL = PreviewLoadingPolicy.previewSourceURL(for: selected)
             let cacheKey = PreviewLoadingPolicy.cacheKey(for: url, resolution: res, sourceURL: sourceURL)
             let previewCacheHit: Bool
+            // v9.1.4 회귀: P-1 변경(getMemoryOnly 강제) 으로 single nav 시 디스크 캐시 fallback 안 됨
+            //   → 메모리에 없고 디스크에만 있는 경우 placeholder branch 발동 → 작은 미리보기 표시.
+            //   원래 패턴 복원: burst 만 getMemoryOnly (메인 차단 회피), single 은 get (디스크 fallback OK).
             let cachedPreview = isFastNavigation
                 ? PreviewImageCache.shared.getMemoryOnly(cacheKey)
                 : PreviewImageCache.shared.get(cacheKey)
@@ -1696,7 +1758,10 @@ struct PhotoPreviewView: View {
                             if didSet && thumbMaxDim >= 3000 {
                                 hiResImage = thumb
                                 isHiResLoaded = true
-                                Self.hiResCache.setObject(thumb, forKey: hiResURL as NSURL)
+                                // v9.1.4 (메모리 누수 #3): insertHiRes 통일 — LRU 추적 누락 방지.
+                                let cost = (thumb.representations.first?.pixelsWide ?? 0)
+                                    * (thumb.representations.first?.pixelsHigh ?? 0) * 4
+                                Self.insertHiRes(thumb, forKey: hiResURL as NSURL, cost: cost)
                             }
                             fputs("[SYNC] HIT-THUMB-KR src=\(url.lastPathComponent) \(thumbMaxDim)px \(thumbMaxDim >= 3000 ? "(hi)" : "(low)") ✓\n", stderr)
                         } else {
@@ -1737,7 +1802,10 @@ struct PhotoPreviewView: View {
                             hiResImage = cached
                             isHiResLoaded = true
                             let hiResNSURL = PreviewLoadingPolicy.hiResURL(for: selected) as NSURL
-                            Self.hiResCache.setObject(cached, forKey: hiResNSURL)
+                            // v9.1.4 (메모리 누수 #3): insertHiRes 통일 — LRU 추적 누락 방지.
+                            let cost = (cached.representations.first?.pixelsWide ?? 0)
+                                * (cached.representations.first?.pixelsHigh ?? 0) * 4
+                            Self.insertHiRes(cached, forKey: hiResNSURL, cost: cost)
                         }
                     }
                     ThumbnailCache.shared.set(url, image: cached)
@@ -1811,8 +1879,12 @@ struct PhotoPreviewView: View {
                 }
             }
         }
-        // v8.5 — 원본 image 가 로드되면 비파괴 보정 프리뷰 갱신
-        .onChange(of: image) { _, _ in refreshDevelopedImage() }
+        // v9.1.4 (P-3): image onChange 두 곳(L1818, L1894) 통합 — 이전엔 stage1→2 전환 시
+        //   refreshDevelopedImage + regenerateClippingMask 가 동시 발사되어 CPU 스파이크 중첩.
+        .onChange(of: image) { _, _ in
+            refreshDevelopedImage()
+            if showClippingOverlay { regenerateClippingMask(throttled: true) }
+        }
         // v8.8.1: 캐시 100% 완료 시 현재 사진을 고화질 버전으로 자동 업그레이드.
         //   캐시가 다 쌓였는데도 저화질 stage1 이 표시되던 케이스 (slow disk skip / key-repeat 취소 등) 대응.
         .onChange(of: store.previewsLoaded) { _, new in
@@ -1887,10 +1959,7 @@ struct PhotoPreviewView: View {
                 }
             }
         }
-        // base 이미지 변화 (Stage 1 / Stage 2 로드) — 쓰로틀 재계산
-        .onChange(of: image) { _, _ in
-            if showClippingOverlay { regenerateClippingMask(throttled: true) }
-        }
+        // v9.1.4 (P-3): image 의 clipping mask regen 은 위 통합 onChange(of: image) 로 이동.
         .onChange(of: rotatedImage) { _, _ in
             if showClippingOverlay { regenerateClippingMask(throttled: true) }
         }
@@ -2541,7 +2610,12 @@ struct PhotoPreviewView: View {
     /// v8.9.5 hotfix: 메인에서 photos/index/cols 를 한꺼번에 스냅샷해 racy mutation 회피.
     ///   이전엔 bg 에서 store.photos / _filteredIndex 를 직접 read → 메인이 동시 write 시
     ///   swift_bridgeObjectRelease 트랩으로 크래시 (M1 Pro tester 보고됨).
+    /// v9.1.4 (성능 #2): 호출 빈도 throttle 100ms — 키 burst 중 preload 작업이 누적되어
+    ///   main.sync 가 50+ 번 호출 = 누적 100ms+ blocking 방지.
     private func preloadNeighborsBatch(currentID: UUID, resolution: Int) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - Self.lastPreloadAt < 0.1 { return }
+        Self.lastPreloadAt = now
         // 메인 스냅샷 (sync) — Array/Dict COW 가 mid-write 일 때 bg read 가 트랩하던 문제 회피.
         // sync 비용은 미미 (수 µs), preload 자체가 background-qos 라 main 블로킹 없음.
         var photos: [PhotoItem] = []
@@ -2721,6 +2795,8 @@ struct PhotoPreviewView: View {
     }
 
     private func applyAICorrection() {
+        // v9.1.4: 외부 전송 동의 (보안 감사 M-5).
+        guard AIConsentGate.requireConsent() else { return }
         isCorrecting = true
         let currentPhoto = photo
         let url = currentPhoto.jpgURL
@@ -2792,7 +2868,9 @@ struct PhotoPreviewView: View {
             switch mode {
             case .aiEnhance:
                 result = AIEnhanceService.enhance(image: ciImage)
-                label = "AI 보정"
+                // v9.1.4: PhotoEnhancer.mlmodelc 미번들 상태에서는 항상 CIFilter 폴백.
+                //   Pro 출시 + 모델 번들 시 다시 "AI 보정" 으로 되돌리거나, 라벨을 isAIModelAvailable 기준 분기.
+                label = AIEnhanceService.isAIModelAvailable ? "AI 보정" : "자동 보정"
             case .denoise:
                 result = AIEnhanceService.denoise(image: ciImage, strength: 0.5)
                 label = "디노이즈"
@@ -3108,6 +3186,12 @@ struct PhotoPreviewView: View {
     private static var hiResCacheInitialized = false
     private static var hiResMemorySource: DispatchSourceMemoryPressure?
     // 명시적 LRU 추적: NSCache 자동 evict는 타이밍이 늦어서 피크 메모리 스파이크를 막지 못함
+    /// v9.1.4 (성능 #2): preloadNeighborsBatch throttle 상태 (100ms 간격).
+    private static var lastPreloadAt: CFAbsoluteTime = 0
+    /// v9.1.4 (C-4): RAW fallback 캐시 비우기 — 폴더 변경 시 PhotoStore+Folder 가 호출.
+    static func clearRAWFallbackCache() {
+        PreviewImageCache.clearRAWFallbackCache()
+    }
     private static var hiResCacheOrder: [NSURL] = []
     private static let hiResCacheLock = NSLock()
     // RAM 기반으로 결정된 countLimit (purgeOldestIfNeeded에서 사용)
@@ -4565,9 +4649,9 @@ struct CorrectionOptionsView: View {
                         .frame(width: 20)
                         .foregroundColor(.purple)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("AI 보정")
+                        Text(AIEnhanceService.isAIModelAvailable ? "AI 보정" : "자동 보정")
                             .font(.system(size: 12, weight: .medium))
-                        Text("NPU 가속 자동 화질 향상")
+                        Text(AIEnhanceService.isAIModelAvailable ? "NPU 가속 자동 화질 향상" : "Apple 자동 색보정")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -4813,14 +4897,14 @@ struct BatchCorrectionView: View {
             if !AppConfig.hideAIFeatures {
                 Divider()
 
-                Text("NPU 고급 보정")
+                Text(AIEnhanceService.isAIModelAvailable ? "NPU 고급 보정" : "자동 보정")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
                 Toggle(isOn: $options.aiEnhance) {
-                    Label("AI 보정", systemImage: "brain").font(.system(size: 12))
+                    Label(AIEnhanceService.isAIModelAvailable ? "AI 보정" : "자동 보정", systemImage: "brain").font(.system(size: 12))
                 }.toggleStyle(.checkbox).disabled(isProcessing)
-                .help("NPU 가속 자동 화질 향상")
+                .help(AIEnhanceService.isAIModelAvailable ? "NPU 가속 자동 화질 향상" : "Apple 자동 색보정")
 
                 Toggle(isOn: $options.denoise) {
                     Label("디노이즈", systemImage: "dot.radiowaves.right").font(.system(size: 12))

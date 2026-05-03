@@ -53,7 +53,7 @@ final class BurstDetectionService {
                     isSameBurst = sim >= config.minSimilarity
                     if !isSameBurst {
                         // 시간 가깝지만 장면이 바뀐 경우 (예: 신부 → 신랑 연사)
-                        fputs("[BURST] 시간 \(String(format: "%.1f", dt))s 안에 있지만 장면 유사도 \(String(format: "%.2f", sim)) < \(config.minSimilarity) — 별도 그룹\n", stderr)
+                        plog("[BURST] 시간 \(String(format: "%.1f", dt))s 안에 있지만 장면 유사도 \(String(format: "%.2f", sim)) < \(config.minSimilarity) — 별도 그룹\n")
                     }
                 } else {
                     // 임베딩 없을 경우 — 시간만으로 판단 (CLIP 인덱스 미완료 대응)
@@ -78,7 +78,7 @@ final class BurstDetectionService {
             groups.append(current)
         }
 
-        fputs("[BURST] 감지 완료: \(groups.count) 그룹, 총 \(groups.reduce(0) { $0 + $1.count })장 / 원본 \(items.count)장\n", stderr)
+        plog("[BURST] 감지 완료: \(groups.count) 그룹, 총 \(groups.reduce(0) { $0 + $1.count })장 / 원본 \(items.count)장\n")
         return groups
     }
 

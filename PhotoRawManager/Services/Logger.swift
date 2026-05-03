@@ -46,6 +46,26 @@ class AppLogger {
         NSWorkspace.shared.open(logDirectory)
     }
 
+    /// v9.1.4: 30일 이상된 로그 파일 자동 삭제 (보안 감사 M-3).
+    ///   장기 사용자의 로그 누적 (수십 MB) + 민감 정보 잔존 시간 단축.
+    ///   앱 시작 시 1회 호출.
+    static func purgeOldLogs(maxAgeDays: Int = 30) {
+        let dir = logDirectory
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let threshold = Date().addingTimeInterval(-Double(maxAgeDays) * 86400)
+        var purged = 0
+        for url in files where url.pathExtension == "log" {
+            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+            if mtime < threshold {
+                if (try? fm.removeItem(at: url)) != nil { purged += 1 }
+            }
+        }
+        if purged > 0 {
+            print("[Logger] 30일 이상된 로그 \(purged)개 자동 삭제")
+        }
+    }
+
     static func log(_ category: LogCategory, _ message: String) {
         guard isEnabled else { return }
         let timestamp = String(format: "%.3f", CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000))
@@ -83,6 +103,11 @@ class AppLogger {
                 // Write header (상세 하드웨어 정보 포함)
                 let header = buildLogHeader(dateStr: dateStr)
                 try? header.write(to: logFile, atomically: true, encoding: .utf8)
+                // v9.1.4 보안 (L-2): 로그 파일 권한 0600 — 다른 프로세스 read 차단 (민감 정보 보호).
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: logFile.path
+                )
             }
             fileHandle = FileHandle(forWritingAtPath: logFile.path)
             fileHandle?.seekToEndOfFile()
@@ -114,8 +139,11 @@ class AppLogger {
             return
         }
 
-        // Filename: {computerName}_{IP}_{version}_{date}.log
-        let fileName = "\(deviceName)_\(localIP)_v\(appVersion)_\(DateFormatter.logDateFormatter.string(from: Date())).log"
+        // v9.1.4: IP / 기기명 평문 노출 제거 (보안 감사 C-4).
+        //   App Store / GDPR / 한국 개인정보법 — 사용자 식별자 외부 전송 시 사전 동의 필요.
+        //   기기명을 SHA1 prefix 8자로 해시하여 로그 식별성만 유지.
+        let deviceHash = Self.deviceIdentifierHash(deviceName: deviceName)
+        let fileName = "device-\(deviceHash)_v\(appVersion)_\(DateFormatter.logDateFormatter.string(from: Date())).log"
 
         // First: find or create "PickShot_Logs" folder
         findOrCreateLogsFolder(token: token) { folderId in
@@ -175,6 +203,17 @@ class AppLogger {
         Host.current().localizedName?.replacingOccurrences(of: " ", with: "_") ?? "unknown"
     }
 
+    /// v9.1.4: 기기명 해시 (외부 전송용 — 식별성만 유지하고 평문 누설 방지).
+    ///   동일 기기에서 일관된 8자 prefix 를 반환해서 같은 사용자의 로그 묶음을 구분 가능.
+    static func deviceIdentifierHash(deviceName: String) -> String {
+        var hash = UInt64(14695981039346656037)  // FNV-1a offset
+        for byte in deviceName.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return String(format: "%08x", hash & 0xFFFF_FFFF)
+    }
+
     // MARK: - Hardware Info (상세 PC 스펙)
 
     /// 앱 시작 시각 (uptime 계산용). PerformanceMonitor.start()에서도 공유.
@@ -185,7 +224,8 @@ class AppLogger {
         var lines: [String] = []
         lines.append("=== PickShot Log ===")
         lines.append("Version: \(appVersion)\(appBuildSuffix)")
-        lines.append("Device: \(deviceName)")
+        // v9.1.4 보안 (M-1): 평문 기기 실명 → 해시 ID 만 기록 (식별성 유지 + PII 누설 방지).
+        lines.append("Device: \(Self.deviceIdentifierHash(deviceName: deviceName))")
         lines.append("Date: \(dateStr)")
         lines.append("OS: \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("--- Hardware ---")

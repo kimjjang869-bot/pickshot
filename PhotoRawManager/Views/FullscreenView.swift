@@ -35,24 +35,26 @@ struct FullscreenView: View {
             Color.black.ignoresSafeArea()
 
             // 뷰어 엔진 그대로 사용 — 클릭하면 확대/선명하게
-            // 별점/컬러라벨/SP 보더는 PhotoPreviewView 내부에서 그림 (중복 방지)
+            // 별점/컬러라벨 보더는 PhotoPreviewView 내부에서 그림 (중복 방지)
             if let photo = currentPhoto {
                 PhotoPreviewView(photo: photo)
             }
 
-            // Top: 카운터 + 파일명 + 닫기
+            // Top: 파일명 + 카운터 + 닫기
             VStack {
                 HStack {
-                    if let counter = photoCounter {
-                        Text("\(counter.index) / \(counter.total)")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(8).background(Color.black.opacity(0.5)).cornerRadius(6).padding(12)
-                    }
                     Spacer()
-                    if showInfo, let photo = currentPhoto {
+                    // v9.1.3: 파일이름 항상 표시 (showInfo 가드 제거) + 카운터 파일명 밑으로.
+                    if let photo = currentPhoto {
                         VStack(alignment: .trailing, spacing: 3) {
-                            Text(photo.jpgURL.lastPathComponent).font(.system(size: 13, weight: .medium)).foregroundColor(.white)
+                            Text(photo.jpgURL.lastPathComponent)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                            if let counter = photoCounter {
+                                Text("\(counter.index) / \(counter.total)")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
                             if let q = photo.quality, q.isAnalyzed {
                                 HStack(spacing: 4) {
                                     Circle().fill(q.overallGrade == .good ? Color.green : q.overallGrade == .average ? Color.orange : Color.red).frame(width: 8, height: 8)
@@ -69,11 +71,12 @@ struct FullscreenView: View {
                 Spacer()
             }
 
-            // Bottom: 필름스트립 + 바
+            // Bottom: 필름스트립만 — fullscreenBottomBar(rating row) 제거.
+            // v9.1.3: 필름스트립을 화면 최하단으로 이동 (chrome bar 와 같은 수평선) — 우측 빈공간 활용.
             VStack(spacing: 0) {
                 Spacer()
                 fullscreenFilmstrip
-                fullscreenBottomBar
+                    .padding(.bottom, 34)
             }
         }
         .onChange(of: store.selectedPhotoID) { _, _ in flashInfo() }
@@ -83,15 +86,8 @@ struct FullscreenView: View {
 
     private var fullscreenBottomBar: some View {
         HStack(spacing: 0) {
-            // Photo counter (left)
-            if let counter = photoCounter {
-                Text("\(counter.index) / \(counter.total)")
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.7))
-                    .frame(width: 90, alignment: .leading)
-            } else {
-                Spacer().frame(width: 90)
-            }
+            // v9.1.3: 좌측 카운터 제거 (상단 우측 파일이름 밑으로 이동) — 좌측 빈 공간만 남김.
+            Spacer().frame(width: 90)
 
             Spacer()
 
@@ -116,34 +112,13 @@ struct FullscreenView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Divider
-                Rectangle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 24)
-                    .padding(.horizontal, 4)
-
-                // SP button
-                Button(action: { toggleSP() }) {
-                    Text("SP")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(isSPActive ? .white : .white.opacity(0.8))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(isSPActive ? Color.red : Color.white.opacity(0.15))
-                        )
-                }
-                .buttonStyle(.plain)
+                // v9.1.3: SP 버튼 제거
             }
 
             Spacer()
 
-            // Hint (right)
-            Text("⌘↩ 닫기")
-                .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.35))
-                .frame(width: 90, alignment: .trailing)
+            // v9.1.3: 우측 hint "⌘↩ 닫기" 제거 — 풀스크린 깔끔하게.
+            Spacer().frame(width: 90)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -173,6 +148,12 @@ struct FullscreenView: View {
                     ForEach(start...end, id: \.self) { i in
                         let photo = photos[i]
                         let isCurrent = i == currentIdx
+                        // v9.1.3: 별점/컬러라벨 있는 셀에 상태 보더 표시.
+                        let stateBorderColor: Color? = {
+                            if let c = photo.colorLabel.color { return c }
+                            if photo.rating > 0 { return AppTheme.starGold }
+                            return nil
+                        }()
                         ZStack {
                             if let thumb = ThumbnailCache.shared.get(photo.jpgURL) {
                                 Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
@@ -180,14 +161,17 @@ struct FullscreenView: View {
                             } else {
                                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
                             }
-                            if photo.isSpacePicked {
-                                RoundedRectangle(cornerRadius: 2).strokeBorder(Color.red, lineWidth: 2)
-                                    .frame(width: isCurrent ? 60 : 50, height: isCurrent ? 45 : 38)
-                            }
                         }
                         .cornerRadius(3)
                         .opacity(isCurrent ? 1.0 : 0.5)
-                        .overlay(isCurrent ? RoundedRectangle(cornerRadius: 3).stroke(Color.white, lineWidth: 2) : nil)
+                        // 상태 보더 (별점/컬러라벨) — 비선택 셀에도 표시.
+                        .overlay(
+                            stateBorderColor.map {
+                                RoundedRectangle(cornerRadius: 3).stroke($0, lineWidth: 3)
+                            }
+                        )
+                        // 현재 포커스 흰 보더 (위에 덮음).
+                        .overlay(isCurrent ? RoundedRectangle(cornerRadius: 3).stroke(Color.white, lineWidth: 4) : nil)
                         .onTapGesture { store.selectPhoto(photo.id, cmdKey: false) }
                     }
                 }
@@ -202,25 +186,12 @@ struct FullscreenView: View {
         currentPhoto?.rating == rating
     }
 
-    private var isSPActive: Bool {
-        currentPhoto?.isSpacePicked == true
-    }
-
     private func setRating(_ rating: Int) {
         guard let id = store.selectedPhotoID,
               let idx = store._photoIndex[id],
               idx < store.photos.count,
               !store.photos[idx].isFolder else { return }
-        // Toggle off if same rating tapped again
         store.photos[idx].rating = store.photos[idx].rating == rating ? 0 : rating
-    }
-
-    private func toggleSP() {
-        guard let id = store.selectedPhotoID,
-              let idx = store._photoIndex[id],
-              idx < store.photos.count,
-              !store.photos[idx].isFolder else { return }
-        store.photos[idx].isSpacePicked.toggle()
     }
 
     private func flashInfo() {

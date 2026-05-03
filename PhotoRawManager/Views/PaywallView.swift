@@ -27,7 +27,7 @@ struct PaywallView: View {
                 }
                 Text("PickShot 구독")
                     .font(.system(size: 22, weight: .bold))
-                Text("행사 만장을 30분에 추리는 도구.\n7일 무료 체험, 카드는 끝나기 하루 전에만 요청.")
+                Text("행사 사진 만장을 약 30분만에 추리는 도구.\n7일 무료 체험, 카드는 끝나기 하루 전에만 요청.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -73,7 +73,7 @@ struct PaywallView: View {
                     // Pro 카드 — 추천
                     tierCard(
                         title: "Pro",
-                        subtitle: "행사 만장 → 클라이언트 폴더까지",
+                        subtitle: "행사 사진 만장 → 클라이언트 폴더까지",
                         price: billingMode == .monthly ? "₩8,900" : "₩89,000",
                         unit: billingMode == .monthly ? "/ 월" : "/ 년",
                         yearlyHint: billingMode == .yearly ? "월 환산 ₩7,420 · 1개월 무료" : nil,

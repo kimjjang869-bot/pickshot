@@ -59,7 +59,7 @@ enum PreviewPipeline {
             let ms1 = Int(ms1Double)
             let sizeMB = Double(s1Trace.fileSizeBytes) / 1_048_576.0
             let stratDesc = s1Trace.strategy == "subsample" ? "subsample=\(s1Trace.subsample)" : s1Trace.strategy
-            fputs("[LD] JPG-S1 \(context.fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms size=\(String(format: "%.1f", sizeMB))MB strat=\(stratDesc) orig=\(s1Trace.origPx)px\n", stderr)
+            plog("[LD] JPG-S1 \(context.fileName) \(Int(fast.size.width))x\(Int(fast.size.height)) \(ms1)ms size=\(String(format: "%.1f", sizeMB))MB strat=\(stratDesc) orig=\(s1Trace.origPx)px\n")
             ProgressiveLoadStats.shared.record(bucket: "JPG-S1-\(s1Trace.strategy)", ms: ms1Double)
 
             ThumbnailCache.shared.set(context.url, image: fast)
@@ -105,7 +105,7 @@ enum PreviewPipeline {
         let totalMs = (CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000
         let s2OnlyMs = (CFAbsoluteTimeGetCurrent() - s2Start) * 1000
         let s2Strat = s2Trace.strategy == "subsample" ? "subsample=\(s2Trace.subsample)" : s2Trace.strategy
-        fputs("[LD] JPG-S2 \(context.fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) total=\(Int(totalMs))ms s2only=\(Int(s2OnlyMs))ms strat=\(s2Strat)\n", stderr)
+        plog("[LD] JPG-S2 \(context.fileName) \(Int(loaded.size.width))x\(Int(loaded.size.height)) total=\(Int(totalMs))ms s2only=\(Int(s2OnlyMs))ms strat=\(s2Strat)\n")
         ProgressiveLoadStats.shared.record(bucket: "JPG-S2-\(s2Trace.strategy)", ms: s2OnlyMs)
         ProgressiveLoadStats.shared.record(bucket: "JPG-total", ms: totalMs)
 
@@ -126,7 +126,7 @@ enum PreviewPipeline {
         ) else {
             // v9.0: RAW 디코드 실패 (손상/지원 안되는 포맷/권한 등) — 무음 return 대신 로그.
             //   notePreviewLoaded 호출해 카운터는 진행하고 (deadlock 방지) stderr 로그 남김.
-            fputs("[LD] RAW-FAIL \(context.fileName) — decode failed (corrupted/unsupported)\n", stderr)
+            plog("[LD] RAW-FAIL \(context.fileName) — decode failed (corrupted/unsupported)\n")
             DispatchQueue.main.async {
                 context.notePreviewLoaded(context.url)
             }
@@ -135,8 +135,12 @@ enum PreviewPipeline {
         guard context.isCurrent() else { return }
 
         let ms1 = Int((CFAbsoluteTimeGetCurrent() - context.startedAt) * 1000)
+        // v9.1.4 (perf C-4 부분): readImageDimensionInfo 동기 CGImageSourceCreateWithURL 추가 I/O (5-20ms).
+        //   디버깅용 정보 — Release 빌드에선 호출 자체 제거.
+        #if DEBUG
         let dinfo = PhotoPreviewView.readImageDimensionInfo(url: context.url)
-        fputs("[LD] RAW-S1 \(context.fileName) loaded=\(Int(fast.size.width))x\(Int(fast.size.height)) raw=\(Int(dinfo?.size.width ?? 0))x\(Int(dinfo?.size.height ?? 0)) orient=\(dinfo?.orientation ?? -1) \(ms1)ms\n", stderr)
+        plog("[LD] RAW-S1 \(context.fileName) loaded=\(Int(fast.size.width))x\(Int(fast.size.height)) raw=\(Int(dinfo?.size.width ?? 0))x\(Int(dinfo?.size.height ?? 0)) orient=\(dinfo?.orientation ?? -1) \(ms1)ms\n")
+        #endif
 
         DispatchQueue.main.async {
             guard context.isCurrent() else { return }
@@ -149,7 +153,14 @@ enum PreviewPipeline {
 
         guard context.isCurrent() else { return }
         if context.isKeyRepeat {
-            fputs("[LD] RAW-S2 SKIP (key repeat) \(context.fileName)\n", stderr)
+            plog("[LD] RAW-S2 SKIP (key repeat) \(context.fileName)\n")
+            PreviewImageCache.shared.set(context.cacheKey, image: fast)
+            return
+        }
+
+        // v9.1: Stage 2 가 Stage 1 과 동일 결과를 반환하는 RAW (임베디드 max 도달) URL 캐시.
+        //   같은 폴더 재진입 시 매번 무용한 디코드 + onDisplayImage 재발사 (~100ms STALL) 누적 방지.
+        if Self.isNoStage2Upgrade(context.url) {
             PreviewImageCache.shared.set(context.cacheKey, image: fast)
             return
         }
@@ -166,11 +177,44 @@ enum PreviewPipeline {
             url: context.url,
             stage1Portrait: fast.size.height > fast.size.width
         )
-        fputs("[LD] RAW-S2 \(context.fileName) loaded=\(Int(hr.size.width))x\(Int(hr.size.height)) → \(Int(finalHR.size.width))x\(Int(finalHR.size.height)) stage2Px=\(Int(stagePlan.finalMaxPixel))\n", stderr)
+
+        // Stage 2 결과가 Stage 1 과 사실상 동일하면 (임베디드 max) → URL 마킹 + onDisplayImage 스킵 (재렌더 STALL 회피).
+        let s1Max = max(fast.size.width, fast.size.height)
+        let s2Max = max(finalHR.size.width, finalHR.size.height)
+        if s2Max <= s1Max * 1.05 {
+            Self.markNoStage2Upgrade(context.url)
+            plog("[LD] RAW-S2 NO-UPGRADE \(context.fileName) (\(Int(s2Max))px ≤ S1 \(Int(s1Max))px) — 재발사 차단\n")
+            PreviewImageCache.shared.set(context.cacheKey, image: fast)
+            return
+        }
+
+        plog("[LD] RAW-S2 \(context.fileName) loaded=\(Int(hr.size.width))x\(Int(hr.size.height)) → \(Int(finalHR.size.width))x\(Int(finalHR.size.height)) stage2Px=\(Int(stagePlan.finalMaxPixel))\n")
         PreviewImageCache.shared.set(context.cacheKey, image: finalHR)
         DispatchQueue.main.async {
             guard context.isCurrent() else { return }
             context.onDisplayImage(finalHR)
         }
+    }
+
+    /// v9.1.4 (P-2): Stage 2 가 Stage 1 과 동일 크기를 반환하는 RAW URL 추적.
+    ///   - 락 추가 — 이전엔 race 시 데이터 레이스 가능 (Sendable 위반).
+    ///   - 폴더 변경/카드 교체 시 clearNoStage2Upgrade() 로 비울 것 (PhotoStore.loadFolder 등).
+    private static var noStage2Upgrade = Set<URL>()
+    private static let noStage2Lock = NSLock()
+
+    static func markNoStage2Upgrade(_ url: URL) {
+        noStage2Lock.lock(); defer { noStage2Lock.unlock() }
+        noStage2Upgrade.insert(url)
+    }
+
+    static func isNoStage2Upgrade(_ url: URL) -> Bool {
+        noStage2Lock.lock(); defer { noStage2Lock.unlock() }
+        return noStage2Upgrade.contains(url)
+    }
+
+    /// 폴더 로드 / 메모리 압박 시 호출 — 무한 누적 방지.
+    static func clearNoStage2Upgrade() {
+        noStage2Lock.lock(); defer { noStage2Lock.unlock() }
+        noStage2Upgrade.removeAll(keepingCapacity: false)
     }
 }

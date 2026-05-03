@@ -43,15 +43,45 @@ struct GeminiService {
         }
     }
 
-    /// UserDefaults에서 Gemini API 키 읽기
-    static func getAPIKey() -> String? {
-        let key = UserDefaults.standard.string(forKey: "GeminiAPIKey")
-        return (key?.isEmpty == false) ? key : nil
+    // v9.1.4: Keychain 저장으로 이관 — Claude 와 일관성. UserDefaults 평문 저장 종료.
+    private static let keychainKey = "gemini_api_key"
+    private static let legacyDefaultsKey = "GeminiAPIKey"
+
+    private static var _apiKeyCache: String?
+    private static var _apiKeyCacheChecked = false
+    private static var _hasAPIKeyCache: Bool?
+
+    static func setAPIKey(_ key: String) {
+        _ = KeychainService.save(key: keychainKey, value: key)
+        invalidateAPIKeyCache()
     }
 
-    /// API 키 존재 여부
+    static func invalidateAPIKeyCache() {
+        _apiKeyCacheChecked = false
+        _apiKeyCache = nil
+        _hasAPIKeyCache = nil
+    }
+
+    /// Keychain 에서 Gemini API 키 읽기 (UserDefaults 레거시 자동 이관).
+    static func getAPIKey() -> String? {
+        if _apiKeyCacheChecked { return _apiKeyCache }
+        if let key = KeychainService.read(key: keychainKey), !key.isEmpty {
+            _apiKeyCache = key; _apiKeyCacheChecked = true; return key
+        }
+        // 레거시 UserDefaults → Keychain 일회 이관.
+        KeychainService.migrateFromUserDefaults(userDefaultsKey: legacyDefaultsKey, keychainKey: keychainKey)
+        let key = KeychainService.read(key: keychainKey)
+        _apiKeyCache = (key?.isEmpty == false) ? key : nil
+        _apiKeyCacheChecked = true
+        return _apiKeyCache
+    }
+
+    /// API 키 존재 여부 (SwiftUI body 평가 비용 절감용 캐시)
     static var hasAPIKey: Bool {
-        return getAPIKey() != nil
+        if let cached = _hasAPIKeyCache { return cached }
+        let result = (getAPIKey()?.isEmpty == false)
+        _hasAPIKeyCache = result
+        return result
     }
 
     /// Gemini API로 이미지 분석
@@ -67,8 +97,9 @@ struct GeminiService {
 
         let base64String = imageData.base64EncodedString()
 
-        // Gemini API 요청 구성
-        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)"
+        // v9.1.4 보안 (H-3): API 키를 URL 쿼리 → x-goog-api-key 헤더로 이동.
+        //   이전엔 HTTP 액세스 로그/프록시/Wireshark 캡처에 키 평문 노출.
+        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
         guard let apiURL = URL(string: endpoint) else {
             throw GeminiError.encodingFailed
         }
@@ -105,6 +136,8 @@ struct GeminiService {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // v9.1.4 보안 (H-3): API 키 헤더 전송.
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = jsonData
 
         let (data, response) = try await URLSession.shared.data(for: request)

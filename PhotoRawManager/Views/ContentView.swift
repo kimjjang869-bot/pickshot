@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var folderBrowserResizePreviewWidth: CGFloat?
     @State private var showFullscreen: Bool = false
     @State private var dualWindow: NSWindow?
+    /// v9.1.4 (R-1): hSplit 드래그 throttle (50ms) 마지막 발사 시각.
+    @State private var hSplitDragLastFire: CFAbsoluteTime = 0
 
     // G Select state (used by toolbar extension)
     @ObservedObject var gSelect = GSelectService.shared
@@ -192,13 +194,6 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             if let photo = store.selectedPhoto {
                                 PhotoPreviewView(photo: photo)
-                                    .overlay(
-                                        photo.isSpacePicked ?
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.red, lineWidth: 4)
-                                            .allowsHitTesting(false)
-                                        : nil
-                                    )
                             } else {
                                 Text("사진을 선택하세요")
                                     .font(.title3)
@@ -293,11 +288,16 @@ struct ContentView: View {
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
                                                 // v8.9.2 perf: 임계값 0.003→0.008 강화 (60+ 이벤트 → ~20)
+                                                // v9.1.4 (R-1): 50ms throttle 추가 — 드래그 중 17,000장 컬렉션
+                                                //   updateNSView 연쇄 부담 감소.
+                                                let now = CFAbsoluteTimeGetCurrent()
+                                                if now - hSplitDragLastFire < 0.05 { return }
                                                 let currentW = geo.size.width * store.hSplitRatio
                                                 let newW = currentW + value.translation.width
                                                 let newRatio = newW / geo.size.width
                                                 let clamped = max(0.10, min(newRatio, 0.55))
                                                 if abs(clamped - store.hSplitRatio) >= 0.008 {
+                                                    hSplitDragLastFire = now
                                                     store.hSplitRatio = clamped
                                                 }
                                             }
@@ -312,13 +312,6 @@ struct ContentView: View {
                                     } else if let photo = store.selectedPhoto {
                                         // v8.9.4: 미리보기 꽉차게 — 하단 메타 영역/DragHandle/frame 제거
                                         PhotoPreviewView(photo: photo)
-                                            .overlay(
-                                                photo.isSpacePicked ?
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.red, lineWidth: 4)
-                                                    .allowsHitTesting(false)
-                                                : nil
-                                            )
                                     } else {
                                         Text("사진을 선택하세요")
                                             .font(.title3)
@@ -769,7 +762,7 @@ struct ContentView: View {
         let url = URL(fileURLWithPath: path)
         store.startupMode = .viewer
         store.loadPhotosRecursive(from: url)
-        fputs("[DEBUG-OPEN] recursive path=\(path)\n", stderr)
+        plog("[DEBUG-OPEN] recursive path=\(path)\n")
     }
 
     private func startDebugStressDriverIfRequested() {
@@ -813,7 +806,9 @@ struct ContentView: View {
                     timer.cancel()
                     return
                 }
-                guard !store.isLoading, !store.filteredPhotos.isEmpty else { return }
+                guard !store.isLoading,
+                      !store.isRecursiveScanInProgress,
+                      !store.filteredPhotos.isEmpty else { return }
 
                 store.isKeyRepeat = true
                 switch pattern {
@@ -842,7 +837,7 @@ struct ContentView: View {
                 if step % logEvery == 0 {
                     let rss = Int(PhotoStore.currentAppMemoryMB())
                     let selectedName = store.selectedPhoto?.fileName ?? "-"
-                    fputs("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n", stderr)
+                    plog("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n")
                 }
             }
         }
@@ -854,12 +849,12 @@ struct ContentView: View {
                 }
                 debugStressTimer = nil
                 let rss = Int(PhotoStore.currentAppMemoryMB())
-                fputs("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n", stderr)
+                plog("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n")
             }
         }
         debugStressTimer = timer
         timer.resume()
-        fputs("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n", stderr)
+        plog("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n")
     }
     #endif
 

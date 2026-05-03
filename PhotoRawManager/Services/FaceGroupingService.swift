@@ -66,7 +66,7 @@ struct FaceGroupingService {
     ) -> FaceGroupResult {
 
         let useAdaFace = AdaFaceService.isAvailable
-        fputs("[FACE] 엔진: \(useAdaFace ? "AdaFace R18 (512-dim)" : "VNFeaturePrint (fallback)")\n", stderr)
+        plog("[FACE] 엔진: \(useAdaFace ? "AdaFace R18 (512-dim)" : "VNFeaturePrint (fallback)")\n")
 
         if useAdaFace {
             return groupFacesAdaFace(photos: photos, progress: progress)
@@ -135,7 +135,7 @@ struct FaceGroupingService {
             return FaceGroupResult(faceCountPerPhoto: faceCountMap)
         }
 
-        fputs("[FACE] 감지된 얼굴: \(detectedFaces.count)개 (\(faceCountMap.count)장 사진)\n", stderr)
+        plog("[FACE] 감지된 얼굴: \(detectedFaces.count)개 (\(faceCountMap.count)장 사진)\n")
 
         // Step 2: AdaFace 임베딩 추출 (직렬 — lock 불필요)
         for face in detectedFaces {
@@ -152,10 +152,10 @@ struct FaceGroupingService {
             }
         }
 
-        fputs("[FACE] AdaFace 임베딩 추출: \(allFaces.count)/\(detectedFaces.count)개 성공\n", stderr)
+        plog("[FACE] AdaFace 임베딩 추출: \(allFaces.count)/\(detectedFaces.count)개 성공\n")
 
         guard !allFaces.isEmpty else {
-            fputs("[FACE] 임베딩 추출 실패 - 모든 얼굴에서 임베딩을 추출하지 못함\n", stderr)
+            plog("[FACE] 임베딩 추출 실패 - 모든 얼굴에서 임베딩을 추출하지 못함\n")
             return FaceGroupResult(faceCountPerPhoto: faceCountMap)
         }
 
@@ -165,7 +165,7 @@ struct FaceGroupingService {
             for i in 0..<debugCount {
                 for j in (i+1)..<debugCount {
                     let sim = AdaFaceService.cosineSimilarity(allFaces[i].embedding, allFaces[j].embedding)
-                    fputs("[FACE] 유사도 디버그: face[\(i)] vs face[\(j)] = \(String(format: "%.4f", sim)) (photo: \(allFaces[i].photoID == allFaces[j].photoID ? "같은사진" : "다른사진"))\n", stderr)
+                    plog("[FACE] 유사도 디버그: face[\(i)] vs face[\(j)] = \(String(format: "%.4f", sim)) (photo: \(allFaces[i].photoID == allFaces[j].photoID ? "같은사진" : "다른사진"))\n")
                 }
             }
         }
@@ -226,7 +226,7 @@ struct FaceGroupingService {
             }
         }
 
-        fputs("[FACE] 1차 매칭 쌍 (threshold \(strictThreshold)): \(allSimPairs.count)개\n", stderr)
+        plog("[FACE] 1차 매칭 쌍 (threshold \(strictThreshold)): \(allSimPairs.count)개\n")
 
         // Step 3-2: Union-Find 클러스터링
         for pair in allSimPairs {
@@ -278,7 +278,7 @@ struct FaceGroupingService {
             }
         }
 
-        fputs("[FACE] 검증 후 초기 그룹: \(verifiedClusters.count)개\n", stderr)
+        plog("[FACE] 검증 후 초기 그룹: \(verifiedClusters.count)개\n")
 
         // Step 3-4: 그룹 병합 — centroid 유사도가 높은 그룹끼리 합치기
         // 같은 사람이 각도/조명 차이로 분리된 경우를 해결
@@ -346,7 +346,7 @@ struct FaceGroupingService {
                 break
             }
 
-            fputs("[FACE] 그룹 병합: \(bestI)(\(membersI.count)개) + \(bestJ)(\(membersJ.count)개), centroid유사도=\(String(format: "%.3f", bestSim)), 교차평균=\(String(format: "%.3f", avgCrossSim))\n", stderr)
+            plog("[FACE] 그룹 병합: \(bestI)(\(membersI.count)개) + \(bestJ)(\(membersJ.count)개), centroid유사도=\(String(format: "%.3f", bestSim)), 교차평균=\(String(format: "%.3f", avgCrossSim))\n")
 
             // 병합 실행
             mergedClusters[bestI] = membersI + membersJ
@@ -359,10 +359,10 @@ struct FaceGroupingService {
         // 큰 그룹 순으로 정렬
         mergedClusters.sort { $0.count > $1.count }
 
-        fputs("[FACE] 병합 \(mergeCount)회 → 최종 \(mergedClusters.count)개 그룹\n", stderr)
+        plog("[FACE] 병합 \(mergeCount)회 → 최종 \(mergedClusters.count)개 그룹\n")
         for (i, cluster) in mergedClusters.prefix(10).enumerated() {
             let photoCount = Set(cluster.map { allFaces[$0].photoID }).count
-            fputs("[FACE]   그룹 \(i): 얼굴 \(cluster.count)개, 사진 \(photoCount)장\n", stderr)
+            plog("[FACE]   그룹 \(i): 얼굴 \(cluster.count)개, 사진 \(photoCount)장\n")
         }
 
         // Step 5: 결과 구성
@@ -388,7 +388,7 @@ struct FaceGroupingService {
             }
         }
 
-        fputs("[FACE] 최종 그룹: \(groupID)개 (2장 이상)\n", stderr)
+        plog("[FACE] 최종 그룹: \(groupID)개 (2장 이상)\n")
         return result
     }
 
@@ -607,32 +607,36 @@ struct FaceGroupingService {
         let imgH = CGFloat(cgImage.height)
         var results: [(featurePrint: VNFeaturePrintObservation, relativeSize: CGFloat)] = []
 
+        // v9.1.4 (M-C): autoreleasepool 추가 — 16,000장 분석 시 VNImageRequestHandler 내부
+        //   CGImage 가 autorelease pool drain 전까지 누적되어 수백 MB 임시 메모리 폭발하던 문제 해결.
         for face in sortedFaces {
-            let box = face.boundingBox
-            let relativeSize = box.width * box.height
-            guard relativeSize > 0.02, relativeSize < 0.8 else { continue }
+            autoreleasepool {
+                let box = face.boundingBox
+                let relativeSize = box.width * box.height
+                guard relativeSize > 0.02, relativeSize < 0.8 else { return }
 
-            let faceRect = CGRect(
-                x: box.origin.x * imgW,
-                y: (1 - box.origin.y - box.height) * imgH,
-                width: box.width * imgW,
-                height: box.height * imgH
-            ).integral
+                let faceRect = CGRect(
+                    x: box.origin.x * imgW,
+                    y: (1 - box.origin.y - box.height) * imgH,
+                    width: box.width * imgW,
+                    height: box.height * imgH
+                ).integral
 
-            let expanded = faceRect.insetBy(dx: -faceRect.width * 0.15, dy: -faceRect.height * 0.15)
-            let clipped = expanded.intersection(CGRect(x: 0, y: 0, width: imgW, height: imgH))
+                let expanded = faceRect.insetBy(dx: -faceRect.width * 0.15, dy: -faceRect.height * 0.15)
+                let clipped = expanded.intersection(CGRect(x: 0, y: 0, width: imgW, height: imgH))
 
-            guard clipped.width > 15, clipped.height > 15,
-                  let faceCrop = cgImage.cropping(to: clipped) else { continue }
+                guard clipped.width > 15, clipped.height > 15,
+                      let faceCrop = cgImage.cropping(to: clipped) else { return }
 
-            let fpRequest = VNGenerateImageFeaturePrintRequest()
-            let fpHandler = VNImageRequestHandler(cgImage: faceCrop, options: [:])
-            do {
-                try fpHandler.perform([fpRequest])
-                if let fp = fpRequest.results?.first {
-                    results.append((featurePrint: fp, relativeSize: relativeSize))
-                }
-            } catch { continue }
+                let fpRequest = VNGenerateImageFeaturePrintRequest()
+                let fpHandler = VNImageRequestHandler(cgImage: faceCrop, options: [:])
+                do {
+                    try fpHandler.perform([fpRequest])
+                    if let fp = fpRequest.results?.first {
+                        results.append((featurePrint: fp, relativeSize: relativeSize))
+                    }
+                } catch { return }
+            }
         }
 
         return results

@@ -266,7 +266,7 @@ struct RAWConversionService {
             let ciImage: CIImage? = autoreleasepool {
                 if let cgImage = extractDeepEmbeddedJPEG(url: inputURL) {
                     let pxMax = max(cgImage.width, cgImage.height)
-                    fputs("[CONVERT] deep embedded selected \(cgImage.width)x\(cgImage.height) (max=\(pxMax)) — \(inputURL.lastPathComponent)\n", stderr)
+                    plog("[CONVERT] deep embedded selected \(cgImage.width)x\(cgImage.height) (max=\(pxMax)) — \(inputURL.lastPathComponent)\n")
                     var img = CIImage(cgImage: cgImage)
                     // v9.0.2: 부모 RAW orientation 적용 — 임베디드 JPEG 는 회전 전 sensor 방향으로 박혀있는 경우 多.
                     //   세로 사진 (orient 5-8) 은 추출하면 가로로 나오므로 명시적 회전 필요.
@@ -274,7 +274,7 @@ struct RAWConversionService {
                     return img
                 }
                 // 폴백: 임베디드 추출 실패 시에만 CIRAWFilter.
-                fputs("[CONVERT] embedded extraction FAILED → CIRAW fallback — \(inputURL.lastPathComponent)\n", stderr)
+                plog("[CONVERT] embedded extraction FAILED → CIRAW fallback — \(inputURL.lastPathComponent)\n")
                 if #available(macOS 12.0, *), let rawFilter = CIRAWFilter(imageURL: inputURL) {
                     rawFilter.boostAmount = 0
                     rawFilter.isGamutMappingEnabled = true
@@ -305,7 +305,7 @@ struct RAWConversionService {
                     // 업샘플 (1.02× 이상 차이날 때만) — Lanczos 한 번.
                     let scale = maxPx / origMax
                     output = lanczosScale(output, scale: scale)
-                    fputs("[RESIZE] \(Int(origMax))→\(Int(maxPx))px (Lanczos UPSAMPLE \(String(format: "%.2f", scale))×)\n", stderr)
+                    plog("[RESIZE] \(Int(origMax))→\(Int(maxPx))px (Lanczos UPSAMPLE \(String(format: "%.2f", scale))×)\n")
                 }
             }
 
@@ -593,7 +593,7 @@ struct RAWConversionService {
             default: return .up
             }
         }()
-        fputs("[CONVERT] orientation correction \(mainOrient) → \(cgOrient.rawValue) for \(url.lastPathComponent)\n", stderr)
+        plog("[CONVERT] orientation correction \(mainOrient) → \(cgOrient.rawValue) for \(url.lastPathComponent)\n")
         return ci.oriented(cgOrient)
     }
 
@@ -646,7 +646,7 @@ struct RAWConversionService {
 
         // v9.0.2: 다단계 리사이즈 검증용 로그 — stderr 1줄.
         let stepCount = steps.count - 1
-        fputs("[RESIZE] \(steps.joined(separator: "→"))px (\(stepCount)-step Lanczos)\n", stderr)
+        plog("[RESIZE] \(steps.joined(separator: "→"))px (\(stepCount)-step Lanczos)\n")
 
         return current.cropped(to: CGRect(x: 0, y: 0, width: finalW, height: finalH))
     }

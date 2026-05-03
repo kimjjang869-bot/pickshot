@@ -54,7 +54,7 @@ final class SemanticSearchService {
 
     private func runIndexing(folderURL: URL, urls: [URL], onProgress: ((Int, Int) -> Void)?) {
         guard ImageEmbeddingService.shared.isAvailable else {
-            fputs("[SEMANTIC] MobileCLIP 모델 없음 — 인덱싱 스킵\n", stderr)
+            plog("[SEMANTIC] MobileCLIP 모델 없음 — 인덱싱 스킵\n")
             return
         }
 
@@ -106,14 +106,14 @@ final class SemanticSearchService {
                 }
 
                 if indexDone % 50 == 0 {
-                    fputs("[SEMANTIC] indexing \(indexDone)/\(indexTotal) (new=\(newCount), skip=\(skipCount))\n", stderr)
+                    plog("[SEMANTIC] indexing \(indexDone)/\(indexTotal) (new=\(newCount), skip=\(skipCount))\n")
                 }
             }
         }
 
         isIndexing = false
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-        fputs("[SEMANTIC] ✅ done \(indexDone)/\(indexTotal) — new=\(newCount), skip=\(skipCount) in \(String(format: "%.1f", elapsed))s\n", stderr)
+        plog("[SEMANTIC] ✅ done \(indexDone)/\(indexTotal) — new=\(newCount), skip=\(skipCount) in \(String(format: "%.1f", elapsed))s\n")
     }
 
     // MARK: - Search
@@ -133,7 +133,7 @@ final class SemanticSearchService {
                 _ = EmbeddingIndex.shared.upsert(url: queryURL, mtime: date.timeIntervalSince1970, embedding: fresh)
             }
         } else {
-            fputs("[SEMANTIC] 쿼리 임베딩 실패: \(queryURL.lastPathComponent)\n", stderr)
+            plog("[SEMANTIC] 쿼리 임베딩 실패: \(queryURL.lastPathComponent)\n")
             return []
         }
 
@@ -158,18 +158,18 @@ final class SemanticSearchService {
     /// - Returns: (url, score) 배열.
     func searchByText(_ text: String, k: Int = 100, minScore: Float = 0.18) -> [(url: URL, score: Float)] {
         guard TextEncoderService.shared.isAvailable else {
-            fputs("[SEMANTIC] TextEncoder 사용 불가 (모델/토크나이저 누락)\n", stderr)
+            plog("[SEMANTIC] TextEncoder 사용 불가 (모델/토크나이저 누락)\n")
             return []
         }
         guard let queryEmb = TextEncoderService.shared.embed(text: text) else {
-            fputs("[SEMANTIC] text embedding 실패: '\(text)'\n", stderr)
+            plog("[SEMANTIC] text embedding 실패: '\(text)'\n")
             return []
         }
         let results = EmbeddingIndex.shared.topK(queryEmbedding: queryEmb, k: k)
         // v8.9: 실제 top 점수 분포 로깅 (minScore 튜닝 참고용)
         let top = results.prefix(5).map { "\(String(format: "%.3f", $0.score))" }.joined(separator: ",")
         let filtered = results.filter { $0.score >= minScore }
-        fputs("[SEMANTIC-TXT] '\(text)' top5=[\(top)] → \(filtered.count)/\(results.count) matched (minScore=\(minScore))\n", stderr)
+        plog("[SEMANTIC-TXT] '\(text)' top5=[\(top)] → \(filtered.count)/\(results.count) matched (minScore=\(minScore))\n")
         return filtered
     }
 
