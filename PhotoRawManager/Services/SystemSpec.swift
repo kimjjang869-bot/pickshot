@@ -164,8 +164,8 @@ final class SystemSpec {
         switch effectiveTier {
         case .low:      return 1
         case .standard: return 2
-        case .high:     return 3
-        case .extreme:  return 4
+        case .high:     return 2
+        case .extreme:  return 2  // v9.1.4 (M-B): 4→2 (피크 1,120MB → 560MB 절감, 280MB×2)
         }
     }
 
@@ -174,8 +174,8 @@ final class SystemSpec {
         switch effectiveTier {
         case .low:      return 128
         case .standard: return 256
-        case .high:     return 420
-        case .extreme:  return 640
+        case .high:     return 320
+        case .extreme:  return 560  // v9.1.4 (M-B): 640→560 (count 2장 × 280MB)
         }
     }
 

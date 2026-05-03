@@ -1,6 +1,38 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - v9.1.3 통합 로그 (Release 빌드에서 컴파일 단계 제거 → 성능 영향 0)
+@inlinable
+public func plog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    if Log.enabled { Log.write(message()) }
+    #endif
+}
+
+public enum Log {
+    public static var enabled: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "pickshotLogsEnabled") == nil {
+            return true  // Debug 기본 ON
+        }
+        return UserDefaults.standard.bool(forKey: "pickshotLogsEnabled")
+        #else
+        return false
+        #endif
+    }()
+
+    public static func setEnabled(_ on: Bool) {
+        enabled = on
+        UserDefaults.standard.set(on, forKey: "pickshotLogsEnabled")
+    }
+
+    @usableFromInline
+    static func write(_ msg: String) {
+        let line = msg.hasSuffix("\n") ? msg : msg + "\n"
+        line.withCString { _ = fwrite($0, 1, strlen($0), stderr) }
+    }
+}
+
 @main
 struct PhotoRawManagerApp: App {
     #if DEBUG
@@ -15,7 +47,7 @@ struct PhotoRawManagerApp: App {
             let gapMs = (now - stallLastFire) * 1000
             stallLastFire = now
             if gapMs > 30 {
-                fputs("[STALL] main runloop blocked \(String(format: "%.0f", gapMs))ms\n", stderr)
+                plog("[STALL] main runloop blocked \(String(format: "%.0f", gapMs))ms\n")
             }
         }
         t.resume()
@@ -37,7 +69,7 @@ struct PhotoRawManagerApp: App {
                 if let existing = runningApps.first(where: { $0 != .current }) {
                     existing.activate()
                 }
-                fputs("[APP] 중복 실행 감지 → 즉시 종료\n", stderr)
+                plog("[APP] 중복 실행 감지 → 즉시 종료\n")
                 exit(0)
             }
         }
@@ -82,13 +114,15 @@ struct PhotoRawManagerApp: App {
                     // SwiftUI 가 view 활성 후 main 액터에서 호출 → @MainActor 싱글톤 안전.
                     _ = SystemSpec.shared
                     AppLogger.log(.general, SystemSpec.shared.debugSummary)
+                    // v9.1.4: 30일 이상된 로그 자동 정리 (보안 감사 M-3) — 디스크 누적 + 잔존 민감정보 차단
+                    AppLogger.purgeOldLogs()
 
                     let thumbCacheVersionKey = "thumbCacheVersion"
                     let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"
                     if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
                         DiskThumbnailCache.shared.clearAll()
                         UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)
-                        fputs("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n", stderr)
+                        plog("[CACHE] 썸네일 디스크 캐시 invalidate (orientation 보정 적용)\n")
                     }
 
                     SubscriptionManager.shared.checkTrialStatus()
@@ -143,6 +177,18 @@ struct PhotoRawManagerApp: App {
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(store.photos.isEmpty)
 
+                    // v9.1.4: AI 자동 거부 표시 (Aftershoot 식 batch reject)
+                    //   AI 품질 분석된 사진 중 hasQualityIssues 인 것 → 컬러라벨 빨강 자동 적용.
+                    //   다른 색 라벨 있는 사진은 보존 (사용자 의도 존중).
+                    Button("AI 거부 표시 (품질 문제 사진 → 빨강)") {
+                        let count = store.applyAIRejectMarks()
+                        let alert = NSAlert()
+                        alert.messageText = "AI 거부 표시 완료"
+                        alert.informativeText = "\(count)장에 빨강 컬러라벨 적용 — 흔들림/노출/포커스 문제 발견된 사진."
+                        alert.runModal()
+                    }
+                    .disabled(store.photos.isEmpty)
+
                     Divider()
                 }
 
@@ -153,6 +199,18 @@ struct PhotoRawManagerApp: App {
                     }
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(store.photos.isEmpty)
+
+                // v9.1.4: Lightroom XMP 호환 일괄 export
+                //   JPG 는 EXIF/XMP 임베딩, RAW 는 .xmp 사이드카 생성.
+                //   Lightroom Classic "메타데이터 → 파일에서 읽기" 로 자동 인식.
+                Button("Lightroom XMP 일괄 내보내기") {
+                    let result = XMPService.exportLightroomCompatible(photos: store.photos)
+                    let alert = NSAlert()
+                    alert.messageText = "Lightroom XMP 내보내기 완료"
+                    alert.informativeText = "총 \(result.total)장 처리 — JPG 임베딩 \(result.jpg)장, .xmp 사이드카 \(result.xmp)장.\n\nLightroom Classic 에서: 메타데이터 → 파일에서 읽기"
+                    alert.runModal()
+                }
                 .disabled(store.photos.isEmpty)
 
                 Button("셀렉 가져오기...") {
@@ -169,6 +227,7 @@ struct PhotoRawManagerApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(store)
         }
     }
 }

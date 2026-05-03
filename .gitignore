@@ -42,3 +42,4 @@ TESTER_KEYS.md
 PhotoRawManager/Models/MobileCLIPImage.mlpackage/
 PhotoRawManager/Models/MobileCLIPText.mlpackage/
 
+.bfg-secrets.txt

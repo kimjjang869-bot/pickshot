@@ -109,28 +109,31 @@ struct StartupView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Tethering
-                    Button(action: { store.startupMode = .tethering }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "cable.connector")
-                                .font(.system(size: 20))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("테더링")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("카메라 연결 · 실시간 촬영")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white.opacity(0.7))
+                    // Tethering — v9.1.4: comingSoon 동안 startup 화면에서 숨김.
+                    //   Pro 출시 시 FeatureGate.tethering.releaseStatus 가 .released 로 바뀌면 자동 노출.
+                    if !FeatureGate.isComingSoon(.tethering) {
+                        Button(action: { store.startupMode = .tethering }) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "cable.connector")
+                                    .font(.system(size: 20))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("테더링")
+                                        .font(.system(size: 14, weight: .bold))
+                                    Text("카메라 연결 · 실시간 촬영")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.white.opacity(0.7))
+                                }
                             }
+                            .foregroundColor(.white)
+                            .frame(width: 182, height: 56)
+                            .background(
+                                LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .shadow(color: .orange.opacity(0.25), radius: 6, y: 3)
                         }
-                        .foregroundColor(.white)
-                        .frame(width: 182, height: 56)
-                        .background(
-                            LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: .orange.opacity(0.25), radius: 6, y: 3)
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
 
                 Spacer()

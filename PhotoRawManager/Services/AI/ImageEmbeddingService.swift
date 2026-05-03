@@ -63,7 +63,7 @@ final class ImageEmbeddingService {
             inputSize = Int(constraint.pixelsWide)
         }
         _model = model
-        fputs("[CLIP-IMG] loaded input=\(inputSize)x\(inputSize) output=\(embeddingDim)-dim\n", stderr)
+        plog("[CLIP-IMG] loaded input=\(inputSize)x\(inputSize) output=\(embeddingDim)-dim\n")
         return model
     }
 

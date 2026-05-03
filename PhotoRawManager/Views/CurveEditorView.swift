@@ -13,6 +13,7 @@ struct CurveEditorView: View {
 
     @ObservedObject var store: DevelopStore = .shared
     @State private var histogramData: HistogramData? = nil
+    private let accent = Color(red: 1.0, green: 0.76, blue: 0.03)
 
     // 드래그 중인 포인트 인덱스
     @State private var dragPointIndex: Int? = nil
@@ -28,14 +29,19 @@ struct CurveEditorView: View {
 
                 Spacer()
 
-                Text("자동")
-                    .font(.system(size: 10, weight: .bold))
-                    .padding(.horizontal, 10).padding(.vertical, 3)
-                    .background(Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03).opacity(0.85)))
+                Button(action: { onAutoApply?() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("자동")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(accent.opacity(0.9)))
                     .foregroundColor(.black)
-                    .contentShape(Capsule())
-                    .onTapGesture { onAutoApply?() }
-                    .help("이미지 분석 후 자동 커브 적용")
+                }
+                .buttonStyle(.plain)
+                .help("이미지 분석 후 자동 커브 적용")
 
                 Button(action: resetAll) {
                     Image(systemName: "arrow.uturn.backward")
@@ -198,7 +204,8 @@ struct CurveEditorView: View {
         }
 
         // 2) 4영역 톤 (anchor 5개 보간)
-        let scale: Double = 0.0012
+        // DevelopPipeline.applyRegionTones 와 동일한 Lightroom-style 완화 매핑.
+        let scale: Double = 0.0008
         let sh = settings.toneShadows * scale
         let dk = settings.toneDarks * scale
         let lt = settings.toneLights * scale
@@ -277,7 +284,8 @@ struct CurveEditorView: View {
                 defaultValue: 0,
                 step: 1,
                 bigStep: 10,
-                format: { _ in "" }
+                format: { _ in "" },
+                sizeVariant: .large
             )
             .frame(maxWidth: .infinity)
             .frame(height: 20)

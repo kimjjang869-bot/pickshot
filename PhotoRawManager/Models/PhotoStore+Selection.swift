@@ -10,6 +10,30 @@ extension PhotoStore {
         }
     }
 
+    // MARK: - v9.1.4: AI 자동 거부 표시 (Aftershoot 식 batch reject)
+    /// AI 품질 분석 결과 hasQualityIssues 인 사진을 일괄 거부 표시.
+    /// 표시 방법: 컬러라벨 .red (사용자가 한눈에 식별 가능, 별점/SP 와 분리).
+    /// - Parameters:
+    ///   - includeAlreadyMarked: true 면 다른 색 라벨이 있어도 빨강 덮어씀
+    /// - Returns: 표시된 사진 수
+    @discardableResult
+    func applyAIRejectMarks(includeAlreadyMarked: Bool = false) -> Int {
+        var marked = 0
+        for i in photos.indices {
+            let p = photos[i]
+            guard p.hasQualityIssues else { continue }
+            // 이미 다른 색 있으면 보존 (사용자 의도 존중) — includeAlreadyMarked 시만 덮어씀
+            if !includeAlreadyMarked && p.colorLabel != .none && p.colorLabel != .red {
+                continue
+            }
+            if photos[i].colorLabel != .red {
+                photos[i].colorLabel = .red
+                marked += 1
+            }
+        }
+        return marked
+    }
+
     /// 미리보기용: 최대 N장만 반환 (대량 선택 시 성능 보호)
     func multiSelectedPhotosLimited(_ limit: Int) -> [PhotoItem] {
         var result: [PhotoItem] = []
@@ -50,10 +74,10 @@ extension PhotoStore {
             let photo = photos[idx]
             // 무결성 검증: id 불일치 감지
             if photo.id != id {
-                fputs("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n", stderr)
+                plog("[SELECT] WARN: _photoIndex 스테일! 클릭 id=\(id.uuidString.prefix(8)) → photos[\(idx)].id=\(photo.id.uuidString.prefix(8)) (\(photo.fileName))\n")
             }
         } else {
-            fputs("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n", stderr)
+            plog("[SELECT] WARN: 클릭된 id=\(id.uuidString.prefix(8))가 _photoIndex에 없음\n")
         }
         if shiftKey {
             // Shift+Click: range selection from anchor
@@ -141,8 +165,8 @@ extension PhotoStore {
         executeMoveSelection(by: offset, shiftKey: shiftKey, cmdKey: cmdKey)
         let t3 = CFAbsoluteTimeGetCurrent()
         let totalMs = (t3 - t0) * 1000
-        if totalMs > 5 {
-            fputs("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n", stderr)
+        if UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") && totalMs > 5 {
+            plog("[MOVE] total=\(String(format: "%.0f", totalMs))ms burst=\(String(format: "%.0f", (t1-t0)*1000))ms throttle=\(String(format: "%.0f", (t2-t1)*1000))ms exec=\(String(format: "%.0f", (t3-t2)*1000))ms\n")
         }
     }
 
@@ -155,10 +179,13 @@ extension PhotoStore {
 
         if rapidTap || isKeyRepeat {
             isNavigationBurst = true
+            // v9.0.2: 글로벌 navigation-busy 플래그 ON — InitialPreviewGenerator 등이 디스크 양보.
+            PhotoStore.navigationBusy = true
             Self.navigationBurstWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.isNavigationBurst = false
+                PhotoStore.navigationBusy = false
                 if let id = self.selectedPhotoID {
                     self.scheduleSelectionIdleWork(for: id, delay: 0.05)
                 }
@@ -228,9 +255,11 @@ extension PhotoStore {
         }
 
         #if DEBUG
-        let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
-        let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
-        fputs("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n", stderr)
+        if measuring || UserDefaults.standard.bool(forKey: "pickshotVerboseNavigationLog") {
+            let fromName = selectedPhotoID.flatMap { _filteredIndex[$0] }.flatMap { list.indices.contains($0) ? list[$0].fileName : nil } ?? "nil"
+            let toName = list.indices.contains(result.targetIndex) ? list[result.targetIndex].fileName : "nil"
+            plog("[SELECT-MOVE] \(fromName) -> \(toName) offset=\(offset) target=\(result.targetIndex) cols=\(actualColumnsPerRow) repeat=\(isKeyRepeat) burst=\(isNavigationBurst)\n")
+        }
         #endif
         selectedPhotoID = result.focusedID
         // v8.9.7+: 진짜 병목은 TouchBarProvider 의 매-nav RAW 디코드였음. scrollTrigger 증가는

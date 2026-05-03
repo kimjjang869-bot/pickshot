@@ -195,7 +195,10 @@ struct AboutView: View {
         let service = NSSharingService(named: .composeEmail)
         service?.recipients = ["potokan@pickshot.app"]
         service?.subject = "PickShot 로그 (\(AppLogger.deviceName) v\(AppLogger.appVersion))"
-        let body = "PickShot 성능 로그입니다.\n\n장치: \(AppLogger.deviceName)\nIP: \(AppLogger.localIP)\n버전: \(AppLogger.appVersion)"
+        // v9.1.4 보안 (H-2): 평문 IP/장치명 → 해시 ID 만 (PII 누설 방지).
+        //   해시는 식별성 유지 — 같은 사용자의 로그 묶음 구분 가능.
+        let deviceID = AppLogger.deviceIdentifierHash(deviceName: AppLogger.deviceName)
+        let body = "PickShot 성능 로그입니다.\n\n장치 ID: \(deviceID)\n버전: \(AppLogger.appVersion)"
         service?.perform(withItems: [body, tempURL])
 
         logSendResult = "이메일 앱이 열렸습니다"

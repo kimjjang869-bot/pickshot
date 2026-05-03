@@ -493,7 +493,7 @@ struct CollectedShotCell: View {
             let fallback = ns ?? PreviewImageCache.loadOptimized(url: shot.url, maxPixel: 240)
             DispatchQueue.main.async {
                 fullImage = fallback
-                fputs("[VS] CollectedShotCell loaded \(shot.url.lastPathComponent): \(fallback != nil ? "OK" : "FAIL")\n", stderr)
+                plog("[VS] CollectedShotCell loaded \(shot.url.lastPathComponent): \(fallback != nil ? "OK" : "FAIL")\n")
             }
         }
     }

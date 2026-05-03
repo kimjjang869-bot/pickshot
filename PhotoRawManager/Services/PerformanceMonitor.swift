@@ -36,6 +36,11 @@ class PerformanceMonitor {
     // MARK: - Start/Stop
 
     func start() {
+        // v9.1.4 (W-1): Release 빌드에서 3초마다 디스크 write 부담 제거.
+        //   Debug 빌드 또는 사용자 명시 토글 (UserDefaults pickshotPerformanceMonitorEnabled) 시만 작동.
+        #if !DEBUG
+        guard UserDefaults.standard.bool(forKey: "pickshotPerformanceMonitorEnabled") else { return }
+        #endif
         startTime = Date()
         setupLogFile()
         writeLog("=== PickShot Performance Monitor Started ===")

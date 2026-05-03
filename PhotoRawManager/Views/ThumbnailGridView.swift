@@ -266,7 +266,7 @@ struct ThumbnailGridView: View {
             // v8.6.3: 러버밴드 (marquee) 선택 — 빈 영역에서 드래그 시작하면 사각형 그리고 교차 셀 선택
             MarqueeSelectionBackground(
                 coordinateSpaceName: "pickshotGrid",
-                allPhotoIDs: photos.filter { !$0.isFolder && !$0.isParentFolder }.map(\.id),
+                allPhotoIDs: store.nonFolderPhotoIDs,
                 store: store
             )
         )
@@ -609,7 +609,7 @@ struct NativeListView: View {
                     //   onChanged 가 여러 번 호출되므로 한 번만 drag session 개시.
                     guard !Self.listDragInProgress else { return }
                     Self.listDragInProgress = true
-                    fputs("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n", stderr)
+                    plog("[ListDrag] gesture → initiate (photo=\(photo.id.uuidString.prefix(8)))\n")
                     initiateListDrag(anchor: photo)
                 }
                 .onEnded { _ in
@@ -630,7 +630,7 @@ struct NativeListView: View {
     /// 드래그 시작 — 선택된 모든 파일로 NSDraggingSession 개시
     private func initiateListDrag(anchor: PhotoItem) {
         guard let event = NSApp.currentEvent else {
-            fputs("[ListDrag] ❌ no current event\n", stderr)
+            plog("[ListDrag] ❌ no current event\n")
             return
         }
         // 선택에 anchor 포함 안 되면 단독 드래그
@@ -693,11 +693,11 @@ struct NativeListView: View {
         }
 
         guard let contentView = event.window?.contentView else {
-            fputs("[ListDrag] ❌ no contentView\n", stderr)
+            plog("[ListDrag] ❌ no contentView\n")
             return
         }
         _ = contentView.beginDraggingSession(with: items, event: event, source: ListViewDragSource.shared)
-        fputs("[ListDrag] ✅ session started with \(urls.count) items\n", stderr)
+        plog("[ListDrag] ✅ session started with \(urls.count) items\n")
     }
 
     /// 리스트뷰 우클릭 컨텍스트 메뉴 — 썸네일뷰 PhotoContextMenu 재사용.
@@ -930,6 +930,8 @@ struct LazyThumbnailWrapper: View, Equatable {
     let isFocused: Bool
     let onTap: () -> Void
     @EnvironmentObject var store: PhotoStore
+    // v9.1.4: 폴더 cell 위로 다른 파일 드래그 호버 시 highlight 표시.
+    @State private var isDropHovering: Bool = false
 
     // v8.6.2: 선택 상태/사진ID/크기만 비교. store 변경 (예: thumbCacheCount) 에는 re-render 안 함.
     static func == (l: LazyThumbnailWrapper, r: LazyThumbnailWrapper) -> Bool {
@@ -987,11 +989,16 @@ struct LazyThumbnailWrapper: View, Equatable {
                 }
             }
             .help("클릭: 선택 / 더블클릭: 이동 / Enter: 이동")
-            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+            .onDrop(of: [UTType.fileURL], isTargeted: $isDropHovering) { providers in
                 // 상위 폴더로 드래그 이동
                 handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
                 return true
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isDropHovering ? Color.accentColor : Color.clear, lineWidth: 3)
+                    .animation(.easeOut(duration: 0.12), value: isDropHovering)
+            )
         } else if photo.isFolder {
             // Subfolder item — 미리보기 사진 4장 or 폴더 아이콘
             VStack(spacing: 4) {
@@ -1030,11 +1037,16 @@ struct LazyThumbnailWrapper: View, Equatable {
                 provider.suggestedName = photo.jpgURL.lastPathComponent
                 return provider
             }
-            // 다른 폴더/파일을 이 폴더 안으로 드롭 받기
-            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+            // 다른 폴더/파일을 이 폴더 안으로 드롭 받기 — v9.1.4: isTargeted 호버 표시.
+            .onDrop(of: [UTType.fileURL], isTargeted: $isDropHovering) { providers in
                 handleDropOnFolder(providers: providers, folderURL: photo.jpgURL)
                 return true
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isDropHovering ? Color.accentColor : Color.clear, lineWidth: 3)
+                    .animation(.easeOut(duration: 0.12), value: isDropHovering)
+            )
             .onTapGesture {
                 if NSApp.currentEvent?.clickCount == 2 {
                     store.loadFolder(photo.jpgURL)
@@ -1394,7 +1406,63 @@ struct PhotoContextMenu: View {
         copyFilesToFolder(url)
     }
 
+    // v9.1.4: 새 폴더로 이동 — 입력 → 중복 체크 → 사용자 선택 → 실행. 새 이름 선택 시 다시 입력.
+    private func promptMoveToNewFolder(suggested: String?) {
+        guard let parent = store.folderURL else { return }
+        let alert = NSAlert()
+        alert.messageText = "새 폴더로 이동"
+        alert.informativeText = "폴더 이름을 입력하세요"
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        if let s = suggested { tf.stringValue = s } else { tf.placeholderString = "새 폴더" }
+        alert.accessoryView = tf
+        alert.addButton(withTitle: "이동")
+        alert.addButton(withTitle: "취소")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let newDir = parent.appendingPathComponent(name)
+
+        if FileManager.default.fileExists(atPath: newDir.path) {
+            let dup = NSAlert()
+            dup.messageText = "같은 이름의 폴더가 이미 있습니다"
+            dup.informativeText = "\"\(name)\" 폴더가 이미 존재합니다. 어떻게 할까요?"
+            dup.addButton(withTitle: "기존 폴더에 추가")
+            dup.addButton(withTitle: "이름 다시 정하기")
+            dup.addButton(withTitle: "취소")
+            switch dup.runModal() {
+            case .alertFirstButtonReturn:
+                break
+            case .alertSecondButtonReturn:
+                let fm = FileManager.default
+                var suggestion = name + " 2"
+                for i in 2...999 {
+                    let cand = "\(name) \(i)"
+                    if !fm.fileExists(atPath: parent.appendingPathComponent(cand).path) {
+                        suggestion = cand
+                        break
+                    }
+                }
+                promptMoveToNewFolder(suggested: suggestion)
+                return
+            default:
+                return
+            }
+        } else {
+            try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+        }
+
+        let urls = collectFileURLs()
+        store.movePhotosToFolder(fileURLs: urls, destination: newDir)
+    }
+
     var body: some View {
+        // v9.1.4: 새 폴더로 이동 — 메뉴 최상단 (사용자 요청).
+        //   같은 이름 폴더 존재 시 "기존 폴더에 추가 / 이름 다시 정하기 / 취소" 선택.
+        Button(action: { promptMoveToNewFolder(suggested: nil) }) {
+            Label("새 폴더로 이동", systemImage: "folder.fill.badge.plus")
+        }
+        Divider()
+
         // v8.9: CLIP 기반 유사 이미지 검색 (MobileCLIP-BLT)
         if ImageEmbeddingService.shared.isAvailable {
             Button(action: {
@@ -1416,30 +1484,6 @@ struct PhotoContextMenu: View {
             Label("붙여넣기  ⌘V", systemImage: "doc.on.clipboard")
         }
         .disabled(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
-
-        Divider()
-
-        // 새 폴더로 이동 (최상단)
-        Button(action: {
-            let alert = NSAlert()
-            alert.messageText = "새 폴더로 이동"
-            alert.informativeText = "폴더 이름을 입력하세요"
-            let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            tf.placeholderString = "새 폴더"
-            alert.accessoryView = tf
-            alert.addButton(withTitle: "이동")
-            alert.addButton(withTitle: "취소")
-            if alert.runModal() == .alertFirstButtonReturn {
-                let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty, let folderURL = store.folderURL else { return }
-                let newDir = folderURL.appendingPathComponent(name)
-                try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
-                let urls = collectFileURLs()
-                store.movePhotosToFolder(fileURLs: urls, destination: newDir)
-            }
-        }) {
-            Label("새 폴더로 이동", systemImage: "folder.fill.badge.plus")
-        }
 
         Divider()
 
@@ -1491,23 +1535,7 @@ struct PhotoContextMenu: View {
             Label(photo.isGSelected ? "G셀렉 해제" : "G셀렉", systemImage: "cloud")
         }
 
-        // Color label submenu
-        Menu {
-            ForEach(ColorLabel.allCases, id: \.self) { label in
-                Button(action: {
-                    for id in targetIDs {
-                        if let idx = store._photoIndex[id] { store.photos[idx].colorLabel = label }
-                    }
-                }) {
-                    HStack {
-                        Circle().fill(label.color ?? .gray).frame(width: 10, height: 10)
-                        Text(label == .none ? "라벨 없음" : label.rawValue)
-                    }
-                }
-            }
-        } label: {
-            Label("컬러 라벨", systemImage: "tag.fill")
-        }
+        // v9.0.2: 중복 "컬러 라벨" 메뉴 제거 — 위 1466~ 의 setColorLabel 버전만 유지.
 
         Divider()
 
@@ -1518,12 +1546,19 @@ struct PhotoContextMenu: View {
             Label("내보내기 (\(targetCount)장)", systemImage: "square.and.arrow.up")
         }
 
-        // RAW → JPG conversion (opens export sheet in RAW→JPG tab)
+        // RAW → JPG conversion (opens export sheet in RAW→JPG tab) — Pro 전용
         Button(action: {
-            store.exportOpenAsRawConvert = true
-            store.showExportSheet = true
+            if FeatureGate.allows(.rawToJpgConvert) {
+                store.exportOpenAsRawConvert = true
+                store.showExportSheet = true
+            } else {
+                store.proLockedFeature = .rawToJpgConvert
+            }
         }) {
-            Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
+            HStack {
+                Label("RAW → JPG 변환 (\(targetCount)장)", systemImage: "arrow.triangle.2.circlepath")
+                if !FeatureGate.allows(.rawToJpgConvert) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+            }
         }
 
         Divider()
@@ -1552,13 +1587,7 @@ struct PhotoContextMenu: View {
             Label("회전 (\(targetCount)장)", systemImage: "rotate.right")
         }
 
-        // v8.6.3: Adobe Camera Raw (Photoshop) 로 열기
-        Button(action: {
-            openInCameraRaw(ids: targetIDs, store: store)
-        }) {
-            Label("Camera Raw 에서 열기 (\(targetCount)장)", systemImage: "camera.metering.matrix")
-        }
-        .disabled(!hasAnyRAW(ids: targetIDs, store: store))
+        // v9.0.2: "Camera Raw 에서 열기" 메뉴 제거 (요청).
 
         // v8.7: 참조 기반 시각 검색 — "이 얼굴/사물이 있는 사진 찾기" (Debug 전용)
         #if DEBUG
@@ -1824,9 +1853,9 @@ func openInCameraRaw(ids: Set<UUID>, store: PhotoStore) {
             photoshop = candidates.sorted { $0.lastPathComponent > $1.lastPathComponent }.first
         }
         if let ps = photoshop {
-            fputs("[RAW] Camera Raw 대상 앱: \(ps.path)\n", stderr)
+            plog("[RAW] Camera Raw 대상 앱: \(ps.path)\n")
         } else {
-            fputs("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n", stderr)
+            plog("[RAW] Photoshop 을 찾지 못함 → 기본 앱으로 fallback\n")
         }
 
         if let ps = photoshop {
@@ -2370,7 +2399,7 @@ class ThumbnailCache {
             if event.contains(.critical) {
                 let currentLimit = self.cache.countLimit
                 self.cache.countLimit = max(200, currentLimit / 4)
-                fputs("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(max(200, currentLimit/4)) (부분 해제)\n", stderr)
+                plog("⚠️ [CACHE] CRITICAL memory pressure — countLimit \(currentLimit)→\(max(200, currentLimit/4)) (부분 해제)\n")
                 // 5초 후 복원 (기존 1초 → OS가 안정될 시간 확보)
                 let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
@@ -2380,7 +2409,7 @@ class ThumbnailCache {
             } else {
                 let currentLimit = self.cache.countLimit
                 self.cache.countLimit = max(500, currentLimit / 2)
-                fputs("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(max(500, currentLimit/2))\n", stderr)
+                plog("⚠️ [CACHE] WARNING memory pressure — countLimit \(currentLimit)→\(max(500, currentLimit/2))\n")
                 // 8초 후 복원
                 let work = DispatchWorkItem { [weak self] in
                     self?.cache.countLimit = self?.baseCountLimit ?? currentLimit
@@ -2556,7 +2585,7 @@ class ThumbnailLoader {
     func dumpStats() {
         let pending = pendingCount
         let ops = queue.operationCount
-        fputs("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n", stderr)
+        plog("[VIEWPORT] pending=\(pending) ops=\(ops) dropped=\(Self.droppedCallbacks)\n")
     }
 
     /// 빠른 탐색 중 프리로딩 양보 (concurrency 낮추되 완전 중단은 안 함)
@@ -2645,13 +2674,26 @@ class ThumbnailLoader {
             return sdType
         }
 
-        // 2. SSD 힌트 (브랜드명)
+        // 2. HDD 힌트 (브랜드/제품명) — SSD 힌트보다 먼저 체크.
+        //    대용량 외장 HDD 를 SSD 로 오판하면 concurrency=2 (.low tier) 로 제한되어
+        //    HDD NCQ 큐(6-way) 활용 못 함 → 썸네일 생성 매우 느려짐.
+        let hddHints = [
+            "wd ", "western digital", "seagate", "toshiba", "hitachi",
+            "my passport", "elements", "expansion", "backup plus", "easystore",
+            "g-drive", "lacie", "hdd", "hard drive"
+        ]
+        if hddHints.contains(where: { volumeName.contains($0) }) {
+            plog("[STORAGE] External HDD detected via hint: \(volumeName)\n")
+            return .externalHDD
+        }
+
+        // 3. SSD 힌트 (브랜드명)
         let ssdHints = ["ssd", "extreme", "samsung t", "sandisk extreme", "nvme", "thunderbolt", "portable ssd"]
         if ssdHints.contains(where: { volumeName.contains($0) }) {
             return .externalSSD
         }
 
-        // 3. 용량 기반 추정: 64GB 이하만 SD카드/USB stick 확정
+        // 4. 용량 기반 추정: 64GB 이하만 SD카드/USB stick 확정
         let mountPoint = "/Volumes/" + (url.pathComponents.count >= 3 ? url.pathComponents[2] : "")
         if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: mountPoint),
            let totalSize = attrs[.systemSize] as? Int64 {
@@ -2661,8 +2703,9 @@ class ThumbnailLoader {
             }
         }
 
-        // 4. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
-        fputs("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n", stderr)
+        // 5. 대용량 외장 — 2024+ 기준 대부분 SSD. HDD 로 과도 추정하면 썸네일/미리보기 느려짐 → SSD 로 가정
+        //    (실제 HDD 라면 위 힌트에서 잡혔어야 함. 여기로 오는 건 불명의 외장 SSD 가능성 높음.)
+        plog("[STORAGE] 불명 대용량 외장 → externalSSD 로 가정: \(volumeName)\n")
         return .externalSSD
     }
 
@@ -2688,7 +2731,7 @@ class ThumbnailLoader {
             // 볼륨 이름으로 추가 SD카드 힌트 확인
             let volName = (resourceValues.volumeName ?? volumeName).lowercased()
             if sdHints.contains(where: { volName.contains($0) }) {
-                fputs("[STORAGE] SD Card detected via volumeName: \(volumeName)\n", stderr)
+                plog("[STORAGE] SD Card detected via volumeName: \(volumeName)\n")
                 return .sdCard
             }
 
@@ -2697,7 +2740,7 @@ class ThumbnailLoader {
             if let totalBytes = resourceValues.volumeTotalCapacity {
                 let gb = Double(totalBytes) / 1_000_000_000
                 if gb <= 64 {
-                    fputs("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n", stderr)
+                    plog("[STORAGE] Small volume (\(String(format: "%.0f", gb))GB) treated as SD: \(volumeName)\n")
                     return .sdCard
                 }
                 // 65GB~ → nil (외장 SSD 가능성 → caller 가 SSD 힌트 검사)
@@ -2748,7 +2791,9 @@ class ThumbnailLoader {
     func load(url: URL, completion: @escaping (NSImage) -> Void) {
         // 1. Memory cache hit → return directly
         if let cached = ThumbnailCache.shared.get(url) {
-            AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
+            if KeyCaptureView.verboseNavigationLog {
+                AppLogger.log(.cache, "thumbnail cache HIT: \(url.lastPathComponent)")
+            }
             completion(cached)
             return
         }
@@ -2810,7 +2855,9 @@ class ThumbnailLoader {
                 ? DiskThumbnailCache.shared.getByPath(url: url)
                 : DiskThumbnailCache.shared.get(url: url, modDate: modDate)
             if let diskCached = diskCached {
-                AppLogger.log(.cache, "disk cache HIT: \(url.lastPathComponent)")
+                if KeyCaptureView.verboseNavigationLog {
+                    AppLogger.log(.cache, "disk cache HIT: \(url.lastPathComponent)")
+                }
                 ThumbnailCache.shared.set(url, image: diskCached)
 
                 self?.lock.lock()
@@ -2846,7 +2893,7 @@ class ThumbnailLoader {
 
             let extractElapsed = (CFAbsoluteTimeGetCurrent() - thumbStart) * 1000
             if extractElapsed > 5 {
-                fputs("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n", stderr)
+                plog("[THUMB] \(url.lastPathComponent) \(Int(extractElapsed))ms\n")
             }
 
             // v8.6.2: 사용자 회전 override 적용
@@ -3009,12 +3056,12 @@ class ThumbnailLoader {
                         let lrOrient = lr.exifOrientation
                         if lrOrient != 1 {
                             resolvedOrientation = lrOrient
-                            fputs("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n", stderr)
+                            plog("[LibRaw] \(url.lastPathComponent) ImageIO=1 → LibRaw=\(lrOrient)\n")
                         }
                     }
                     #if DEBUG
                     if isRAW && ProcessInfo.processInfo.environment["PICKSHOT_THUMB_ORIENT_LOG"] == "1" {
-                        fputs("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n", stderr)
+                        plog("[ORIENT] \(url.lastPathComponent) idx=\(idx) finalOrient=\(resolvedOrientation) thumb=\(cg.width)x\(cg.height) mainW=\(mainW ?? -1) mainH=\(mainH ?? -1)\n")
                     }
                     #endif
 
@@ -3049,6 +3096,10 @@ class ThumbnailLoader {
         return nil  // 임베디드 없음 → 풀 디코딩으로 폴백
     }
 
+    /// v9.1.4 (T-3): CIContext 싱글톤화 — 매 호출마다 GPU pipeline 재생성 비용 제거.
+    ///   세로 사진 500장 폴더 ~500-1500ms 누적 → 0ms.
+    private static let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
+
     /// EXIF orientation 값을 NSImage에 적용 (CIImage 기반 — 모든 orientation 정확 처리)
     private static func applyOrientation(_ image: NSImage, orientation: Int) -> NSImage? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
@@ -3065,8 +3116,7 @@ class ThumbnailLoader {
         default: return nil
         }
         let ci = CIImage(cgImage: cgImage).oriented(ciOrientation)
-        let ctx = CIContext(options: [.useSoftwareRenderer: false])
-        guard let outCG = ctx.createCGImage(ci, from: ci.extent) else { return nil }
+        guard let outCG = sharedCIContext.createCGImage(ci, from: ci.extent) else { return nil }
         return NSImage(cgImage: outCG, size: NSSize(width: outCG.width, height: outCG.height))
     }
 
@@ -3315,6 +3365,30 @@ struct AsyncThumbnailView: View {
     ///   빠른 필름스트립 스크롤 시 20+ 셀 동시 로드 → 디스크 스파이크 현상 억제.
     static let thumbIOSemaphore = DispatchSemaphore(value: 4)
 
+    /// v9.1.2: 빠른 스크롤 감지 — 200ms 윈도우에 8셀 이상 onAppear → scroll 중.
+    ///   필름스트립 마우스휠 스크롤 시 디코드 SKIP 트리거.
+    private static var rapidAppearWindowStart: CFAbsoluteTime = 0
+    private static var rapidAppearCount: Int = 0
+    private static let rapidScrollLock = NSLock()
+
+    static func detectRapidScroll() -> Bool {
+        rapidScrollLock.lock(); defer { rapidScrollLock.unlock() }
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - rapidAppearWindowStart > 0.2 {
+            rapidAppearWindowStart = now
+            rapidAppearCount = 1
+            return false
+        }
+        rapidAppearCount += 1
+        return rapidAppearCount > 8
+    }
+
+    static func isRapidScrollActive() -> Bool {
+        rapidScrollLock.lock(); defer { rapidScrollLock.unlock() }
+        let now = CFAbsoluteTimeGetCurrent()
+        return (now - rapidAppearWindowStart < 0.2) && rapidAppearCount > 8
+    }
+
     var body: some View {
         Group {
             if let image = image {
@@ -3369,6 +3443,23 @@ struct AsyncThumbnailView: View {
         if let disk = DiskThumbnailCache.shared.getByPath(url: currentURL) {
             ThumbnailCache.shared.set(currentURL, image: disk)
             self.image = disk
+            return
+        }
+
+        // v9.1.2: 키 이동 burst OR 빠른 스크롤 (필름스트립 마우스휠) 중엔 디코드 SKIP.
+        //   - PhotoStore.navigationBusy: 키 이동 중
+        //   - Self.detectRapidScroll(): 200ms 내 8셀 이상 onAppear → scroll 중으로 판정
+        //   nav/scroll 끝나면 자동 재시도 (캐시 hit 가능성 높음).
+        //   v9.1.3 회귀: 풀스크린 burst 시 못따라가는 문제로 SKIP 로직 복원.
+        if PhotoStore.navigationBusy || Self.detectRapidScroll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                guard self.loadedURL == currentURL, self.image == nil else { return }
+                if !PhotoStore.navigationBusy && !Self.isRapidScrollActive() {
+                    self.loadThumbnail()
+                } else {
+                    self.retryCount += 1
+                }
+            }
             return
         }
 
@@ -3583,18 +3674,17 @@ struct MultiFileDragView: NSViewRepresentable {
                 dragImage = NSWorkspace.shared.icon(forFile: fileURLs.first?.path ?? "")
             }
 
-            // ⚠️ 모든 NSDraggingItem 에 draggingFrame 필수 — 없으면 크래시
-            // 첫 번째 아이템만 실제 썸네일 이미지, 나머지(.xmp, RAW 등)는 1x1 투명 프레임
+            // v9.1.4: 썸네일 미리보기 제거 — 사용자 요청 (어떤 파일 옮기는지 굳이 표시 안 함).
+            //   draggingFrame 은 여전히 필수 (없으면 크래시) 지만 contents=nil 로 빈 프레임만 전달.
+            _ = dragImage  // 사용 안 함 — 추후 옵션화 대비 변수 유지
             dragItem.setDraggingFrame(
-                NSRect(x: 0, y: 0, width: previewSize, height: previewSize),
-                contents: dragImage
+                NSRect(x: 0, y: 0, width: 1, height: 1),
+                contents: nil
             )
-            // 나머지 아이템: 같은 이미지로 설정하되 offset 을 다르게 (시각적 중복 최소화)
-            // contents 는 NSImage 공유해도 ARC 로 관리됨.
             for i in 1..<items.count {
                 items[i].setDraggingFrame(
-                    NSRect(x: 0, y: 0, width: previewSize, height: previewSize),
-                    contents: nil  // 추가 파일은 프리뷰 없이 빈 프레임
+                    NSRect(x: 0, y: 0, width: 1, height: 1),
+                    contents: nil
                 )
             }
 
@@ -3841,6 +3931,14 @@ class TileDocumentView: NSView {
     @objc func scrollChanged() {
         updateVisibleTiles()
 
+        // 스크롤은 대량 폴더에서 가장 쉽게 썸네일 I/O backlog 를 만든다.
+        // 현재 viewport 주변만 살리고 이전 스크롤 위치의 작업은 callback 단계에서 버린다.
+        let isHugeFolder = photos.count > 10_000
+        let keepURLs = thumbnailURLsAroundVisible(marginRows: isHugeFolder ? 2 : 3)
+        ThumbnailLoader.shared.cancelPending(keeping: keepURLs)
+        ThumbnailLoader.shared.throttle()
+        PhotoStore.scheduleUnthrottle()
+
         // 스크롤 멈춤 감지 debounce → visible 주변만 prefetch
         // 대량 재귀 폴더는 스크롤/선택 즉시성을 위해 더 늦고 작게 채운다.
         scrollPrefetchWork?.cancel()
@@ -3848,8 +3946,31 @@ class TileDocumentView: NSView {
             self?.prefetchAroundVisible()
         }
         scrollPrefetchWork = work
-        let delay: TimeInterval = photos.count > 10_000 ? 0.18 : 0.08
+        let delay: TimeInterval = isHugeFolder ? 0.35 : 0.14
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func thumbnailURLsAroundVisible(marginRows: Int) -> Set<URL> {
+        guard let scrollView = enclosingScrollView, !photos.isEmpty, cols > 0 else { return [] }
+        let visibleRect = scrollView.documentVisibleRect
+        let rowHeight = cellH + lineSpacing
+        guard rowHeight > 0 else { return [] }
+
+        let totalRows = (photos.count + cols - 1) / cols
+        let startRow = max(0, Int((visibleRect.minY - inset) / rowHeight) - marginRows)
+        let endRow = min(totalRows, Int((visibleRect.maxY - inset) / rowHeight) + marginRows + 1)
+        let startIdx = max(0, startRow * cols)
+        let endIdx = min(photos.count, endRow * cols)
+        guard startIdx < endIdx else { return [] }
+
+        var urls = Set<URL>()
+        urls.reserveCapacity(endIdx - startIdx)
+        for idx in startIdx..<endIdx {
+            let photo = photos[idx]
+            if photo.isFolder || photo.isParentFolder { continue }
+            urls.insert(photo.jpgURL)
+        }
+        return urls
     }
 
     /// 현재 visible 범위 앞뒤로 ±5행 썸네일 prefetch.
@@ -3857,11 +3978,13 @@ class TileDocumentView: NSView {
     /// Slow disk(HDD/SD)에서는 범위를 ±2행으로 축소 (queue 폭주 방지).
     private func prefetchAroundVisible() {
         guard let scrollView = enclosingScrollView, !photos.isEmpty else { return }
+        guard !PhotoStore.navigationBusy else { return }
         let visibleRect = scrollView.documentVisibleRect
 
         // 대량 재귀 폴더에서는 보이는 범위를 벗어난 디코드를 최소화한다.
         let isHugeFolder = photos.count > 10_000
-        let margin = isHugeFolder ? 1 : (ThumbnailLoader.shared.isSlowDisk ? 4 : 5)
+        guard !isHugeFolder else { return }
+        let margin = ThumbnailLoader.shared.isSlowDisk ? 1 : 2
         let startRow = max(0, Int((visibleRect.minY - inset) / (cellH + lineSpacing)) - margin)
         let totalRows = (photos.count + cols - 1) / cols
         let endRow = min(totalRows, Int((visibleRect.maxY - inset) / (cellH + lineSpacing)) + margin)
@@ -4333,6 +4456,9 @@ struct FolderPreviewGrid: View {
     @State private var subfolderCount: Int = 0
     @State private var loaded = false
 
+    /// v9.1.4 (perf P5): 앱 언어 1회 read 후 캐싱 — 매 셀 렌더 동기 UserDefaults 호출 제거.
+    static let cachedAppLanguage: String = UserDefaults.standard.string(forKey: "appLanguage") ?? "ko"
+
     private var cellH: CGFloat { size * 0.75 }
     private var halfW: CGFloat { (size - 6) / 2 }
     private var halfH: CGFloat { (cellH - 20) / 2 }  // 상단 폴더탭 영역 확보
@@ -4354,7 +4480,9 @@ struct FolderPreviewGrid: View {
 
             // 빈 폴더 표시 (사진 없고 하위 폴더도 없을 때만)
             if loaded && previewImages.isEmpty {
-                let lang = UserDefaults.standard.string(forKey: "appLanguage") ?? "ko"
+                // v9.1.4 (perf P5): UserDefaults 매 셀 렌더마다 동기 read → static 캐시.
+                //   언어는 앱 실행 중 거의 안 바뀜. 변경 시 앱 재시작 안내가 표준.
+                let lang = Self.cachedAppLanguage
                 if subfolderCount > 0 {
                     // 하위 폴더만 있는 경우
                     VStack(spacing: 2) {
@@ -4441,7 +4569,7 @@ struct FolderPreviewGrid: View {
             do {
                 items = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
             } catch {
-                fputs("[FolderPreview] contentsOfDirectory 실패: \(url.path) — \(error.localizedDescription)\n", stderr)
+                plog("[FolderPreview] contentsOfDirectory 실패: \(url.path) — \(error.localizedDescription)\n")
                 DispatchQueue.main.async { loaded = true }
                 return
             }
@@ -4450,9 +4578,9 @@ struct FolderPreviewGrid: View {
             let imageFiles = items.filter { mediaExts.contains($0.pathExtension.lowercased()) }
             let count = imageFiles.count
             if count == 0 {
-                fputs("[FolderPreview] 미디어 파일 0개: \(url.path) (전체 \(items.count)개 항목)\n", stderr)
+                plog("[FolderPreview] 미디어 파일 0개: \(url.path) (전체 \(items.count)개 항목)\n")
                 for item in items.prefix(5) {
-                    fputs("[FolderPreview]   - \(item.lastPathComponent) (ext: \(item.pathExtension))\n", stderr)
+                    plog("[FolderPreview]   - \(item.lastPathComponent) (ext: \(item.pathExtension))\n")
                 }
             }
 
@@ -4698,7 +4826,7 @@ final class ListViewDragMonitor: ObservableObject {
             self?.handle(event)
             return event
         }
-        fputs("[ListDrag] monitor installed\n", stderr)
+        plog("[ListDrag] monitor installed\n")
     }
 
     func uninstall() {
@@ -4716,7 +4844,7 @@ final class ListViewDragMonitor: ObservableObject {
             let inBounds = isInTableBounds(event: event)
             downLocation = inBounds ? event.locationInWindow : nil
             didStartDrag = false
-            fputs("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n", stderr)
+            plog("[ListDrag] mouseDown inBounds=\(inBounds) bounds=\(tableBounds) sel=\(store?.selectedPhotoIDs.count ?? 0)\n")
 
         case .leftMouseDragged:
             let hasStart = downLocation != nil
@@ -4727,12 +4855,12 @@ final class ListViewDragMonitor: ObservableObject {
                                  event.locationInWindow.y - downLocation!.y)
                 if dist > threshold {
                     didStartDrag = true
-                    fputs("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n", stderr)
+                    plog("[ListDrag] 🚀 initiate dist=\(Int(dist)) sel=\(selCount)\n")
                     initiateDrag(event: event, store: store!)
                 }
             } else if !didStartDrag {
                 // 드래그 실패 이유 로깅 (한 번만)
-                fputs("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n", stderr)
+                plog("[ListDrag] dragged but skipped: hasStart=\(hasStart) hasStore=\(hasStore) sel=\(selCount)\n")
             }
 
         case .leftMouseUp:
@@ -4839,6 +4967,6 @@ final class ListViewDragSource: NSObject, NSDraggingSource {
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
         NativeListView.listDragInProgress = false
-        fputs("[ListDrag] session ended — flag reset\n", stderr)
+        plog("[ListDrag] session ended — flag reset\n")
     }
 }

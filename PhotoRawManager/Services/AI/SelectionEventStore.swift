@@ -100,7 +100,7 @@ final class SelectionEventStore {
         if sqlite3_open_v2(dbURL.path, &db,
                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
                            nil) != SQLITE_OK {
-            fputs("[SEL-DB] open 실패: \(String(cString: sqlite3_errmsg(db)))\n", stderr)
+            plog("[SEL-DB] open 실패: \(String(cString: sqlite3_errmsg(db)))\n")
             db = nil
             return
         }
@@ -108,7 +108,7 @@ final class SelectionEventStore {
         sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nil, nil, nil)
         createSchema()
-        fputs("[SEL-DB] opened \(dbURL.path)\n", stderr)
+        plog("[SEL-DB] opened \(dbURL.path)\n")
     }
 
     func close() {
@@ -380,7 +380,7 @@ final class SelectionEventStore {
             var removed: Int32 = 0
             sqlite3_exec(db, sql, nil, nil, nil)
             removed = sqlite3_changes(db)
-            fputs("[SEL-DB] coalesce: 중복 \(removed)건 제거\n", stderr)
+            plog("[SEL-DB] coalesce: 중복 \(removed)건 제거\n")
         }
     }
 
@@ -400,7 +400,7 @@ final class SelectionEventStore {
                 }
                 sqlite3_finalize(stmt)
                 if count == 0 { return }
-                fputs("[SEL-DB] compact: \(count)건 대상\n", stderr)
+                plog("[SEL-DB] compact: \(count)건 대상\n")
             }
             // 단순 삭제 (실제 서비스는 먼저 스냅샷으로 집계 후 삭제하는 편이 좋음)
             let delSQL = "DELETE FROM events WHERE created_at < ?"
@@ -410,7 +410,7 @@ final class SelectionEventStore {
                 sqlite3_finalize(stmt)
             }
             sqlite3_exec(db, "VACUUM;", nil, nil, nil)
-            fputs("[SEL-DB] compact 완료 (VACUUM 수행)\n", stderr)
+            plog("[SEL-DB] compact 완료 (VACUUM 수행)\n")
         }
     }
 

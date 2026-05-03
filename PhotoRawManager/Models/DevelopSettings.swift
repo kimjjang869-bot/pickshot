@@ -27,7 +27,7 @@ struct DevelopSettings: Codable, Hashable {
     var wbAuto: Bool = false
 
     /// 색온도 오프셋: -100 (차갑게) ~ +100 (따뜻하게)
-    /// 내부 렌더링 파이프라인에서 약 2000K~12000K 범위로 매핑
+    /// 내부 렌더링 파이프라인에서 약 2300K~8700K 범위로 보수적으로 매핑
     var temperature: Double = 0
 
     /// 틴트 오프셋: -100 (초록) ~ +100 (마젠타)
@@ -42,7 +42,7 @@ struct DevelopSettings: Codable, Hashable {
     var exposure: Double = 0
 
     /// 대비 (Contrast): -100 ~ +100. 0 = 변화 없음.
-    /// 내부적으로 CIColorControls.contrast (기본 1.0) 에 매핑: +100 → 1.5, -100 → 0.5
+    /// Lightroom/Capture One 체감에 맞춰 부드럽게 매핑: +100 → 1.25, -100 → 0.75
     var contrast: Double = 0
 
     // MARK: - Levels (검정점 / 흰점 / 감마)

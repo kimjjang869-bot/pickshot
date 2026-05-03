@@ -37,9 +37,14 @@ struct InlineCropOverlay: View {
         AspectPreset(id: "Original", label: "원본",   ratio: nil, isOriginal: true)
     ]
 
-    /// 현재 선택된 preset 의 픽셀 비율 (NSCropView 의 Shift 비율 잠금용).
+    /// 현재 선택된 preset 의 픽셀 비율.
+    /// Free 만 nil 이고, Original 은 원본 이미지 비율로 잠가서 드래그 중 자유 비율로 풀리지 않게 한다.
     private var currentAspectRatio: Double? {
-        presets.first(where: { $0.id == draftAspectLabel })?.ratio
+        guard let preset = presets.first(where: { $0.id == draftAspectLabel }) else { return nil }
+        if preset.isOriginal, image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        return preset.ratio
     }
 
     // MARK: - Body

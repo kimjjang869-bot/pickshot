@@ -301,7 +301,7 @@ extension PhotoStore {
                 }
                 log += "[CLASSIFY] 인물감지: \(personPhotos)장, 텍스트감지: \(textPhotos)장\n"
                 log += "[CLASSIFY] ━━━━━━━━━━━━━━━\n\n"
-                fputs(log, stderr)
+                plog(log)
                 try? log.write(toFile: FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_classify.log").path, atomically: true, encoding: .utf8)
             }
         }
@@ -322,7 +322,7 @@ extension PhotoStore {
         // 선택 여부 무관하게 폴더 내 전체 사진 대상
         let photoSnapshots = photos
         let total = photoSnapshots.count
-        fputs("[FACE] 전체 사진 \(total)장 대상 얼굴 그룹핑 시작\n", stderr)
+        plog("[FACE] 전체 사진 \(total)장 대상 얼굴 그룹핑 시작\n")
         faceGroupTotalCount = total
         faceGroupDoneCount = 0
         faceGroupStatusMessage = "얼굴 감지 준비 중..."
@@ -401,6 +401,8 @@ extension PhotoStore {
         let engine = UserDefaults.standard.string(forKey: "aiClassifyEngine") ?? "claudeHaiku"
         let hasKey = engine.hasPrefix("gemini") ? GeminiService.hasAPIKey : ClaudeVisionService.hasAPIKey
         guard !photos.isEmpty, !isAIClassifying, hasKey else { return }
+        // v9.1.4: 외부 전송 동의 (보안 감사 M-5). UI 액션 경로 → 메인 액터 가정 안전.
+        guard MainActor.assumeIsolated({ AIConsentGate.requireConsent() }) else { return }
         isAIClassifying = true
         aiClassifyErrors = []
 
@@ -420,7 +422,7 @@ extension PhotoStore {
         let unclassified = photoSnapshots.filter { !$0.isFolder && !$0.isParentFolder && $0.aiCategory == nil }
         let skippedCount = photoSnapshots.count - unclassified.count
         if skippedCount > 0 {
-            fputs("[CLASSIFY] \(skippedCount)장 이미 분류됨 → 스킵, \(unclassified.count)장 처리\n", stderr)
+            plog("[CLASSIFY] \(skippedCount)장 이미 분류됨 → 스킵, \(unclassified.count)장 처리\n")
         }
         guard !unclassified.isEmpty else {
             showToastMessage("모든 사진이 이미 분류되어 있습니다")
@@ -440,13 +442,13 @@ extension PhotoStore {
                     onClassified: { photo, classification in
                         // 분류 즉시 폴더 이동 (중간에 멈춰도 처리됨)
                         let category = classification.category
-                        fputs("[CLASSIFY] base=\(baseURL?.path ?? "nil") cat='\(category)' file=\(photo.jpgURL.lastPathComponent)\n", stderr)
+                        plog("[CLASSIFY] base=\(baseURL?.path ?? "nil") cat='\(category)' file=\(photo.jpgURL.lastPathComponent)\n")
                         guard let base = baseURL else {
-                            fputs("[CLASSIFY] ❌ baseURL nil\n", stderr)
+                            plog("[CLASSIFY] ❌ baseURL nil\n")
                             return
                         }
                         guard !category.isEmpty else {
-                            fputs("[CLASSIFY] ❌ category empty\n", stderr)
+                            plog("[CLASSIFY] ❌ category empty\n")
                             return
                         }
                         let fm = FileManager.default
@@ -454,7 +456,7 @@ extension PhotoStore {
                         do {
                             try fm.createDirectory(at: categoryFolder, withIntermediateDirectories: true)
                         } catch {
-                            fputs("[CLASSIFY] ❌ mkdir failed: \(error)\n", stderr)
+                            plog("[CLASSIFY] ❌ mkdir failed: \(error)\n")
                         }
 
                         // JPG 이동
@@ -462,9 +464,9 @@ extension PhotoStore {
                         if !fm.fileExists(atPath: jpgDest.path) {
                             do {
                                 try fm.moveItem(at: photo.jpgURL, to: jpgDest)
-                                fputs("[CLASSIFY] ✅ \(photo.jpgURL.lastPathComponent) → \(category)/\n", stderr)
+                                plog("[CLASSIFY] ✅ \(photo.jpgURL.lastPathComponent) → \(category)/\n")
                             } catch {
-                                fputs("[CLASSIFY] ❌ move failed: \(error)\n", stderr)
+                                plog("[CLASSIFY] ❌ move failed: \(error)\n")
                             }
                         }
                         // RAW 매칭 파일도 이동
@@ -586,7 +588,7 @@ extension PhotoStore {
                     movedCount += 1
                 } catch {
                     failedCount += 1
-                    fputs("[ORGANIZE] 이동 실패: \(photo.jpgURL.lastPathComponent) → \(error.localizedDescription)\n", stderr)
+                    plog("[ORGANIZE] 이동 실패: \(photo.jpgURL.lastPathComponent) → \(error.localizedDescription)\n")
                 }
             }
 
@@ -599,7 +601,7 @@ extension PhotoStore {
             }
         }
 
-        fputs("[ORGANIZE] 완료: \(movedCount)장 이동, \(failedCount)장 실패\n", stderr)
+        plog("[ORGANIZE] 완료: \(movedCount)장 이동, \(failedCount)장 실패\n")
         showToastMessage("📂 \(movedCount)장을 \(Set(categorized.compactMap { $0.aiCategory }).count)개 폴더로 정리 완료")
 
         // 폴더 트리 새로고침 알림

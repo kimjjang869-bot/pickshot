@@ -32,11 +32,21 @@ extension PhotoStore {
         savedCollections.removeAll { $0.id == id }
     }
 
+    /// v9.1.4 (perf P7): JSON encode + UserDefaults set 을 background 큐로 이동.
+    ///   이전엔 didSet 매 호출마다 메인 스레드 동기 실행 — 컬렉션 추가/수정 1회당 메인 차단.
+    ///   debounce 250ms 로 빠른 연속 변경 시 마지막 1회만 실제 저장.
     func saveCollections() {
-        if let data = try? JSONEncoder().encode(savedCollections) {
-            UserDefaults.standard.set(data, forKey: "smartCollections")
+        let snapshot = savedCollections  // Sendable 복사
+        Self.saveCollectionsWork?.cancel()
+        let work = DispatchWorkItem {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                UserDefaults.standard.set(data, forKey: "smartCollections")
+            }
         }
+        Self.saveCollectionsWork = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25, execute: work)
     }
+    private static var saveCollectionsWork: DispatchWorkItem?
 
     func loadCollections() {
         guard let data = UserDefaults.standard.data(forKey: "smartCollections"),
@@ -62,17 +72,36 @@ extension PhotoStore {
         UserDefaults.standard.set(100.0, forKey: "defaultThumbnailSize")
         thumbnailSize = 100
 
-        // v8.6.2: 기본값 통일 — 사용자 실측 기준 최적.
-        // - 미리보기 해상도 1000px, 메모리 캐시 50장 (RAM 50 초과는 디스크로 자동 spill)
-        // - 썸네일 디스크 캐시: 0 = 무제한 (macOS isPurgeable 로 자동 관리 — 디스크 부족 시 조용히 정리)
-        _ = spec  // effectiveTier 분기 제거
-        UserDefaults.standard.set("1000", forKey: "previewMaxResolution")
-        UserDefaults.standard.set(50.0, forKey: "previewCacheSize")
-        UserDefaults.standard.set(0.0, forKey: "thumbnailCacheMaxGB")  // 0 = 자동
-        previewResolution = 1000
+        // PR fix: MBA(저사양) 기본값을 SystemSpec tier 기반으로 자동 분기.
+        //   기존 통일 기본값(1000px × 50장)은 8GB MBA 에서 OOM/렉 유발 → tier 별 분기 복원.
+        let previewMax = spec.previewMaxPixel()
+        _ = previewMax
+        switch spec.effectiveTier {
+        case .extreme:
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(30.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(4.0, forKey: "thumbnailCacheMaxGB")
+            previewResolution = 0
+        case .high:
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(25.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(3.0, forKey: "thumbnailCacheMaxGB")
+            previewResolution = 0
+        case .standard:
+            UserDefaults.standard.set("original", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(15.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(1.5, forKey: "thumbnailCacheMaxGB")
+            previewResolution = 0
+        case .low:
+            // MBA 8GB 등 저사양: 500px × 50장 + 2GB 썸네일 캐시
+            UserDefaults.standard.set("500", forKey: "previewMaxResolution")
+            UserDefaults.standard.set(50.0, forKey: "previewCacheSize")
+            UserDefaults.standard.set(2.0, forKey: "thumbnailCacheMaxGB")
+            previewResolution = 500
+        }
 
         UserDefaults.standard.set(true, forKey: key)
-        fputs("[OPT] 첫 실행 자동 최적화 완료 — tier: \(spec.effectiveTier.rawValue), RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n", stderr)
+        plog("[OPT] 첫 실행 자동 최적화 완료 — tier: \(spec.effectiveTier.rawValue), RAM: \(ramGB)GB, AppleSilicon: \(isAppleSilicon)\n")
     }
 
     /// v8.6.2: 기존 사용자가 구 tier-기반 기본값 그대로 쓰고 있으면 새 기본값으로 업데이트.
@@ -105,7 +134,7 @@ extension PhotoStore {
             d.set(0.0, forKey: "thumbnailCacheMaxGB")
         }
         d.set(true, forKey: migrationKey)
-        fputs("[OPT] v8.6.2 기본값 마이그레이션 완료 — 디스크 캐시는 macOS 자동 관리로 전환\n", stderr)
+        plog("[OPT] v8.6.2 기본값 마이그레이션 완료 — 디스크 캐시는 macOS 자동 관리로 전환\n")
     }
 
     /// Settings 창에서 변경된 값을 라이브 프로퍼티에 동기화

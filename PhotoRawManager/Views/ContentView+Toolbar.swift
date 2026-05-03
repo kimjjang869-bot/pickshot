@@ -45,14 +45,8 @@ extension ContentView {
                         }
                         .buttonStyle(.plain)
                     }
-                    // v8.9.7+: 캐시 진행률 게이지 제거 — 미리보기 토글로 통합 표시.
-                    // v8.8.1: 적극 캐시 모드 토글 (ON 이면 폴더 진입 즉시 공격적 병렬 로딩)
-                    AggressiveCacheToggle(store: store)
-                    // v8.9.4: 빠른 셀렉 모드 토글 (ON 이면 viewport 우선, AI/Stage2 OFF)
-                    FastCullingToggle(store: store)
-                    // v8.9.7+: 초기 미리보기 토글 — 토끼 옆 (FastCullingToggle 직후)
-                    InitialPreviewToggle()
-                        .fixedSize(horizontal: true, vertical: true)
+                    // v9.1: 4개 토글 → 1개 segmented picker (표준 / 빠른 셀렉 / 사전 생성)
+                    PerformanceProfilePicker(store: store)
                     // v8.9.4: 활성 필터 요약 배지 (별점/라벨/선택만 등 무엇이 켜져있는지 한눈에)
                     activeFilterBadge
                 }
@@ -104,22 +98,47 @@ extension ContentView {
                         qualityFilterMenu
                     }
 
-                    // 클라이언트 셀렉
+                    // 클라이언트 셀렉 — Pro 전용
                     Menu {
-                        Button(action: { ClientSelectService.shared.requestStart() }) {
-                            Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.requestStart() }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
+                            HStack {
+                                Label("사진 업로드 + 링크 생성", systemImage: "icloud.and.arrow.up")
+                                if !FeatureGate.allows(.clientSelect) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
-                        Button(action: { ClientSelectService.shared.showSessionList = true }) {
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.showSessionList = true }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
                             Label("내 세션 목록", systemImage: "list.clipboard")
                         }
-                        Button(action: { ClientSelectService.shared.showProxySetup = true }) {
+                        Button(action: {
+                            if FeatureGate.allows(.clientSelect) { ClientSelectService.shared.showProxySetup = true }
+                            else { store.proLockedFeature = .clientSelect }
+                        }) {
                             Label("Apps Script 프록시 설정", systemImage: "network.badge.shield.half.filled")
                         }
                         Divider()
-                        Button(action: { store.importPickshotFile() }) {
-                            Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                        // v9.1.4: comingSoon 항목은 메뉴에서 숨김 — 사용자 혼란 방지.
+                        //   Pro 출시 시 FeatureGate.releaseStatus 를 .released 로 바꾸면 자연스럽게 노출됨.
+                        if !FeatureGate.isComingSoon(.pickshotFileImport) {
+                            Button(action: {
+                                if FeatureGate.allows(.pickshotFileImport) { store.importPickshotFile() }
+                                else { store.proLockedFeature = .pickshotFileImport }
+                            }) {
+                                HStack {
+                                    Label("셀렉 파일 가져오기", systemImage: "doc.badge.arrow.up")
+                                    if !FeatureGate.allows(.pickshotFileImport) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                                }
+                            }
                         }
-                        Button(action: { importPickshotFromDrive() }) {
+                        Button(action: {
+                            if FeatureGate.allows(.driveUpload) { importPickshotFromDrive() }
+                            else { store.proLockedFeature = .driveUpload }
+                        }) {
                             Label("Drive에서 가져오기", systemImage: "icloud.and.arrow.down")
                         }
                     } label: {
@@ -127,19 +146,31 @@ extension ContentView {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .help("클라이언트 셀렉 보내기/가져오기")
+                    .help("클라이언트 셀렉 보내기/가져오기 (Pro)")
 
                     // 내보내기
                     Menu {
                         Button(action: { store.showExportSheet = true }) {
                             Label("내보내기 (Cmd+E)", systemImage: "square.and.arrow.up")
                         }
-                        Button(action: { store.showBatchProcess = true }) {
-                            Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
+                        Button(action: {
+                            if FeatureGate.allows(.batchProcess) { store.showBatchProcess = true }
+                            else { store.proLockedFeature = .batchProcess }
+                        }) {
+                            HStack {
+                                Label("배치 처리 (리사이즈+워터마크)", systemImage: "photo.on.rectangle.angled")
+                                if !FeatureGate.allows(.batchProcess) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
                         Divider()
-                        Button(action: { store.showContactSheet = true }) {
-                            Label("컨택트시트 PDF", systemImage: "tablecells")
+                        Button(action: {
+                            if FeatureGate.allows(.contactSheetPDF) { store.showContactSheet = true }
+                            else { store.proLockedFeature = .contactSheetPDF }
+                        }) {
+                            HStack {
+                                Label("컨택트시트 PDF", systemImage: "tablecells")
+                                if !FeatureGate.allows(.contactSheetPDF) { Spacer(); Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple) }
+                            }
                         }
                         Button(action: {
                             store.metadataEditorMode = store.selectedPhotoIDs.count > 1 ? .batch : .single
@@ -424,7 +455,7 @@ extension ContentView {
     // MARK: - Quality Filter Menu
 
     var qualityFilterMenu: some View {
-        let aiCount = store.photos.filter { $0.isAIPick }.count
+        let aiCount = store.aiPickCount
 
         let groups = store.availableFaceGroups
         let hasGroups = !groups.isEmpty
@@ -485,8 +516,23 @@ extension ContentView {
                     Label(store.isClassifyingScenes ? "분류 중..." : "Vision 로컬 분류", systemImage: "eye.fill")
                 }
                 .disabled(store.isClassifyingScenes)
-                Button(action: { store.showBurstPickerDialog = true }) {
-                    Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                // v9.1.4: comingSoon 동안은 메뉴에서 숨김 (Pro 출시 시 자동 노출).
+                if !FeatureGate.isComingSoon(.burstBestAuto) {
+                    Button(action: {
+                        if FeatureGate.allows(.burstBestAuto) {
+                            store.showBurstPickerDialog = true
+                        } else {
+                            store.proLockedFeature = .burstBestAuto
+                        }
+                    }) {
+                        HStack {
+                            Label("연사 베스트 자동 선별...", systemImage: "wand.and.stars.inverse")
+                            if !FeatureGate.allows(.burstBestAuto) {
+                                Spacer()
+                                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -887,7 +933,7 @@ extension ContentView {
                     // Category filters
                     Section("📂 카테고리") {
                         ForEach(categories, id: \.self) { cat in
-                            let count = store.photos.filter { $0.aiCategory == cat }.count
+                            let count = store.aiCategoryCount(cat)
                             let icon = aiCategoryIcon(cat)
                             Button(action: { store.aiCategoryFilter = cat }) {
                                 Label("\(icon) \(cat) (\(count)장)",
@@ -1088,7 +1134,7 @@ extension ContentView {
                 let isExactlyActive = activeRatings.contains(rating)
                 // 누적 칠하기: 단일 선택 모드일 때 rating <= cumulativeMax 면 fill
                 let shouldFill = isMulti ? isExactlyActive : (rating <= cumulativeMax)
-                let count = store.photos.filter { $0.rating == rating && !$0.isFolder && !$0.isParentFolder }.count
+                let count = store.ratingCount(rating)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)
@@ -1142,9 +1188,7 @@ extension ContentView {
         return HStack(spacing: 3) {
             ForEach(ColorLabel.allCases.filter { $0 != .none }, id: \.self) { label in
                 let isActive = activeLabels.contains(label)
-                let count = store.photos.filter {
-                    $0.colorLabel == label && !$0.isFolder && !$0.isParentFolder
-                }.count
+                let count = store.colorLabelCount(label)
                 Button(action: {
                     let flags = NSEvent.modifierFlags
                     let multi = flags.contains(.command) || flags.contains(.shift)

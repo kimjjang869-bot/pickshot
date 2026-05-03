@@ -32,7 +32,8 @@ final class CLIPTokenizer {
     /// <|endoftext|>
     private(set) var endToken: Int = 49407
     /// 정규식 — 단어/숫자/기호 단위 분할 (CLIP 레퍼런스와 동일)
-    private let wordRegex: NSRegularExpression
+    /// v9.1.4: try! → optional 로 변경. 패턴 빌드 실패 시 토크나이저 비활성화 (graceful degradation).
+    private let wordRegex: NSRegularExpression?
 
     private struct BPEPair: Hashable {
         let left: String
@@ -46,7 +47,11 @@ final class CLIPTokenizer {
         byteEncoder = Self.makeByteEncoder()
         // CLIP 레퍼런스 regex: "<\\|startoftext\\|>|<\\|endoftext\\|>|'s|'t|'re|'ve|'m|'ll|'d|[\\p{L}]+|[\\p{N}]|[^\\s\\p{L}\\p{N}]+"
         let pattern = #"<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+"#
-        wordRegex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        // v9.1.4: try? — 패턴 변경 시 크래시 대신 nil → encode() 가 빈 결과 반환.
+        wordRegex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        if wordRegex == nil {
+            plog("[CLIPTokenizer] regex 빌드 실패 — 토크나이저 비활성화\n")
+        }
     }
 
     /// 최초 사용 시 vocab 로드. 오래 걸리므로 백그라운드 큐에서 호출 권장.
@@ -60,7 +65,7 @@ final class CLIPTokenizer {
               let gzData = try? Data(contentsOf: url),
               let rawData = Self.gunzip(gzData),
               let text = String(data: rawData, encoding: .utf8) else {
-            fputs("[CLIP-TOK] bpe_simple_vocab_16e6.txt.gz 로드 실패\n", stderr)
+            plog("[CLIP-TOK] bpe_simple_vocab_16e6.txt.gz 로드 실패\n")
             return
         }
 
@@ -102,7 +107,7 @@ final class CLIPTokenizer {
         startToken = enc["<|startoftext|>"] ?? 49406
         endToken = enc["<|endoftext|>"] ?? 49407
         isLoaded = true
-        fputs("[CLIP-TOK] loaded vocab=\(encoder.count) merges=\(bpeRanks.count)\n", stderr)
+        plog("[CLIP-TOK] loaded vocab=\(encoder.count) merges=\(bpeRanks.count)\n")
     }
 
     /// 주어진 텍스트 → CLIP 토큰 ID 배열 (길이 = contextLength, 뒤는 0 패딩).
@@ -111,6 +116,11 @@ final class CLIPTokenizer {
         let cleaned = Self.basicClean(text).lowercased()
         var tokenIDs: [Int32] = [Int32(startToken)]
 
+        // v9.1.4: regex 빌드 실패 시 (이론상 무발생) start/end 토큰만 있는 빈 결과로 폴백.
+        guard let wordRegex = wordRegex else {
+            tokenIDs.append(Int32(endToken))
+            return tokenIDs
+        }
         let range = NSRange(cleaned.startIndex..., in: cleaned)
         wordRegex.enumerateMatches(in: cleaned, options: [], range: range) { match, _, _ in
             guard let m = match, let r = Range(m.range, in: cleaned) else { return }

@@ -53,7 +53,7 @@ struct XMPService {
             try (mutableData as Data).write(to: url, options: .atomic)
             return true
         } catch {
-            fputs("[XMP] JPG EXIF 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] JPG EXIF 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -73,6 +73,44 @@ struct XMPService {
             }
         }
         return count
+    }
+
+    /// v9.1.4 (Lightroom 호환): 모든 사진(JPG + RAW)에 XMP 사이드카 일괄 생성.
+    /// - JPG 는 EXIF + XMP 임베딩 (writeRatingToJPG)
+    /// - RAW 는 .xmp 사이드카 생성 (writeRating)
+    /// - Lightroom Classic 의 "메타데이터 → 파일에서 읽기" 로 자동 인식.
+    /// - Returns: (jpgCount, xmpSidecarCount, totalProcessed)
+    @discardableResult
+    static func exportLightroomCompatible(photos: [PhotoItem]) -> (jpg: Int, xmp: Int, total: Int) {
+        var jpgCount = 0
+        var xmpCount = 0
+        var total = 0
+        for photo in photos {
+            guard !photo.isFolder, !photo.isParentFolder else { continue }
+            // 별점 또는 컬러 라벨이 있는 사진만 (메타데이터 없는 사진 skip)
+            guard photo.rating > 0 || photo.colorLabel != .none else { continue }
+            total += 1
+
+            let label = photo.colorLabel != .none ? photo.colorLabel.xmpName : nil
+            let ext = photo.jpgURL.pathExtension.lowercased()
+            // JPG 는 EXIF + XMP 임베딩
+            if ["jpg", "jpeg"].contains(ext) {
+                if writeRatingToJPG(url: photo.jpgURL, rating: photo.rating, label: label) {
+                    jpgCount += 1
+                }
+            }
+            // RAW 가 있으면 .xmp 사이드카 생성 — Lightroom 표준
+            if let rawURL = photo.rawURL {
+                writeRating(for: rawURL, rating: photo.rating, label: label, spacePicked: false)
+                xmpCount += 1
+            }
+            // JPG 만 있는 경우도 .xmp 사이드카 추가 (호환성 ↑)
+            if photo.rawURL == nil && ["jpg", "jpeg"].contains(ext) {
+                writeRating(for: photo.jpgURL, rating: photo.rating, label: label, spacePicked: false)
+                xmpCount += 1
+            }
+        }
+        return (jpg: jpgCount, xmp: xmpCount, total: total)
     }
 
     // MARK: - XMP File URL
@@ -289,7 +327,7 @@ struct XMPService {
             _ = writeIPTCToXMPSidecar(for: url, metadata: metadata)
             return true
         } catch {
-            fputs("[XMP] IPTC 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] IPTC 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -349,7 +387,7 @@ struct XMPService {
             try xml.data(using: .utf8)?.write(to: url, options: .atomic)
             return true
         } catch {
-            fputs("[XMP] 사이드카 쓰기 실패: \(error.localizedDescription)\n", stderr)
+            plog("[XMP] 사이드카 쓰기 실패: \(error.localizedDescription)\n")
             return false
         }
     }

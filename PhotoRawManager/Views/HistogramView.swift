@@ -89,15 +89,11 @@ struct HistogramOverlay: View {
         // Metal 경로
         if MetalImageProcessor.isAvailable,
            let gpuHist = MetalImageProcessor.histogram(image: image) {
-            let maxVal = max(
-                gpuHist.r.max() ?? 1, gpuHist.g.max() ?? 1,
-                gpuHist.b.max() ?? 1, gpuHist.l.max() ?? 1, 1
-            )
             return HistogramData(
-                red: gpuHist.r.map { CGFloat($0) / CGFloat(maxVal) },
-                green: gpuHist.g.map { CGFloat($0) / CGFloat(maxVal) },
-                blue: gpuHist.b.map { CGFloat($0) / CGFloat(maxVal) },
-                luminance: gpuHist.l.map { CGFloat($0) / CGFloat(maxVal) }
+                red: normalizeHistogram(gpuHist.r),
+                green: normalizeHistogram(gpuHist.g),
+                blue: normalizeHistogram(gpuHist.b),
+                luminance: normalizeHistogram(gpuHist.l)
             )
         }
         // CPU fallback — 300px 로 리사이즈해 속도 확보
@@ -121,12 +117,11 @@ struct HistogramOverlay: View {
             r[rv] += 1; g[gv] += 1; b[bv] += 1
             l[(rv * 299 + gv * 587 + bv * 114) / 1000] += 1
         }
-        let maxVal = max(r.max() ?? 1, g.max() ?? 1, b.max() ?? 1, l.max() ?? 1, 1)
         return HistogramData(
-            red: r.map { CGFloat($0) / CGFloat(maxVal) },
-            green: g.map { CGFloat($0) / CGFloat(maxVal) },
-            blue: b.map { CGFloat($0) / CGFloat(maxVal) },
-            luminance: l.map { CGFloat($0) / CGFloat(maxVal) }
+            red: normalizeHistogram(r),
+            green: normalizeHistogram(g),
+            blue: normalizeHistogram(b),
+            luminance: normalizeHistogram(l)
         )
     }
 
@@ -149,15 +144,11 @@ struct HistogramOverlay: View {
         // Try Metal GPU histogram first (much faster)
         if MetalImageProcessor.isAvailable,
            let gpuHist = MetalImageProcessor.histogram(image: image) {
-            let maxVal = max(
-                gpuHist.r.max() ?? 1, gpuHist.g.max() ?? 1,
-                gpuHist.b.max() ?? 1, gpuHist.l.max() ?? 1, 1
-            )
             return HistogramData(
-                red: gpuHist.r.map { CGFloat($0) / CGFloat(maxVal) },
-                green: gpuHist.g.map { CGFloat($0) / CGFloat(maxVal) },
-                blue: gpuHist.b.map { CGFloat($0) / CGFloat(maxVal) },
-                luminance: gpuHist.l.map { CGFloat($0) / CGFloat(maxVal) }
+                red: normalizeHistogram(gpuHist.r),
+                green: normalizeHistogram(gpuHist.g),
+                blue: normalizeHistogram(gpuHist.b),
+                luminance: normalizeHistogram(gpuHist.l)
             )
         }
 
@@ -191,14 +182,26 @@ struct HistogramOverlay: View {
             l[(rv * 299 + gv * 587 + bv * 114) / 1000] += 1
         }
 
-        let maxVal = max(r.max() ?? 1, g.max() ?? 1, b.max() ?? 1, l.max() ?? 1, 1)
-
         return HistogramData(
-            red: r.map { CGFloat($0) / CGFloat(maxVal) },
-            green: g.map { CGFloat($0) / CGFloat(maxVal) },
-            blue: b.map { CGFloat($0) / CGFloat(maxVal) },
-            luminance: l.map { CGFloat($0) / CGFloat(maxVal) }
+            red: normalizeHistogram(r),
+            green: normalizeHistogram(g),
+            blue: normalizeHistogram(b),
+            luminance: normalizeHistogram(l)
         )
+    }
+
+    /// 히스토그램 표시용 정규화.
+    /// 단일 피크가 전체 그래프를 눌러버리지 않도록 99 percentile + log 압축을 쓴다.
+    private static func normalizeHistogram(_ values: [Int]) -> [CGFloat] {
+        guard !values.isEmpty else { return [] }
+        let sorted = values.sorted()
+        let p99Index = min(sorted.count - 1, max(0, Int(Double(sorted.count - 1) * 0.99)))
+        let reference = max(sorted[p99Index], 1)
+        let denom = log1p(Double(reference))
+        return values.map { value in
+            let v = min(Double(value), Double(reference))
+            return CGFloat(log1p(v) / denom)
+        }
     }
 }
 

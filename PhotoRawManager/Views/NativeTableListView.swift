@@ -39,6 +39,10 @@ struct NativeTableListView: NSViewRepresentable {
         tableView.autosaveTableColumns = true
         tableView.menu = NSMenu()   // contextMenu 용 — delegate 에서 동적 구성
 
+        // v9.0.2: 더블클릭으로 폴더 진입 (Finder 와 동일).
+        tableView.target = coord
+        tableView.doubleAction = #selector(NativeTableListView.Coordinator.handleDoubleClick(_:))
+
         // 멀티 드래그 소스 등록
         //   외부(Finder): copy 만 허용 — move 로 실수로 파일 사라지는 것 방지
         //   내부: move (아직 내부 드롭 미구현이지만 placeholder)

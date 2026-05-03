@@ -252,3 +252,29 @@ async function fetchLatestVersion() {
     if (btn) btn.href = asset.browser_download_url;
   } catch (_) { /* silent */ }
 }
+
+// ─────────────────────────────────────────────────────────
+// v9.0.2 — Pricing toggle (월 / 연)
+// ─────────────────────────────────────────────────────────
+function initPricingToggle() {
+  const btns = document.querySelectorAll('.pt-btn');
+  if (!btns.length) return;
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const billing = btn.dataset.billing;
+      btns.forEach(b => b.classList.toggle('active', b === btn));
+
+      // 가격 숫자 + 사이클 라벨 + yearly note 표시
+      document.querySelectorAll('.price-num').forEach(num => {
+        num.textContent = num.dataset[billing];
+      });
+      document.querySelectorAll('.pu-cycle').forEach(c => {
+        c.textContent = billing === 'yearly' ? '/ 년' : '/ 월';
+      });
+      document.querySelectorAll('.price-yearly-note').forEach(n => {
+        n.hidden = billing !== 'yearly';
+      });
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', initPricingToggle);

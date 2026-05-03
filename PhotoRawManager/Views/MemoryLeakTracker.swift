@@ -78,7 +78,7 @@ final class MemoryLeakTracker: ObservableObject {
     /// v8.6.2: HUD "중단" 버튼에서 호출 — 진행 중 스트레스 테스트 즉시 중단.
     func abortStressTest() {
         stressAbortRequested = true
-        fputs("[LEAK-TRACKER] ⏹ 사용자가 스트레스 테스트 중단 요청\n", stderr)
+        plog("[LEAK-TRACKER] ⏹ 사용자가 스트레스 테스트 중단 요청\n")
     }
 
     // MARK: - Sampling
@@ -103,7 +103,7 @@ final class MemoryLeakTracker: ObservableObject {
             let now = Date()
             if now.timeIntervalSince(lastAutoCleanupTime) > autoCleanupCooldown {
                 lastAutoCleanupTime = now
-                fputs("[LEAK-TRACKER] 🚨 HARD CAP \(hardCapMB)MB 초과 (\(rssMB)MB) → 자동 emergency cleanup + stress 중단\n", stderr)
+                plog("[LEAK-TRACKER] 🚨 HARD CAP \(hardCapMB)MB 초과 (\(rssMB)MB) → 자동 emergency cleanup + stress 중단\n")
                 DispatchQueue.main.async { [weak self] in
                     _ = self?.emergencyCleanup()
                 }
@@ -123,7 +123,7 @@ final class MemoryLeakTracker: ObservableObject {
             appendSnapshot(spikeSnap)
             logToFile(spikeSnap)
             // stderr 경고
-            fputs("[LEAK-TRACKER] ⚠️ SPIKE \(rssMB - last.rssMB)MB in \(String(format: "%.1f", dt))s (rate=\(Int(rate))MB/min) — peak=\(peakRSSMB)MB\n", stderr)
+            plog("[LEAK-TRACKER] ⚠️ SPIKE \(rssMB - last.rssMB)MB in \(String(format: "%.1f", dt))s (rate=\(Int(rate))MB/min) — peak=\(peakRSSMB)MB\n")
         }
 
         let snap = makeSnapshot(rssMB: rssMB, trigger: trigger)
@@ -275,7 +275,7 @@ final class MemoryLeakTracker: ObservableObject {
         let delta = before - after
         log.append("RSS: \(before)MB → \(after)MB  (Δ -\(delta)MB)")
         let result = log.joined(separator: " | ")
-        fputs("[MEM-CLEANUP] \(result)\n", stderr)
+        plog("[MEM-CLEANUP] \(result)\n")
         sampleOnce(trigger: "cleanup_\(delta)MB")
         return result
     }
@@ -332,7 +332,7 @@ final class MemoryLeakTracker: ObservableObject {
                 let deltaAfter = self.currentRSSMB - initialMB
                 self.stressProgress = "✅ \(mode.rawValue) 완료\n    테스트 중: \(initialMB)→\(initialMB + deltaBefore)MB (Δ+\(deltaBefore)MB)\n    cleanup 후: \(self.currentRSSMB)MB (Δ+\(deltaAfter)MB)\n    \(cleanupResult)"
                 self.isStressTesting = false
-                fputs("[STRESS-\(mode.rawValue)] 완료 초기=\(initialMB)MB 테스트종료=\(initialMB + deltaBefore)MB cleanup후=\(self.currentRSSMB)MB\n", stderr)
+                plog("[STRESS-\(mode.rawValue)] 완료 초기=\(initialMB)MB 테스트종료=\(initialMB + deltaBefore)MB cleanup후=\(self.currentRSSMB)MB\n")
             }
         }
     }

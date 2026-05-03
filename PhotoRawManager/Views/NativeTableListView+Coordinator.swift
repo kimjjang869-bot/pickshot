@@ -295,13 +295,7 @@ extension NativeTableListView {
             rotateItem.submenu = rotateSub
             menu.addItem(rotateItem)
 
-            // Camera Raw 에서 열기
-            let cameraRawItem = NSMenuItem(title: "Camera Raw 에서 열기 (\(count)장)",
-                                           action: #selector(ctxOpenInCameraRaw), keyEquivalent: "")
-            cameraRawItem.target = self
-            cameraRawItem.image = NSImage(systemSymbolName: "camera.metering.matrix", accessibilityDescription: nil)
-            cameraRawItem.isEnabled = hasAnyRAW(ids: ids, store: store)
-            menu.addItem(cameraRawItem)
+            // v9.0.2: "Camera Raw 에서 열기" 메뉴 제거 (요청).
 
             menu.addItem(.separator())
 
@@ -455,6 +449,21 @@ extension NativeTableListView {
                     if let raw = p.rawURL, raw != p.jpgURL { fileURLs.append(raw) }
                 }
                 store.movePhotosToFolder(fileURLs: fileURLs, destination: newDir)
+            }
+        }
+
+        // MARK: - Double Click (v9.0.2)
+
+        /// 더블클릭 → 폴더 진입 / 부모 진입 (파일은 no-op).
+        @objc func handleDoubleClick(_ sender: Any?) {
+            guard let table = tableView else { return }
+            let row = table.clickedRow
+            guard row >= 0, row < rows.count else { return }
+            let photo = rows[row]
+            if photo.isParentFolder, let parent = store.folderURL?.deletingLastPathComponent() {
+                store.loadFolder(parent, restoreRatings: true)
+            } else if photo.isFolder {
+                store.loadFolder(photo.jpgURL, restoreRatings: true)
             }
         }
 
@@ -724,7 +733,7 @@ extension NativeTableListView {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self = self else { return }
                     self.store.loadFolder(folder, restoreRatings: true)
-                    fputs("[ListDrag] session ended op=\(operation.rawValue) → folder reloaded\n", stderr)
+                    plog("[ListDrag] session ended op=\(operation.rawValue) → folder reloaded\n")
                 }
             }
         }

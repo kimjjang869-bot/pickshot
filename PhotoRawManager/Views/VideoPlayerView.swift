@@ -13,8 +13,18 @@ struct VideoPlayerView: View {
     @State private var hideTimer: DispatchWorkItem?
     @State private var isHovering = false
     @State private var isScrubbing = false
+    /// v9.0.2: Pro 잠금 모달 표시용 (LOG 자동 LUT 등)
+    @State private var lockedFeature: AppFeature? = nil
 
     var body: some View {
+        innerBody
+            // v9.0.2: LOG 자동 LUT 등 Pro 잠금 모달.
+            .sheet(item: $lockedFeature) { feature in
+                ProLockModal(feature: feature)
+            }
+    }
+
+    private var innerBody: some View {
         ZStack {
             // AVPlayer 렌더링
             AVPlayerLayerView(player: manager.player)
@@ -432,11 +442,24 @@ struct VideoPlayerView: View {
 
                 if !manager.recentLUTs.isEmpty {
                     Divider()
-                    Button(action: { manager.autoApplyLUT.toggle() }) {
-                        if manager.autoApplyLUT {
-                            Label("LOG 자동 적용 끄기", systemImage: "checkmark.circle.fill")
+                    Button(action: {
+                        // v9.0.2: LOG 자동 LUT 는 Pro 전용
+                        if FeatureGate.allows(.logAutoLUT) {
+                            manager.autoApplyLUT.toggle()
                         } else {
-                            Label("LOG 자동 적용 켜기", systemImage: "circle")
+                            lockedFeature = .logAutoLUT
+                        }
+                    }) {
+                        HStack {
+                            if manager.autoApplyLUT {
+                                Label("LOG 자동 적용 끄기", systemImage: "checkmark.circle.fill")
+                            } else {
+                                Label("LOG 자동 적용 켜기", systemImage: "circle")
+                            }
+                            if !FeatureGate.allows(.logAutoLUT) {
+                                Spacer()
+                                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundColor(.purple)
+                            }
                         }
                     }
                     Button(action: { manager.clearRecentLUTs() }) {

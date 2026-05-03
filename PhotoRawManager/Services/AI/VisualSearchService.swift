@@ -106,9 +106,9 @@ final class VisualSearchService: ObservableObject {
             while folderAccessOrder.count > maxFolderStates {
                 let old = folderAccessOrder.removeFirst()
                 folderStates.removeValue(forKey: old)
-                fputs("[VS] LRU evict '\(URL(fileURLWithPath: old).lastPathComponent)'\n", stderr)
+                plog("[VS] LRU evict '\(URL(fileURLWithPath: old).lastPathComponent)'\n")
             }
-            fputs("[VS] 폴더 상태 저장 '\(URL(fileURLWithPath: curPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count) (\(folderAccessOrder.count)/\(maxFolderStates))\n", stderr)
+            plog("[VS] 폴더 상태 저장 '\(URL(fileURLWithPath: curPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count) (\(folderAccessOrder.count)/\(maxFolderStates))\n")
         }
 
         // 2) 현재 상태 초기화
@@ -131,7 +131,7 @@ final class VisualSearchService: ObservableObject {
         matchedURLs = saved.matchedURLs
         combineMode = saved.combineMode
         threshold = saved.threshold
-        fputs("[VS] 폴더 상태 복원 '\(URL(fileURLWithPath: newPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count)\n", stderr)
+        plog("[VS] 폴더 상태 복원 '\(URL(fileURLWithPath: newPath).lastPathComponent)' refs=\(references.count) matched=\(matchedURLs.count)\n")
         onRestore(saved.active)
     }
 
@@ -150,11 +150,11 @@ final class VisualSearchService: ObservableObject {
         label: String? = nil,
         completion: @escaping (Bool) -> Void
     ) {
-        fputs("[VS] addReference mode=\(mode.rawValue) src=\(sourceURL.lastPathComponent) crop=\(cropRect?.debugDescription ?? "nil")\n", stderr)
+        plog("[VS] addReference mode=\(mode.rawValue) src=\(sourceURL.lastPathComponent) crop=\(cropRect?.debugDescription ?? "nil")\n")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let vec = self.computeEmbedding(mode: mode, url: sourceURL, cropRect: cropRect)
-            fputs("[VS] 주 embedding dim=\(vec.count)\n", stderr)
+            plog("[VS] 주 embedding dim=\(vec.count)\n")
             guard !vec.isEmpty else {
                 DispatchQueue.main.async { completion(false) }
                 return
@@ -165,7 +165,7 @@ final class VisualSearchService: ObservableObject {
             if mode == .face {
                 bodyFP = Self.computePersonBodyFeaturePrint(url: sourceURL)
                 sceneFP = Self.computeFeaturePrint(url: sourceURL, cropRect: nil)
-                fputs("[VS] 보조 벡터 body=\(bodyFP?.count ?? 0) scene=\(sceneFP?.count ?? 0)\n", stderr)
+                plog("[VS] 보조 벡터 body=\(bodyFP?.count ?? 0) scene=\(sceneFP?.count ?? 0)\n")
             }
             let ref = VisualSearchReference(
                 mode: mode,
@@ -204,7 +204,7 @@ final class VisualSearchService: ObservableObject {
             let faces = FaceEmbeddingService.shared.embeddings(for: url)
             guard !faces.isEmpty else {
                 DispatchQueue.main.async {
-                    fputs("[VS-LEARN] ❌ \(url.lastPathComponent): 얼굴 감지 실패 — 학습 불가\n", stderr)
+                    plog("[VS-LEARN] ❌ \(url.lastPathComponent): 얼굴 감지 실패 — 학습 불가\n")
                 }
                 return
             }
@@ -215,7 +215,7 @@ final class VisualSearchService: ObservableObject {
             guard let neg = best else { return }
             DispatchQueue.main.async {
                 self.negativeExamples[label, default: []].append(neg)
-                fputs("[VS-LEARN] ✅ '\(label)' 부정 예시 추가: \(url.lastPathComponent) (총 \(self.negativeExamples[label]?.count ?? 0)개)\n", stderr)
+                plog("[VS-LEARN] ✅ '\(label)' 부정 예시 추가: \(url.lastPathComponent) (총 \(self.negativeExamples[label]?.count ?? 0)개)\n")
                 // matchedURLs 에서 이 사진 즉시 제거
                 self.matchedURLs.remove(url)
             }
@@ -227,7 +227,7 @@ final class VisualSearchService: ObservableObject {
         // 간단 구현: 전체 재검색 트리거
         let urls = Array(matchedURLs)
         if !urls.isEmpty {
-            fputs("[VS-LEARN] 부정 학습 반영 — \(urls.count)장 재평가\n", stderr)
+            plog("[VS-LEARN] 부정 학습 반영 — \(urls.count)장 재평가\n")
         }
     }
 
@@ -239,7 +239,7 @@ final class VisualSearchService: ObservableObject {
             matchedURLs = []
             return
         }
-        fputs("[VS] runSearch refs=\(references.count) targets=\(urls.count) threshold=\(threshold)\n", stderr)
+        plog("[VS] runSearch refs=\(references.count) targets=\(urls.count) threshold=\(threshold)\n")
         searchWork?.cancel()
         isSearching = true
         progress = (0, urls.count)
@@ -284,7 +284,7 @@ final class VisualSearchService: ObservableObject {
                 self.matchedURLs = matches
                 self.isSearching = false
                 self.progress = (urls.count, urls.count)
-                fputs("[VS] 완료 matched=\(matches.count)/\(urls.count)\n", stderr)
+                plog("[VS] 완료 matched=\(matches.count)/\(urls.count)\n")
             }
         }
         searchWork = work
@@ -398,7 +398,7 @@ final class VisualSearchService: ObservableObject {
                     }
                 }
 
-                fputs("[VS-MATCH] \(url.lastPathComponent) '\(label)' face=\(String(format: "%.3f", bestFaceSim)) body=\(String(format: "%.3f", bestBodySim)) neg=\(String(format: "%.3f", bestNegSim)) thr=\(String(format: "%.2f", threshold)) facesDetected=\(faces.count) by=\(matchedBy)\n", stderr)
+                plog("[VS-MATCH] \(url.lastPathComponent) '\(label)' face=\(String(format: "%.3f", bestFaceSim)) body=\(String(format: "%.3f", bestBodySim)) neg=\(String(format: "%.3f", bestNegSim)) thr=\(String(format: "%.2f", threshold)) facesDetected=\(faces.count) by=\(matchedBy)\n")
 
                 if groupMatched { faceMatchCount += 1 }
             }

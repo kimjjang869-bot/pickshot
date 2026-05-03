@@ -123,15 +123,20 @@ enum PreviewLoadingPolicy {
     // v8.9.6: fastCullingMode 에서도 현재 사진은 hi-res 로 올린다 (FRV 패턴).
     //   이전엔 fastCullingMode 면 영영 hi-res 안 올라 5K 화면에서 임베디드 1616px 흐릿하게 보였음.
     //   neighbor prefetch 는 여전히 shouldPrefetchHiRes 로 차단.
+    // v9.1: 슈퍼 셀렉 모드 ON 시 자동 hi-res 차단 (Stage 2 까지만).
+    //   사용자 명시 줌/100% (loadHiResForZoom forceDeepScan) 은 별도 경로라 통과.
     static func shouldAutoLoadHiRes(fastCullingMode: Bool) -> Bool {
-        true
+        if SuperCullMode.isActive { return false }
+        return true
     }
 
     static func hiResDelay(isKeyRepeat: Bool, alreadyCached: Bool, tier: PerformanceTier) -> TimeInterval {
         if alreadyCached { return 0 }
-        // v8.9.7+: hi-res 표시 시간 단축. 키 멈춤 후 80ms idle + 짧은 delay → 평균 1초→500ms 목표.
+        // v8.9.7+: hi-res 표시 시간 단축. 키 멈춤 후 80ms idle + 짧은 delay.
+        // v9.1.4: 일반 클릭(non-keyRepeat) 은 0ms — 캐시 미스 시 1~2초 체감 단축.
+        //   stage1 표시 직후 곧바로 hi-res 디코드 시작.
         if isKeyRepeat { return 0.1 }
-        return tier == .low ? 0.1 : 0.05
+        return tier == .low ? 0.05 : 0
     }
 
     /// fastCullingMode 에서 현재 사진 hi-res 까지 추가 delay (nav 도중 디코드 시작 회피)

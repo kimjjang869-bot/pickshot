@@ -10,6 +10,7 @@ import Metal
 import CryptoKit
 
 struct PerformanceOptimizeTab: View {
+    @EnvironmentObject var store: PhotoStore
     @State private var isBenchmarking = false
     @State private var benchmarkDone = false
     @State private var cpuLabel: String = "—"
@@ -21,6 +22,7 @@ struct PerformanceOptimizeTab: View {
     @State private var applied = false
     @State private var selectedProfile: String = ""
 
+    @AppStorage("superCullModeActive") private var superCullActive: Bool = false
     @AppStorage("previewMaxResolution") private var previewMaxResolution = "1000"  // v8.6.2 기본값 통일
     @AppStorage("previewCacheSize") private var previewCacheSize = 50.0  // v8.6.2 기본값 통일
     @AppStorage("defaultThumbnailSize") private var defaultThumbnailSize = 150.0
@@ -37,6 +39,17 @@ struct PerformanceOptimizeTab: View {
                 }
 
                 Divider()
+
+                // v9.1: 성능 프로파일 (4개 토글 통합) — 툴바와 동기화
+                GroupBox("성능 프로파일") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PerformanceProfilePicker(store: store)
+                        Text(store.performanceProfile.helpText)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(4)
+                }
 
                 // 시스템 정보
                 GroupBox("시스템 정보") {

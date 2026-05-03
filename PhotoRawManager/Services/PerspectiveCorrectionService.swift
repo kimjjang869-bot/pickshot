@@ -55,7 +55,7 @@ struct PerspectiveCorrectionService {
         // 0. 얼굴 감지
         let hasFace = detectFaces(image: image)
         if hasFace {
-            fputs("[Upright] 인물 감지됨\n", stderr)
+            plog("[Upright] 인물 감지됨\n")
         }
 
         // ── 전략 ──
@@ -67,7 +67,7 @@ struct PerspectiveCorrectionService {
         if hasFace {
             // 인물은 무조건 수평만
             effectiveMode = .level
-            fputs("[Upright] 인물 → level 고정\n", stderr)
+            plog("[Upright] 인물 → level 고정\n")
         } else {
             effectiveMode = mode
         }
@@ -92,13 +92,13 @@ struct PerspectiveCorrectionService {
         do {
             try handler.perform([request])
         } catch {
-            fputs("[Upright/Vision] 에러: \(error)\n", stderr)
+            plog("[Upright/Vision] 에러: \(error)\n")
             return (image, 0, false)
         }
 
         guard let obs = request.results?.first,
               abs(obs.angle) > 0.003 else {  // 0.17도 미만 스킵
-            fputs("[Upright/Vision] 회전 감지 안 됨 — 스킵\n", stderr)
+            plog("[Upright/Vision] 회전 감지 안 됨 — 스킵\n")
             return (image, 0, false)
         }
 
@@ -106,11 +106,11 @@ struct PerspectiveCorrectionService {
 
         // 15도 이상은 비정상
         guard abs(angleDeg) < 15.0 else {
-            fputs("[Upright/Vision] 각도 과대 (\(String(format: "%.1f", angleDeg))°) — 스킵\n", stderr)
+            plog("[Upright/Vision] 각도 과대 (\(String(format: "%.1f", angleDeg))°) — 스킵\n")
             return (image, 0, false)
         }
 
-        fputs("[Upright/Vision] 수평 보정: \(String(format: "%.2f", angleDeg))°\n", stderr)
+        plog("[Upright/Vision] 수평 보정: \(String(format: "%.2f", angleDeg))°\n")
 
         let corrected = rotateAndCrop(image: image, angleDegrees: Double(-angleDeg))
         return (corrected, abs(Double(angleDeg)), true)
@@ -134,7 +134,7 @@ struct PerspectiveCorrectionService {
         let lines = detectLineSegments(image: result, maxSize: 1024)
         let verticalLines = lines.filter { $0.isVertical && $0.length > 50 }
 
-        fputs("[Upright/Vertical] 수직선: \(verticalLines.count)개\n", stderr)
+        plog("[Upright/Vertical] 수직선: \(verticalLines.count)개\n")
         guard verticalLines.count >= 3 else {
             return levelApplied ? (result, totalAngle, true) : (image, 0, false)
         }
@@ -149,7 +149,7 @@ struct PerspectiveCorrectionService {
         let pitch = atan2(vp.y - cy, f)
         let pitchDeg = pitch * 180.0 / .pi
 
-        fputs("[Upright/Vertical] VP: (\(String(format: "%.0f", vp.x)), \(String(format: "%.0f", vp.y))), pitch: \(String(format: "%.2f", pitchDeg))°\n", stderr)
+        plog("[Upright/Vertical] VP: (\(String(format: "%.0f", vp.x)), \(String(format: "%.0f", vp.y))), pitch: \(String(format: "%.2f", pitchDeg))°\n")
 
         if abs(pitchDeg) > 0.5 && abs(pitchDeg) < 15 {
             result = applyPitchCorrection(image: result, pitchRadians: pitch)
@@ -180,7 +180,7 @@ struct PerspectiveCorrectionService {
 
             if abs(yawDeg) > 0.5 && abs(yawDeg) < 15 {
                 let final = applyYawCorrection(image: result, yawRadians: yaw)
-                fputs("[Upright/Full] yaw: \(String(format: "%.2f", yawDeg))°\n", stderr)
+                plog("[Upright/Full] yaw: \(String(format: "%.2f", yawDeg))°\n")
                 return (final, max(angle, abs(yawDeg)), true)
             }
         }

@@ -30,6 +30,8 @@ struct SettingsView: View {
                 }
                 ShortcutsSettingsTab()
                     .tabItem { Label("단축키", systemImage: "keyboard") }
+                SubscriptionSettingsTab()
+                    .tabItem { Label("구독 관리", systemImage: "creditcard") }
             }
 
             // 하단 고정 버튼

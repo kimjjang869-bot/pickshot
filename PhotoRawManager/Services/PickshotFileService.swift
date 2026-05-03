@@ -119,7 +119,7 @@ class PickshotFileService {
         // 웹 뷰어 형식 시도 (version: String, photos 배열 포함)
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let photosArray = json["photos"] as? [[String: Any]] {
-            fputs("[PICKSHOT] 웹 뷰어 형식 감지\n", stderr)
+            plog("[PICKSHOT] 웹 뷰어 형식 감지\n")
             return applyWebViewerPickshot(json: json, photosArray: photosArray, to: &photos, photoIndex: photoIndex)
         }
 
@@ -154,9 +154,9 @@ class PickshotFileService {
                 if let penArr = pen as? [Any], !penArr.isEmpty,
                    let penData = try? JSONSerialization.data(withJSONObject: pen) {
                     penJSON = String(data: penData, encoding: .utf8)
-                    fputs("[PICKSHOT] 🎨 펜 데이터 감지: \(filename) — \(penArr.count)개 stroke, JSON \(penJSON?.count ?? 0)자\n", stderr)
+                    plog("[PICKSHOT] 🎨 펜 데이터 감지: \(filename) — \(penArr.count)개 stroke, JSON \(penJSON?.count ?? 0)자\n")
                 } else if let penArr = pen as? [Any], penArr.isEmpty {
-                    fputs("[PICKSHOT] penDrawings 빈 배열: \(filename) (스킵)\n", stderr)
+                    plog("[PICKSHOT] penDrawings 빈 배열: \(filename) (스킵)\n")
                 }
             }
 
