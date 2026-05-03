@@ -46,8 +46,8 @@ struct DoubleClickResetSlider: View {
         self.sizeVariant = sizeVariant
     }
 
-    private var trackHeight: CGFloat { sizeVariant == .large ? 6 : 4 }
-    private var thumbDiameter: CGFloat { sizeVariant == .large ? 18 : 14 }
+    private var trackHeight: CGFloat { sizeVariant == .large ? 7 : 5 }
+    private var thumbDiameter: CGFloat { sizeVariant == .large ? 20 : 16 }
 
     @State private var isDragging: Bool = false
 
@@ -63,7 +63,7 @@ struct DoubleClickResetSlider: View {
                     if let grad = trackGradient {
                         Capsule().fill(grad).frame(height: trackHeight)
                     } else {
-                        Capsule().fill(Color.white.opacity(0.15)).frame(height: trackHeight)
+                        Capsule().fill(Color.white.opacity(0.18)).frame(height: trackHeight)
                     }
                 }
 
@@ -79,8 +79,8 @@ struct DoubleClickResetSlider: View {
 
                 // 기본값 틱
                 Rectangle()
-                    .fill(Color.white.opacity(0.6))
-                    .frame(width: 1.5, height: 10)
+                    .fill(Color.white.opacity(0.65))
+                    .frame(width: 1.5, height: 12)
                     .offset(x: defaultRatio * width - 0.75)
 
                 // 썸

@@ -10,6 +10,17 @@ import Compression
 class ClientSelectService: ObservableObject {
     static let shared = ClientSelectService()
 
+    /// v9.1.4: 세션명 sanitize — 파일시스템/URL 위험문자 제거 (보안 감사 H-2).
+    static func sanitizeSessionName(_ raw: String) -> String {
+        let forbidden = CharacterSet(charactersIn: "/\\:*?\"<>|")
+        let cleaned = raw.components(separatedBy: forbidden).joined(separator: "_")
+        // 연속 점은 traversal 의도가 강함 — 단일 _ 로 축약.
+        let noTraversal = cleaned.replacingOccurrences(of: "..", with: "_")
+        let trimmed = noTraversal.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 빈 문자열 폴백.
+        return trimmed.isEmpty ? "session" : String(trimmed.prefix(120))
+    }
+
     // 세션 상태
     @Published var isActive = false
     @Published var isUploading = false
@@ -23,6 +34,8 @@ class ClientSelectService: ObservableObject {
     @Published var selectionLimit: Int = 0
     @Published var shareLink: String?
     @Published var viewerLink: String?
+    /// v9.1.4: is.gd URL 단축 실패 시 UI 안내용 (보안 감사 H-3).
+    @Published var viewerLinkShortenFailed: Bool = false
     // 원본 업로드 옵션
     var uploadOriginal = false
     var originalResolution = 2000
@@ -30,8 +43,16 @@ class ClientSelectService: ObservableObject {
     @Published var originalZipFileId: String?
 
     var viewerBaseURL: String {
-        UserDefaults.standard.string(forKey: "clientSelectViewerURL")
-            ?? "https://kimjjang869-bot.github.io/pickshot-viewer"
+        let fallback = "https://kimjjang869-bot.github.io/pickshot-viewer"
+        // v9.1.4: 사용자/UserDefaults 조작 방어 (보안 감사 M-4) — https 스킴 + 유효 URL 만 허용.
+        let custom = UserDefaults.standard.string(forKey: "clientSelectViewerURL") ?? ""
+        guard custom.hasPrefix("https://"),
+              let url = URL(string: custom),
+              url.host != nil else {
+            return fallback
+        }
+        // 끝의 / 만 제거 (path 는 보존).
+        return custom.hasSuffix("/") ? String(custom.dropLast()) : custom
     }
 
     /// 기본 Cloudflare Worker 프록시 (PickShot 개발자가 운영 — 사용자 설정 불필요).
@@ -123,7 +144,7 @@ class ClientSelectService: ObservableObject {
 
     func startSession(name: String, client: String, email: String,
                       photos: [PhotoItem], accessMode: AccessMode) {
-        fputs("[CLIENT] startSession: name=\(name), photos=\(photos.count)\n", stderr)
+        plog("[CLIENT] startSession: name=\(name), photos=\(photos.count)\n")
 
         // 토큰 확보 (비동기 — 메인스레드 블로킹 없음)
         resolveToken { [weak self] token in
@@ -134,7 +155,7 @@ class ClientSelectService: ObservableObject {
                 }
                 return
             }
-            fputs("[CLIENT] 토큰 준비: \(token.prefix(10))...\n", stderr)
+            plog("[CLIENT] 토큰 준비: OK\n")  // v9.1.4: 토큰 prefix 노출 제거 (보안 감사 H-4)
             self.continueSession(token: token, name: name, client: client, email: email, photos: photos, accessMode: accessMode)
         }
     }
@@ -144,19 +165,19 @@ class ClientSelectService: ObservableObject {
         if GoogleDriveService.savedAccessToken != nil {
             GoogleDriveService.refreshAccessToken { newToken, error in
                 if let newToken = newToken {
-                    fputs("[CLIENT] 토큰 갱신 성공\n", stderr)
+                    plog("[CLIENT] 토큰 갱신 성공\n")
                     completion(newToken)
                 } else {
-                    fputs("[CLIENT] 토큰 갱신 실패 — 재로그인\n", stderr)
+                    plog("[CLIENT] 토큰 갱신 실패 — 재로그인\n")
                     GoogleDriveService.startOAuthLogin { token, _ in
-                        fputs("[CLIENT] 재로그인: \(token != nil ? "성공" : "실패")\n", stderr)
+                        plog("[CLIENT] 재로그인: \(token != nil ? "성공" : "실패")\n")
                         completion(token)
                     }
                 }
             }
         } else {
             GoogleDriveService.startOAuthLogin { token, _ in
-                fputs("[CLIENT] 새 로그인: \(token != nil ? "성공" : "실패")\n", stderr)
+                plog("[CLIENT] 새 로그인: \(token != nil ? "성공" : "실패")\n")
                 completion(token)
             }
         }
@@ -164,12 +185,16 @@ class ClientSelectService: ObservableObject {
 
     private func continueSession(token: String, name: String, client: String, email: String,
                                   photos: [PhotoItem], accessMode: AccessMode) {
-        fputs("[CLIENT] continueSession with token\n", stderr)
+        plog("[CLIENT] continueSession with token\n")
+
+        // v9.1.4: 세션명 sanitize — 경로 구분자 / URL 메타문자 제거 (보안 감사 H-2).
+        //   `/`, `\`, `..` 등이 폴더명에 들어가면 로컬 Drive 복사 경로 traversal 또는 뷰어 URL 파싱 오류 유발.
+        let sanitizedName = Self.sanitizeSessionName(name)
 
         // 상태 초기화 — 반드시 메인스레드에서 @Published 변경
         let ensureMain = { [weak self] in
             guard let self = self else { return }
-            self.sessionName = name
+            self.sessionName = sanitizedName
             self.clientName = client
             self.clientEmail = email
             self.accessMode = accessMode
@@ -208,29 +233,29 @@ class ClientSelectService: ObservableObject {
     // MARK: - 업로드 워크플로우
 
     private func executeUploadWorkflow(token: String, photos: [PhotoItem]) {
-        fputs("[CLIENT] executeUploadWorkflow: \(photos.count)장, token=\(token.prefix(10))...\n", stderr)
+        plog("[CLIENT] executeUploadWorkflow: \(photos.count)장\n")  // v9.1.4: 토큰 prefix 제거 (H-4)
         // 1. Google Drive 폴더 생성
         let folderSemaphore = DispatchSemaphore(value: 0)
         var folderId: String?
 
-        fputs("[CLIENT] 폴더 생성 시도: \(sessionName)\n", stderr)
+        plog("[CLIENT] 폴더 생성 시도: \(sessionName)\n")
         GoogleDriveService.createFolder(name: sessionName, accessToken: token) { id, error in
             folderId = id
             if let error = error {
-                fputs("[CLIENT] ❌ 폴더 생성 실패: \(error.localizedDescription)\n", stderr)
+                plog("[CLIENT] ❌ 폴더 생성 실패: \(error.localizedDescription)\n")
                 DispatchQueue.main.async { [weak self] in
                     self?.errorMessage = "폴더 생성 실패: \(error.localizedDescription)"
                     self?.isUploading = false
                 }
             } else {
-                fputs("[CLIENT] ✅ 폴더 생성: \(id ?? "nil")\n", stderr)
+                plog("[CLIENT] ✅ 폴더 생성: \(id ?? "nil")\n")
             }
             folderSemaphore.signal()
         }
         folderSemaphore.wait()
 
         guard let folderID = folderId, !cancelled else {
-            fputs("[CLIENT] ❌ 폴더 ID 없음 또는 취소됨\n", stderr)
+            plog("[CLIENT] ❌ 폴더 ID 없음 또는 취소됨\n")
             return
         }
 
@@ -257,7 +282,7 @@ class ClientSelectService: ObservableObject {
         let filteredPhotos = photos.filter { !existingFileNames.contains($0.jpgURL.lastPathComponent) }
         let skippedCount = originalCount - filteredPhotos.count
         if skippedCount > 0 {
-            fputs("[CLIENT] 중복 건너뛰기: \(skippedCount)장 (기존 파일과 동일 이름)\n", stderr)
+            plog("[CLIENT] 중복 건너뛰기: \(skippedCount)장 (기존 파일과 동일 이름)\n")
             DispatchQueue.main.async { [weak self] in
                 self?.errorMessage = "\(skippedCount)장 중복 건너뛰기"
             }
@@ -265,7 +290,7 @@ class ClientSelectService: ObservableObject {
 
         let photosToUpload = filteredPhotos
         guard !photosToUpload.isEmpty else {
-            fputs("[CLIENT] 업로드할 새 파일 없음 (전부 중복)\n", stderr)
+            plog("[CLIENT] 업로드할 새 파일 없음 (전부 중복)\n")
             DispatchQueue.main.async { [weak self] in
                 self?.isUploading = false
                 self?.errorMessage = "업로드할 새 파일 없음 (\(skippedCount)장 이미 존재)"
@@ -286,10 +311,10 @@ class ClientSelectService: ObservableObject {
         let uploadGroup = DispatchGroup()
         let uploadSemaphore = DispatchSemaphore(value: concurrency)
 
-        fputs("[CLIENT] 사진 업로드 시작: \(photosToUpload.count)장 (중복 \(skippedCount)장 건너뜀)\n", stderr)
+        plog("[CLIENT] 사진 업로드 시작: \(photosToUpload.count)장 (중복 \(skippedCount)장 건너뜀)\n")
         for (index, photo) in photosToUpload.enumerated() {
             guard !cancelled else { break }
-            fputs("[CLIENT] 업로드 \(index+1)/\(photosToUpload.count): \(photo.jpgURL.lastPathComponent)\n", stderr)
+            plog("[CLIENT] 업로드 \(index+1)/\(photosToUpload.count): \(photo.jpgURL.lastPathComponent)\n")
 
             uploadSemaphore.wait()  // 동시 4개 제한
             uploadGroup.enter()
@@ -361,7 +386,7 @@ class ClientSelectService: ObservableObject {
 
         // 3.5. 원본 파일 ZIP 업로드 (옵션)
         if uploadOriginal && !cancelled {
-            fputs("[CLIENT] 원본 ZIP 생성 중 (\(originalResolution)px)...\n", stderr)
+            plog("[CLIENT] 원본 ZIP 생성 중 (\(originalResolution)px)...\n")
             DispatchQueue.main.async { [weak self] in
                 self?.uploadSpeed = "원본 ZIP 생성 중..."
             }
@@ -397,32 +422,41 @@ class ClientSelectService: ObservableObject {
                     let proxyURL = self?.effectiveProxyURL ?? Self.defaultCloudflareProxyURL
                     if let encodedProxy = proxyURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
                         viewerURL += "&proxy=\(encodedProxy)"
-                        fputs("[CLIENT] ✅ Worker 프록시 모드 (\(photoCount)장) \(proxyURL)?id=\(mid)\n", stderr)
+                        plog("[CLIENT] ✅ Worker 프록시 모드 (\(photoCount)장) \(proxyURL)?id=\(mid)\n")
                     }
                 }
 
                 let urlLen = viewerURL.count
-                fputs("[CLIENT] 원본 URL 길이: \(urlLen) chars\n", stderr)
-                self?.viewerLink = viewerURL  // 우선 원본 URL 로 표시
+                plog("[CLIENT] 원본 URL 길이: \(urlLen) chars\n")
 
-                // is.gd URL 단축은 백그라운드에서 실행 후 UI 업데이트 (메인 블로킹 방지)
+                // v9.1.4 (보안 감사 H-3): URL 단축이 필요한 경우 → 시도 결과를 기다린 후 viewerLink/QR 설정.
+                //   기존 동작: 즉시 원본 URL 노출 후 단축 성공 시 교체. 단축 실패 시 세션명·클라이언트명·프록시 URL 평문 누설.
+                //   개선: 단축 시도 → 성공이면 짧은 URL, 실패면 원본 URL + 사용자 안내 플래그.
                 if urlLen > 150 {
+                    self?.viewerLinkShortenFailed = false
                     let urlToShorten = viewerURL
                     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                         guard let self = self else { return }
                         let shortURL = self.shortenURL(urlToShorten)
-                        if shortURL != urlToShorten && shortURL.hasPrefix("https://is.gd/") {
-                            DispatchQueue.main.async {
-                                self.viewerLink = shortURL
-                                self.qrCodeImage = self.generateQRCode(from: shortURL)
-                                fputs("[CLIENT] 🔗 단축 URL 적용 (\(urlLen)자 → \(shortURL.count)자)\n", stderr)
+                        let succeeded = (shortURL != urlToShorten) && shortURL.hasPrefix("https://is.gd/")
+                        DispatchQueue.main.async {
+                            let finalURL = succeeded ? shortURL : urlToShorten
+                            self.viewerLink = finalURL
+                            self.qrCodeImage = self.generateQRCode(from: finalURL)
+                            self.viewerLinkShortenFailed = !succeeded
+                            if succeeded {
+                                plog("[CLIENT] 🔗 단축 URL 적용 (\(urlLen)자 → \(shortURL.count)자)\n")
+                            } else {
+                                plog("[CLIENT] ⚠ URL 단축 실패 — 원본 URL 사용 (\(urlLen)자)\n")
                             }
                         }
                     }
+                } else {
+                    // 짧은 URL (≤150자) → 단축 불필요, 즉시 적용.
+                    self?.viewerLink = viewerURL
+                    self?.qrCodeImage = self?.generateQRCode(from: viewerURL)
+                    self?.viewerLinkShortenFailed = false
                 }
-
-                // QR 코드 생성
-                self?.qrCodeImage = self?.generateQRCode(from: viewerURL)
             }
             linkSemaphore.signal()
         }
@@ -450,7 +484,7 @@ class ClientSelectService: ObservableObject {
                 createdAt: Date()
             )
             self.saveSession(record)
-            fputs("[CLIENT] ✅ 업로드 완료: \(self.uploadDone)장, 링크: \(self.viewerLink ?? "없음")\n", stderr)
+            plog("[CLIENT] ✅ 업로드 완료: \(self.uploadDone)장, 링크: \(self.viewerLink ?? "없음")\n")
         }
     }
 
@@ -472,7 +506,7 @@ class ClientSelectService: ObservableObject {
         clientName = d.string(forKey: "cs_lastClientName") ?? ""
         viewerLink = d.string(forKey: "cs_lastViewerLink")
         isActive = true
-        fputs("[CLIENT] 세션 복원: \(sessionName) folder=\(fid)\n", stderr)
+        plog("[CLIENT] 세션 복원: \(sessionName) folder=\(fid)\n")
         return true
     }
 
@@ -487,45 +521,41 @@ class ClientSelectService: ObservableObject {
     // MARK: - 사진 리사이즈
 
     private func resizePhoto(photo: PhotoItem, index: Int, tempDir: URL) -> URL? {
+        // v9.0.2: RAWConversionService 의 새 파이프라인 사용 — Stage 3 임베디드 추출 + orientation +
+        //   다단계 Lanczos 다운샘플. 색감 / 화질 / 회전 모두 본 변환 엔진과 동일.
         let sourceURL = photo.jpgURL
-        let ext = sourceURL.pathExtension.lowercased()
-        let isRAW = FileMatchingService.rawExtensions.contains(ext)
+        let targetMax: CGFloat = 1200
 
-        var thumbnail: CGImage? = nil
-
-        // RAW (NEF/ARW/CR3/RAF 등)는 ImageIO 의 CGImageSourceCreateThumbnailAtIndex 가
-        // Bayer main image 디코드에 실패해 "검정 이미지" 를 반환하는 케이스가 있음 (특히
-        // 니콘 NEF, 소니 ARW). `kCGImageSourceCreateThumbnailFromImageAlways: true` 가
-        // embedded preview JPEG 를 의도적으로 건너뛰기 때문. → RAW 는 CGImageSource
-        // 경로를 건너뛰고 PreviewImageCache.loadOptimized 로 (embedded JPEG 추출 /
-        // CIRAWFilter 포함된 검증 경로) 직행.
-        if !isRAW {
-            if let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) {
-                let options: [CFString: Any] = [
-                    kCGImageSourceThumbnailMaxPixelSize: 1200,
-                    // embedded preview 가 있으면 우선 사용 (Always → IfAbsent) — JPG 도
-                    // embedded thumbnail 이 있으면 훨씬 빠르고 거의 동일 품질.
-                    kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                ]
-                thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
+        let cgImage: CGImage? = autoreleasepool {
+            // 1차: deep embedded JPEG (RAW 면 Stage 3, JPG 면 임베디드/풀이미지).
+            if let cg = RAWConversionService.extractDeepEmbeddedJPEG(url: sourceURL) {
+                var ci = CIImage(cgImage: cg)
+                // 2차: 부모 orientation 적용 (세로 사진 정방향).
+                ci = RAWConversionService.applyParentOrientationIfNeeded(ci, url: sourceURL, embeddedSize: CGSize(width: cg.width, height: cg.height))
+                // 3차: 다단계 Lanczos 다운샘플.
+                let extent = ci.extent
+                let origMax = max(extent.width, extent.height)
+                if origMax > targetMax {
+                    ci = RAWConversionService.highQualityDownscale(ci, targetMax: targetMax)
+                }
+                return RAWConversionService.ciContext.createCGImage(ci, from: ci.extent,
+                                                                     format: .RGBA8,
+                                                                     colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
             }
-        }
-
-        // RAW 이거나 CGImageSource 실패: PreviewImageCache.loadOptimized 로 fallback.
-        if thumbnail == nil {
-            let reason = isRAW ? "RAW" : "CGImageSource 실패"
-            fputs("[CLIENT] \(reason) → loadOptimized: \(sourceURL.lastPathComponent)\n", stderr)
-            if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: 1200),
+            // 폴백: PreviewImageCache.loadOptimized (DNG without thumb 등).
+            plog("[CLIENT] embedded extraction 실패 → loadOptimized 폴백: \(sourceURL.lastPathComponent)\n")
+            if let nsImage = PreviewImageCache.loadOptimized(url: sourceURL, maxPixel: targetMax),
                let cgImg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                thumbnail = cgImg
+                return cgImg
             }
-        }
-
-        guard let finalThumb = thumbnail else {
-            fputs("[CLIENT] ❌ 리사이즈 완전 실패: \(sourceURL.lastPathComponent)\n", stderr)
             return nil
         }
+
+        guard let finalThumb = cgImage else {
+            plog("[CLIENT] ❌ 리사이즈 완전 실패: \(sourceURL.lastPathComponent)\n")
+            return nil
+        }
+        plog("[CLIENT] 리사이즈 완료 \(finalThumb.width)x\(finalThumb.height) — \(sourceURL.lastPathComponent)\n")
 
         // 파일명: 접두어 있으면 "접두어_0001.jpg", 없으면 "0001_원본이름.jpg"
         let fileName: String
@@ -539,7 +569,7 @@ class ClientSelectService: ObservableObject {
         guard let dest = CGImageDestinationCreateWithURL(destURL as CFURL, "public.jpeg" as CFString, 1, nil) else { return nil }
 
         let jpegOptions: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: 0.8
+            kCGImageDestinationLossyCompressionQuality: 0.85
         ]
         CGImageDestinationAddImage(dest, finalThumb, jpegOptions as CFDictionary)
 
@@ -564,7 +594,7 @@ class ClientSelectService: ObservableObject {
             let pubSem = DispatchSemaphore(value: 0)
             URLSession.shared.dataTask(with: pubReq) { data, response, _ in
                 if let http = response as? HTTPURLResponse {
-                    fputs("[CLIENT] 공개 권한 설정: HTTP \(http.statusCode)\n", stderr)
+                    plog("[CLIENT] 공개 권한 설정: HTTP \(http.statusCode)\n")
                 }
                 pubSem.signal()
             }.resume()
@@ -773,13 +803,13 @@ class ClientSelectService: ObservableObject {
         let ghToken: String? = KeychainService.read(key: "github_token")
 
         guard let ghToken = ghToken, !ghToken.isEmpty else {
-            fputs("[CLIENT] GitHub 토큰 없음 — manifest GitHub 업로드 스킵\n", stderr)
+            plog("[CLIENT] GitHub 토큰 없음 — manifest GitHub 업로드 스킵\n")
             return false
         }
 
         let b64Content = data.base64EncodedString()
         guard let apiURL = URL(string: "https://api.github.com/repos/kimjjang869-bot/pickshot-viewer/contents/data/\(sessionId).json") else {
-            fputs("[CLIENT] Invalid GitHub API URL\n", stderr)
+            plog("[CLIENT] Invalid GitHub API URL\n")
             return false
         }
 
@@ -798,7 +828,7 @@ class ClientSelectService: ObservableObject {
         var success = false
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let http = response as? HTTPURLResponse {
-                fputs("[CLIENT] GitHub manifest 업로드: HTTP \(http.statusCode)\n", stderr)
+                plog("[CLIENT] GitHub manifest 업로드: HTTP \(http.statusCode)\n")
                 success = (200...299).contains(http.statusCode)
             }
             sem.signal()
@@ -827,14 +857,14 @@ class ClientSelectService: ObservableObject {
         var shortURL = longURL
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                fputs("[CLIENT] URL 단축 에러: \(error.localizedDescription)\n", stderr)
+                plog("[CLIENT] URL 단축 에러: \(error.localizedDescription)\n")
             } else if let data = data,
                       let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
                 if result.hasPrefix("https://") {
                     shortURL = result
-                    fputs("[CLIENT] ✅ URL 단축 성공: \(result)\n", stderr)
+                    plog("[CLIENT] ✅ URL 단축 성공: \(result)\n")
                 } else {
-                    fputs("[CLIENT] URL 단축 응답 이상: \(result.prefix(120))\n", stderr)
+                    plog("[CLIENT] URL 단축 응답 이상: \(result.prefix(120))\n")
                 }
             }
             sem.signal()
@@ -848,11 +878,13 @@ class ClientSelectService: ObservableObject {
     @discardableResult
     private func uploadManifest(photos: [[String: Any]], folderId: String, token: String) -> String? {
         var manifestFileId: String?
+        // v9.1.4 보안 (M-3): clientEmail 제거 — manifest.json 은 type:"anyone" reader 권한으로
+        //   공유되므로 링크 아는 누구나 이메일 열람 가능. 클라이언트 측엔 sessionName 만 표시되면 충분.
+        //   향후 필요 시 hash 또는 호스트 사이드 storage 로 별도 저장.
         let manifest: [String: Any] = [
             "version": "1.0",
             "sessionName": sessionName,
             "clientName": clientName,
-            "clientEmail": clientEmail,
             "selectionLimit": selectionLimit,   // 0 = 무제한
             "originalZipFileId": originalZipFileId ?? "",
             "createdAt": ISO8601DateFormatter().string(from: Date()),
@@ -900,14 +932,14 @@ class ClientSelectService: ObservableObject {
             let permSem = DispatchSemaphore(value: 0)
             URLSession.shared.dataTask(with: permReq) { _, resp, _ in
                 if let http = resp as? HTTPURLResponse {
-                    fputs("[CLIENT] manifest 공개 권한: HTTP \(http.statusCode)\n", stderr)
+                    plog("[CLIENT] manifest 공개 권한: HTTP \(http.statusCode)\n")
                 }
                 permSem.signal()
             }.resume()
             permSem.wait()
         }
 
-        fputs("[CLIENT] manifest 업로드: \(manifestFileId ?? "실패")\n", stderr)
+        plog("[CLIENT] manifest 업로드: \(manifestFileId ?? "실패")\n")
         return manifestFileId
     }
 
@@ -946,7 +978,7 @@ class ClientSelectService: ObservableObject {
                     }
                 }
                 guard let finalThumb = thumb else {
-                    fputs("[CLIENT] ❌ 원본 리사이즈 실패: \(sourceURL.lastPathComponent)\n", stderr)
+                    plog("[CLIENT] ❌ 원본 리사이즈 실패: \(sourceURL.lastPathComponent)\n")
                     return
                 }
 
@@ -975,17 +1007,17 @@ class ClientSelectService: ObservableObject {
 
         // v8.6.1: coordinator 실패 시 early return (기존엔 nil ZIP 업로드 시도해 500 에러)
         if let err = zipError {
-            fputs("[CLIENT] ❌ ZIP coordinator 실패: \(err.localizedDescription)\n", stderr)
+            plog("[CLIENT] ❌ ZIP coordinator 실패: \(err.localizedDescription)\n")
             return nil
         }
 
         guard FileManager.default.fileExists(atPath: zipURL.path) else {
-            fputs("[CLIENT] ❌ ZIP 생성 실패\n", stderr)
+            plog("[CLIENT] ❌ ZIP 생성 실패\n")
             return nil
         }
 
         let zipSize = (try? FileManager.default.attributesOfItem(atPath: zipURL.path)[.size] as? Int64) ?? 0
-        fputs("[CLIENT] ZIP 생성: \(zipName) (\(zipSize / 1024 / 1024)MB)\n", stderr)
+        plog("[CLIENT] ZIP 생성: \(zipName) (\(zipSize / 1024 / 1024)MB)\n")
 
         // 업로드
         DispatchQueue.main.async { [weak self] in
@@ -997,9 +1029,9 @@ class ClientSelectService: ObservableObject {
         GoogleDriveService.uploadFile(fileURL: zipURL, folderId: folderId, accessToken: token) { result, error in
             fileId = result?.fileId
             if let error = error {
-                fputs("[CLIENT] ❌ ZIP 업로드 실패: \(error.localizedDescription)\n", stderr)
+                plog("[CLIENT] ❌ ZIP 업로드 실패: \(error.localizedDescription)\n")
             } else {
-                fputs("[CLIENT] ✅ ZIP 업로드: \(fileId ?? "")\n", stderr)
+                plog("[CLIENT] ✅ ZIP 업로드: \(fileId ?? "")\n")
             }
             sem.signal()
         }
@@ -1099,12 +1131,12 @@ class ClientSelectService: ObservableObject {
                   let firstFile = files.first,
                   let fileId = firstFile["id"] as? String,
                   let fileName = firstFile["name"] as? String else {
-                fputs("[CLIENT] Drive에서 .pickshot 파일 없음\n", stderr)
+                plog("[CLIENT] Drive에서 .pickshot 파일 없음\n")
                 completion(nil)
                 return
             }
 
-            fputs("[CLIENT] Drive에서 .pickshot 발견: \(fileName) (\(fileId))\n", stderr)
+            plog("[CLIENT] Drive에서 .pickshot 발견: \(fileName) (\(fileId))\n")
 
             // 파일 다운로드
             guard let downloadURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)?alt=media") else {
@@ -1116,7 +1148,7 @@ class ClientSelectService: ObservableObject {
 
             URLSession.shared.dataTask(with: dlRequest) { data, _, error in
                 guard let data = data else {
-                    fputs("[CLIENT] .pickshot 다운로드 실패: \(error?.localizedDescription ?? "")\n", stderr)
+                    plog("[CLIENT] .pickshot 다운로드 실패: \(error?.localizedDescription ?? "")\n")
                     completion(nil)
                     return
                 }
@@ -1124,10 +1156,10 @@ class ClientSelectService: ObservableObject {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
                 do {
                     try data.write(to: tempURL)
-                    fputs("[CLIENT] .pickshot 다운로드 완료: \(tempURL.path)\n", stderr)
+                    plog("[CLIENT] .pickshot 다운로드 완료: \(tempURL.path)\n")
                     completion(tempURL)
                 } catch {
-                    fputs("[CLIENT] .pickshot 저장 실패: \(error.localizedDescription)\n", stderr)
+                    plog("[CLIENT] .pickshot 저장 실패: \(error.localizedDescription)\n")
                     completion(nil)
                 }
             }.resume()

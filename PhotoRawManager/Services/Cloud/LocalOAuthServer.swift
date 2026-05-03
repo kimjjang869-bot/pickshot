@@ -41,10 +41,10 @@ class LocalOAuthServer {
             let candidate = preferredPort &+ offset
             guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
             if let l = try? NWListener(using: Self.makeParameters(), on: nwPort) {
-                fputs("[OAUTH-SRV] bound on port \(candidate)\n", stderr)
+                plog("[OAUTH-SRV] bound on port \(candidate)\n")
                 return (l, candidate)
             } else {
-                fputs("[OAUTH-SRV] port \(candidate) in use — next\n", stderr)
+                plog("[OAUTH-SRV] port \(candidate) in use — next\n")
             }
         }
         return nil
@@ -64,26 +64,26 @@ class LocalOAuthServer {
         listener?.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                fputs("[OAUTH-SRV] ✅ listener ready on port \(self?.boundPort ?? 0)\n", stderr)
+                plog("[OAUTH-SRV] ✅ listener ready on port \(self?.boundPort ?? 0)\n")
             case .failed(let err):
-                fputs("[OAUTH-SRV] ❌ listener failed: \(err.localizedDescription)\n", stderr)
+                plog("[OAUTH-SRV] ❌ listener failed: \(err.localizedDescription)\n")
                 DispatchQueue.main.async {
                     self?.completion(nil, err)
                 }
             case .cancelled:
-                fputs("[OAUTH-SRV] listener cancelled\n", stderr)
+                plog("[OAUTH-SRV] listener cancelled\n")
             case .waiting(let err):
-                fputs("[OAUTH-SRV] ⚠️ listener waiting: \(err.localizedDescription)\n", stderr)
+                plog("[OAUTH-SRV] ⚠️ listener waiting: \(err.localizedDescription)\n")
             default:
-                fputs("[OAUTH-SRV] listener state: \(state)\n", stderr)
+                plog("[OAUTH-SRV] listener state: \(state)\n")
             }
         }
         listener?.newConnectionHandler = { [weak self] connection in
-            fputs("[OAUTH-SRV] 📥 incoming connection\n", stderr)
+            plog("[OAUTH-SRV] 📥 incoming connection\n")
             self?.handleConnection(connection)
         }
         listener?.start(queue: .global(qos: .userInitiated))
-        fputs("[OAUTH-SRV] start() called, port=\(boundPort)\n", stderr)
+        plog("[OAUTH-SRV] start() called, port=\(boundPort)\n")
     }
 
     func stop() {
@@ -141,7 +141,7 @@ class LocalOAuthServer {
                 returnedCode = nil
                 returnedError = NSError(domain: "LocalOAuthServer", code: -2,
                                         userInfo: [NSLocalizedDescriptionKey: "OAuth state 불일치 (CSRF 의심)"])
-                fputs("[OAUTH-SRV] ❌ state mismatch: expected=\(self?.expectedState ?? "nil") got=\(state ?? "nil")\n", stderr)
+                plog("[OAUTH-SRV] ❌ state mismatch: expected=\(self?.expectedState ?? "nil") got=\(state ?? "nil")\n")
             } else {
                 html = """
                 <html><body style="font-family:-apple-system;text-align:center;padding:60px;background:#1a1a2e;color:white;">
@@ -153,7 +153,19 @@ class LocalOAuthServer {
                 returnedCode = code
                 returnedError = nil
             }
-            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+            // v9.1.4: 보안 헤더 추가 (보안 감사 M-2) — 동일 Mac 내 다른 앱의 iframe / MIME 추측 방어.
+            let headers = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: text/html; charset=utf-8",
+                "Content-Length: \(html.utf8.count)",
+                "Connection: close",
+                "X-Frame-Options: DENY",
+                "X-Content-Type-Options: nosniff",
+                "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+                "Referrer-Policy: no-referrer",
+                "Cache-Control: no-store"
+            ].joined(separator: "\r\n")
+            let response = "\(headers)\r\n\r\n\(html)"
 
             connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
                 connection.cancel()

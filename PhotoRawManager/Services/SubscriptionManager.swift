@@ -5,11 +5,13 @@ import StoreKit
 
 enum SubscriptionTier: String, Comparable {
     case free = "free"
-    case pro = "pro"
+    case simple = "simple"   // v9.0.2: ₩2,900/월 — 셀렉 도구만
+    case pro = "pro"         // v9.0.2: ₩8,900/월 — 클라이언트/AI/고급출력
 
     var displayName: String {
         switch self {
         case .free: return "Free"
+        case .simple: return "Simple"
         case .pro: return "Pro"
         }
     }
@@ -17,6 +19,7 @@ enum SubscriptionTier: String, Comparable {
     var icon: String {
         switch self {
         case .free: return "person.circle"
+        case .simple: return "person.crop.circle.fill"
         case .pro: return "star.circle.fill"
         }
     }
@@ -24,12 +27,13 @@ enum SubscriptionTier: String, Comparable {
     var color: String {
         switch self {
         case .free: return "gray"
+        case .simple: return "green"
         case .pro: return "blue"
         }
     }
 
     static func < (lhs: SubscriptionTier, rhs: SubscriptionTier) -> Bool {
-        let order: [SubscriptionTier] = [.free, .pro]
+        let order: [SubscriptionTier] = [.free, .simple, .pro]
         return (order.firstIndex(of: lhs) ?? 0) < (order.firstIndex(of: rhs) ?? 0)
     }
 }
@@ -69,13 +73,18 @@ class SubscriptionManager: ObservableObject {
     static let shared = SubscriptionManager()
 
     // Product IDs - match these in App Store Connect
-    // Pro: ₩1,900/month, ₩15,000/year
-    static let proMonthlyID = "com.pickshot.pro.monthly"    // ₩1,900
-    static let proYearlyID = "com.pickshot.pro.yearly"      // ₩15,000
+    // v9.0.2 새 가격 정책:
+    //   Simple: ₩2,900/월, ₩29,000/년 (셀렉 도구)
+    //   Pro:    ₩8,900/월, ₩89,000/년 (클라이언트 + 고급 출력 + 영상)
+    static let simpleMonthlyID = "com.pickshot.simple.monthly"  // ₩2,900
+    static let simpleYearlyID  = "com.pickshot.simple.yearly"   // ₩29,000
+    static let proMonthlyID    = "com.pickshot.pro.monthly"     // ₩8,900
+    static let proYearlyID     = "com.pickshot.pro.yearly"      // ₩89,000
 
-    // Keep legacy IDs for migration
-    static let premiumMonthlyID = "com.pickshot.premium.monthly"
-    static let premiumYearlyID = "com.pickshot.premium.yearly"
+    // Keep legacy IDs for migration (이전 ₩1,900 가격)
+    static let legacyProMonthlyID = "com.pickshot.pro.legacy.monthly"
+    static let premiumMonthlyID   = "com.pickshot.premium.monthly"
+    static let premiumYearlyID    = "com.pickshot.premium.yearly"
 
     @Published var currentTier: SubscriptionTier = .free
     @Published var products: [Product] = []
@@ -87,21 +96,58 @@ class SubscriptionManager: ObservableObject {
 
     // MARK: - 3주 트라이얼
 
-    private static let trialStartKey = "trialStartDate"
+    // v9.1.4: trialStartDate 를 Keychain 으로 이동 (보안 감사 C-3).
+    //   기존 UserDefaults 는 `defaults write` 한 줄로 무기한 연장 가능했음.
+    //   Keychain 은 일반 사용자 권한으로 직접 수정 불가.
+    private static let trialStartKey = "trialStartDate"           // 레거시 UserDefaults 키
+    private static let trialStartKeychainKey = "trial_start_date" // Keychain 키
     private static let trialDuration: TimeInterval = 21 * 24 * 60 * 60  // 21일
 
-    var trialStartDate: Date {
-        if let saved = UserDefaults.standard.object(forKey: Self.trialStartKey) as? Date {
-            return saved
+    private static func dateFromKeychain() -> Date? {
+        guard let s = KeychainService.read(key: trialStartKeychainKey),
+              let interval = TimeInterval(s) else { return nil }
+        return Date(timeIntervalSince1970: interval)
+    }
+
+    /// v9.1.4: Trial 시작일을 *생성하지 않고* 읽기만 한다 (TierManager.canStartTrial 용).
+    ///   `trialStartDate` getter 는 첫 호출 시 부수효과로 시작일을 기록 → 체험 가능 여부 판정에 사용 불가.
+    static func peekTrialStartDate() -> Date? {
+        if let saved = dateFromKeychain() { return saved }
+        if let legacy = UserDefaults.standard.object(forKey: trialStartKey) as? Date {
+            return legacy
         }
-        // 처음 실행 → 지금부터 시작
+        return nil
+    }
+
+    private static func saveDateToKeychain(_ d: Date) {
+        _ = KeychainService.save(key: trialStartKeychainKey, value: String(d.timeIntervalSince1970))
+    }
+
+    var trialStartDate: Date {
+        // 1) Keychain 우선
+        if let saved = Self.dateFromKeychain() { return saved }
+        // 2) 레거시 UserDefaults 일회 마이그레이션
+        if let legacy = UserDefaults.standard.object(forKey: Self.trialStartKey) as? Date {
+            Self.saveDateToKeychain(legacy)
+            UserDefaults.standard.removeObject(forKey: Self.trialStartKey)
+            return legacy
+        }
+        // 3) 첫 실행 — 지금 시점 기록 (Keychain 만)
         let now = Date()
-        UserDefaults.standard.set(now, forKey: Self.trialStartKey)
+        Self.saveDateToKeychain(now)
         return now
     }
 
     func checkTrialStatus() {
-        let elapsed = Date().timeIntervalSince(trialStartDate)
+        let start = trialStartDate
+        let now = Date()
+        // v9.1.4: 시계 조작 방어선 — 현재 시각이 시작일보다 과거면 만료 처리.
+        if now < start {
+            trialDaysRemaining = 0
+            isTrialExpired = true
+            return
+        }
+        let elapsed = now.timeIntervalSince(start)
         let remaining = Self.trialDuration - elapsed
         trialDaysRemaining = max(0, Int(ceil(remaining / (24 * 60 * 60))))
         isTrialExpired = remaining <= 0
@@ -152,7 +198,9 @@ class SubscriptionManager: ObservableObject {
     }
 
     private var productIDs: Set<String> {
-        [Self.proMonthlyID, Self.proYearlyID,
+        [Self.simpleMonthlyID, Self.simpleYearlyID,
+         Self.proMonthlyID, Self.proYearlyID,
+         Self.legacyProMonthlyID,
          Self.premiumMonthlyID, Self.premiumYearlyID]
     }
 
@@ -243,13 +291,21 @@ class SubscriptionManager: ObservableObject {
         }
         purchasedProductIDs = newPurchased
 
-        // Any pro or premium purchase = Pro tier
-        if newPurchased.contains(Self.proMonthlyID) ||
-           newPurchased.contains(Self.proYearlyID) ||
-           newPurchased.contains(Self.premiumMonthlyID) ||
-           newPurchased.contains(Self.premiumYearlyID) {
+        // v9.0.2: 새 가격 정책 — Simple / Pro / Free 3-tier.
+        let isPro = newPurchased.contains(Self.proMonthlyID)
+            || newPurchased.contains(Self.proYearlyID)
+            || newPurchased.contains(Self.legacyProMonthlyID)
+            || newPurchased.contains(Self.premiumMonthlyID)
+            || newPurchased.contains(Self.premiumYearlyID)
+        let isSimple = newPurchased.contains(Self.simpleMonthlyID)
+            || newPurchased.contains(Self.simpleYearlyID)
+
+        if isPro {
             currentTier = .pro
-            // 구독이 활성화되면 트라이얼 만료 Paywall 을 즉시 닫는다.
+            showTrialExpiredPaywall = false
+            isTrialExpired = false
+        } else if isSimple {
+            currentTier = .simple
             showTrialExpiredPaywall = false
             isTrialExpired = false
         } else {

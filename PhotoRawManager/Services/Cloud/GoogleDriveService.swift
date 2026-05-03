@@ -138,7 +138,7 @@ class GoogleDriveService {
             return
         }
 
-        fputs("[GDRIVE] upload \(fileName) (\(fileSize / 1024)KB) → folder=\(folderId ?? "ROOT")\n", stderr)
+        plog("[GDRIVE] upload \(fileName) (\(fileSize / 1024)KB) → folder=\(folderId ?? "ROOT")\n")
 
         if fileSize >= resumableThreshold {
             // 대용량: resumable upload (스트리밍, 메모리 절약)
@@ -230,12 +230,12 @@ class GoogleDriveService {
                 return
             }
 
-            fputs("[GDRIVE] resumable session started: \(fileName)\n", stderr)
+            plog("[GDRIVE] resumable session started: \(fileName)\n")
 
             // Step 2: 파일 데이터 PUT (uploadTask로 스트리밍 — 메모리에 전체 로드 안 함)
             // v9.0: 서버 응답 URL 파싱 실패 시 force unwrap 크래시 방지.
             guard let putURL = URL(string: uploadURL) else {
-                fputs("[GDRIVE] invalid upload URL from server: \(uploadURL)\n", stderr)
+                plog("[GDRIVE] invalid upload URL from server: \(uploadURL)\n")
                 completion(nil, NSError(domain: "GoogleDrive", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"]))
                 return
             }
@@ -283,12 +283,19 @@ class GoogleDriveService {
     ///   - fileId: Google Drive file ID
     ///   - accessToken: OAuth2 Bearer token
     ///   - completion: (shareLink: String?, Error?)
+    /// - Warning: v9.1.4 보안 (H-1): role="writer" + type="anyone" 조합은 링크 아는 누구나
+    ///   해당 폴더에 파일 upload/edit/delete 가능. 폐쇄 클라이언트 셀렉 워크플로우에서만 사용 권장.
+    ///   범용 공유에는 반드시 "reader" 사용. ⚠️ 향후 per-file permission 으로 리팩토링 권장.
     static func createShareLink(
         fileId: String,
         accessToken: String,
         role: String = "reader",
         completion: @escaping (String?, Error?) -> Void
     ) {
+        // v9.1.4 보안 (H-1): writer 권한 사용 시 명시적 로그 — 잘못된 호출 추적용.
+        if role == "writer" {
+            plog("[GDRIVE-SEC] ⚠️ createShareLink(role=writer) called for \(fileId.prefix(8)) — anyone with link can modify\n")
+        }
         // Step 1: Create permission (anyone with link can view/edit based on role)
         guard let permURL = URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)/permissions") else {
             completion(nil, APIError(message: "잘못된 permissions URL"))
@@ -305,7 +312,8 @@ class GoogleDriveService {
         ]
         permRequest.httpBody = try? JSONSerialization.data(withJSONObject: permBody)
 
-        URLSession.shared.dataTask(with: permRequest) { data, response, error in
+        // v9.1.4 (H-3): 401 자동 갱신 재시도
+        performWithAutoRefresh(permRequest) { data, response, error in
             if let error = error {
                 completion(nil, error)
                 return
@@ -326,7 +334,7 @@ class GoogleDriveService {
             var fileRequest = URLRequest(url: fileURL)
             fileRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-            URLSession.shared.dataTask(with: fileRequest) { data, response, error in
+            performWithAutoRefresh(fileRequest) { data, response, error in
                 if let error = error {
                     completion(nil, error)
                     return
@@ -344,8 +352,8 @@ class GoogleDriveService {
                     ?? "https://drive.google.com/file/d/\(fileId)/view?usp=sharing"
 
                 completion(link, nil)
-            }.resume()
-        }.resume()
+            }
+        }
     }
 
     /// Create a folder on Google Drive and return its ID
@@ -371,29 +379,31 @@ class GoogleDriveService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: metadata)
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        // v9.1.4 (H-3): 401 자동 갱신 재시도
+        performWithAutoRefresh(request) { data, response, error in
             if let error = error {
                 completion(nil, error)
                 return
             }
 
-            if let httpResponse = response as? HTTPURLResponse {
-                fputs("[GDRIVE] createFolder HTTP \(httpResponse.statusCode)\n", stderr)
-            }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            plog("[GDRIVE] createFolder HTTP \(statusCode)\n")
             guard let data = data else {
                 completion(nil, APIError(message: "응답 데이터 없음"))
                 return
             }
-            let responseStr = String(data: data, encoding: .utf8) ?? ""
-            fputs("[GDRIVE] createFolder response: \(responseStr)\n", stderr)
+            // v9.1.4 보안 (M-1): 에러일 때만 응답 본문 로깅 (정상 200 응답은 id 만이라 누출 없지만,
+            //   에러 응답에 OAuth scope/계정 정보 포함될 수 있어 로그 분리).
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let folderId = json["id"] as? String else {
-                completion(nil, APIError(message: "폴더 생성 실패: \(responseStr.prefix(200))"))
+                let responseStr = String(data: data, encoding: .utf8) ?? ""
+                plog("[GDRIVE] createFolder error response: \(responseStr.prefix(200))\n")
+                completion(nil, APIError(message: "폴더 생성 실패 (HTTP \(statusCode))"))
                 return
             }
 
             completion(folderId, nil)
-        }.resume()
+        }
     }
 
     /// Delete a file from Google Drive
@@ -412,7 +422,8 @@ class GoogleDriveService {
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        // v9.1.4 (H-3): 401 자동 갱신 재시도
+        performWithAutoRefresh(request) { _, response, error in
             if let error = error {
                 completion(false, error)
                 return
@@ -420,7 +431,7 @@ class GoogleDriveService {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             // 204 No Content = success, 404 = already deleted
             completion(status == 204 || status == 404, nil)
-        }.resume()
+        }
     }
 
     // MARK: - 폴더 내 파일 목록 조회 (중복 체크용)
@@ -441,7 +452,8 @@ class GoogleDriveService {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        // v9.1.4 (H-3): 401 자동 갱신 재시도
+        performWithAutoRefresh(request) { data, _, error in
             if let error = error {
                 completion([], error)
                 return
@@ -454,24 +466,24 @@ class GoogleDriveService {
             }
             let names = files.compactMap { $0["name"] as? String }
             completion(names, nil)
-        }.resume()
+        }
     }
 
     // MARK: - OAuth 2.0
 
-    // OAuth credentials — Secrets.xcconfig 또는 환경변수에서 로드.
-    // 보안 권고: 아래 defaultClientID/Secret 은 소스에 평문이라 DMG strings 로 추출 가능.
-    //   Google Desktop App 정책상 "not confidential" 이지만, 앱 사칭 방지를 위해 추후 obfuscation
-    //   또는 강제 Secrets.xcconfig 요구로 전환 권장. (v8.6.1 현재는 배포 호환성 위해 유지)
+    // v9.1.4: Client Secret 소스 하드코딩 제거 (보안 감사 C-1).
+    //   Google Desktop App 의 OAuth flow 는 PKCE 사용 시 Secret 없이도 동작 가능.
+    //   Client ID 는 public, Secret 은 Keychain / Secrets.xcconfig 에서만 로드.
+    //   ⚠ 이전 노출 Secret (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) 은 Google Cloud Console 에서 즉시 rotate 필요.
+    // v9.1.4: Desktop OAuth Client 유지. Secret 만 회전 (Reset Secret).
     private static let defaultClientID = "661638823938-f9bk0a503pv0js0iskdqd196erkg40ua.apps.googleusercontent.com"
-    private static let defaultClientSecret = "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"
     static var oauthClientID: String {
         let saved = KeychainService.read(key: "gdrive_client_id") ?? ""
         return saved.isEmpty ? defaultClientID : saved
     }
     static var oauthClientSecret: String {
-        let saved = KeychainService.read(key: "gdrive_client_secret") ?? ""
-        return saved.isEmpty ? defaultClientSecret : saved
+        // Keychain 우선, 없으면 빈 문자열 → token endpoint 가 PKCE-only 모드로 동작.
+        return KeychainService.read(key: "gdrive_client_secret") ?? ""
     }
 
     static func setOAuthCredentials(clientID: String, clientSecret: String) {
@@ -575,8 +587,10 @@ class GoogleDriveService {
         codeVerifier = generateCodeVerifier()
         let codeChallenge = generateCodeChallenge(from: codeVerifier)
 
-        // CSRF 방지를 위한 state 파라미터 생성
-        let stateBytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
+        // v9.1.4 보안 (C-2): state 파라미터는 CSRF 방어의 유일한 수단 → 암호학적 RNG 필수.
+        //   이전 UInt8.random(in:) 은 표준 lib RNG (보장 없음). SecRandomCopyBytes 로 통일.
+        var stateBytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, stateBytes.count, &stateBytes)
         let stateToken = Data(stateBytes).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -680,7 +694,7 @@ class GoogleDriveService {
 
             if let errorMsg = json["error"] as? String {
                 let desc = json["error_description"] as? String ?? ""
-                fputs("[GDRIVE] Token error: \(errorMsg) - \(desc)\n", stderr)
+                plog("[GDRIVE] Token error: \(errorMsg) - \(desc)\n")
                 completion(nil, APIError(message: "Google 오류: \(errorMsg)\n\(desc)"))
                 return
             }
@@ -698,15 +712,70 @@ class GoogleDriveService {
         }.resume()
     }
 
+    // v9.1.4 보안 (H-2): refreshAccessToken race condition 방어 — 동시 호출 시
+    //   첫 요청만 실제 갱신, 나머지는 대기 후 동일 결과 수신.
+    //   이전엔 병렬 401 발생 시 refresh token 이 일회성 교체되어 invalid_grant → 강제 로그아웃.
+    private static let refreshLock = NSLock()
+    private static var isRefreshing = false
+    private static var refreshWaiters: [(String?, Error?) -> Void] = []
+
+    // v9.1.4 보안 (H-3): 401 받으면 토큰 자동 갱신 후 1회 재시도. 재시도 401 시 최종 실패.
+    //   사용자가 1시간마다 수동 재로그인하던 문제 해결. createFolder/listFiles/deleteFile/createShareLink 적용.
+    //   uploadMultipart/uploadResumable 은 multipart 본문 재전송 복잡성 → follow-up.
+    private static func performWithAutoRefresh(
+        _ request: URLRequest,
+        completion: @escaping (Data?, URLResponse?, Error?) -> Void
+    ) {
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+                refreshAccessToken { newToken, refreshErr in
+                    guard let newToken = newToken else {
+                        completion(data, response, refreshErr ?? error)
+                        return
+                    }
+                    var retry = request
+                    retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                    URLSession.shared.dataTask(with: retry, completionHandler: completion).resume()
+                }
+                return
+            }
+            completion(data, response, error)
+        }.resume()
+    }
+
+    /// v9.1.4 (H-4): refresh_token 만료 vs 일반 실패 구분용 sentinel.
+    ///   호출자가 이 에러 코드 감지 시 사용자에게 "재로그인 필요" 안내 가능.
+    static let refreshTokenExpiredError = APIError(message: "리프레시 토큰이 만료되었습니다. 다시 로그인해주세요. [GDRIVE_REAUTH_REQUIRED]")
+
     /// Refresh access token using saved refresh token
     static func refreshAccessToken(completion: @escaping (String?, Error?) -> Void) {
+        // race 방어: 진행 중이면 대기열에 추가하고 종료.
+        refreshLock.lock()
+        if isRefreshing {
+            refreshWaiters.append(completion)
+            refreshLock.unlock()
+            return
+        }
+        isRefreshing = true
+        refreshLock.unlock()
+
+        let finish: (String?, Error?) -> Void = { token, err in
+            refreshLock.lock()
+            let waiters = refreshWaiters
+            refreshWaiters.removeAll()
+            isRefreshing = false
+            refreshLock.unlock()
+            completion(token, err)
+            for w in waiters { w(token, err) }
+        }
+
         guard let refreshToken = savedRefreshToken, !oauthClientID.isEmpty else {
-            completion(nil, APIError(message: "리프레시 토큰이 없습니다. 다시 로그인해주세요."))
+            finish(nil, refreshTokenExpiredError)
             return
         }
 
         guard let tokenURL = URL(string: "https://oauth2.googleapis.com/token") else {
-            completion(nil, APIError(message: "잘못된 token URL"))
+            finish(nil, APIError(message: "잘못된 token URL"))
             return
         }
         var request = URLRequest(url: tokenURL)
@@ -723,17 +792,38 @@ class GoogleDriveService {
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             if let error = error {
-                completion(nil, error)
+                finish(nil, error)
                 return
             }
             guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let accessToken = json["access_token"] as? String else {
-                completion(nil, APIError(message: "토큰 갱신 실패"))
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                finish(nil, APIError(message: "토큰 갱신 응답 파싱 실패"))
+                return
+            }
+            // v9.1.4 (H-4): invalid_grant 감지 → 명확한 에러 코드.
+            //   Google OAuth: refresh_token 만료/취소 시 error="invalid_grant".
+            if let errorCode = json["error"] as? String {
+                if errorCode == "invalid_grant" {
+                    // refresh token 폐기 + 재로그인 유도
+                    savedRefreshToken = nil
+                    savedAccessToken = nil
+                    finish(nil, refreshTokenExpiredError)
+                } else {
+                    let desc = json["error_description"] as? String ?? errorCode
+                    finish(nil, APIError(message: "토큰 갱신 실패: \(desc)"))
+                }
+                return
+            }
+            guard let accessToken = json["access_token"] as? String else {
+                finish(nil, APIError(message: "토큰 갱신 실패: access_token 없음"))
                 return
             }
             savedAccessToken = accessToken
-            completion(accessToken, nil)
+            // v9.1.4: refresh_token 도 회전될 수 있음 (Google 정책에 따라).
+            if let newRefresh = json["refresh_token"] as? String {
+                savedRefreshToken = newRefresh
+            }
+            finish(accessToken, nil)
         }.resume()
     }
 

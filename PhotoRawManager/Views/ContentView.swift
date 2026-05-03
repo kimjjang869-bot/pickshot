@@ -8,8 +8,12 @@ struct ContentView: View {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var folderBrowserExpanded: Bool = false
     @State private var folderBrowserWidth: CGFloat = 250
+    @State private var folderBrowserResizeStartWidth: CGFloat?
+    @State private var folderBrowserResizePreviewWidth: CGFloat?
     @State private var showFullscreen: Bool = false
     @State private var dualWindow: NSWindow?
+    /// v9.1.4 (R-1): hSplit 드래그 throttle (50ms) 마지막 발사 시각.
+    @State private var hSplitDragLastFire: CFAbsoluteTime = 0
 
     // G Select state (used by toolbar extension)
     @ObservedObject var gSelect = GSelectService.shared
@@ -37,6 +41,8 @@ struct ContentView: View {
     @State private var testerKeyAlertSuccess: Bool = false
 
     private var folderSizeText: String { store.cachedFolderSizeText }
+    private let folderBrowserMinWidth: CGFloat = 120
+    private let folderBrowserMaxWidth: CGFloat = 560
 
     private var importResultMessage: String {
         guard let r = store.lastImportResult else { return "가져오기 실패" }
@@ -109,7 +115,7 @@ struct ContentView: View {
                     // Folder Browser Sidebar (only when photos loaded)
                     if store.showFolderBrowser {
                         FolderBrowserView(isExpanded: $folderBrowserExpanded)
-                            .frame(width: folderBrowserExpanded ? min(folderBrowserWidth, 280) : 36)
+                            .frame(width: folderBrowserExpanded ? folderBrowserWidth.clamped(to: folderBrowserMinWidth...folderBrowserMaxWidth) : 36)
                             .animation(.easeInOut(duration: 0.2), value: folderBrowserExpanded)
 
                         // Drag handle for resizing
@@ -121,8 +127,17 @@ struct ContentView: View {
                                 .gesture(
                                     DragGesture()
                                         .onChanged { value in
-                                            let newWidth = folderBrowserWidth + value.translation.width
-                                            folderBrowserWidth = max(120, min(400, newWidth))
+                                            let startWidth = folderBrowserResizeStartWidth ?? folderBrowserWidth
+                                            folderBrowserResizeStartWidth = startWidth
+                                            let newWidth = startWidth + value.translation.width
+                                            folderBrowserResizePreviewWidth = newWidth.clamped(to: folderBrowserMinWidth...folderBrowserMaxWidth)
+                                        }
+                                        .onEnded { _ in
+                                            if let preview = folderBrowserResizePreviewWidth {
+                                                folderBrowserWidth = preview
+                                            }
+                                            folderBrowserResizeStartWidth = nil
+                                            folderBrowserResizePreviewWidth = nil
                                         }
                                 )
                                 .onHover { inside in
@@ -179,13 +194,6 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             if let photo = store.selectedPhoto {
                                 PhotoPreviewView(photo: photo)
-                                    .overlay(
-                                        photo.isSpacePicked ?
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.red, lineWidth: 4)
-                                            .allowsHitTesting(false)
-                                        : nil
-                                    )
                             } else {
                                 Text("사진을 선택하세요")
                                     .font(.title3)
@@ -280,11 +288,16 @@ struct ContentView: View {
                                         DragGesture(minimumDistance: 5)
                                             .onChanged { value in
                                                 // v8.9.2 perf: 임계값 0.003→0.008 강화 (60+ 이벤트 → ~20)
+                                                // v9.1.4 (R-1): 50ms throttle 추가 — 드래그 중 17,000장 컬렉션
+                                                //   updateNSView 연쇄 부담 감소.
+                                                let now = CFAbsoluteTimeGetCurrent()
+                                                if now - hSplitDragLastFire < 0.05 { return }
                                                 let currentW = geo.size.width * store.hSplitRatio
                                                 let newW = currentW + value.translation.width
                                                 let newRatio = newW / geo.size.width
                                                 let clamped = max(0.10, min(newRatio, 0.55))
                                                 if abs(clamped - store.hSplitRatio) >= 0.008 {
+                                                    hSplitDragLastFire = now
                                                     store.hSplitRatio = clamped
                                                 }
                                             }
@@ -299,13 +312,6 @@ struct ContentView: View {
                                     } else if let photo = store.selectedPhoto {
                                         // v8.9.4: 미리보기 꽉차게 — 하단 메타 영역/DragHandle/frame 제거
                                         PhotoPreviewView(photo: photo)
-                                            .overlay(
-                                                photo.isSpacePicked ?
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.red, lineWidth: 4)
-                                                    .allowsHitTesting(false)
-                                                : nil
-                                            )
                                     } else {
                                         Text("사진을 선택하세요")
                                             .font(.title3)
@@ -321,6 +327,17 @@ struct ContentView: View {
                     }
                     } // end VStack (toolbarRow2 + content)
                 }
+                .overlay(alignment: .leading) {
+                    if store.showFolderBrowser,
+                       folderBrowserExpanded,
+                       let preview = folderBrowserResizePreviewWidth {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.65))
+                            .frame(width: 3)
+                            .offset(x: preview)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
 
             // Bottom: Analysis progress bar
@@ -332,6 +349,10 @@ struct ContentView: View {
         .sheet(isPresented: $store.showBurstPickerDialog) {
             BurstPickerDialog(isPresented: $store.showBurstPickerDialog)
                 .environmentObject(store)
+        }
+        // v9.0.2: Pro 잠금 모달 — proLockedFeature 가 set 되면 표시.
+        .sheet(item: $store.proLockedFeature) { feature in
+            ProLockModal(feature: feature)
         }
         .sheet(isPresented: $store.showPreferenceTrainingDialog) {
             PreferenceTrainingDialog(isPresented: $store.showPreferenceTrainingDialog)
@@ -741,7 +762,7 @@ struct ContentView: View {
         let url = URL(fileURLWithPath: path)
         store.startupMode = .viewer
         store.loadPhotosRecursive(from: url)
-        fputs("[DEBUG-OPEN] recursive path=\(path)\n", stderr)
+        plog("[DEBUG-OPEN] recursive path=\(path)\n")
     }
 
     private func startDebugStressDriverIfRequested() {
@@ -785,7 +806,9 @@ struct ContentView: View {
                     timer.cancel()
                     return
                 }
-                guard !store.isLoading, !store.filteredPhotos.isEmpty else { return }
+                guard !store.isLoading,
+                      !store.isRecursiveScanInProgress,
+                      !store.filteredPhotos.isEmpty else { return }
 
                 store.isKeyRepeat = true
                 switch pattern {
@@ -814,7 +837,7 @@ struct ContentView: View {
                 if step % logEvery == 0 {
                     let rss = Int(PhotoStore.currentAppMemoryMB())
                     let selectedName = store.selectedPhoto?.fileName ?? "-"
-                    fputs("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n", stderr)
+                    plog("[DEBUG-STRESS] layout=\(layout) pattern=\(pattern) step=\(step) elapsed=\(Int(elapsed))s rss=\(rss)MB selected=\(selectedName)\n")
                 }
             }
         }
@@ -826,12 +849,12 @@ struct ContentView: View {
                 }
                 debugStressTimer = nil
                 let rss = Int(PhotoStore.currentAppMemoryMB())
-                fputs("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n", stderr)
+                plog("[DEBUG-STRESS] done layout=\(layout) pattern=\(pattern) steps=\(step) rss=\(rss)MB\n")
             }
         }
         debugStressTimer = timer
         timer.resume()
-        fputs("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n", stderr)
+        plog("[DEBUG-STRESS] start layout=\(layout) pattern=\(pattern) interval=\(intervalMs)ms duration=\(durationSec)s photos=\(selectableCount)\n")
     }
     #endif
 
@@ -889,10 +912,10 @@ struct ContentView: View {
                     VisualSearchService.shared.runSearch(on: urls)
                 } else {
                     store.showToastMessage("⚠️ 임베딩 계산 실패 — 얼굴이 감지되지 않았을 수 있습니다")
+                    }
                 }
             }
         }
-    }
 
     // MARK: - v8.6.2: CacheSweeper 활동 감지 (스크롤 + 키)
     @State private var sweeperActivityMonitor: Any?
@@ -1117,5 +1140,11 @@ struct TesterKeyInputSheet: View {
         }
         .padding(20)
         .frame(width: 380)
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

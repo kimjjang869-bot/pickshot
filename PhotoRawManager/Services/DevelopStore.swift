@@ -35,6 +35,10 @@ final class DevelopStore: ObservableObject {
     /// 디바운스 타이머
     private var flushTask: DispatchWorkItem?
 
+    /// UI 갱신 통지 coalescing. 슬라이더 드래그 중 objectWillChange 를 매 tick마다 보내면
+    /// 플로팅바와 PhotoPreviewView가 과도하게 다시 그려져 조작감이 무거워진다.
+    private var notifyTask: DispatchWorkItem?
+
     /// v8.6.1: memory / sidecarDirty 딕셔너리 보호용 락.
     private let memLock = NSLock()
 
@@ -96,17 +100,17 @@ final class DevelopStore: ObservableObject {
         memLock.unlock()
         if settings.isDefault {
             UserDefaults.standard.removeObject(forKey: udPrefix + key)
-        } else {
-            if let data = try? JSONEncoder().encode(settings) {
-                UserDefaults.standard.set(data, forKey: udPrefix + key)
-            }
         }
+        // v9.0.3 camera-look develop:
+        // 슬라이더 드래그 중 set() 이 초당 수십 번 호출된다. 여기서 매번 UserDefaults 를
+        // 동기 쓰기하면 UI/렌더 루프가 같이 무거워진다. 메모리에는 즉시 반영하고,
+        // UserDefaults + 폴더 sidecar 는 scheduleFlush() 에서 묶어서 기록한다.
         // L2 는 디바운스 — 폴더 단위로 묶어서 한 번에 flush
         markSidecarDirty(for: url)
         scheduleFlush()
 
-        // ObservableObject 통지
-        DispatchQueue.main.async { self.objectWillChange.send() }
+        // ObservableObject 통지 — 30fps 정도로 묶어서 보정 UI 반응성 유지
+        scheduleChangeNotification()
     }
 
     /// 현재 사진의 보정값을 복사 (클립보드).
@@ -155,7 +159,19 @@ final class DevelopStore: ObservableObject {
         flushTask?.cancel()
         let task = DispatchWorkItem { [weak self] in self?.flushSidecars() }
         flushTask = task
-        queue.asyncAfter(deadline: .now() + 0.15, execute: task)
+        // 보정 슬라이더 드래그는 초당 수십 번 발생한다. 저장은 사용자가 잠깐 멈췄을 때 묶어서 처리.
+        queue.asyncAfter(deadline: .now() + 0.45, execute: task)
+    }
+
+    private func scheduleChangeNotification() {
+        guard notifyTask == nil else { return }
+        let task = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.notifyTask = nil
+            self.objectWillChange.send()
+        }
+        notifyTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.033, execute: task)
     }
 
     /// Dirty 로 마크된 폴더들의 사이드카를 실제 디스크에 기록.
@@ -184,8 +200,12 @@ final class DevelopStore: ObservableObject {
                 guard url.deletingLastPathComponent().path == folderPath else { continue }
                 if settings.isDefault {
                     container.photos.removeValue(forKey: url.lastPathComponent)
+                    UserDefaults.standard.removeObject(forKey: udPrefix + path)
                 } else {
                     container.photos[url.lastPathComponent] = settings
+                    if let data = try? JSONEncoder().encode(settings) {
+                        UserDefaults.standard.set(data, forKey: udPrefix + path)
+                    }
                 }
             }
 

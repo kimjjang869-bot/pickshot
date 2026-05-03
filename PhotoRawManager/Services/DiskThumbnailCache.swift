@@ -74,24 +74,19 @@ class DiskThumbnailCache {
         let key = cacheKey(url: url, modDate: modDate)
         let filePath = cacheDir.appendingPathComponent(key + ".jpg")
 
-        // v8.9.7+: 더 작은 이미지로 큰 이미지 덮어쓰기 차단 (픽셀 기준, NSImage.size point 단위 회피).
-        let newMax: Int = {
-            if let rep = image.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
-            return max(Int(image.size.width), Int(image.size.height))
-        }()
-        if let existing = getByPath(url: url) {
-            let existingMax: Int = {
-                if let rep = existing.representations.first { return max(rep.pixelsWide, rep.pixelsHigh) }
-                return max(Int(existing.size.width), Int(existing.size.height))
-            }()
-            if existingMax > newMax {
-                fputs("[DiskThumbCache] SKIP write — existing \(existingMax)px > new \(newMax)px\n", stderr)
-                return
-            }
-        }
-
+        // v9.1.4 (T-4): 작은 픽셀 → 큰 픽셀 덮어쓰기 차단 — 파일 size 만으로 비교.
+        //   이전엔 getByPath() 가 NSImage 디스크 디코드 → 픽셀 비교 (1000장 첫 sweep ~200-500ms 누적).
+        //   같은 source 의 thumbnail 은 픽셀 클수록 jpeg size 도 큼 → byte 비교로 충분.
         guard let jpegData = jpegData(from: image) else { return }
         let dataSize = Int64(jpegData.count)
+        if FileManager.default.fileExists(atPath: filePath.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: filePath.path),
+           let existingSize = attrs[.size] as? Int64,
+           existingSize > dataSize * 2 {
+            // 기존 파일이 새 파일보다 2배 이상 크면 더 큰 픽셀로 추정 → skip (margin: JPEG 압축률 변동).
+            plog("[DiskThumbCache] SKIP write — existing \(existingSize)B > new \(dataSize)B (×2 margin)\n")
+            return
+        }
 
         // I/O 는 lock 밖 — atomic write 자체가 OS 레벨 동기화 보장
         let writeSuccess = (try? jpegData.write(to: filePath, options: .atomic)) != nil
@@ -137,7 +132,7 @@ class DiskThumbnailCache {
 
         let fm = FileManager.default
         if (try? fm.removeItem(at: dir)) == nil {
-            fputs("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n", stderr)
+            plog("[DiskCache] clearAll: removeItem 실패 \(dir.path)\n")
         }
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
     }

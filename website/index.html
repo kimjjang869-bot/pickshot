@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="PickShot v9.0.0 — 행사 만장을 30분에 추리는 macOS 컬링 엔진. 12년차 커머셜 포토그래퍼가 만듦. 2,000장 RAW 1.5초. 7일 무료.">
+<meta name="description" content="PickShot v9.1.0 — 행사 사진 만장을 약 30분만에 추리는 macOS 컬링 엔진. 12년차 커머셜 포토그래퍼가 만듦. 2,000장 RAW 1.5초. 7일 무료.">
 <meta name="theme-color" content="#050614">
-<meta property="og:title" content="PickShot — 행사 만장을 30분에 추리는 방법">
-<meta property="og:description" content="v9.0.0 · 12년차 커머셜 포토그래퍼가 만든 macOS 셀렉 엔진. 7일 무료.">
+<meta property="og:title" content="PickShot — 행사 사진 만장을 약 30분만에 추리는 방법">
+<meta property="og:description" content="v9.1.0 · 12년차 커머셜 포토그래퍼가 만든 macOS 셀렉 엔진. 7일 무료.">
 <meta property="og:type" content="website">
-<title>PickShot — 행사 만장을 30분에 추리는 방법</title>
+<title>PickShot — 행사 사진 만장을 약 30분만에 추리는 방법</title>
 <link rel="stylesheet" href="style.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,15 +29,17 @@
     <a href="#" class="logo">
       <span class="logo-orb"></span>
       <span class="logo-text">PickShot</span>
-      <span class="logo-ver">v9.0.0</span>
+      <span class="logo-ver">v9.1.0</span>
     </a>
     <div class="nav-links">
+      <a href="#whatsnew" class="nav-new">새 기능 <span class="nav-dot"></span></a>
       <a href="#gselect">G-Select</a>
       <a href="#speed">속도</a>
       <a href="#features">기능</a>
       <a href="#craft">만든 사람</a>
       <a href="#pricing">가격</a>
       <a href="manual.html">매뉴얼</a>
+      <a href="feedback.html">피드백</a>
     </div>
     <a href="#download" class="btn btn-secondary btn-sm">다운로드</a>
   </div>
@@ -50,18 +52,19 @@
 
     <div class="hero-eyebrow">
       <span class="eyebrow-pulse"></span>
-      v9.0.0 · 12년차 커머셜 포토그래퍼가 만든 macOS 도구
+      v9.1.0 · 12년차 커머셜 포토그래퍼가 만든 macOS 도구
     </div>
 
     <h1 class="hero-title">
-      <span class="h-line">행사 만장을</span>
-      <span class="h-line">30분에 추리는 <span class="italic">방법</span>.</span>
+      <span class="h-line">행사 사진 만장을</span>
+      <span class="h-line">약&nbsp;30분만에 추리는 <span class="h-keep"><span class="italic">방법</span>.</span></span>
     </h1>
 
     <p class="hero-sub">
-      2,000장 RAW가 <strong>1.5초에</strong> 뜨고,
-      클릭하는 순간 풀해상도. Lightroom 카탈로그 만드는 시간에
-      <strong>100장 골라 클라이언트 폴더에</strong> 있습니다.
+      <span class="hs-line">2,000장&nbsp;RAW가 <strong>1.5초에</strong> 뜨고,</span>
+      <span class="hs-line">클릭하는&nbsp;순간 <strong>풀해상도</strong>.</span>
+      <span class="hs-line">Lightroom&nbsp;카탈로그 만드는&nbsp;시간에</span>
+      <span class="hs-line"><strong>100장&nbsp;골라 클라이언트&nbsp;폴더에</strong> 있습니다.</span>
     </p>
 
     <div class="hero-cta">
@@ -110,6 +113,86 @@
           <span class="status-item"><span class="status-dot green"></span>캐시 완료 10,234/10,234</span>
           <span class="status-item">AI 분류 중 · 2,410/10,234</span>
           <span class="status-item">다음 백업: JAY_0976.NEF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHAT'S NEW v9.0.2 ============ -->
+<section class="section section-whatsnew" id="whatsnew">
+  <div class="section-inner">
+    <div class="whatsnew-head">
+      <div class="kicker"><span class="ver-pill">v9.0.2</span> RELEASE</div>
+      <h2 class="section-title">RAW 색감과<br>리사이즈 품질을 다시 짰습니다</h2>
+      <p class="section-sub">매거진 화보 톤 그대로, 다단계 Lanczos 다운샘플, 헤일로 없는 샤픈.<br>Lightroom export 와 동일한 알고리즘 — 별도 후처리 없이 끝.</p>
+    </div>
+
+    <div class="whatsnew-grid">
+      <!-- 1. Stage 3 색감 -->
+      <div class="wn-card wn-hero" data-reveal>
+        <div class="wn-tag">색감</div>
+        <div class="wn-title">Stage 3 deep embedded</div>
+        <div class="wn-body">
+          RAW 파일 안에 박힌 풀해상도 카메라 JPEG 를 0xFFD8 마커 스캔으로 직접 추출.
+          CIRAW demosaic 안 거치니까 <strong>프리뷰에서 본 색감 그대로</strong>.
+          Sony S-Cinetone, Canon Picture Style, Nikon Picture Control — 그대로 출력.
+        </div>
+        <div class="wn-meta">Sony ARW · Canon CR3 · Nikon NEF · Fujifilm RAF · Adobe DNG</div>
+      </div>
+
+      <!-- 2. Multi-step Lanczos -->
+      <div class="wn-card" data-reveal>
+        <div class="wn-tag">화질</div>
+        <div class="wn-title">다단계 Lanczos</div>
+        <div class="wn-body">
+          8000→2000 같은 4×+ 다운샘플도 한 번에 안 합니다.
+          <strong>8000 → 4000 → 2000</strong> 단계별 sinc filter — 디테일 뭉개짐 없음.
+        </div>
+        <div class="wn-stat"><span class="wn-num">2-step</span><span class="wn-cap">기본 4×+ 자동 분할</span></div>
+      </div>
+
+      <!-- 3. 샤픈 -->
+      <div class="wn-card" data-reveal>
+        <div class="wn-tag">샤픈</div>
+        <div class="wn-title">자연 · 선명 · 또렷</div>
+        <div class="wn-body">
+          작은 반경 USM 으로 헤일로는 sub-pixel — 안 보임.
+          <strong>밝기 100% 보존</strong>.
+          매거진 화보 느낌 프리셋도 새로 — Clarity + Detail + Pop 3-pass 합성.
+        </div>
+        <div class="wn-stat"><span class="wn-num">5</span><span class="wn-cap">샤픈 프리셋</span></div>
+      </div>
+
+      <!-- 4. DPI / 해상도 -->
+      <div class="wn-card" data-reveal>
+        <div class="wn-tag">출력</div>
+        <div class="wn-title">DPI · 직접 입력 · 폴더 유지</div>
+        <div class="wn-body">
+          DPI 72/150/300/600 메타데이터 셋팅 (JFIF + TIFF + EXIF).
+          해상도 직접 입력 px.
+          하위폴더 모드에서 <strong>원본 폴더 구조 그대로 출력</strong>.
+        </div>
+      </div>
+
+      <!-- 5. 회전 자동 -->
+      <div class="wn-card" data-reveal>
+        <div class="wn-tag">회전</div>
+        <div class="wn-title">세로 사진 자동 보정</div>
+        <div class="wn-body">
+          부모 RAW 의 orientation tag 를 임베디드 JPEG 에 적용.
+          <strong>세로 사진 정방향</strong> 출력 보장.
+        </div>
+      </div>
+
+      <!-- 6. 안정성 -->
+      <div class="wn-card" data-reveal>
+        <div class="wn-tag">안정성</div>
+        <div class="wn-title">크래시 픽스 + 회귀 수정</div>
+        <div class="wn-body">
+          연사 베스트 자동 선별 응답없음 → 크래시 해소.
+          Sony LOG 영상 LUT 자동 적용 회귀 수정.
+          빠른 네비 STALL 패턴 완화.
         </div>
       </div>
     </div>
@@ -191,7 +274,7 @@
 
     <div class="speed-bench" data-reveal>
       <div class="bench-row">
-        <span class="bench-app">PickShot v9.0.0</span>
+        <span class="bench-app">PickShot v9.0.2</span>
         <div class="bench-bar"><div class="bench-fill us" style="--w:8%"></div></div>
         <span class="bench-time"><strong>1.5s</strong></span>
       </div>
@@ -287,10 +370,19 @@
       </div>
       <div class="feat" data-reveal>
         <div class="feat-ico">🎬</div>
-        <div class="feat-title">LOG 영상 자동 LUT</div>
+        <div class="feat-title">LOG 영상 자동 LUT <span class="feat-new">v9.0.2 회귀 픽스</span></div>
         <div class="feat-desc">
           S-Log3 · V-Log · D-Log 자동 감지. 내가 쓰는 LUT가
           다음 클립부터 자동 적용. 프리미어 켜기 전 셀렉 완료.
+        </div>
+      </div>
+
+      <div class="feat" data-reveal>
+        <div class="feat-ico">🎨</div>
+        <div class="feat-title">RAW → JPG 변환 <span class="feat-new">v9.0.2 NEW</span></div>
+        <div class="feat-desc">
+          카메라 색감 그대로 + 다단계 Lanczos 다운샘플 + 헤일로 없는 샤픈.
+          DPI / 직접 입력 / 폴더 구조 유지 / 화보 느낌 프리셋.
         </div>
       </div>
       <div class="feat" data-reveal>
@@ -458,23 +550,72 @@
   <div class="section-inner">
     <div class="section-head center">
       <div class="kicker">가격</div>
-      <h2 class="section-title">카드 없이 7일, 이후 월 ₩2,900</h2>
-    </div>
-    <div class="price-card" data-reveal>
-      <div class="price-orb"></div>
-      <div class="price-head">
-        <div class="price-name">PickShot Pro</div>
-        <div class="price-amount"><span class="price-num">2,900</span><span class="price-unit">원 / 월</span></div>
+      <h2 class="section-title">카드 없이 7일,<br>이후 월&nbsp;₩2,900 부터</h2>
+      <p class="section-sub center">시작은 2,900원. 클라이언트 워크플로우가 필요해지면 Pro 로.<br>둘 다 7일 무료, 카드는 체험 끝나기 하루 전에만 요청.</p>
+
+      <!-- 월/연간 토글 -->
+      <div class="price-toggle" role="tablist">
+        <button class="pt-btn active" data-billing="monthly">월 결제</button>
+        <button class="pt-btn" data-billing="yearly">연 결제 <span class="pt-save">17% 할인</span></button>
       </div>
-      <ul class="price-list">
-        <li><strong>무제한 사진 · 영상</strong> · 완전 로컬 처리 · 클라우드 요금 0</li>
-        <li>모든 기능 — G-Select · 적극 캐시 · 클라이언트 뷰어 · LOG LUT · 얼굴 그룹</li>
-        <li>비파괴 보정 + 프리셋 + 복사 붙여넣기 + XMP 양방향</li>
-        <li>자연어 검색 (v8.9+) 자동 업데이트</li>
-        <li>우선 지원 · 기능 요청 반영 (12년차 개발자 직접 대응)</li>
-      </ul>
-      <a href="#download" class="btn btn-primary btn-lg btn-block">7일 무료 시작 →</a>
-      <div class="price-note">언제든 취소. 카드는 체험 종료 하루 전에만 요청됩니다.</div>
+    </div>
+
+    <div class="price-grid">
+      <!-- Simple -->
+      <div class="price-card price-simple" data-reveal>
+        <div class="price-head">
+          <div class="price-tag">Simple</div>
+          <div class="price-tagline">가볍게, 셀렉만 빠르게</div>
+          <div class="price-amount">
+            <span class="price-num" data-monthly="2,900" data-yearly="29,000">2,900</span>
+            <span class="price-unit">원 <span class="pu-cycle">/ 월</span></span>
+          </div>
+          <div class="price-yearly-note" hidden>월 환산 2,420원</div>
+        </div>
+        <ul class="price-list">
+          <li><strong>초고속 RAW 뷰잉</strong> — 2,000장 1.5초</li>
+          <li>별점 · 색상 라벨 · Space Pick</li>
+          <li>JPG/RAW 폴더 자동 매칭</li>
+          <li>기본 내보내기 (해상도 1개 · 원본 유지 파일명)</li>
+          <li>메모리카드 백업 (1장씩 수동)</li>
+          <li>워터마크 1개 (배치 X)</li>
+          <li>비파괴 보정 + 프리셋</li>
+        </ul>
+        <a href="#download" class="btn btn-secondary btn-lg btn-block">7일 무료 시작</a>
+        <div class="price-note">셀렉 도구 1개로 충분한 분께</div>
+      </div>
+
+      <!-- Pro -->
+      <div class="price-card price-pro" data-reveal>
+        <div class="price-orb"></div>
+        <div class="price-ribbon">추천</div>
+        <div class="price-head">
+          <div class="price-tag pro">Pro</div>
+          <div class="price-tagline">행사 사진 만장 → 클라이언트 폴더까지</div>
+          <div class="price-amount">
+            <span class="price-num" data-monthly="8,900" data-yearly="89,000">8,900</span>
+            <span class="price-unit">원 <span class="pu-cycle">/ 월</span></span>
+          </div>
+          <div class="price-yearly-note" hidden>월 환산 7,420원 · 1개월 무료</div>
+        </div>
+        <ul class="price-list">
+          <li class="pl-section">Simple 의 <strong>모든 기능</strong> +</li>
+          <li class="pl-pro">🔥 <strong>클라이언트 워크플로우</strong> — G-Select · 웹 뷰어 · 펜/코멘트 · QR 공유</li>
+          <li class="pl-pro">🤖 <strong>AI 자동화</strong> — 연사 베스트 · 얼굴 그룹 · 스마트 셀렉 · 의미 검색</li>
+          <li class="pl-pro">🎨 <strong>고급 출력</strong> — RAW→JPG 변환 (Stage3 + Lanczos) · 화보 느낌 · 배치 처리 · 컨택트시트 PDF</li>
+          <li class="pl-pro">📷 <strong>워크플로우</strong> — 카메라 테더링 · 연속 메모리카드 백업</li>
+          <li class="pl-pro">🎬 <strong>영상</strong> — LOG 자동 LUT · JKL 역재생 · 마커</li>
+          <li class="pl-pro">🔄 <strong>Lightroom 양방향</strong> — XMP 사이드카 · 셀렉 import/export</li>
+          <li>⚡ 적극 캐시 모드 + 우선 지원 + 기능 요청 반영</li>
+        </ul>
+        <a href="#download" class="btn btn-primary btn-lg btn-block">Pro 7일 무료 체험</a>
+        <div class="price-note">미팅 1회 = 1시간 절약 × 월 5회 → Pro 가격의 6배 가치</div>
+      </div>
+    </div>
+
+    <div class="price-fineprint">
+      가격은 부가세 포함. 7일 후 자동으로 Simple 로 강등 — Pro 체험 끝나도 돈 빠지지 않음.<br>
+      언제든 해지 가능. 결제는 Apple ID 또는 카드.
     </div>
   </div>
 </section>
@@ -489,11 +630,11 @@
         <span class="italic">오늘 밤에 전달됩니다.</span>
       </h2>
       <div class="dl-cta-row">
-        <a id="download-btn" href="https://github.com/kimjjang869-bot/pickshot/releases/download/v9.0.0/PickShot-v9.0.0.dmg" class="btn btn-primary btn-xl">
+        <a id="download-btn" href="https://github.com/kimjjang869-bot/pickshot/releases/download/v9.1.0-build42/PickShot-v9.1.0-build42-fixed-20260502-2331.dmg" class="btn btn-primary btn-xl">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
           </svg>
-          <span>Mac 다운로드 · <span id="download-version">v9.0.0</span></span>
+          <span>Mac 다운로드 · <span id="download-version">v9.1.0</span></span>
         </a>
         <a href="manual.html" class="btn btn-ghost">
           사용법 먼저 보기

@@ -51,7 +51,7 @@ final class TextEncoderService {
         inputName = model.modelDescription.inputDescriptionsByName.keys.first ?? "text"
         outputName = model.modelDescription.outputDescriptionsByName.keys.first ?? "final_emb_1"
         _model = model
-        fputs("[CLIP-TXT] loaded input=\(inputName) output=\(outputName)\n", stderr)
+        plog("[CLIP-TXT] loaded input=\(inputName) output=\(outputName)\n")
         return model
     }
 
@@ -72,13 +72,13 @@ final class TextEncoderService {
             hasLoggedShape = true
             let inputDesc = model.modelDescription.inputDescriptionsByName
             for (k, v) in inputDesc {
-                fputs("[CLIP-TXT-DBG] input='\(k)' type=\(v.type.rawValue) mult=\(v.multiArrayConstraint?.shape ?? []) dtype=\(v.multiArrayConstraint?.dataType.rawValue ?? 0)\n", stderr)
+                plog("[CLIP-TXT-DBG] input='\(k)' type=\(v.type.rawValue) mult=\(v.multiArrayConstraint?.shape ?? []) dtype=\(v.multiArrayConstraint?.dataType.rawValue ?? 0)\n")
             }
             let outDesc = model.modelDescription.outputDescriptionsByName
             for (k, v) in outDesc {
-                fputs("[CLIP-TXT-DBG] output='\(k)' type=\(v.type.rawValue)\n", stderr)
+                plog("[CLIP-TXT-DBG] output='\(k)' type=\(v.type.rawValue)\n")
             }
-            fputs("[CLIP-TXT-DBG] tokens[0..10]=\(tokens.prefix(10))\n", stderr)
+            plog("[CLIP-TXT-DBG] tokens[0..10]=\(tokens.prefix(10))\n")
         }
 
         // MLMultiArray 로 변환 — 입력 shape 확인 후 적절히 세팅

@@ -166,7 +166,7 @@ extension TetherService: ICDeviceBrowserDelegate {
         let name = cam.name ?? "Unknown"
         let caps = cam.capabilities
         AppLogger.log(.general, "[Tether] Camera found: \(name) caps=\(caps)")
-        fputs("[Tether] 🔎 Camera found: '\(name)' caps=\(caps)\n", stderr)
+        plog("[Tether] 🔎 Camera found: '\(name)' caps=\(caps)\n")
 
         let nameLower = name.lowercased()
         let sdCardKeywords = ["sd_card", "sd card", "memory card", "mmc", "cf_card",
@@ -175,7 +175,7 @@ extension TetherService: ICDeviceBrowserDelegate {
 
         if isSDCard {
             // SD 카드 — 별도 보관해서 폴링 용도로 사용 (본체 카메라에서 mediaFiles 못 읽는 경우 대응)
-            fputs("[Tether] 💾 SD 카드로 판단 — 폴링 용도로 보관\n", stderr)
+            plog("[Tether] 💾 SD 카드로 판단 — 폴링 용도로 보관\n")
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 // 이미 다른 SD 있으면 교체
@@ -191,7 +191,7 @@ extension TetherService: ICDeviceBrowserDelegate {
 
         // 본체 카메라 — 이미 연결돼 있으면 무시
         if let existing = camera, existing !== cam {
-            fputs("[Tether] ⏭️  이미 '\(existing.name ?? "?")' 연결됨 — '\(name)' 무시\n", stderr)
+            plog("[Tether] ⏭️  이미 '\(existing.name ?? "?")' 연결됨 — '\(name)' 무시\n")
             return
         }
 
@@ -235,17 +235,17 @@ extension TetherService: ICCameraDeviceDelegate {
             if let cam = device as? ICCameraDevice {
                 self.batteryLevel = cam.batteryLevel
                 let caps = cam.capabilities
-                fputs("[Tether] 📋 Capabilities: \(caps)\n", stderr)
+                plog("[Tether] 📋 Capabilities: \(caps)\n")
                 AppLogger.log(.general, "[Tether] Capabilities: \(caps)")
 
                 let canShoot = caps.contains(ICDeviceCapability.cameraDeviceCanTakePicture.rawValue)
                 let canReceive = caps.contains(ICDeviceCapability.cameraDeviceCanReceiveFile.rawValue)
                 let supportsTether = caps.contains(ICDeviceCapability.cameraDeviceCanAcceptPTPCommands.rawValue)
-                fputs("[Tether] 🎯 canTakePicture=\(canShoot) canReceiveFile=\(canReceive) canAcceptPTP=\(supportsTether)\n", stderr)
+                plog("[Tether] 🎯 canTakePicture=\(canShoot) canReceiveFile=\(canReceive) canAcceptPTP=\(supportsTether)\n")
 
                 // mediaFiles 로 이미 카메라 내 파일 상태 조회
                 let existingFiles = cam.mediaFiles ?? []
-                fputs("[Tether] 📁 초기 mediaFiles: \(existingFiles.count) 개\n", stderr)
+                plog("[Tether] 📁 초기 mediaFiles: \(existingFiles.count) 개\n")
                 self.knownFileNames = Set(existingFiles.compactMap { $0.name })
 
                 self.canTriggerShutter = canShoot
@@ -253,7 +253,7 @@ extension TetherService: ICCameraDeviceDelegate {
                 if !canShoot && !canReceive && supportsTether {
                     // Sony PC Remote 일 수도 있음 — PTP 지원되면 polling 으로 회복
                     self.statusMessage = "Sony PC Remote 감지 — 폴링 모드로 촬영 감지 중 (2초 간격)"
-                    fputs("[Tether] 🔄 폴링 모드 활성화 (PTP 만 지원)\n", stderr)
+                    plog("[Tether] 🔄 폴링 모드 활성화 (PTP 만 지원)\n")
                     self.startPollingMode()
                 } else if !canShoot && !canReceive {
                     self.statusMessage = "카메라가 촬영 이벤트를 지원하지 않는 모드입니다 — USB 모드 확인"
@@ -262,7 +262,7 @@ extension TetherService: ICCameraDeviceDelegate {
                 // 실제 촬영 데이터 수신을 위해 requestEnableTethering (Canon/Nikon)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                     guard let self = self, let c = self.camera else { return }
-                    fputs("[Tether] → requestEnableTethering()\n", stderr)
+                    plog("[Tether] → requestEnableTethering()\n")
                     c.requestEnableTethering()
                 }
 
@@ -331,11 +331,11 @@ extension TetherService: ICCameraDeviceDelegate {
 
         pollCount += 1
         if pollCount % 5 == 0 {
-            fputs("[Tether] 💓 polling tick #\(pollCount) cam=\(camFiles.count) sd=\(sdFiles.count) known=\(knownFileNames.count)\n", stderr)
+            plog("[Tether] 💓 polling tick #\(pollCount) cam=\(camFiles.count) sd=\(sdFiles.count) known=\(knownFileNames.count)\n")
         }
 
         if !newNames.isEmpty {
-            fputs("[Tether] 🔍 폴링: 새 파일 \(newNames.count)개 감지 \(Array(newNames).prefix(3))\n", stderr)
+            plog("[Tether] 🔍 폴링: 새 파일 \(newNames.count)개 감지 \(Array(newNames).prefix(3))\n")
             let newItems = merged.filter { file in
                 guard let name = file.name else { return false }
                 return newNames.contains(name)
@@ -367,7 +367,7 @@ extension TetherService: ICCameraDeviceDelegate {
 
     // 새 API: 여러 아이템 배열을 받음 (macOS 10.15+)
     func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {
-        fputs("[Tether] 📸 didAdd items count=\(items.count)\n", stderr)
+        plog("[Tether] 📸 didAdd items count=\(items.count)\n")
         AppLogger.log(.general, "[Tether] 📸 didAdd \(items.count) items")
 
         DispatchQueue.main.async { [weak self] in
@@ -377,17 +377,17 @@ extension TetherService: ICCameraDeviceDelegate {
         for item in items {
             let itemName = item.name ?? "?"
             let itemType = type(of: item)
-            fputs("[Tether]   - \(itemName) (type: \(itemType))\n", stderr)
+            plog("[Tether]   - \(itemName) (type: \(itemType))\n")
 
             guard let file = item as? ICCameraFile else {
-                fputs("[Tether]   ⚠️  item is not ICCameraFile (folder/other) — skipping\n", stderr)
+                plog("[Tether]   ⚠️  item is not ICCameraFile (folder/other) — skipping\n")
                 continue
             }
             let fileName = file.name ?? "unknown"
             AppLogger.log(.general, "[Tether] New file detected: \(fileName) size=\(file.fileSize)")
 
             guard !pendingDownloads.contains(fileName) else {
-                fputs("[Tether]   • already pending, skipping\n", stderr)
+                plog("[Tether]   • already pending, skipping\n")
                 continue
             }
             pendingDownloads.insert(fileName)
@@ -400,7 +400,7 @@ extension TetherService: ICCameraDeviceDelegate {
                 .sidecarFiles: true,
             ]
 
-            fputs("[Tether]   → requestDownloadFile \(fileName)\n", stderr)
+            plog("[Tether]   → requestDownloadFile \(fileName)\n")
             camera.requestDownloadFile(file, options: options, downloadDelegate: self, didDownloadSelector: #selector(ICCameraDeviceDownloadDelegate.didDownloadFile(_:error:options:contextInfo:)), contextInfo: nil)
         }
     }
@@ -422,7 +422,7 @@ extension TetherService: ICCameraDeviceDelegate {
     func cameraDevice(_ camera: ICCameraDevice, didReceivePTPEvent eventData: Data) {
         // PTP 이벤트 로그 (디버깅 — 셔터 눌렀을 때 이벤트 오는지 확인용)
         let hex = eventData.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
-        fputs("[Tether] 🔔 PTP event (\(eventData.count) bytes): \(hex)\n", stderr)
+        plog("[Tether] 🔔 PTP event (\(eventData.count) bytes): \(hex)\n")
     }
 
     func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {

@@ -376,7 +376,26 @@ struct FileCopyService {
 
         let copyElapsed = CFAbsoluteTimeGetCurrent() - copyStart
         let totalCopied = result.copiedJPG + result.copiedRAW
-        fputs("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초\n", stderr)
+        plog("[COPY] \(totalCopied)파일 복사 완료 \(String(format: "%.1f", copyElapsed))초\n")
+
+        // v9.1.4: RAW export 시 별점/라벨 있는 사진은 dest 폴더에 .xmp 사이드카 자동 생성.
+        //   PickShot 자체 별점 (UserDefaults/JSON) 은 다른 PC 로 옮겨가면 못 읽으므로
+        //   RAW 와 함께 별점 정보를 .xmp 로 내보내서 다른 사진가/Lightroom 에서 인식 가능.
+        var xmpGenerated = 0
+        if exportRAW {
+            for photo in photos where photo.hasRAW {
+                guard let rawURL = photo.rawURL else { continue }
+                guard photo.rating > 0 || photo.colorLabel != .none else { continue }
+                let destRAW = rawFolder.appendingPathComponent(rawURL.lastPathComponent)
+                guard fileManager.fileExists(atPath: destRAW.path) else { continue }
+                let label = photo.colorLabel != .none ? photo.colorLabel.xmpName : nil
+                XMPService.writeRating(for: destRAW, rating: photo.rating, label: label, spacePicked: photo.isSpacePicked)
+                xmpGenerated += 1
+            }
+            if xmpGenerated > 0 {
+                plog("[COPY] RAW XMP 사이드카 \(xmpGenerated)개 생성 (별점/라벨 보존)\n")
+            }
+        }
 
         result.verified = verify(photos: photos, jpgFolder: jpgFolder, rawFolder: rawFolder)
         return result

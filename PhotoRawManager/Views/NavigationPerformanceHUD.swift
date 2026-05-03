@@ -266,7 +266,7 @@ struct NavigationPerformanceHUD: View {
         if !m.isRepeat {
             return .gray.opacity(0.5)
         }
-        if m.intervalMs > 120 { return .red }
+        if m.intervalMs > 110 { return .red }
         if m.intervalMs > 70 { return .orange }
         if m.intervalMs > 45 { return .yellow }
         return .green

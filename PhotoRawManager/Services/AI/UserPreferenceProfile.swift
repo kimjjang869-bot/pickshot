@@ -51,7 +51,7 @@ final class UserPreferenceService {
             return
         }
         profile = p
-        fputs("[PREFS] profile 로드: pos=\(p.positiveCount) neg=\(p.negativeCount)\n", stderr)
+        plog("[PREFS] profile 로드: pos=\(p.positiveCount) neg=\(p.negativeCount)\n")
     }
 
     func save() {
@@ -98,7 +98,7 @@ final class UserPreferenceService {
             if pos.isEmpty { profile = .empty }
             self.profile = profile
             self.save()
-            fputs("[PREFS] 학습 완료: pos=\(profile.positiveCount) neg=\(profile.negativeCount) dim=\(profile.positiveVector.count)\n", stderr)
+            plog("[PREFS] 학습 완료: pos=\(profile.positiveCount) neg=\(profile.negativeCount) dim=\(profile.positiveVector.count)\n")
             DispatchQueue.main.async { onComplete(profile) }
         }
     }
@@ -109,7 +109,7 @@ final class UserPreferenceService {
     func exportProfile(to url: URL) throws {
         let data = try JSONEncoder().encode(profile)
         try data.write(to: url, options: .atomic)
-        fputs("[PREFS] export → \(url.lastPathComponent) (\(data.count) bytes)\n", stderr)
+        plog("[PREFS] export → \(url.lastPathComponent) (\(data.count) bytes)\n")
     }
 
     enum MergeStrategy {
@@ -137,7 +137,7 @@ final class UserPreferenceService {
         }
         self.profile = merged
         self.save()
-        fputs("[PREFS] import 완료 from \(url.lastPathComponent), posCount=\(merged.positiveCount)\n", stderr)
+        plog("[PREFS] import 완료 from \(url.lastPathComponent), posCount=\(merged.positiveCount)\n")
     }
 
     private func blend(base: UserPreferenceProfile, other: UserPreferenceProfile, myWeight: Double) -> UserPreferenceProfile {

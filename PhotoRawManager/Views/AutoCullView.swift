@@ -93,7 +93,11 @@ struct AutoCullView: View {
 
     private func selectAndNext() {
         guard let photo = currentPhoto else { return }
-        if let idx = store.photos.firstIndex(where: { $0.id == photo.id }) { store.photos[idx].isSpacePicked = true }
+        // v9.1.4 (perf P3): firstIndex(where:) O(N) → _photoIndex O(1).
+        //   이전엔 store.photos[idx].isSpacePicked = true 직접 변형 → didSet 폭탄 (rebuildIndex + invalidateFilterCache).
+        if let idx = store._photoIndex[photo.id], idx < store.photos.count {
+            store.photos[idx].isSpacePicked = true
+        }
         selectedCount += 1; showFeedback("select"); advance()
     }
     private func skipAndNext() { skippedCount += 1; showFeedback("skip"); advance() }

@@ -11,6 +11,7 @@ struct AdaFaceService {
     // MARK: - Model Loading
 
     private static var _model: MLModel?
+    private static var _embeddingOutputName: String?  // v9.1.4: 모델 로드 시 한 번만 결정
     private static let modelLock = NSLock()
 
     /// CoreML 모델 로드 (lazy, thread-safe)
@@ -26,10 +27,10 @@ struct AdaFaceService {
                 let config = MLModelConfiguration()
                 config.computeUnits = .all  // ANE + GPU + CPU
                 _model = try MLModel(contentsOf: url, configuration: config)
-                fputs("[ADAFACE] 모델 로딩 성공 (mlmodelc)\n", stderr)
+                plog("[ADAFACE] 모델 로딩 성공 (mlmodelc)\n")
                 return _model
             } catch {
-                fputs("[ADAFACE] mlmodelc 로딩 실패: \(error)\n", stderr)
+                plog("[ADAFACE] mlmodelc 로딩 실패: \(error)\n")
             }
         }
 
@@ -40,14 +41,14 @@ struct AdaFaceService {
                 let config = MLModelConfiguration()
                 config.computeUnits = .all
                 _model = try MLModel(contentsOf: compiled, configuration: config)
-                fputs("[ADAFACE] 모델 로딩 성공 (mlpackage 컴파일)\n", stderr)
+                plog("[ADAFACE] 모델 로딩 성공 (mlpackage 컴파일)\n")
                 return _model
             } catch {
-                fputs("[ADAFACE] mlpackage 컴파일 실패: \(error)\n", stderr)
+                plog("[ADAFACE] mlpackage 컴파일 실패: \(error)\n")
             }
         }
 
-        fputs("[ADAFACE] 모델 파일 없음\n", stderr)
+        plog("[ADAFACE] 모델 파일 없음\n")
         return nil
     }
 
@@ -64,20 +65,20 @@ struct AdaFaceService {
     /// - Returns: 512차원 Float 배열 (L2 정규화됨)
     static func embedding(from faceCrop: CGImage) -> [Float]? {
         guard let model = loadModel() else {
-            fputs("[ADAFACE] 모델 로드 실패\n", stderr)
+            plog("[ADAFACE] 모델 로드 실패\n")
             return nil
         }
 
         // 112x112로 리사이즈
         guard let resized = resizeTo112(faceCrop) else {
-            fputs("[ADAFACE] 리사이즈 실패 (원본: \(faceCrop.width)x\(faceCrop.height))\n", stderr)
+            plog("[ADAFACE] 리사이즈 실패 (원본: \(faceCrop.width)x\(faceCrop.height))\n")
             return nil
         }
 
         // CoreML 입력 생성
         let pixelBuffer = createPixelBuffer(from: resized)
         guard let pb = pixelBuffer else {
-            fputs("[ADAFACE] PixelBuffer 생성 실패\n", stderr)
+            plog("[ADAFACE] PixelBuffer 생성 실패\n")
             return nil
         }
 
@@ -87,23 +88,32 @@ struct AdaFaceService {
             ])
             let output = try model.prediction(from: input)
 
-            // 첫 번째 출력이 임베딩 (512차원)
-            guard let embeddingArray = output.featureValue(for: "var_498")?.multiArrayValue else {
-                // 출력 이름이 다를 수 있으므로 첫 번째 출력 시도
-                let names = output.featureNames
-                for name in names {
-                    if let arr = output.featureValue(for: name)?.multiArrayValue,
-                       arr.count >= 512 {
-                        return extractAndNormalize(arr)
-                    }
-                }
-                fputs("[ADAFACE] 임베딩 출력을 찾을 수 없음. 출력 이름: \(Array(output.featureNames))\n", stderr)
-                return nil
+            // v9.1.4: 출력 이름 동적 결정 — 첫 prediction 시 임베딩 후보 (count >= 512) 인 출력 이름을 캐시.
+            //   이전 하드코딩 ("var_498") 은 모델 재컴파일/교체 시 조용히 폴백 분기 → 추적 어려움.
+            modelLock.lock()
+            let cachedName = _embeddingOutputName
+            modelLock.unlock()
+
+            if let name = cachedName,
+               let arr = output.featureValue(for: name)?.multiArrayValue {
+                return extractAndNormalize(arr)
             }
 
-            return extractAndNormalize(embeddingArray)
+            // 캐시 없음 — 출력 후보 탐색.
+            for name in output.featureNames {
+                if let arr = output.featureValue(for: name)?.multiArrayValue,
+                   arr.count >= 512 {
+                    modelLock.lock()
+                    _embeddingOutputName = name
+                    modelLock.unlock()
+                    plog("[ADAFACE] 임베딩 출력 이름 결정: \(name)\n")
+                    return extractAndNormalize(arr)
+                }
+            }
+            plog("[ADAFACE] 임베딩 출력을 찾을 수 없음. 출력 이름: \(Array(output.featureNames))\n")
+            return nil
         } catch {
-            fputs("[ADAFACE] 추론 실패: \(error)\n", stderr)
+            plog("[ADAFACE] 추론 실패: \(error)\n")
             return nil
         }
     }
@@ -145,7 +155,7 @@ struct AdaFaceService {
         if _debugEmbeddingCount == 0 {
             let minVal = vec.min() ?? 0
             let maxVal = vec.max() ?? 0
-            fputs("[ADAFACE] 첫 임베딩 통계 - shape: \(arr.shape), dtype: \(arr.dataType.rawValue), min: \(minVal), max: \(maxVal), norm: \(norm)\n", stderr)
+            plog("[ADAFACE] 첫 임베딩 통계 - shape: \(arr.shape), dtype: \(arr.dataType.rawValue), min: \(minVal), max: \(maxVal), norm: \(norm)\n")
         }
         _debugEmbeddingCount += 1
 

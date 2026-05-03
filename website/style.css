@@ -65,13 +65,15 @@ img { display: block; max-width: 100%; height: auto; }
   font-family: var(--display); font-style: italic; font-weight: 400;
   background: linear-gradient(135deg, var(--accent-g), var(--accent-2));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  /* CJK 이탤릭 합성(skew) 시 오른쪽 글리프가 배경 박스 밖으로 삐져나가
-     background-clip: text 때문에 끝 글자가 잘리는 현상 방지 */
+  /* v9.0.2: CJK 이탤릭 합성(skew) 시 오른쪽 글리프가 배경 박스 밖으로 삐져나가
+     background-clip: text 때문에 끝 글자가 잘리는 현상 방지.
+     skew 각도가 크기 때문에 padding 더 많이 — "법" 등 받침 있는 글자 클리핑 방지. */
   display: inline-block;
-  padding-right: 0.14em;
-  margin-right: -0.04em;
+  padding: 0 0.32em 0.06em 0.04em;  /* right 더 큼 — italic 끝 글자 받침 보호 */
+  margin-right: -0.18em;             /* 시각적 간격은 정상 유지 */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  overflow: visible;
 }
 em { font-style: normal; color: var(--ink); font-weight: 600; }
 strong { color: var(--ink); font-weight: 600; }
@@ -278,27 +280,50 @@ strong { color: var(--ink); font-weight: 600; }
   font-family: var(--display);
   font-weight: 500;
   font-size: clamp(42px, 6.5vw, 84px);
-  line-height: 1.04;
-  letter-spacing: -0.035em;
+  line-height: 1.08;
+  letter-spacing: -0.025em;            /* v9.0.2: 한국어 가독성 위해 자간 살짝 완화 */
   margin-bottom: 28px;
   color: var(--ink);
   /* 이탤릭 합성 글리프가 화면 오른쪽으로 삐져나가지 않도록 안전 여백 */
-  padding: 0 0.1em;
+  padding: 0 0.18em 0.08em;
+  word-break: keep-all;                 /* 한국어 어절 단위 줄바꿈 */
+  overflow-wrap: break-word;
+  text-wrap: balance;                   /* v9.0.2: 2줄 시 양쪽 균형 (Safari 17+/Chrome) */
+}
+.h-line {
+  display: block;
+  animation: reveal-up .9s var(--ease-out) both;
+  padding-right: 0.12em;                /* v9.0.2: italic 마진 반영 — 받침 클리핑 방지 */
+  /* v9.0.2: 영어/숫자/한글 어절 사이는 줄바꿈 가능하나 어절 내부는 막음 */
   word-break: keep-all;
 }
-.h-line { display: block; animation: reveal-up .9s var(--ease-out) both; padding-right: 0.05em; }
 .h-line:nth-child(1) { animation-delay: .25s; }
 .h-line:nth-child(2) { animation-delay: .45s; }
+/* v9.0.2: 강조 단어 + 마침표가 떨어지지 않게 묶기 */
+.h-keep {
+  white-space: nowrap;
+  display: inline-block;
+}
 @keyframes reveal-up {
   from { opacity: 0; transform: translateY(28px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .hero-sub {
-  max-width: 640px; margin: 0 auto 40px;
+  max-width: 720px; margin: 0 auto 40px;
   font-size: 18px; color: var(--ink-2);
-  line-height: 1.65;
+  line-height: 1.7;
+  letter-spacing: -0.005em;
+  word-break: keep-all;
+  text-wrap: pretty;                  /* 마지막 줄 외톨이 단어 방지 (Chrome 117+) */
   animation: reveal-up .9s var(--ease-out) .65s both;
+}
+/* v9.0.2: 어절 단위 자연스러운 줄바꿈 — 줄 사이 공백 한 칸 */
+.hs-line {
+  display: inline;
+}
+.hs-line + .hs-line::before {
+  content: " ";
 }
 
 .hero-cta {
@@ -1157,4 +1182,430 @@ strong { color: var(--ink); font-weight: 600; }
     transition-duration: 0.01ms !important;
   }
   [data-reveal] { opacity: 1; transform: none; }
+}
+
+/* ====================================================
+   v9.0.2 — What's New 섹션
+   ==================================================== */
+
+.section-whatsnew {
+  padding: 120px 24px 100px;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(34, 197, 94, 0.06), transparent 60%),
+    var(--color-bg);
+  position: relative;
+  overflow: hidden;
+}
+.section-whatsnew::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 56px 56px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+
+.whatsnew-head {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 64px;
+  position: relative;
+  z-index: 1;
+}
+.whatsnew-head .section-sub {
+  margin-top: 18px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.ver-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: linear-gradient(135deg, #6366f1, #22c55e);
+  color: white;
+  border-radius: 999px;
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.35);
+}
+
+.whatsnew-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.wn-card {
+  position: relative;
+  padding: 32px 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  overflow: hidden;
+}
+.wn-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.45), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.wn-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.25);
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+}
+.wn-card:hover::before { opacity: 1; }
+
+.wn-hero {
+  grid-column: span 2;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(34, 197, 94, 0.04) 100%);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+.wn-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(99, 102, 241, 0.95);
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 6px;
+  margin-bottom: 18px;
+}
+
+.wn-title {
+  font-family: 'Pretendard', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+  color: rgba(255, 255, 255, 0.95);
+}
+.wn-hero .wn-title { font-size: 28px; }
+
+.wn-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.65);
+}
+.wn-body strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+}
+
+.wn-meta {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.wn-stat {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.wn-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(34, 197, 94, 0.95);
+  letter-spacing: -0.02em;
+}
+.wn-cap {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (max-width: 1024px) {
+  .whatsnew-grid { grid-template-columns: repeat(2, 1fr); }
+  .wn-hero { grid-column: span 2; }
+}
+
+@media (max-width: 640px) {
+  .section-whatsnew { padding: 80px 20px 60px; }
+  .whatsnew-grid { grid-template-columns: 1fr; gap: 16px; }
+  .wn-hero { grid-column: span 1; }
+  .wn-card { padding: 24px 22px; }
+  .wn-title { font-size: 19px; }
+  .wn-hero .wn-title { font-size: 22px; }
+  .whatsnew-head { margin-bottom: 40px; }
+}
+
+/* nav-new — v9.0.2 새기능 강조 */
+.nav-new {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  color: rgba(99, 102, 241, 0.95) !important;
+  font-weight: 600;
+}
+.nav-dot {
+  width: 6px;
+  height: 6px;
+  background: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.8);
+  animation: nav-dot-pulse 2s infinite ease-out;
+}
+@keyframes nav-dot-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* ============================================================
+   v9.0.2 — Pricing redesign (Simple / Pro 2-tier + Annual)
+============================================================ */
+
+.section-pricing .section-head { margin-bottom: 56px; }
+
+/* 월/연 토글 */
+.price-toggle {
+  display: inline-flex;
+  margin-top: 28px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  gap: 4px;
+}
+.pt-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 9px 22px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: -0.01em;
+}
+.pt-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) inset;
+}
+.pt-save {
+  margin-left: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: white;
+  border-radius: 4px;
+}
+
+/* 2-카드 그리드 */
+.price-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  max-width: 1000px;
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+.price-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 38px 34px 32px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 22px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+.price-card:hover {
+  transform: translateY(-3px);
+}
+.price-simple:hover { border-color: rgba(255, 255, 255, 0.14); }
+
+.price-pro {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.10) 0%, rgba(34, 197, 94, 0.04) 100%);
+  border-color: rgba(99, 102, 241, 0.30);
+  box-shadow: 0 20px 48px -16px rgba(99, 102, 241, 0.25);
+}
+.price-pro:hover {
+  border-color: rgba(99, 102, 241, 0.50);
+  box-shadow: 0 26px 60px -14px rgba(99, 102, 241, 0.40);
+}
+
+/* Pro orb 발광 */
+.price-orb {
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.price-ribbon {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #6366f1, #22c55e);
+  color: white;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px -4px rgba(99, 102, 241, 0.6);
+  z-index: 2;
+}
+
+.price-head {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.price-tag {
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+.price-tag.pro {
+  background: linear-gradient(135deg, #818cf8, #4ade80);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  font-size: 16px;
+}
+.price-tagline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 18px;
+  letter-spacing: -0.005em;
+}
+.price-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.price-num {
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.96);
+}
+.price-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+}
+.price-yearly-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(34, 197, 94, 0.85);
+  font-weight: 500;
+}
+
+.price-list {
+  list-style: none;
+  margin: 0 0 24px 0;
+  padding: 0;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+.price-list li {
+  position: relative;
+  padding: 9px 0 9px 22px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.price-list li:last-child { border-bottom: none; }
+.price-list li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  color: rgba(34, 197, 94, 0.8);
+  font-weight: 700;
+  font-size: 12px;
+}
+.price-list li.pl-section {
+  font-size: 12px;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding-left: 0;
+  margin-bottom: 4px;
+  border-bottom: none;
+}
+.price-list li.pl-section::before { content: ""; }
+.price-list li.pl-pro::before { content: ""; padding-right: 0; }
+.price-list li.pl-pro {
+  padding-left: 0;
+}
+.price-list strong {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 600;
+}
+
+.btn-block { width: 100%; }
+
+.price-note {
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  letter-spacing: -0.005em;
+}
+
+.price-fineprint {
+  margin-top: 40px;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 768px) {
+  .price-grid { grid-template-columns: 1fr; gap: 16px; }
+  .price-card { padding: 28px 24px 26px; }
+  .price-num { font-size: 36px; }
+  .price-orb { width: 130px; height: 130px; top: -28px; right: -28px; }
 }

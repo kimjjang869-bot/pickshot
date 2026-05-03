@@ -18,12 +18,12 @@ struct ClientPenOverlayView: View {
 
     var body: some View {
         Canvas { context, size in
-            fputs("[PEN] 🖼️ Canvas draw — size=\(size), strokes=\(parsedDrawings.count)\n", stderr)
+            plog("[PEN] 🖼️ Canvas draw — size=\(size), strokes=\(parsedDrawings.count)\n")
             for stroke in parsedDrawings {
                 guard stroke.points.count >= 2 else { continue }
                 var path = Path()
                 let first = stroke.points[0]
-                fputs("[PEN] stroke — pts=\(stroke.points.count), first=(\(first.x),\(first.y)), width=\(stroke.width)\n", stderr)
+                plog("[PEN] stroke — pts=\(stroke.points.count), first=(\(first.x),\(first.y)), width=\(stroke.width)\n")
                 path.move(to: CGPoint(x: first.x * size.width, y: first.y * size.height))
                 for pt in stroke.points.dropFirst() {
                     path.addLine(to: CGPoint(x: pt.x * size.width, y: pt.y * size.height))
@@ -43,14 +43,14 @@ struct ClientPenOverlayView: View {
     private func parse() {
         guard let data = penDrawingsJSON.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            fputs("[PEN] ❌ JSON 파싱 실패, 원본 \(penDrawingsJSON.count)자 앞부분: \(penDrawingsJSON.prefix(200))\n", stderr)
+            plog("[PEN] ❌ JSON 파싱 실패, 원본 \(penDrawingsJSON.count)자 앞부분: \(penDrawingsJSON.prefix(200))\n")
             parsedDrawings = []
             return
         }
-        fputs("[PEN] JSON 파싱 OK — \(array.count)개 entry\n", stderr)
+        plog("[PEN] JSON 파싱 OK — \(array.count)개 entry\n")
         if let firstEntry = array.first {
-            fputs("[PEN] 첫 entry keys: \(firstEntry.keys.joined(separator: ","))\n", stderr)
-            if let paths = firstEntry["paths"] as? [Any] { fputs("[PEN] paths count: \(paths.count), first: \(paths.first ?? "nil")\n", stderr) }
+            plog("[PEN] 첫 entry keys: \(firstEntry.keys.joined(separator: ","))\n")
+            if let paths = firstEntry["paths"] as? [Any] { plog("[PEN] paths count: \(paths.count), first: \(paths.first ?? "nil")\n") }
         }
         parsedDrawings = array.compactMap { entry in
             let colorHex = entry["color"] as? String ?? "#FF3B30"
@@ -80,7 +80,7 @@ struct ClientPenOverlayView: View {
                     }
                 }
                 if points.isEmpty {
-                    fputs("[PEN] ⚠️ paths \(pathsAny.count)개 중 0개 변환 — dictFail=\(failedDictCast), numFail=\(failedNumCast), firstType=\(type(of: pathsAny.first ?? "nil"))\n", stderr)
+                    plog("[PEN] ⚠️ paths \(pathsAny.count)개 중 0개 변환 — dictFail=\(failedDictCast), numFail=\(failedNumCast), firstType=\(type(of: pathsAny.first ?? "nil"))\n")
                 }
             } else if let pointsArr = entry["points"] as? [[Double]] {
                 points = pointsArr.compactMap { p in

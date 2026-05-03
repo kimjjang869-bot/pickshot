@@ -14,6 +14,7 @@ struct PresetPanelView: View {
     @State private var presets: [DevelopSettings.Preset] = []
     @State private var showingSaveSheet = false
     @State private var newPresetName = ""
+    private let accent = Color(red: 1.0, green: 0.76, blue: 0.03)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -32,7 +33,7 @@ struct PresetPanelView: View {
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .foregroundColor(.black)
-                    .background(Capsule().fill(Color(red: 1.0, green: 0.76, blue: 0.03)))
+                    .background(Capsule().fill(accent.opacity(store.get(for: photoURL).isDefault ? 0.35 : 0.95)))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.get(for: photoURL).isDefault)
@@ -42,13 +43,13 @@ struct PresetPanelView: View {
             ScrollView {
                 VStack(spacing: 2) {
                     if let userPresets = Optional(presets.filter { !isBuiltin($0) }), !userPresets.isEmpty {
-                        sectionHeader("❤️ My Presets")
+                        sectionHeader("내 프리셋")
                         ForEach(userPresets) { preset in
                             presetRow(preset, isDeletable: true)
                         }
                     }
 
-                    sectionHeader("📦 Built-in")
+                    sectionHeader("기본 프리셋")
                     ForEach(presets.filter { isBuiltin($0) }) { preset in
                         presetRow(preset, isDeletable: false)
                     }
@@ -57,7 +58,7 @@ struct PresetPanelView: View {
             .frame(height: 210)
         }
         .padding(10)
-        .frame(width: 260)
+        .frame(width: 280)
         .onAppear { reload() }
         .sheet(isPresented: $showingSaveSheet) { savePresetSheet }
     }
@@ -95,7 +96,11 @@ struct PresetPanelView: View {
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(0.04))
+                        .fill(Color.white.opacity(0.055))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        )
                 )
                 .contentShape(Rectangle())
             }

@@ -104,38 +104,60 @@ final class BurstPickerService {
         onProgress: @escaping (Int, Int) -> Void,
         onComplete: @escaping ([(group: [PhotoItem], best: PhotoItem, scores: [BurstShotScore])]) -> Void
     ) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // v9.0.2 crash fix:
+        //   1) QoS .userInitiated → .utility (메인 스레드 starvation 차단)
+        //   2) 그룹 단위 autoreleasepool (메모리 누적 차단)
+        //   3) progress 콜백 throttle (매 10장 또는 50ms 마다 1회 → 1000장 burst 시 main hop 1000→~100)
+        //   4) Vision 동시 실행 제한 (단일 ciContext 보호 — Self.visionLock)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
             var results: [(group: [PhotoItem], best: PhotoItem, scores: [BurstShotScore])] = []
             let total = groups.reduce(0) { $0 + $1.count }
             var done = 0
+            var lastProgressEmit: CFAbsoluteTime = 0
 
             // v8.9: 엄격도(strictness) — 최고 점수가 이 값 미만이면 그룹을 skip (결과 안 내놓음).
-            //   느슨(0.0) = 항상 선택, 보통(0.5) = 0.40 이상만, 엄격(1.0) = 0.65 이상만.
             let minOverall = 0.30 + criteria.strictness * 0.40
 
             for group in groups {
-                var groupScores: [BurstShotScore] = []
-                for photo in group {
-                    autoreleasepool {  // 대용량 연사에서 오토릴리즈 누적 방지
-                        let s = self.scorePhoto(photo, criteria: criteria)
-                        groupScores.append(s)
+                // 그룹 단위 autoreleasepool — Vision/CIContext 결과 그룹 끝나면 즉시 해제.
+                autoreleasepool {
+                    var groupScores: [BurstShotScore] = []
+                    for photo in group {
+                        autoreleasepool {
+                            let s = self.scorePhoto(photo, criteria: criteria)
+                            groupScores.append(s)
+                        }
+                        done += 1
+                        // progress throttle: 10장 마다 또는 50ms 경과 시.
+                        let now = CFAbsoluteTimeGetCurrent()
+                        if done % 10 == 0 || now - lastProgressEmit >= 0.05 {
+                            lastProgressEmit = now
+                            let d = done
+                            DispatchQueue.main.async { onProgress(d, total) }
+                        }
                     }
-                    done += 1
-                    let d = done
-                    DispatchQueue.main.async { onProgress(d, total) }
-                }
-                if let winner = groupScores.max(by: { $0.overall < $1.overall }),
-                   winner.overall >= minOverall,
-                   let bestPhoto = group.first(where: { $0.id == winner.photoID }) {
-                    results.append((group: group, best: bestPhoto, scores: groupScores))
-                } else if let winner = groupScores.max(by: { $0.overall < $1.overall }) {
-                    fputs("[BURST-SKIP] 그룹 (\(group.count)장) 최고 점수 \(String(format: "%.2f", winner.overall)) < 엄격도 바닥 \(String(format: "%.2f", minOverall))\n", stderr)
+                    if let winner = groupScores.max(by: { $0.overall < $1.overall }),
+                       winner.overall >= minOverall,
+                       let bestPhoto = group.first(where: { $0.id == winner.photoID }) {
+                        results.append((group: group, best: bestPhoto, scores: groupScores))
+                    } else if let winner = groupScores.max(by: { $0.overall < $1.overall }) {
+                        plog("[BURST-SKIP] 그룹 (\(group.count)장) 최고 점수 \(String(format: "%.2f", winner.overall)) < 엄격도 바닥 \(String(format: "%.2f", minOverall))\n")
+                    }
                 }
             }
-            DispatchQueue.main.async { onComplete(results) }
+            // 마지막 진행률 강제 emit (마무리).
+            let finalDone = done
+            DispatchQueue.main.async {
+                onProgress(finalDone, total)
+                onComplete(results)
+            }
         }
     }
+
+    /// v9.0.2: Vision + CIContext 동시 실행 직렬화. Vision 은 thread-safe 표방하나,
+    ///   공유 CIContext + ImageRequestHandler 조합에서 race condition 가능 → 락으로 보호.
+    private static let visionLock = NSLock()
 
     // MARK: - Scoring
 
@@ -276,6 +298,9 @@ final class BurstPickerService {
             req.revision = VNDetectFaceLandmarksRequestRevision3
         }
         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        // v9.0.2 crash fix: Vision request 직렬화 (CIContext race 방지).
+        Self.visionLock.lock()
+        defer { Self.visionLock.unlock() }
         do { try handler.perform([req]) } catch { return nil }
         guard let faces = req.results, !faces.isEmpty else {
             // 얼굴 없음 — face 관련 점수는 중립 0.5 로 반환 (감점/가점 없음)
@@ -347,6 +372,9 @@ final class BurstPickerService {
         guard let cg = loadCGImage(url: url, maxPixel: 1000) else { return 0.5 }
         let req = VNDetectHorizonRequest()
         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        // v9.0.2 crash fix: Vision request 직렬화.
+        Self.visionLock.lock()
+        defer { Self.visionLock.unlock() }
         do { try handler.perform([req]) } catch { return 0.5 }
         guard let angle = req.results?.first?.angle else { return 0.5 }
         // angle 은 라디안. ±1° 이면 완벽, ±5° 이상이면 기울어짐.
@@ -367,12 +395,25 @@ final class BurstPickerService {
 
     private func loadCGImage(url: URL, maxPixel: CGFloat) -> CGImage? {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        // v9.0.2 crash fix: IfAbsent: false → 임베디드만 사용 (RAW demosaic 안 함).
+        //   풀 RAW demosaic 은 사진당 200~500MB 메모리 → 1000장 burst 메모리 폭발 원인.
         let opts: [NSString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false
+        ]
+        if let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) {
+            return cg
+        }
+        // 임베디드 없으면 폴백 (희귀 케이스 — JPG 등).
+        let fallbackOpts: [NSString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCache: false
         ]
-        return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, fallbackOpts as CFDictionary)
     }
 }

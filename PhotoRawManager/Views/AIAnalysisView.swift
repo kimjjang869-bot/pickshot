@@ -222,6 +222,11 @@ struct AIAnalysisView: View {
             showAPIKeyInput = true
             return
         }
+        // v9.1.4: 외부 전송 동의 (보안 감사 M-5).
+        guard AIConsentGate.requireConsent() else {
+            errorMessage = "AI 분석이 취소되었습니다"
+            return
+        }
 
         isAnalyzing = true
         analysisType = type
