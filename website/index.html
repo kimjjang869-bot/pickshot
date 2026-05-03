@@ -61,10 +61,10 @@
     </h1>
 
     <p class="hero-sub">
-      <span class="hs-line">2,000장&nbsp;RAW가 <strong>1.5초에</strong> 뜨고,</span>
+      <span class="hs-line">2,000장의&nbsp;RAW가 <strong>1.5초만에</strong> 뜨고,</span>
       <span class="hs-line">클릭하는&nbsp;순간 <strong>풀해상도</strong>.</span>
       <span class="hs-line">Lightroom&nbsp;카탈로그 만드는&nbsp;시간에</span>
-      <span class="hs-line"><strong>100장&nbsp;골라 클라이언트&nbsp;폴더에</strong> 있습니다.</span>
+      <span class="hs-line"><strong>100장 골라 클라이언트&nbsp;폴더에</strong> 보낼 수 있습니다.</span>
     </p>
 
     <div class="hero-cta">
@@ -134,9 +134,9 @@
         <div class="wn-tag">색감</div>
         <div class="wn-title">Stage 3 deep embedded</div>
         <div class="wn-body">
-          RAW 파일 안에 박힌 풀해상도 카메라 JPEG 를 0xFFD8 마커 스캔으로 직접 추출.
-          CIRAW demosaic 안 거치니까 <strong>프리뷰에서 본 색감 그대로</strong>.
-          Sony S-Cinetone, Canon Picture Style, Nikon Picture Control — 그대로 출력.
+          RAW 파일 안에 들어 있는 풀해상도 카메라 JPEG 를 0xFFD8 마커 스캔으로 바로 추출합니다.
+          CIRAW demosaic 단계를 건너뛰기 때문에 <strong>미리보기에서 본 색감 그대로</strong> 저장됩니다.
+          Sony S-Cinetone, Canon Picture Style, Nikon Picture Control — 카메라 색감 그대로 출력.
         </div>
         <div class="wn-meta">Sony ARW · Canon CR3 · Nikon NEF · Fujifilm RAF · Adobe DNG</div>
       </div>
@@ -146,8 +146,8 @@
         <div class="wn-tag">화질</div>
         <div class="wn-title">다단계 Lanczos</div>
         <div class="wn-body">
-          8000→2000 같은 4×+ 다운샘플도 한 번에 안 합니다.
-          <strong>8000 → 4000 → 2000</strong> 단계별 sinc filter — 디테일 뭉개짐 없음.
+          8000→2000 같은 4배 이상 다운샘플도 한 번에 줄이지 않습니다.
+          <strong>8000 → 4000 → 2000</strong> 단계별 sinc filter 로 디테일이 뭉개지지 않습니다.
         </div>
         <div class="wn-stat"><span class="wn-num">2-step</span><span class="wn-cap">기본 4×+ 자동 분할</span></div>
       </div>
@@ -157,9 +157,9 @@
         <div class="wn-tag">샤픈</div>
         <div class="wn-title">자연 · 선명 · 또렷</div>
         <div class="wn-body">
-          작은 반경 USM 으로 헤일로는 sub-pixel — 안 보임.
-          <strong>밝기 100% 보존</strong>.
-          매거진 화보 느낌 프리셋도 새로 — Clarity + Detail + Pop 3-pass 합성.
+          작은 반경 USM 으로 헤일로를 sub-pixel 수준으로 억제 — 눈에 보이지 않습니다.
+          <strong>원본 밝기 100% 보존</strong>.
+          매거진 화보 느낌 프리셋 신규 추가 — Clarity + Detail + Pop 3-pass 합성.
         </div>
         <div class="wn-stat"><span class="wn-num">5</span><span class="wn-cap">샤픈 프리셋</span></div>
       </div>
@@ -169,9 +169,9 @@
         <div class="wn-tag">출력</div>
         <div class="wn-title">DPI · 직접 입력 · 폴더 유지</div>
         <div class="wn-body">
-          DPI 72/150/300/600 메타데이터 셋팅 (JFIF + TIFF + EXIF).
-          해상도 직접 입력 px.
-          하위폴더 모드에서 <strong>원본 폴더 구조 그대로 출력</strong>.
+          DPI 72/150/300/600 메타데이터를 JFIF + TIFF + EXIF 모두에 기록.
+          해상도는 px 단위로 직접 입력할 수 있습니다.
+          하위폴더 모드에서는 <strong>원본 폴더 구조 그대로 출력</strong>됩니다.
         </div>
       </div>
 
@@ -180,8 +180,8 @@
         <div class="wn-tag">회전</div>
         <div class="wn-title">세로 사진 자동 보정</div>
         <div class="wn-body">
-          부모 RAW 의 orientation tag 를 임베디드 JPEG 에 적용.
-          <strong>세로 사진 정방향</strong> 출력 보장.
+          부모 RAW 의 orientation tag 를 임베디드 JPEG 에 자동 적용합니다.
+          <strong>세로 사진도 정방향</strong> 으로 출력됩니다.
         </div>
       </div>
 
@@ -190,74 +190,32 @@
         <div class="wn-tag">안정성</div>
         <div class="wn-title">크래시 픽스 + 회귀 수정</div>
         <div class="wn-body">
-          연사 베스트 자동 선별 응답없음 → 크래시 해소.
-          Sony LOG 영상 LUT 자동 적용 회귀 수정.
-          빠른 네비 STALL 패턴 완화.
+          연사 베스트 자동 선별 도중 응답없음으로 크래시 나던 문제를 해결했습니다.
+          Sony LOG 영상 LUT 자동 적용 회귀를 수정했고,
+          빠른 키 이동 시 발생하던 STALL 도 완화됐습니다.
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============ G-SELECT (promoted to #2) ============ -->
-<section class="section section-gselect" id="gselect">
+<!-- ============ G-SELECT (sub-feature, 클라이언트 뷰어와 짝) ============ -->
+<section class="section section-gselect-mini" id="gselect">
   <div class="section-inner">
-    <div class="gs-grid">
-      <div class="gs-copy">
-        <div class="kicker">PickShot 만의 매커닉</div>
-        <h2 class="section-title">
-          별점만으론 부족합니다.<br>
-          <span class="italic">클라이언트 셀렉</span>은 따로 있어야 합니다.
-        </h2>
-        <p class="section-sub">
-          <strong>별점 (내 기준)</strong> 과 <strong>G (클라이언트 전달용)</strong> 이
-          독립 레이어로 공존합니다. 내 셀렉은 별점으로, 클라이언트에게 보낼 컷은 G 로.
-          두 결정이 섞이지 않아 내 기준을 훼손하지 않고 클라이언트용 픽만 갈아낄 수 있습니다.
-        </p>
-        <div class="gs-steps">
-          <div class="gs-step" data-reveal>
-            <div class="gs-step-num">1</div>
-            <div>
-              <div class="gs-step-title">숫자키 <kbd>1</kbd>~<kbd>4</kbd></div>
-              <div class="gs-step-desc">품질 등급 — 내 기준, 절대 변하지 않음</div>
-            </div>
-          </div>
-          <div class="gs-step" data-reveal>
-            <div class="gs-step-num">2</div>
-            <div>
-              <div class="gs-step-title"><kbd>Space</kbd> 별 5점 빠른 셀렉</div>
-              <div class="gs-step-desc">숫자 5 대신 스페이스바로 원핸드 셀렉</div>
-            </div>
-          </div>
-          <div class="gs-step" data-reveal>
-            <div class="gs-step-num">3</div>
-            <div>
-              <div class="gs-step-title"><kbd>G</kbd> 클라이언트 전달용</div>
-              <div class="gs-step-desc">별점과 독립. 클라이언트에게 보낼 컷만 G 로 묶기</div>
-            </div>
-          </div>
-        </div>
+    <div class="gs-mini">
+      <div class="gs-mini-icon">
+        <span class="gs-mini-g">G</span>
       </div>
-
-      <div class="gs-demo" data-reveal>
-        <div class="gs-mock">
-          <div class="gs-mock-head">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span>셀렉 워크플로우</span>
-          </div>
-          <div class="gs-tiles">
-            <div class="gs-tile"><div class="gs-ph g-ph-1"></div><div class="gs-meta"><span class="gs-stars">★★★</span></div></div>
-            <div class="gs-tile picked"><div class="gs-ph g-ph-2"></div><div class="gs-meta"><span class="gs-stars">★★★★★</span><span class="gs-g">G</span></div></div>
-            <div class="gs-tile"><div class="gs-ph g-ph-3"></div><div class="gs-meta"><span class="gs-stars">★★★★</span></div></div>
-            <div class="gs-tile picked"><div class="gs-ph g-ph-4"></div><div class="gs-meta"><span class="gs-stars">★★★★★</span><span class="gs-g">G</span></div></div>
-            <div class="gs-tile"><div class="gs-ph g-ph-5"></div><div class="gs-meta"><span class="gs-stars">★★</span></div></div>
-            <div class="gs-tile"><div class="gs-ph g-ph-6"></div><div class="gs-meta"><span class="gs-stars">★★★</span></div></div>
-          </div>
-          <div class="gs-legend">
-            <span><span class="dot-s"></span>별점 = 내 기준</span>
-            <span><span class="dot-g"></span>G = 클라이언트 전달용</span>
-          </div>
-        </div>
+      <div class="gs-mini-body">
+        <div class="kicker">클라이언트 뷰어와 짝을 이루는 셀렉 구조</div>
+        <h3 class="gs-mini-title">
+          <span class="italic">별점 = 내 기준</span> · <span class="italic">G = 클라이언트 전달용</span>
+        </h3>
+        <p class="gs-mini-desc">
+          두 결정이 섞이지 않게 별점과 G 를 독립 레이어로 분리했습니다.
+          내 기준은 그대로 두고, 클라이언트에게 보낼 픽만 <kbd>G</kbd> 로 모아 뷰어에 한 번에 올립니다.
+          숫자키 <kbd>1</kbd>~<kbd>4</kbd> 품질 등급, <kbd>Space</kbd> 별 5점 빠른 셀렉, <kbd>G</kbd> 전달 묶음 — 한 손으로 끝.
+        </p>
       </div>
     </div>
   </div>
@@ -421,23 +379,37 @@
   </div>
 </section>
 
-<!-- ============ CLIENT VIEWER ============ -->
-<section class="section section-client">
+<!-- ============ CLIENT VIEWER (★ 핵심 차별화) ============ -->
+<section class="section section-client" id="client-viewer">
   <div class="section-inner">
+    <div class="section-head center">
+      <div class="kicker">PickShot 만의 핵심 기능</div>
+      <h2 class="section-title">
+        클라이언트가 <span class="italic">자기 폰</span> 으로 고르고,<br>
+        내 Mac 에 <span class="italic">실시간으로 들어옵니다.</span>
+      </h2>
+      <p class="section-sub center">
+        업로드도, 메일 캐치볼도, 스크린샷에 빨간 동그라미 그리기도 끝. <br>
+        링크 한 줄이면 셀렉 작업이 한 화면에서 닫힙니다.
+      </p>
+    </div>
+
     <div class="cv-grid">
       <div class="cv-copy">
-        <div class="kicker">클라이언트 뷰어</div>
-        <h2 class="section-title">
-          클라이언트가 웹에서 직접 고르고,<br>
-          <span class="italic">내 Mac 에 실시간 반영</span>됩니다.
-        </h2>
         <ul class="cv-list">
-          <li><span class="cv-dot"></span>링크 한 줄. <strong>로그인 · 설치 없이</strong> 브라우저로 열람</li>
-          <li><span class="cv-dot"></span>별점 · 펜 · 코멘트로 의사 전달</li>
-          <li><span class="cv-dot"></span>내 PickShot 셀렉 뷰에 <strong>실시간 동기화</strong></li>
-          <li><span class="cv-dot"></span>RAW 원본 노출 없음 — 웹사이즈 JPEG만</li>
-          <li><span class="cv-dot"></span>Google Drive 한 번 연결 이후 자동 업로드</li>
+          <li><span class="cv-dot"></span><strong>설치도 로그인도 없음</strong> — 링크 클릭 → 바로 셀렉 시작</li>
+          <li><span class="cv-dot"></span>클라이언트가 별 5점, 펜 그림, 코멘트로 직접 표시</li>
+          <li><span class="cv-dot"></span>내 PickShot 그리드에 <strong>실시간 반영</strong> (대기 시간 0)</li>
+          <li><span class="cv-dot"></span>모바일/태블릿/데스크톱 어디서나 — 반응형 UI</li>
+          <li><span class="cv-dot"></span>웹사이즈 JPEG 만 노출 — RAW 원본은 절대 안 나감</li>
+          <li><span class="cv-dot"></span>Google Drive 1회 연결 후 <strong>업로드 자동화</strong></li>
+          <li><span class="cv-dot"></span>QR 코드 즉시 생성 — 현장에서 클라이언트 폰으로 바로 공유</li>
         </ul>
+        <div class="cv-quote">
+          “기존엔 카톡으로 사진 캡처본 + 빨간 동그라미를 한 시간씩 받았는데,<br>
+          지금은 클라이언트가 직접 별 누르면 끝입니다.<br>
+          <strong>피드백 2시간 → 10분</strong>.”
+        </div>
       </div>
       <div class="cv-demo" data-reveal>
         <div class="cv-phone">
