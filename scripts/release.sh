@@ -20,7 +20,9 @@
 #   - gh CLI 인증 완료
 #   - Developer ID Application 인증서 keychain 에 있음 (Kwangho Kim, Team 322DLHS5T8)
 
-set -euo pipefail
+set -eu
+# pipefail 은 의도적으로 비활성 — `... | tail -N` 에서 tail 이 SIGPIPE 받으면 전체 실패하던 문제 차단.
+# 각 단계 결과 검증은 if/grep 으로 명시적으로 처리.
 
 VERSION="${1:-}"
 NOTES_FILE="${2:-}"
