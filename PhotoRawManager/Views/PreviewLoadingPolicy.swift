@@ -137,8 +137,12 @@ enum PreviewLoadingPolicy {
     //   neighbor prefetch 는 여전히 shouldPrefetchHiRes 로 차단.
     // v9.1: 슈퍼 셀렉 모드 ON 시 자동 hi-res 차단 (Stage 2 까지만).
     //   사용자 명시 줌/100% (loadHiResForZoom forceDeepScan) 은 별도 경로라 통과.
+    // v9.1.4 (re-applied): fastCullingMode 도 SuperCullMode 처럼 Stage 3 차단.
+    //   PhotoStore PerformanceProfile.fastCull: "Stage 3 차단, AI/Stage 2 prefetch OFF (셀렉 작업용)".
+    //   사용자 명시 줌/100% (loadHiResForZoom forceDeepScan) 은 별도 경로라 통과.
     static func shouldAutoLoadHiRes(fastCullingMode: Bool) -> Bool {
         if SuperCullMode.isActive { return false }
+        if fastCullingMode { return false }
         return true
     }
 

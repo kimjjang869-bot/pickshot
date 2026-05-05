@@ -3306,11 +3306,11 @@ struct PhotoPreviewView: View {
     private static var lastPrefetchIdx: Int = -1
     private static var lastFireIdx: Int = -1
 
-    // v8.9.7+: 메모리 압박 자동 throttle (8GB 시스템 대응).
-    //   .warning: 큐 cap 10 → 3 (디스크/메모리 부하 75% 감소)
-    //   .critical: 큐 cap → 0 (prefetch 일시 정지)
-    //   .normal: 큐 cap 10 복구
-    private static var currentQueueCap: Int = 10
+    // v9.1.4 (re-applied): PREFETCH-KR 4초+ STALL 원인 → cap 10 (190MB backlog) 너무 큼.
+    //   ARW thumbnail 1300x900 NSImage = ~19MB/장 → ThumbnailCache.set 누적 → main page fault.
+    //   cap 10→5 (95MB backlog), warning 3→2.
+    //   ※ 이전 세션 backup 복구 과정에서 한 번 사라졌던 fix — 재적용.
+    private static var currentQueueCap: Int = 5
     private static let memoryPressureSource: DispatchSourceMemoryPressure = {
         let src = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
         src.setEventHandler {
@@ -3321,11 +3321,11 @@ struct PhotoPreviewView: View {
                 // 큐 비우기
                 prefetchOpQueue.cancelAllOperations()
             } else if event.contains(.warning) {
-                currentQueueCap = 3
-                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=3)\n", stderr)
+                currentQueueCap = 2
+                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=2)\n", stderr)
             } else {
-                currentQueueCap = 10
-                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=10)\n", stderr)
+                currentQueueCap = 5
+                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=5)\n", stderr)
             }
         }
         src.activate()
@@ -3488,9 +3488,13 @@ struct PhotoPreviewView: View {
     private func loadHiResForZoom(forceDeepScan: Bool = false) {
         guard let selected = store.selectedPhoto,
               !selected.isFolder, !selected.isParentFolder else { return }
-        // v8.9.6: fastCullingMode 가드 제거 — PreviewLoadingPolicy.shouldAutoLoadHiRes
-        //   가 항상 true 로 hi-res 를 허용. fastCullingMode 는 hiResDelay 로만 늦춤.
-        //   key repeat 중에는 여전히 막아야 (디코드 burst 방지).
+        // v9.1.4 (re-applied): fastCullingMode/SuperCullMode 가드 — 캐시 HIT 도 Stage 3 차단.
+        //   forceDeepScan (사용자 명시 줌/100%) 만 통과. 키 직접 호출 경로(1072/1458/1842/2183/2269/2359)
+        //   가 shouldAutoLoadHiRes 가드 우회해서 캐시 있으면 Stage 3 진입하던 버그 차단.
+        if !forceDeepScan {
+            if SuperCullMode.isActive { return }
+            if store.fastCullingMode { return }
+        }
         guard !store.isFastNavigation else { return }
         guard !isHiResLoaded else { return }
         // 보정 적용된 이미지를 원본으로 덮어쓰지 않음
