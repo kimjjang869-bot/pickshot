@@ -4,9 +4,12 @@ import AppKit
 
 extension PhotoStore {
     func rebuildIndex() {
-        _photoIndex.removeAll()
+        _photoIndex.removeAll(keepingCapacity: true)
+        _urlIndex.removeAll(keepingCapacity: true)
         for (i, p) in photos.enumerated() {
             _photoIndex[p.id] = i
+            // v9.1.4: URL → idx 인덱스. PreviewLoadingPolicy.decodeURL O(N)→O(1).
+            _urlIndex[p.jpgURL] = i
         }
     }
 

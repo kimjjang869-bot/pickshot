@@ -175,20 +175,20 @@ extension NativeTableListView {
             let ids = ctxTargetIDs(anchor: photo)
             let count = ids.count
 
+            // v9.1.4: 새 폴더로 이동 — 메뉴 최상단 (NSThumbnailCollectionView/PhotoContextMenu 와 통일).
+            let moveNewFolder = NSMenuItem(title: "새 폴더로 이동", action: #selector(ctxMoveToNewFolder), keyEquivalent: "")
+            moveNewFolder.target = self
+            moveNewFolder.image = NSImage(systemSymbolName: "folder.fill.badge.plus", accessibilityDescription: nil)
+            menu.addItem(moveNewFolder)
+
+            menu.addItem(.separator())
+
             // 복사 / 잘라내기 / 붙여넣기
             menu.addItem(mkItem("복사", key: "c", action: #selector(ctxCopy), modifier: [.command]))
             menu.addItem(mkItem("잘라내기", key: "x", action: #selector(ctxCut), modifier: [.command]))
             let paste = mkItem("붙여넣기", key: "v", action: #selector(ctxPaste), modifier: [.command])
             paste.isEnabled = !(NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: nil)?.isEmpty ?? true)
             menu.addItem(paste)
-
-            menu.addItem(.separator())
-
-            // 새 폴더로 이동
-            let moveNewFolder = NSMenuItem(title: "새 폴더로 이동", action: #selector(ctxMoveToNewFolder), keyEquivalent: "")
-            moveNewFolder.target = self
-            moveNewFolder.image = NSImage(systemSymbolName: "folder.fill.badge.plus", accessibilityDescription: nil)
-            menu.addItem(moveNewFolder)
 
             menu.addItem(.separator())
 
@@ -305,8 +305,8 @@ extension NativeTableListView {
             copyNameItem.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
             menu.addItem(copyNameItem)
 
-            // Finder 에서 보기
-            let revealItem = NSMenuItem(title: "Finder 에서 보기", action: #selector(ctxReveal), keyEquivalent: "")
+            // Finder에서 보기
+            let revealItem = NSMenuItem(title: "Finder에서 보기", action: #selector(ctxReveal), keyEquivalent: "")
             revealItem.target = self
             revealItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
             revealItem.representedObject = photo.jpgURL

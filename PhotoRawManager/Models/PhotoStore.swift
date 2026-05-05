@@ -981,6 +981,9 @@ class PhotoStore: ObservableObject {
 
     // Fast O(1) lookup instead of O(n) linear search
     var _photoIndex: [UUID: Int] = [:]
+    /// v9.1.4: URL → photos[i] 인덱스. PreviewLoadingPolicy.decodeURL O(N)→O(1).
+    ///   rebuildIndex() 에서 _photoIndex 와 함께 갱신.
+    var _urlIndex: [URL: Int] = [:]
 
     var selectedPhoto: PhotoItem? {
         guard let id = selectedPhotoID else { return nil }

@@ -67,8 +67,16 @@ final class TierManager: ObservableObject {
     }
 
     private func sync(from sm: SubscriptionManager) {
+        // v9.1.4: DEBUG 빌드 only 개발자 unlock — Release 분기 완전 제거 (보안 백도어 차단).
+        //   `defaults write ... devUnlockPro` 같은 우회 경로 자체 없음.
+        #if DEBUG
+        hasPro = true
+        trialDaysRemaining = 9999
+        isInTrial = false
+        return
+        #endif
+
         // 정식 Pro 구독 OR 트라이얼 미만료 → Pro 권한 보유.
-        // Simple 구독자는 Pro 권한 없음.
         let proSubscribed = (sm.currentTier == .pro)
         let trialActive = !sm.isTrialExpired && sm.trialDaysRemaining > 0 && sm.currentTier != .simple
         hasPro = proSubscribed || trialActive

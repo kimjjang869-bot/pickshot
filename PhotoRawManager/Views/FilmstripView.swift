@@ -72,6 +72,11 @@ struct FilmstripView: View {
                   pt.y <= CGFloat(self.filmstripHeight) + 24
             else { return event }
 
+            // v9.1.4: Shift 누른 상태 휠은 selection / viewport 변경 안 함 — anchor 보존.
+            //   테스터 보고: a→d 다중선택 후 Shift+휠 굴리면 anchor 가 b/c/d 로 따라가던 문제 차단.
+            //   Shift+휠은 NSScrollView 기본 가로 스크롤로 통과시킴.
+            if event.modifierFlags.contains(.shift) { return event }
+
             let deltaY = event.scrollingDeltaY
             let deltaX = event.scrollingDeltaX
             // 가로/세로 둘 다 누적 (가로 휠도 지원).

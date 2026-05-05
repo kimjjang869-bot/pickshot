@@ -48,13 +48,25 @@ enum PreviewLoadingPolicy {
         return photo.jpgURL
     }
 
+    /// 레거시 시그니처 — fallback 선형 탐색. 새 호출처는 `decodeURL(for:store:)` 권장.
     static func decodeURL(for url: URL, selectedPhoto: PhotoItem?, allPhotos: [PhotoItem]) -> URL {
         if let selectedPhoto, selectedPhoto.jpgURL == url {
             return previewSourceURL(for: selectedPhoto)
         }
-
         if let photo = allPhotos.first(where: { $0.jpgURL == url }) {
             return previewSourceURL(for: photo)
+        }
+        return url
+    }
+
+    /// v9.1.4: store 인스턴스를 직접 받아 O(1) 인덱스 룩업 (`store._urlIndex`).
+    ///   nav 마다 호출되므로 17,000장 폴더에서 first(where:) 비용 제거.
+    static func decodeURL(for url: URL, store: PhotoStore) -> URL {
+        if let selected = store.selectedPhoto, selected.jpgURL == url {
+            return previewSourceURL(for: selected)
+        }
+        if let idx = store._urlIndex[url], idx < store.photos.count {
+            return previewSourceURL(for: store.photos[idx])
         }
         return url
     }

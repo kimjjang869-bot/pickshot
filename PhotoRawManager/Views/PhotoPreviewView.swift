@@ -2374,11 +2374,8 @@ struct PhotoPreviewView: View {
         //   이유: Nikon JPG 는 20-30MB → SubsampleFactor 4로도 풀 스캔 필요.
         //   NEF 의 임베디드 프리뷰(~1616×1080)는 직접 추출 가능 → Strategy 1 로 즉시 리턴.
         //   Cache key 는 원본 url(jpgURL) 기준 유지 → sweep/DevelopStore 와 일관.
-        let decodeURL = PreviewLoadingPolicy.decodeURL(
-            for: url,
-            selectedPhoto: store.selectedPhoto,
-            allPhotos: store.photos
-        )
+        // v9.1.4: O(1) URL 인덱스 사용 — 17,000장 폴더에서 nav 마다 N 순회 비용 제거.
+        let decodeURL = PreviewLoadingPolicy.decodeURL(for: url, store: store)
         if decodeURL != url {
             fputs("[LD] RAW-pair decode: \(url.lastPathComponent) → \(decodeURL.lastPathComponent)\n", stderr)
         }

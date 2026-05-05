@@ -16,7 +16,10 @@
 #   8. gh release create / upload --clobber
 #
 # 사전 준비:
-#   - Apple ID app-specific password 가 NOTARY_PASSWORD 환경변수 또는 keychain profile 에 있어야 함
+#   - notarytool keychain profile "pickshot-notary" 등록 필요:
+#     xcrun notarytool store-credentials "pickshot-notary" \
+#       --apple-id kimjjang869@gmail.com --team-id 322DLHS5T8
+#     (한 번만 실행 → app-specific password 가 macOS 키체인에 안전 저장)
 #   - gh CLI 인증 완료
 #   - Developer ID Application 인증서 keychain 에 있음 (Kwangho Kim, Team 322DLHS5T8)
 
@@ -38,7 +41,7 @@ APPLE_ID="kimjjang869@gmail.com"
 TEAM_ID="322DLHS5T8"
 SIGN_IDENTITY="Developer ID Application: Kwangho Kim ($TEAM_ID)"
 GH_REPO="kimjjang869-bot/pickshot"
-NOTARY_PASSWORD="${NOTARY_PASSWORD:-tspp-ubpl-utto-uixs}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-pickshot-notary}"  # 키체인 프로파일 이름 — store-credentials 로 등록
 
 # ── 경로 ───────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -50,6 +53,28 @@ DMG_PATH="/tmp/PickShot-$VERSION.dmg"
 ENTITLEMENTS="$PROJECT_DIR/PhotoRawManager/PhotoRawManager.entitlements"
 
 cd "$PROJECT_DIR"
+
+# v9.1.4: 동일 볼륨명 마운트 잔존 시 hdiutil create 실패 차단.
+detach_existing_mounts() {
+    hdiutil info | awk -v vol="PickShot $VERSION" '$0 ~ vol {print prev} {prev=$1}' \
+        | grep -E "^/dev/disk" | sort -u | while read -r dev; do
+        hdiutil detach "$dev" -force >/dev/null 2>&1 || true
+    done
+}
+
+# 종료 시 stage / archive 정리 (실패 시 디스크 점유 차단).
+cleanup() {
+    local rc=$?
+    [ -d "$DMG_STAGE_DIR" ] && rm -rf "$DMG_STAGE_DIR" 2>/dev/null || true
+    detach_existing_mounts
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "❌ 배포 실패 (exit $rc) — 부분 산출물 정리됨."
+        # 실패한 DMG 는 다음 stapler 가 죽은 파일 사용 못 하게 제거.
+        [ -f "$DMG_PATH" ] && rm -f "$DMG_PATH" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
@@ -94,6 +119,7 @@ echo "✅ 서명 완료"
 # ── 4) DMG 생성 ─────────────────────────────────────────
 echo ""
 echo "💿 [4/8] DMG 생성..."
+detach_existing_mounts  # 같은 볼륨명 잔존 시 detach (재배포 안전)
 rm -rf "$DMG_STAGE_DIR"
 mkdir -p "$DMG_STAGE_DIR"
 cp -R "$APP_PATH" "$DMG_STAGE_DIR/"
@@ -108,9 +134,7 @@ echo "✅ DMG: $DMG_PATH ($DMG_SIZE)"
 echo ""
 echo "🍎 [5/8] Apple notary 제출 (대기 5~10분)..."
 xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$APPLE_ID" \
-    --password "$NOTARY_PASSWORD" \
-    --team-id "$TEAM_ID" \
+    --keychain-profile "$NOTARY_PROFILE" \
     --wait 2>&1 | tee /tmp/notary_$VERSION.log
 
 if ! grep -q "status: Accepted" /tmp/notary_$VERSION.log; then
@@ -118,7 +142,7 @@ if ! grep -q "status: Accepted" /tmp/notary_$VERSION.log; then
     SUB_ID=$(grep -m1 "id:" /tmp/notary_$VERSION.log | awk '{print $2}')
     if [ -n "$SUB_ID" ]; then
         echo "상세 로그:"
-        xcrun notarytool log "$SUB_ID" --apple-id "$APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$TEAM_ID"
+        xcrun notarytool log "$SUB_ID" --keychain-profile "$NOTARY_PROFILE"
     fi
     exit 1
 fi

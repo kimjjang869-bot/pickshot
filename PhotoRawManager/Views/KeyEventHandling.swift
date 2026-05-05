@@ -72,14 +72,27 @@ func copySelectionToPasteboard(store: PhotoStore) {
 }
 
 /// Cut selected photos/folders (Cmd+X). Paste 시 move 동작.
+/// v9.1.4: cut marker 가 paste 시점에 사라지던 문제 fix —
+///   writeObjects 후 setData 가 마지막 item 에만 추가되어 일부 환경에서 data(forType:) nil 반환.
+///   NSPasteboardItem 으로 첫 item 에 marker + 모든 fileURL 명시 binding.
 func cutSelectionToPasteboard(store: PhotoStore) {
     let (urls, selectedIDs) = collectURLsForSelection(store: store)
     guard !urls.isEmpty else { return }
 
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
-    pasteboard.writeObjects(urls as [NSURL])
-    pasteboard.setData(Data([1]), forType: pickshotCutPasteboardType)
+    pasteboard.declareTypes([.fileURL, pickshotCutPasteboardType], owner: nil)
+    // 모든 url 을 NSPasteboardItem 으로 wrapping — 첫 item 에 cut marker 동봉.
+    var items: [NSPasteboardItem] = []
+    for (i, url) in urls.enumerated() {
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .fileURL)
+        if i == 0 {
+            item.setData(Data([1]), forType: pickshotCutPasteboardType)
+        }
+        items.append(item)
+    }
+    pasteboard.writeObjects(items)
 
     store.pendingCutPhotoIDs = selectedIDs
 
@@ -102,8 +115,11 @@ func copyURLToPasteboard(_ url: URL) {
 func cutURLToPasteboard(_ url: URL) {
     let pb = NSPasteboard.general
     pb.clearContents()
-    pb.writeObjects([url as NSURL])
-    pb.setData(Data([1]), forType: pickshotCutPasteboardType)
+    // v9.1.4: NSPasteboardItem 첫 item 에 marker 동봉 (다중 cut 과 동일 패턴).
+    let item = NSPasteboardItem()
+    item.setString(url.absoluteString, forType: .fileURL)
+    item.setData(Data([1]), forType: pickshotCutPasteboardType)
+    pb.writeObjects([item])
     plog("✂️ [CUT] \(url.lastPathComponent) 잘라내기 대기\n")
 }
 
@@ -115,7 +131,11 @@ func pasteFilesToFolder(_ destFolder: URL, store: PhotoStore) {
         plog("📋 [PASTE] 클립보드에 파일 없음\n")
         return
     }
-    let isCut = pasteboard.data(forType: pickshotCutPasteboardType) != nil
+    // v9.1.4: marker 가 NSPasteboardItem 안에 들어있으므로 최상위 data(forType:) 로는 못 찾음.
+    //   pasteboardItems 순회로 검색해야 정확.
+    let isCut = (pasteboard.pasteboardItems ?? []).contains {
+        $0.data(forType: pickshotCutPasteboardType) != nil
+    }
     // 완료 후 클립보드 정리는 performFileTransferToFolder 내부에서 처리
     performFileTransferToFolder(urls: urls, destFolder: destFolder, isCut: isCut, store: store,
                                 clearClipboardOnSuccess: true)
@@ -480,7 +500,10 @@ func pasteFilesFromPasteboard(store: PhotoStore) {
         return
     }
 
-    let isCut = pasteboard.data(forType: pickshotCutPasteboardType) != nil
+    // v9.1.4: marker 가 NSPasteboardItem 안에 들어있으므로 pasteboardItems 순회로 검색.
+    let isCut = (pasteboard.pasteboardItems ?? []).contains {
+        $0.data(forType: pickshotCutPasteboardType) != nil
+    }
     let op = isCut ? "MOVE" : "COPY"
     plog("📋 [PASTE] \(op) \(urls.count)개 파일 → \(destFolder.lastPathComponent)\n")
 

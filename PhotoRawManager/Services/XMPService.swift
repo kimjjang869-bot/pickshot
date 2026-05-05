@@ -99,16 +99,13 @@ struct XMPService {
                     jpgCount += 1
                 }
             }
-            // RAW 가 있으면 .xmp 사이드카 생성 — Lightroom 표준
+            // RAW 가 있으면 .xmp 사이드카 생성 — Lightroom 표준 (RAW 는 EXIF 직접 쓰기 위험)
             if let rawURL = photo.rawURL {
                 writeRating(for: rawURL, rating: photo.rating, label: label, spacePicked: false)
                 xmpCount += 1
             }
-            // JPG 만 있는 경우도 .xmp 사이드카 추가 (호환성 ↑)
-            if photo.rawURL == nil && ["jpg", "jpeg"].contains(ext) {
-                writeRating(for: photo.jpgURL, rating: photo.rating, label: label, spacePicked: false)
-                xmpCount += 1
-            }
+            // v9.1.4: JPG-only 사진은 EXIF 임베딩만으로 충분 — .xmp 중복 생성 제거
+            //   (Lightroom 도 JPG 의 EXIF Rating 인식. 테스터 보고: JPG 옆 .xmp 가 거슬림.)
         }
         return (jpg: jpgCount, xmp: xmpCount, total: total)
     }

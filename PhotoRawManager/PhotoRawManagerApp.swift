@@ -117,8 +117,14 @@ struct PhotoRawManagerApp: App {
                     // v9.1.4: 30일 이상된 로그 자동 정리 (보안 감사 M-3) — 디스크 누적 + 잔존 민감정보 차단
                     AppLogger.purgeOldLogs()
 
+                    // 썸네일 디스크 캐시 invalidate token — orientation/디코드 알고리즘이 바뀐 빌드에서만 갱신.
+                    //   ⚠️ 매 버전마다 자동 갱신하면 GB 단위 캐시가 매번 날아감 → 의도적으로 "수동" 갱신.
+                    //   다음 사유로 토큰 갱신해야 함:
+                    //     - 썸네일 디코드 알고리즘 변경 (Lanczos step 등)
+                    //     - orientation 처리 변경
+                    //     - 임베디드 추출 경로 변경
                     let thumbCacheVersionKey = "thumbCacheVersion"
-                    let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"
+                    let currentThumbCacheVersion = "v8.9.4-cr3-portrait-fix"  // ← 위 사유 발생 시만 변경
                     if UserDefaults.standard.string(forKey: thumbCacheVersionKey) != currentThumbCacheVersion {
                         DiskThumbnailCache.shared.clearAll()
                         UserDefaults.standard.set(currentThumbCacheVersion, forKey: thumbCacheVersionKey)

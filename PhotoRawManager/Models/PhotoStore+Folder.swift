@@ -650,6 +650,22 @@ extension PhotoStore {
                 return
             }
 
+            // v9.1.4: path traversal 가드 — 추출된 항목이 모두 tempDir 아래에 있는지 검증.
+            //   AppleArchive 가 `../` 경로를 허용할 수 있으므로 외부 ZIP 신뢰 불가.
+            let tempStandardized = tempDir.standardizedFileURL.path
+            let fm = FileManager.default
+            if let enumerator = fm.enumerator(at: tempDir, includingPropertiesForKeys: nil,
+                                              options: [.skipsHiddenFiles]) {
+                for case let item as URL in enumerator {
+                    let resolved = item.standardizedFileURL.resolvingSymlinksInPath().path
+                    if !resolved.hasPrefix(tempStandardized + "/") && resolved != tempStandardized {
+                        plog("[ZIP] ⚠️ path traversal 시도 감지 — 추출 거부: \(resolved)\n")
+                        try? fm.removeItem(at: tempDir)
+                        return
+                    }
+                }
+            }
+
             // 이전 임시 폴더 정리
             cleanupZipTemp()
 

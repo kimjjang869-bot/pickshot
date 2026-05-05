@@ -144,20 +144,41 @@ struct ProLockModal: View {
                             .multilineTextAlignment(.center)
                     }
 
-                    Button(action: {
-                        if let url = URL(string: "https://kimjjang869-bot.github.io/pickshot/#pricing") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        Text("Pro 구독 (월 ₩8,900)")
-                            .fontWeight(.medium)
+                    // v9.1.4: Simple ₩2,900 옵션도 함께 노출 — 가격 진입장벽 완화.
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            if let url = URL(string: "https://kimjjang869-bot.github.io/pickshot/#pricing") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            VStack(spacing: 2) {
+                                Text("Simple").font(.system(size: 12, weight: .medium))
+                                Text("월 ₩2,900").font(.system(size: 11)).foregroundColor(.secondary)
+                            }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
+                            .padding(.vertical, 9)
                             .background(Color.gray.opacity(0.12))
                             .foregroundColor(.primary)
                             .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        Button(action: {
+                            if let url = URL(string: "https://kimjjang869-bot.github.io/pickshot/#pricing") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            VStack(spacing: 2) {
+                                Text("Pro").font(.system(size: 12, weight: .semibold))
+                                Text("월 ₩8,900").font(.system(size: 11)).foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(Color.purple.opacity(0.15))
+                            .foregroundColor(.primary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     Button("닫기") { dismiss() }
                         .buttonStyle(.plain)

@@ -262,8 +262,25 @@ extension PhotoStore {
         }
 
         if synchronous {
-            // loadFolder flush 경로 — 디스크 쓰기 완료 보장 후 리턴.
-            work()
+            // v9.1.4: synchronous 도 백그라운드 큐에서 실행 + DispatchSemaphore 로 완료 대기.
+            //   work() 를 호출 스레드(메인) 직접 실행하면 17,000장 재귀 폴더에서 50~200ms 메인 블록.
+            //   semaphore.wait() 자체는 메인을 점유하지만, 디스크 IO 동안 main runloop 이 다른 이벤트를
+            //   처리할 수 있도록 RunLoop.main.run(until:) 로 폴링.
+            let sema = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                work()
+                sema.signal()
+            }
+            // 메인 큐를 짧게 양보하며 완료 대기 (UI 멈춤 없이) — 최대 5초 안전망.
+            let deadline = Date().addingTimeInterval(5.0)
+            while sema.wait(timeout: .now()) == .timedOut {
+                if Date() >= deadline { break }
+                if Thread.isMainThread {
+                    RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+                } else {
+                    Thread.sleep(forTimeInterval: 0.005)
+                }
+            }
         } else {
             DispatchQueue.global(qos: .utility).async(execute: work)
         }
@@ -399,22 +416,22 @@ extension PhotoStore {
         // v9.1.4: PickShot 이 한 번이라도 만진 폴더 (.pickshot_selection.json 존재) 는 XMP fallback 비활성화.
         //   사용자가 별점 0 으로 만들어도 옛 .xmp 가 다시 5점 복원해버리는 버그 차단.
         //   카메라/Lightroom 별점 자동 import 는 처음 폴더 열 때 (백업 파일 없을 때) 만 동작.
-        let pickshotManagedFolders: Set<String> = {
-            var set = Set<String>()
+        // v9.1.4 hotfix: 폴더 fileExists 검사를 메인이 아닌 백그라운드에서 수행 — NAS/HDD 에서 0.5~2초 메인 블록 차단.
+        let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            // 백그라운드 — 등장 폴더별로 .pickshot_selection.json 존재 여부 1회 검사.
+            var pickshotManagedFolders = Set<String>()
             var checked = Set<String>()
-            for p in photos where !p.isFolder && !p.isParentFolder {
-                let f = p.jpgURL.deletingLastPathComponent().path
+            for (_, url, _) in photosSnapshot {
+                let f = url.deletingLastPathComponent().path
                 if checked.contains(f) { continue }
                 checked.insert(f)
                 let backupURL = URL(fileURLWithPath: f).appendingPathComponent(".pickshot_selection.json")
                 if FileManager.default.fileExists(atPath: backupURL.path) {
-                    set.insert(f)
+                    pickshotManagedFolders.insert(f)
                 }
             }
-            return set
-        }()
-        let photosSnapshot = photos.map { ($0.id, $0.jpgURL, $0.rating) }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+
             var exifRatings: [UUID: Int] = [:]
             for (id, url, currentRating) in photosSnapshot {
                 guard currentRating == 0 else { continue }

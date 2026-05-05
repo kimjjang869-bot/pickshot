@@ -732,7 +732,7 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
             copyNameItem.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
             menu.addItem(copyNameItem)
 
-            let revealItem = menuItem("Finder 에서 보기", action: #selector(ctxReveal(_:)))
+            let revealItem = menuItem("Finder에서 보기", action: #selector(ctxReveal(_:)))
             revealItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
             revealItem.representedObject = photo.jpgURL
             menu.addItem(revealItem)

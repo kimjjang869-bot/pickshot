@@ -89,6 +89,8 @@ struct FolderBrowserView: View {
     @State private var iconFolderContents: [FolderItem] = []
     @State private var refreshWork: DispatchWorkItem?
     @State private var volumeObservers: [NSObjectProtocol] = []
+    /// v9.1.4: NSWorkspace 와 NotificationCenter.default 옵저버를 분리 보관 — 정리 시 정확한 센터에 removeObserver.
+    @State private var defaultCenterObservers: [NSObjectProtocol] = []
     // v9.1: 폴더 트리 다중 선택. Cmd+클릭 = 토글. Shift+클릭 = anchor 부터 범위 추가.
     @State var multiFolderSelection: Set<URL> = []
     @State var folderSelectionAnchor: URL?
@@ -162,7 +164,15 @@ struct FolderBrowserView: View {
                 }
                 refreshRootItems()
             }
+            // v9.1.4: Finder 등 외부 앱에서 폴더 만들기/삭제 후 PickShot 으로 돌아오면 자동 트리 갱신.
+            //   NSApplication.didBecomeActive — 앱 다시 활성화될 때 한 번 refresh.
+            let appActiveObs = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil, queue: .main
+            ) { _ in refreshRootItems() }
+            // (token, center) 튜플로 보관 → 정리 시 정확한 center 에 removeObserver.
             volumeObservers = [mountObs, unmountObs]
+            defaultCenterObservers = [appActiveObs]
         }
         .onChange(of: store.folderURL) { _, newURL in
             guard let url = newURL else { return }
@@ -175,7 +185,9 @@ struct FolderBrowserView: View {
         .onDisappear {
             let ws = NSWorkspace.shared.notificationCenter
             for obs in volumeObservers { ws.removeObserver(obs) }
+            for obs in defaultCenterObservers { NotificationCenter.default.removeObserver(obs) }
             volumeObservers.removeAll()
+            defaultCenterObservers.removeAll()
         }
     }
 
@@ -243,6 +255,8 @@ struct FolderBrowserView: View {
     /// 확장 상태(isExpanded + children)를 보존하기 위해 oldItems 스냅샷을 캡처하고
     /// 새 rootItems와 경로 기준으로 머지한다. 머지 중 확장된 폴더의 자식은 디스크에서
     /// 새로 읽어 새 폴더 생성/이동 결과가 즉시 반영되도록 한다.
+    /// v9.1.4: debounce 300ms → 50ms — 폴더 생성/이동 직후 트리 반영 체감 단축.
+    ///   외부 마운트/언마운트 burst 합치기에는 50ms 도 충분.
     private func refreshRootItems() {
         refreshWork?.cancel()
         let oldSnapshot = rootItems  // main thread 호출 가정 — @State 값 타입이라 deep copy
@@ -268,7 +282,7 @@ struct FolderBrowserView: View {
             }
         }
         refreshWork = work
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3, execute: work)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
     /// 경로 기준으로 newItems에 oldItems의 isExpanded / children을 재귀 이식.

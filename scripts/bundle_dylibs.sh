@@ -105,4 +105,26 @@ otool -L "$EXE_PATH" | grep -E "libraw" | sed 's/^/      /' || echo "      (no d
 echo "   --- codesign:"
 codesign --verify --verbose=2 "$APP_PATH" 2>&1 | head -3 | sed 's/^/      /'
 
+# 8) v9.1.4: /opt/homebrew 경로 잔존 검증 — libraw 업그레이드 또는 새 brew 의존성
+#   추가 시 누락 즉시 감지. 다른 머신에서 missing dylib 크래시 차단.
+echo "🔍 Homebrew 경로 잔존 검사..."
+LEAKED_BIN=$(otool -L "$EXE_PATH" 2>/dev/null | grep "/opt/homebrew" || true)
+LEAKED_LIBS=""
+for lib in "$FRAMEWORKS_DIR"/*.dylib; do
+    [ -f "$lib" ] || continue
+    leak=$(otool -L "$lib" 2>/dev/null | grep "/opt/homebrew" || true)
+    if [ -n "$leak" ]; then
+        LEAKED_LIBS="$LEAKED_LIBS\n   $(basename "$lib"):\n$leak"
+    fi
+done
+if [ -n "$LEAKED_BIN" ] || [ -n "$LEAKED_LIBS" ]; then
+    echo "❌ Homebrew 경로 누출 감지 — 다른 Mac 에서 missing dylib 크래시 발생!"
+    [ -n "$LEAKED_BIN" ] && echo "   실행파일:" && echo "$LEAKED_BIN"
+    [ -n "$LEAKED_LIBS" ] && echo -e "$LEAKED_LIBS"
+    echo ""
+    echo "   해결: bundle_dylibs.sh 에 누락된 의존성을 SRC_LIBXXX 로 추가하고 install_name_tool -change 라인 추가."
+    exit 1
+fi
+echo "   ✓ /opt/homebrew 참조 0건"
+
 echo "✨ Done — dylibs bundled and code-signed."
