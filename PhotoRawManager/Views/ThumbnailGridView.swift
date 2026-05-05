@@ -2514,9 +2514,12 @@ class ThumbnailLoader {
     private let genLock = NSLock()
 
     init() {
-        queue.maxConcurrentOperationCount = 4
-        // v8.9.4: viewport 셀 우선 — userInitiated 로 격상
-        // (CacheSweeper sweep queue 는 utility 로 분리되어 있어 우선순위 충돌 없음)
+        // v9.1.4: tier 별 차등 — 8GB 머신 IO 스파이크 방지.
+        switch SystemSpec.shared.effectiveTier {
+        case .low: queue.maxConcurrentOperationCount = 2
+        case .standard: queue.maxConcurrentOperationCount = 3
+        case .high, .extreme: queue.maxConcurrentOperationCount = 4
+        }
         queue.qualityOfService = .userInitiated
     }
 
@@ -3361,9 +3364,15 @@ struct AsyncThumbnailView: View {
     static let rotationInvalidateNotification = Notification.Name("com.pickshot.rotation.invalidate")
     /// 고속 concurrent 큐 — 디스크 캐시 + 임베디드 추출 병렬
     static let thumbConcurrentQueue = DispatchQueue(label: "com.pickshot.thumb.fast", qos: .userInteractive, attributes: .concurrent)
-    /// v8.6.2: I/O 스파이크 방지 — 동시 디스크 읽기 최대 4개로 제한.
-    ///   빠른 필름스트립 스크롤 시 20+ 셀 동시 로드 → 디스크 스파이크 현상 억제.
-    static let thumbIOSemaphore = DispatchSemaphore(value: 4)
+    /// v9.1.4: tier 별 차등 — 8GB Mac SSD 트래싱 방지.
+    ///   low=2 / standard=3 / high=4 / extreme=4
+    static let thumbIOSemaphore: DispatchSemaphore = {
+        switch SystemSpec.shared.effectiveTier {
+        case .low: return DispatchSemaphore(value: 2)
+        case .standard: return DispatchSemaphore(value: 3)
+        case .high, .extreme: return DispatchSemaphore(value: 4)
+        }
+    }()
 
     /// v9.1.2: 빠른 스크롤 감지 — 200ms 윈도우에 8셀 이상 onAppear → scroll 중.
     ///   필름스트립 마우스휠 스크롤 시 디코드 SKIP 트리거.
@@ -4405,7 +4414,13 @@ class FolderPreviewCache {
 
     private let cache: NSCache<NSURL, FolderPreviewEntry> = {
         let c = NSCache<NSURL, FolderPreviewEntry>()
-        c.countLimit = 500
+        // v9.1.4: tier 별 차등 — 8GB 머신 누적 GB 방지.
+        switch SystemSpec.shared.effectiveTier {
+        case .low: c.countLimit = 150
+        case .standard: c.countLimit = 300
+        case .high: c.countLimit = 500
+        case .extreme: c.countLimit = 800
+        }
         return c
     }()
 

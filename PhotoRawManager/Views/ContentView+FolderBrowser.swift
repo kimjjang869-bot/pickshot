@@ -1410,8 +1410,9 @@ struct FolderRowView: View {
                 }
                 if multiSelection.count >= 2 {
                     Button {
+                        // v9.1.4: 일괄 열기 후 multiSelection 유지 — 어떤 폴더가 열렸는지 시각적 표시 보존.
+                        //   사용자가 "다중 선택 해제" 메뉴 또는 다른 폴더 클릭 시에만 해제.
                         let urls = Array(multiSelection)
-                        multiSelection.removeAll()
                         store.loadFoldersAggregated(urls)
                     } label: {
                         Label("선택한 \(multiSelection.count)개 폴더 일괄 열기", systemImage: "rectangle.stack.badge.plus")
@@ -1528,8 +1529,12 @@ struct FolderRowView: View {
     }
 
     private var folderColor: Color {
-        // v8.9.7+: 재귀 모드에 포함된 폴더는 노란 아이콘
+        // v8.9.7+: 재귀 모드에 포함된 폴더는 노란 아이콘.
+        // v9.1.4: 다중 선택으로 일괄 열기 한 폴더도 노란 아이콘 — 사용자가 어떤 폴더가 합쳐졌는지 식별.
         if store.recursiveScannedFolders.contains(item.url.path) {
+            return .yellow
+        }
+        if isMultiSelected || multiSelection.contains(item.url) {
             return .yellow
         }
         if item.url.path.hasPrefix("/Volumes") && level == 0 {

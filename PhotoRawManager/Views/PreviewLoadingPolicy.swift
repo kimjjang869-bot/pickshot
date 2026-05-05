@@ -161,9 +161,9 @@ enum PreviewLoadingPolicy {
     }
 
     static func embeddedNeighborRangeDuringKeyRepeat() -> Int {
-        // v8.9.7: ↓/↑ 행이동은 +cols(5장) 점프 — ±2 로는 burst 동안 계속 미스. 폴더 cols*2 까지 미리 채움.
+        // v9.1.4: low tier 4→3 — cap 4 와 매칭(forwardN ≈ cap). SKIP 누적 차단.
         switch SystemSpec.shared.effectiveTier {
-        case .low: return 4
+        case .low: return 3
         case .standard: return 6
         case .high: return 10
         case .extreme: return 12

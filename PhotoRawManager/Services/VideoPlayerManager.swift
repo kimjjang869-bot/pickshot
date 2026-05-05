@@ -1064,7 +1064,9 @@ class VideoPlayerManager: ObservableObject {
 
     private func startAudioMeter() {
         guard meterTimer == nil else { return }
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        // v9.1.4: tier 별 차등 — 8GB 머신은 15Hz 로 충분 (시각 VU 미터 차이 미미).
+        let hz: Double = SystemSpec.shared.effectiveTier == .low ? 15.0 : 30.0
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / hz, repeats: true) { [weak self] _ in
             guard let self, self.isPlaying else { return }
             let vol = self.isMuted ? Float(0) : self.volume
             // 자연스러운 VU 미터 시뮬레이션: 볼륨 기반 + 미세 변동

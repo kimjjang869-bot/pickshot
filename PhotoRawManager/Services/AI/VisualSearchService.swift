@@ -252,7 +252,7 @@ final class VisualSearchService: ObservableObject {
             guard let self = self else { return }
             var matches: Set<URL> = []
             let opQueue = OperationQueue()
-            opQueue.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.activeProcessorCount / 2)
+            opQueue.maxConcurrentOperationCount = SystemSpec.shared.visionBatchConcurrency()
             opQueue.qualityOfService = .userInitiated
             let matchLock = NSLock()
             var done = 0

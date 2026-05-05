@@ -71,13 +71,35 @@ class PreviewImageCache {
 
     /// v9.1.4 (C-4): RAW fallback 결과 URL 캐시 — 5초+ STALL 직접 원인 해결.
     ///   range = best embedded JPEG byte range, width = 추출된 픽셀 width.
+    /// v9.1.4 hotfix: 상한(1000) + LRU eviction — 폴더 변경 없이 장시간 세션 시 누적 방지.
     fileprivate static var fallbackCache: [URL: (range: Range<Int>, width: Int)] = [:]
+    fileprivate static var fallbackCacheOrder: [URL] = []  // LRU
     fileprivate static var fallbackNoEmbedded: Set<URL> = []
     fileprivate static let fallbackCacheLock = NSLock()
+    fileprivate static let fallbackCacheLimit: Int = {
+        switch SystemSpec.shared.effectiveTier {
+        case .low: return 500
+        case .standard: return 1000
+        case .high: return 2000
+        case .extreme: return 5000
+        }
+    }()
+    fileprivate static func recordFallbackAccess(_ url: URL) {
+        if let idx = fallbackCacheOrder.firstIndex(of: url) {
+            fallbackCacheOrder.remove(at: idx)
+        }
+        fallbackCacheOrder.append(url)
+        // 한도 초과 시 가장 오래된 것 evict.
+        while fallbackCacheOrder.count > fallbackCacheLimit {
+            let old = fallbackCacheOrder.removeFirst()
+            fallbackCache.removeValue(forKey: old)
+        }
+    }
     /// 폴더 변경 시 호출 — 메모리 누적 방지.
     static func clearRAWFallbackCache() {
         fallbackCacheLock.lock(); defer { fallbackCacheLock.unlock() }
         fallbackCache.removeAll(keepingCapacity: false)
+        fallbackCacheOrder.removeAll(keepingCapacity: false)
         fallbackNoEmbedded.removeAll(keepingCapacity: false)
     }
     private var cache: [URL: NSImage] = [:]
@@ -155,11 +177,16 @@ class PreviewImageCache {
         diskCacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("pickshot_cache")
         try? FileManager.default.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
 
-        // Listen for memory pressure → auto-clear cache
-        // v9.0: [self] strong → [weak self] (singleton 이라 누수는 아니지만 패턴 통일).
+        // v9.1.4: pressure 시 전량 삭제 → 부분 evict — 재디코드 STALL 방지.
+        //   warning: 50% trim, critical: 80% trim (전량 아님).
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in
-            self?.clearCache()
+            let event = source.data
+            if event.contains(.critical) {
+                self?.trimOldest(ratio: 0.8)
+            } else {
+                self?.trimOldest(ratio: 0.5)
+            }
         }
         source.resume()
         memoryPressureSource = source
@@ -379,11 +406,15 @@ class PreviewImageCache {
         return (c, b)
     }
 
-    /// Prefetch previews at given resolution
+    /// Prefetch previews at given resolution — v9.1.4: tier 별 차등.
     private static let prefetchQueue: OperationQueue = {
         let q = OperationQueue()
-        q.maxConcurrentOperationCount = 3
-        q.qualityOfService = .utility  // 실제 로드(.userInitiated)와 경합 방지
+        switch SystemSpec.shared.effectiveTier {
+        case .low: q.maxConcurrentOperationCount = 1
+        case .standard: q.maxConcurrentOperationCount = 2
+        case .high, .extreme: q.maxConcurrentOperationCount = 3
+        }
+        q.qualityOfService = .utility
         return q
     }()
 
@@ -565,6 +596,7 @@ class PreviewImageCache {
         Self.fallbackCacheLock.lock()
         let cachedRange = Self.fallbackCache[url]
         let cachedNoEmbedded = Self.fallbackNoEmbedded.contains(url)
+        if cachedRange != nil { Self.recordFallbackAccess(url) }  // LRU 갱신
         Self.fallbackCacheLock.unlock()
 
         if cachedNoEmbedded { return nil }
@@ -629,10 +661,11 @@ class PreviewImageCache {
                 }
             }
         }
-        // v9.1.4 (C-4): 결과 캐싱
+        // v9.1.4 (C-4): 결과 캐싱 + LRU 등록.
         Self.fallbackCacheLock.lock()
         if let r = bestRange {
             Self.fallbackCache[url] = (range: r, width: bestWidth)
+            Self.recordFallbackAccess(url)
         } else {
             Self.fallbackNoEmbedded.insert(url)
         }
@@ -2374,8 +2407,12 @@ struct PhotoPreviewView: View {
         //   이유: Nikon JPG 는 20-30MB → SubsampleFactor 4로도 풀 스캔 필요.
         //   NEF 의 임베디드 프리뷰(~1616×1080)는 직접 추출 가능 → Strategy 1 로 즉시 리턴.
         //   Cache key 는 원본 url(jpgURL) 기준 유지 → sweep/DevelopStore 와 일관.
-        // v9.1.4: O(1) URL 인덱스 사용 — 17,000장 폴더에서 nav 마다 N 순회 비용 제거.
-        let decodeURL = PreviewLoadingPolicy.decodeURL(for: url, store: store)
+        // v9.1.4 (revert): _urlIndex 갱신 비용이 더 커서 일반 fallback 선형 탐색으로 복귀.
+        let decodeURL = PreviewLoadingPolicy.decodeURL(
+            for: url,
+            selectedPhoto: store.selectedPhoto,
+            allPhotos: store.photos
+        )
         if decodeURL != url {
             fputs("[LD] RAW-pair decode: \(url.lastPathComponent) → \(decodeURL.lastPathComponent)\n", stderr)
         }
@@ -3292,10 +3329,15 @@ struct PhotoPreviewView: View {
     private static let prefetchOpQueue: OperationQueue = {
         let q = OperationQueue()
         q.name = "preview.prefetch"
-        // v8.9.7+: ARW (Sony) 디코드 = CR3 의 28배 (3.7초/장) — concurrency 2 → 1 로 감소.
-        //   QoS .background 시 burst 중 거의 진행 안 됨 → HIT 2건. .utility 유지.
-        q.maxConcurrentOperationCount = 1
-        q.qualityOfService = .utility
+        // v9.1.4 tuned: tier 별 차등 — 8GB Mac swap 트래싱 방지.
+        //   low: 1 / standard: 2 / high: 2 / extreme: 3
+        switch SystemSpec.shared.effectiveTier {
+        case .low: q.maxConcurrentOperationCount = 1
+        case .standard, .high: q.maxConcurrentOperationCount = 2
+        case .extreme: q.maxConcurrentOperationCount = 3
+        }
+        // QoS 도 저사양은 .utility (main 과 경쟁 회피), 고사양만 .userInitiated.
+        q.qualityOfService = (SystemSpec.shared.effectiveTier == .low) ? .utility : .userInitiated
         return q
     }()
     private static var prefetchInflight: Set<URL> = []
@@ -3306,11 +3348,17 @@ struct PhotoPreviewView: View {
     private static var lastPrefetchIdx: Int = -1
     private static var lastFireIdx: Int = -1
 
-    // v9.1.4 (re-applied): PREFETCH-KR 4초+ STALL 원인 → cap 10 (190MB backlog) 너무 큼.
-    //   ARW thumbnail 1300x900 NSImage = ~19MB/장 → ThumbnailCache.set 누적 → main page fault.
-    //   cap 10→5 (95MB backlog), warning 3→2.
-    //   ※ 이전 세션 backup 복구 과정에서 한 번 사라졌던 fix — 재적용.
-    private static var currentQueueCap: Int = 5
+    // v9.1.4 tuned: tier 별 차등 cap — 8GB Mac swap 폭주 방지.
+    //   low(8GB): 4 (76MB) / standard(16GB): 6 (114MB) / high(32GB): 10 (190MB) / extreme(64GB+): 16 (304MB)
+    private static let baseQueueCap: Int = {
+        switch SystemSpec.shared.effectiveTier {
+        case .low: return 4
+        case .standard: return 6
+        case .high: return 10
+        case .extreme: return 16
+        }
+    }()
+    private static var currentQueueCap: Int = baseQueueCap
     private static let memoryPressureSource: DispatchSourceMemoryPressure = {
         let src = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
         src.setEventHandler {
@@ -3321,11 +3369,12 @@ struct PhotoPreviewView: View {
                 // 큐 비우기
                 prefetchOpQueue.cancelAllOperations()
             } else if event.contains(.warning) {
-                currentQueueCap = 2
-                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=2)\n", stderr)
+                // tier 별 base cap 의 1/4 (low: 1 → 최소 1, extreme: 4)
+                currentQueueCap = max(1, baseQueueCap / 4)
+                fputs("[MEM-PRESSURE] WARNING — prefetch throttle (cap=\(currentQueueCap))\n", stderr)
             } else {
-                currentQueueCap = 5
-                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=5)\n", stderr)
+                currentQueueCap = baseQueueCap
+                fputs("[MEM-PRESSURE] NORMAL — prefetch 정상화 (cap=\(currentQueueCap))\n", stderr)
             }
         }
         src.activate()
@@ -3381,9 +3430,17 @@ struct PhotoPreviewView: View {
             ? (curIdx == prevIdx ? 0 : (curIdx > prevIdx ? 1 : -1))
             : 0
 
-        // 광범위 발사 조건: (a) 새 burst, 또는 (b) 같은 burst 안에서 lastFireIdx 로부터 baseRange/2 이상 진행.
-        let baseRange = Int(Double(range) * 1.5)  // extreme 12 → 18
-        let needsCatchUp: Bool = (lastFireIdx >= 0) && (abs(curIdx - lastFireIdx) >= baseRange / 2)
+        // 광범위 발사 조건: (a) 새 burst, 또는 (b) 같은 burst 안에서 lastFireIdx 로부터 일정 진행.
+        // v9.1.4: tier 별 threshold — 8GB 머신은 catch-up 빈도 줄여 부하 분산.
+        let baseRange = Int(Double(range) * 1.5)  // extreme 12 → 18, low 3 → 4
+        let catchUpThreshold: Int = {
+            switch SystemSpec.shared.effectiveTier {
+            case .low: return max(4, baseRange / 2)        // 8장 (이전 9장 수준)
+            case .standard: return max(3, baseRange / 3)
+            case .high, .extreme: return max(3, baseRange / 4)  // 4-5장 (자주 재발사)
+            }
+        }()
+        let needsCatchUp: Bool = (lastFireIdx >= 0) && (abs(curIdx - lastFireIdx) >= catchUpThreshold)
         guard isNewBurst || needsCatchUp else { return }
         lastFireIdx = curIdx
 

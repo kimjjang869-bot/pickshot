@@ -312,7 +312,7 @@ final class FaceEmbeddingService {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let opQueue = OperationQueue()
-            opQueue.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.activeProcessorCount / 2)
+            opQueue.maxConcurrentOperationCount = SystemSpec.shared.visionBatchConcurrency()
             opQueue.qualityOfService = .userInitiated
             var done = 0
             let doneLock = NSLock()

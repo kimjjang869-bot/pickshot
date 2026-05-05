@@ -712,7 +712,9 @@ struct FilmstripCell: View {
                     }
                     .frame(width: cellWidth, height: imgHeight)
                 } else {
-                    AsyncThumbnailView(url: photo.displayURL)
+                    // v9.1.4: displayURL(RAW) → jpgURL — PREFETCH-KR 가 jpgURL 키로 캐시 채우므로
+                    //   ThumbnailCache HIT 가능. RAW+JPG 페어에서 필름스트립 빈 회색 유지되던 문제 해결.
+                    AsyncThumbnailView(url: photo.jpgURL)
                         .frame(width: cellWidth, height: imgHeight)
                         .clipped()
                 }

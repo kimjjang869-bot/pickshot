@@ -18,8 +18,15 @@ struct ParallelFFD8Scanner {
         let count = data.count
         guard count > 2 else { return [] }
 
-        // Split data into chunks for parallel scanning
-        let chunkCount = min(ProcessInfo.processInfo.activeProcessorCount, 8)
+        // v9.1.4: tier 차등 — 8GB Air SSD I/O 와 메모리 동시 점유 방지.
+        let chunkCount: Int = {
+            switch SystemSpec.shared.effectiveTier {
+            case .low: return 2
+            case .standard: return 3
+            case .high: return 5
+            case .extreme: return 8
+            }
+        }()
         let chunkSize = count / chunkCount
 
         let lock = NSLock()

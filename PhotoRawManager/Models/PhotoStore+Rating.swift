@@ -262,25 +262,10 @@ extension PhotoStore {
         }
 
         if synchronous {
-            // v9.1.4: synchronous 도 백그라운드 큐에서 실행 + DispatchSemaphore 로 완료 대기.
-            //   work() 를 호출 스레드(메인) 직접 실행하면 17,000장 재귀 폴더에서 50~200ms 메인 블록.
-            //   semaphore.wait() 자체는 메인을 점유하지만, 디스크 IO 동안 main runloop 이 다른 이벤트를
-            //   처리할 수 있도록 RunLoop.main.run(until:) 로 폴링.
-            let sema = DispatchSemaphore(value: 0)
-            DispatchQueue.global(qos: .userInitiated).async {
-                work()
-                sema.signal()
-            }
-            // 메인 큐를 짧게 양보하며 완료 대기 (UI 멈춤 없이) — 최대 5초 안전망.
-            let deadline = Date().addingTimeInterval(5.0)
-            while sema.wait(timeout: .now()) == .timedOut {
-                if Date() >= deadline { break }
-                if Thread.isMainThread {
-                    RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
-                } else {
-                    Thread.sleep(forTimeInterval: 0.005)
-                }
-            }
+            // v9.1.4 (revert): RunLoop polling 제거 — 5ms 단위 polling 자체가 STALL 원인 의심.
+            //   loadFolder 진입부에서만 호출됨. 메인 직접 실행 시 50~200ms 블록 가능하나
+            //   polling 보다 단순/빠름. 폴더 변경 직후 한 번뿐이라 키 burst 영향 없음.
+            work()
         } else {
             DispatchQueue.global(qos: .utility).async(execute: work)
         }

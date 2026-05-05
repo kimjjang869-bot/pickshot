@@ -827,7 +827,15 @@ class PhotoStore: ObservableObject {
     /// 삭제 되돌리기용: 삭제된 PhotoItem + 원래 인덱스
     struct RemovedPhoto { let photo: PhotoItem; let originalIndex: Int }
     var undoStack: [(action: String, photoIDs: Set<UUID>, oldRatings: [UUID: Int], oldSP: [UUID: Bool], oldGSelect: [UUID: Bool], fileMoves: [FileMove], removedPhotos: [RemovedPhoto])] = []
-    let maxUndoSteps = 100
+    // v9.1.4: tier 별 차등 — 8GB 머신 removedPhotos PhotoItem 통째 보유 누적 방지.
+    let maxUndoSteps: Int = {
+        switch SystemSpec.shared.effectiveTier {
+        case .low: return 30
+        case .standard: return 50
+        case .high: return 80
+        case .extreme: return 100
+        }
+    }()
 
     let defaults = UserDefaults.standard
     let layoutModeKey = "layoutMode"
@@ -1500,10 +1508,14 @@ class PhotoStore: ObservableObject {
         player.play()
     }
 
-    /// RAW 임베디드 썸네일 프리페치 (이동 방향으로 미리 채움, 병렬 추출)
+    /// RAW 임베디드 썸네일 프리페치 — v9.1.4: tier 별 차등 (8GB 머신 IO 스파이크 방지).
     static let thumbPrefetchQueue: OperationQueue = {
         let q = OperationQueue()
-        q.maxConcurrentOperationCount = 4  // 4개 병렬 추출
+        switch SystemSpec.shared.effectiveTier {
+        case .low: q.maxConcurrentOperationCount = 2
+        case .standard: q.maxConcurrentOperationCount = 3
+        case .high, .extreme: q.maxConcurrentOperationCount = 4
+        }
         q.qualityOfService = .userInitiated
         return q
     }()

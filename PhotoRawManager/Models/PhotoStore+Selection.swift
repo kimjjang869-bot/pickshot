@@ -4,12 +4,12 @@ import AppKit
 
 extension PhotoStore {
     func rebuildIndex() {
+        // v9.1.4: _urlIndex 동시 갱신 제거 — 17,000 URL hash 가 photos 변경마다
+        //   누적되어 키 burst 시 STALL 유발했음. PreviewLoadingPolicy.decodeURL 은
+        //   first(where:) fallback (1-3ms) 사용해도 키 이동 체감 영향 미미.
         _photoIndex.removeAll(keepingCapacity: true)
-        _urlIndex.removeAll(keepingCapacity: true)
         for (i, p) in photos.enumerated() {
             _photoIndex[p.id] = i
-            // v9.1.4: URL → idx 인덱스. PreviewLoadingPolicy.decodeURL O(N)→O(1).
-            _urlIndex[p.jpgURL] = i
         }
     }
 

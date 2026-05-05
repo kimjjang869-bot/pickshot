@@ -951,14 +951,13 @@ struct NSThumbnailCollectionView: NSViewRepresentable {
                 newIDs.insert(id)
                 focusID = id  // Last one becomes focus
             }
-            plog("[SEL] cv=\(selectedIndexPaths.count) old=\(oldIDs.count) new=\(newIDs.count) cmd=\(cmd) shift=\(shift)\n")
+            // v9.1.4: 매 selection 마다 plog 누적 STALL 방지 — 일반 경로 로그 제거.
 
             // v9.1.4: Shift+드래그(rubber-band) 시 기존 선택 보존 — NSCollectionView 기본이 reset+select 일 때 대응.
             //   shift 누른 상태에서 newIDs 가 oldIDs 의 부분집합이 아니면(=새 항목 추가) 또는 줄어들면 union 강제.
             if shift && !newIDs.isEmpty {
                 if !oldIDs.isSubset(of: newIDs) {
                     let merged = oldIDs.union(newIDs)
-                    plog("[SEL] shift-merge: old=\(oldIDs.count) new=\(newIDs.count) → \(merged.count)\n")
                     newIDs = merged
                     isBatchUpdating = true
                     let paths = Set(newIDs.compactMap { id -> IndexPath? in

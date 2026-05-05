@@ -519,14 +519,27 @@ struct FaceGroupingService {
         }
 
         let n = allFaces.count
-        let maxCompare = min(n, 5000)
+        // v9.1.4: tier 별 차등 — 8GB 머신 임베딩 메모리/CPU 폭주 방지.
+        let perTier: Int = {
+            switch SystemSpec.shared.effectiveTier {
+            case .low: return 1500
+            case .standard: return 2500
+            case .high: return 4000
+            case .extreme: return 5000
+            }
+        }()
+        let maxCompare = min(n, perTier)
 
         struct PairResult { let i: Int; let j: Int }
         let pairLock = NSLock()
         var matchedPairs: [PairResult] = []
         let facesSnapshot = allFaces
 
-        DispatchQueue.concurrentPerform(iterations: min(n, maxCompare)) { i in
+        // v9.1.4: low tier 는 concurrentPerform 가 8 코어 전부 점유 → 발열/스로틀.
+        //   직렬 for-loop 으로 대체. iteration 함수 통일.
+        let iterCount = min(n, maxCompare)
+        let useSerial = SystemSpec.shared.effectiveTier == .low
+        let runIter: (Int) -> Void = { i in
             var localPairs: [PairResult] = []
             for j in (i + 1)..<min(n, maxCompare) {
                 if facesSnapshot[i].photoID == facesSnapshot[j].photoID { continue }
@@ -548,6 +561,12 @@ struct FaceGroupingService {
                 matchedPairs.append(contentsOf: localPairs)
                 pairLock.unlock()
             }
+        }
+
+        if useSerial {
+            for i in 0..<iterCount { runIter(i) }
+        } else {
+            DispatchQueue.concurrentPerform(iterations: iterCount, execute: runIter)
         }
 
         for pair in matchedPairs {

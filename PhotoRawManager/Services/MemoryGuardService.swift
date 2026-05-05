@@ -44,8 +44,10 @@ final class MemoryGuardService {
     private var lastWarningTime: CFAbsoluteTime = 0
 
     // 같은 레이어 연속 발화 최소 간격 (초)
-    private let warningCooldown: CFAbsoluteTime = 8.0
-    private let emergencyCooldown: CFAbsoluteTime = 3.0
+    // v9.1.4: emergencyCooldown 3.0 → 30.0 — clear 효과 없는데 매 3초 main 점유 → STALL 누적.
+    private let warningCooldown: CFAbsoluteTime = 30.0
+    private let emergencyCooldown: CFAbsoluteTime = 30.0
+    private var emergencyIneffectiveCount: Int = 0  // 효과 없는 emergency 누적 — backoff 적응
 
     // MARK: - 타이머 + OS 압박 신호
     private var timer: DispatchSourceTimer?
@@ -56,18 +58,18 @@ final class MemoryGuardService {
         self.physicalRamGB = ramGB
         let ramMB = ramGB * 1024
 
-        // v8.9 실전 한도 — 사용자 체감 "메모리 많이 쓴다" 는 대략 8~12GB 부터.
-        //   RAM 이 많아도 사진 앱 1개가 18GB+ 쓰는 건 비정상 → 더 공격적으로 하향.
-        // Layer 1: soft target — RAM 20%, 캡 8GB
-        let soft = min(Int(Double(ramMB) * 0.20), 8192)
+        // v9.1.4: absolute cap 을 RAM 비율로 — 8GB 머신에서 emergencyMB ~2.5GB 로 너무 보수적이어서
+        //   캐시 자주 비워 재디코드 STALL 유발. RAM 의 50% 까지 허용 (8GB → 4GB) — OS+앱 여유 공존.
+        // Layer 1: soft target — RAM 25%
+        let soft = min(Int(Double(ramMB) * 0.25), 16384)
         self.softTargetMB = max(soft, 1024)
 
-        // Layer 2: warning — soft × 1.5, 캡 12GB
-        self.warningMB = min(Int(Double(self.softTargetMB) * 1.5), 12288)
+        // Layer 2: warning — soft × 1.5
+        self.warningMB = min(Int(Double(self.softTargetMB) * 1.5), 24576)
 
-        // Layer 3: emergency — RAM 30%, 캡 16GB
-        let emergency = min(Int(Double(ramMB) * 0.30), 16384)
-        self.emergencyMB = max(emergency, self.warningMB + 512)
+        // Layer 3: emergency — RAM 50% (8GB → 4GB / 16GB → 8GB / 64GB → 32GB)
+        let emergency = min(Int(Double(ramMB) * 0.50), 32768)
+        self.emergencyMB = max(emergency, self.warningMB + 1024)
 
         plog("[MemGuard] 초기화 — RAM \(ramGB)GB / soft \(softTargetMB)MB / warn \(warningMB)MB / emerg \(emergencyMB)MB\n")
     }
@@ -79,10 +81,11 @@ final class MemoryGuardService {
         baselineRamMB = currentRamMB()
         plog("[MemGuard] 시작 — baseline \(baselineRamMB)MB\n")
 
-        // 1) 주기적 타이머 체크 (utility 큐 — main 간섭 최소)
+        // 1) 주기적 타이머 체크 (utility 큐 — main 간섭 최소).
+        //   v9.1.4: 2초 → 10초 — OS memoryPressureSource 가 진짜 위험 시 즉시 깨움. 보조 폴링은 느슨하게.
         timer?.cancel()
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        t.schedule(deadline: .now() + 2.0, repeating: 2.0)
+        t.schedule(deadline: .now() + 10.0, repeating: 10.0)
         t.setEventHandler { [weak self] in
             self?.check()
         }
@@ -134,19 +137,43 @@ final class MemoryGuardService {
         let now = currentRamMB()
         let t = CFAbsoluteTimeGetCurrent()
 
-        // v9.0.2: baseline 기반 dynamic warning — baseline 대비 +2GB 시 Layer 2.
-        //   64GB Mac 에서 8GB cap 까지 가기 전, 작은 누수도 일찍 잡음.
-        //   기존: 절대 임계값 (8GB/12GB/16GB) 만 → 수 시간 사용 시 누적 캐시 안 잡힘.
-        let dynamicWarning = baselineRamMB + 2048   // +2GB
-        let dynamicEmergency = baselineRamMB + 4096 // +4GB
+        // v9.1.4: baseline 기반 임계값을 RAM 크기에 따라 차등.
+        //   8GB Mac 은 OS+다른앱 합치면 OOM 위험 — 보수적 +1.5GB warning / +3GB emergency.
+        //   16GB 일반 +2GB / +4GB. 32GB +4GB / +8GB. 64GB+ +8GB / +16GB.
+        let warningDelta: Int
+        let emergencyDelta: Int
+        if physicalRamGB >= 48 {
+            warningDelta = 8192; emergencyDelta = 16384
+        } else if physicalRamGB >= 24 {
+            warningDelta = 4096; emergencyDelta = 8192
+        } else if physicalRamGB >= 12 {
+            warningDelta = 2048; emergencyDelta = 4096
+        } else {
+            // 8GB 이하 — 절반 적용으로 swap 트래싱 사전 차단.
+            warningDelta = 1536; emergencyDelta = 3072
+        }
+        let dynamicWarning = baselineRamMB + warningDelta
+        let dynamicEmergency = baselineRamMB + emergencyDelta
 
         if now >= emergencyMB || now >= dynamicEmergency {
-            // Layer 3 — 한계선 돌파
-            if t - lastEmergencyTime >= emergencyCooldown {
+            // Layer 3 — 한계선 돌파. 효과 없으면 cooldown 기하급수 증가 (60s → 120s → 240s ...).
+            let backoff = emergencyCooldown * pow(2.0, Double(min(emergencyIneffectiveCount, 4)))
+            if t - lastEmergencyTime >= backoff {
                 lastEmergencyTime = t
-                let why = now >= emergencyMB ? "abs cap" : "baseline+4GB"
-                plog("[MemGuard] 🔴 \(now)MB ≥ \(why) — Layer 3 발동 (baseline=\(baselineRamMB)MB)\n")
-                DispatchQueue.main.async { [weak self] in self?.executeLayer3(reason: "self-monitored") }
+                let why = now >= emergencyMB ? "abs cap" : "baseline+\(emergencyDelta/1024)GB"
+                plog("[MemGuard] 🔴 \(now)MB ≥ \(why) — Layer 3 발동 (baseline=\(baselineRamMB)MB, backoff=\(Int(backoff))s)\n")
+                let beforeMB = now
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.executeLayer3(reason: "self-monitored")
+                    let afterMB = self.currentRamMB()
+                    // 효과 없으면 (200MB 미만 감소) ineffective count 증가.
+                    if beforeMB - afterMB < 200 {
+                        self.emergencyIneffectiveCount = min(self.emergencyIneffectiveCount + 1, 4)
+                    } else {
+                        self.emergencyIneffectiveCount = 0
+                    }
+                }
             }
             lastLayer = 3
         } else if now >= warningMB || now >= dynamicWarning {

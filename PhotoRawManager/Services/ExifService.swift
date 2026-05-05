@@ -88,8 +88,8 @@ struct ExifService {
             return results
         }
 
-        // Concurrent dispatch with limited parallelism
-        let concurrency = min(ProcessInfo.processInfo.activeProcessorCount, 8)
+        // v9.1.4: tier 별 차등 — 8GB Air 폴더 진입 EXIF 폭주 방지.
+        let concurrency = SystemSpec.shared.exifBatchConcurrency()
         let queue = DispatchQueue(label: "exif.batch", attributes: .concurrent)
         let group = DispatchGroup()
         let semaphore = DispatchSemaphore(value: concurrency)

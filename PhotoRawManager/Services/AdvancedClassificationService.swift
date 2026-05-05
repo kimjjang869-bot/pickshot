@@ -677,11 +677,13 @@ struct AdvancedClassificationService {
         let lock = NSLock()
         let total = photos.count
 
-        // CPU 코어 절반 사용 (Vision이 내부적으로도 병렬)
-        let concurrency = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
+        // v9.1.4: tier 차등 — 8GB Air 발열 / 스로틀 방지.
+        let concurrency = SystemSpec.shared.visionBatchConcurrency()
         let semaphore = DispatchSemaphore(value: concurrency)
 
-        DispatchQueue.concurrentPerform(iterations: total) { idx in
+        // v9.1.4: low tier 는 직렬 for-loop — concurrentPerform 이 8 코어 점유 → 발열.
+        let useSerial = SystemSpec.shared.effectiveTier == .low
+        let runIter: (Int) -> Void = { idx in
             if cancelCheck() { return }
             semaphore.wait()
             defer { semaphore.signal() }
@@ -713,6 +715,12 @@ struct AdvancedClassificationService {
             }
 
             progress(idx + 1)
+        }
+
+        if useSerial {
+            for i in 0..<total { runIter(i) }
+        } else {
+            DispatchQueue.concurrentPerform(iterations: total, execute: runIter)
         }
 
         return results

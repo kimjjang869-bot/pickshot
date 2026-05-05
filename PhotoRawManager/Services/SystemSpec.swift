@@ -250,6 +250,26 @@ final class SystemSpec {
         }
     }
 
+    /// v9.1.4: ExifService 배치 동시성 — 폴더 진입 시 EXIF 추출 폭주 방지.
+    func exifBatchConcurrency() -> Int {
+        switch effectiveTier {
+        case .low:      return 2
+        case .standard: return 3
+        case .high:     return 5
+        case .extreme:  return 8
+        }
+    }
+
+    /// v9.1.4: Vision/CoreML 배치 동시성 — VisualSearch / Classification / FaceEmbedding 공유.
+    func visionBatchConcurrency() -> Int {
+        switch effectiveTier {
+        case .low:      return 2
+        case .standard: return 2
+        case .high:     return 3
+        case .extreme:  return 4
+        }
+    }
+
     /// 프리뷰 최대 해상도 (0 = 원본)
     func previewMaxPixel() -> Int {
         switch effectiveTier {
