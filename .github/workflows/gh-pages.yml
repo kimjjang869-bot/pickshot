@@ -1,0 +1,53 @@
+name: Sync website to gh-pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync website/ → gh-pages root
+        run: |
+          set -eu
+          # 작업용 디렉토리에 website/ 복사
+          mkdir -p /tmp/site-stage
+          cp -R website/. /tmp/site-stage/
+
+          # gh-pages 브랜치 체크아웃 (없으면 orphan 생성)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+              git fetch origin gh-pages
+              git checkout gh-pages
+              # main 의 website/ 외 파일 삭제 (gh-pages 자체 파일만 유지하지 않음)
+              git rm -rf . >/dev/null 2>&1 || true
+              cp -R /tmp/site-stage/. .
+          else
+              git checkout --orphan gh-pages
+              git rm -rf . >/dev/null 2>&1 || true
+              cp -R /tmp/site-stage/. .
+          fi
+
+          git add -A
+          if git diff --cached --quiet; then
+              echo "변경사항 없음 — skip commit"
+              exit 0
+          fi
+
+          # 트리거된 main 커밋 메시지 가져오기
+          MAIN_COMMIT_MSG=$(git log -1 --format='%s' "$GITHUB_SHA" 2>/dev/null || echo "site sync")
+          git commit -m "site: ${MAIN_COMMIT_MSG}" -m "auto-sync from main@${GITHUB_SHA::7}"
+          git push origin gh-pages
